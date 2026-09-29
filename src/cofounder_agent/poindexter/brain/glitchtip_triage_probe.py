@@ -20,8 +20,9 @@ operator-controlled ruleset (DB-driven via app_settings) to:
     AND have low recurrence — the resolution is "we already know,
     closing as expected noise".
   * **Alert via notify_operator()** on issues with count above
-    ``glitchtip_triage_alert_threshold_count`` that we've not alerted
-    on this cycle (per-issue dedupe by id).
+    ``glitchtip_triage_alert_threshold_count`` (or the issue's project
+    entry in ``glitchtip_triage_alert_threshold_overrides``) that we've not
+    alerted on this cycle (per-issue dedupe by id).
   * **Summarize** the cycle for the daily roll-up consumer.
 
 Everything is best-effort: GlitchTip down => probe returns
@@ -89,6 +90,13 @@ ORG_SLUG_DEFAULT = "poindexter"
 # times — humans should look".
 ALERT_THRESHOLD_SETTING_KEY = "glitchtip_triage_alert_threshold_count"
 ALERT_THRESHOLD_DEFAULT = 100
+
+# Per-project override of the threshold above, as a JSON object
+# ``{"<project slug>": <count>}``. One number cannot fit every project: the
+# worker's project repeats known transients hundreds of times, while a public
+# site's project sees one real error (a signup that could not be stored) and
+# then nothing. Unlisted projects use the global threshold.
+ALERT_THRESHOLD_OVERRIDES_SETTING_KEY = "glitchtip_triage_alert_threshold_overrides"
 
 # Don't re-page issues whose ``lastSeen`` is older than this. Captured
 # 2026-05-16: a brain restart re-paged a 2-day-stale unresolved issue as
@@ -327,6 +335,57 @@ async def _read_threshold(pool) -> int:
         return v if v > 0 else ALERT_THRESHOLD_DEFAULT
     except ValueError:
         return ALERT_THRESHOLD_DEFAULT
+
+
+async def _read_threshold_overrides(pool) -> dict[str, int]:
+    """Parse the per-project threshold map. Bad entries are skipped, loudly.
+
+    A malformed map falls back to the global threshold for every project
+    rather than disabling paging: an override can only make a project page
+    sooner or later, never silence it.
+    """
+    raw = await _read_setting(pool, ALERT_THRESHOLD_OVERRIDES_SETTING_KEY, "{}")
+    try:
+        data = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "[GLITCHTIP_TRIAGE] %s is not valid JSON (%s); using the global "
+            "threshold for every project",
+            ALERT_THRESHOLD_OVERRIDES_SETTING_KEY, exc,
+        )
+        return {}
+    if not isinstance(data, dict):
+        logger.warning(
+            "[GLITCHTIP_TRIAGE] %s must be a JSON object of project slug -> "
+            "count, got %s; using the global threshold",
+            ALERT_THRESHOLD_OVERRIDES_SETTING_KEY, type(data).__name__,
+        )
+        return {}
+    overrides: dict[str, int] = {}
+    for slug, value in data.items():
+        try:
+            count = int(value)
+        except (TypeError, ValueError):
+            count = 0
+        if count < 1 or isinstance(value, bool):
+            logger.warning(
+                "[GLITCHTIP_TRIAGE] ignoring %s[%r] = %r: the threshold must be "
+                "a whole number of at least 1",
+                ALERT_THRESHOLD_OVERRIDES_SETTING_KEY, slug, value,
+            )
+            continue
+        overrides[str(slug)] = count
+    return overrides
+
+
+def _issue_project_slug(issue: dict[str, Any]) -> str:
+    """The issue's GlitchTip project slug, or "" when the API omitted it."""
+    project = issue.get("project")
+    if isinstance(project, dict):
+        slug = project.get("slug")
+        if isinstance(slug, str):
+            return slug
+    return ""
 
 
 async def _read_freshness_hours(pool) -> int:
@@ -676,6 +735,7 @@ async def run_glitchtip_triage_probe(
     base_url = localize_url(base_url).rstrip("/")
     org_slug = (await _read_setting(pool, ORG_SLUG_SETTING_KEY, ORG_SLUG_DEFAULT)).strip() or ORG_SLUG_DEFAULT
     threshold = await _read_threshold(pool)
+    threshold_overrides = await _read_threshold_overrides(pool)
     freshness_hours = await _read_freshness_hours(pool)
     default_resolve_max_count = await _read_default_resolve_max_count(pool)
     rules = await _read_rules(pool, default_resolve_max_count)
@@ -756,15 +816,18 @@ async def run_glitchtip_triage_probe(
                 # re-paging stale unresolved issues that haven't fired
                 # since. Operator-housekeeping (close in the UI) instead
                 # of an on-call ping.
+                project_slug = _issue_project_slug(issue)
+                issue_threshold = threshold_overrides.get(project_slug, threshold)
                 if (
-                    count >= threshold
+                    count >= issue_threshold
                     and _is_fresh(issue.get("lastSeen"), freshness_hours)
                     and issue_id not in _alerted_ids
                 ):
                     permalink = issue.get("permalink") or ""
                     detail_msg = (
                         f"Title: {title[:300]}\n"
-                        f"Count: {count}\n"
+                        f"Project: {project_slug or 'unknown'}\n"
+                        f"Count: {count} (pages at {issue_threshold})\n"
                         f"Level: {level}\n"
                         f"Last seen: {issue.get('lastSeen')}\n"
                         f"Permalink: {permalink}\n"
@@ -773,9 +836,14 @@ async def run_glitchtip_triage_probe(
                         f"app_settings.{RULES_SETTING_KEY}, OR resolve "
                         f"manually in the GlitchTip UI."
                     )
+                    page_title = (
+                        f"GlitchTip novel issue in {project_slug}: {title[:80]}"
+                        if project_slug in threshold_overrides
+                        else f"GlitchTip novel high-count issue: {title[:80]}"
+                    )
                     try:
                         notify_fn(
-                            title=f"GlitchTip novel high-count issue: {title[:80]}",
+                            title=page_title,
                             detail=detail_msg,
                             source="brain.glitchtip_triage_probe",
                             severity="warning" if level != "fatal" else "critical",
@@ -793,6 +861,7 @@ async def run_glitchtip_triage_probe(
                             "title": title[:160],
                             "count": count,
                             "level": level,
+                            "project": project_slug,
                         })
                     except Exception as exc:
                         logger.warning(

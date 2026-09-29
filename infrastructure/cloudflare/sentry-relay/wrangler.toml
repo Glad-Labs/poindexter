@@ -2,6 +2,15 @@ name = "sentry-relay"
 main = "src/index.ts"
 compatibility_date = "2026-05-01"
 
+# D1 queue holding envelopes until the operator's DrainSentryRelayJob pulls
+# them. No database_id on purpose: `wrangler deploy` (4.x) finds the database
+# by name and creates it on the first deploy (automatic resource
+# provisioning), so no account-specific id lands in this repo. The table is
+# created by the Worker on first use.
+[[d1_databases]]
+binding = "RELAY_DB"
+database_name = "sentry-relay"
+
 # Rate limiting — 120 requests/min per IP. Error capture is burstier than page
 # views (a broken deploy fires many events fast), so this is more generous than
 # the page-views beacon's 60/min while still killing a sustained abuse loop.
@@ -13,30 +22,39 @@ type = "ratelimit"
 namespace_id = "2001"
 simple = { limit = 120, period = 60 }
 
-# Operator config — ALL of it lives as Worker SECRETS, none as [vars]
-# (set each after the first deploy):
+[vars]
+# Days an envelope waits in the queue if the drain stops. /pending prunes
+# older rows and reports how many it pruned, so a drain that was down past
+# this shows up as `expired` in the job's metrics instead of vanishing.
+RETENTION_DAYS = "7"
+# Queue ceiling. Past it the relay answers 503 rather than growing without
+# bound while nobody drains. Normal traffic is a handful of rows.
+MAX_QUEUE_ROWS = "5000"
+# Largest envelope accepted, after gzip decompression. Error envelopes are
+# typically 5-30 KB; replays and attachments are dropped at the edge anyway.
+MAX_ENVELOPE_BYTES = "262144"
+
+# Operator config lives as Worker SECRETS, never [vars] (set each after the
+# first deploy):
 #
 #   echo "https://example.com,https://www.example.com" | npx wrangler secret put ALLOWED_ORIGINS
-#   echo "1" | npx wrangler secret put ALLOWED_PROJECT_IDS
-#   echo "https://<host>.<tailnet>.ts.net" | npx wrangler secret put GLITCHTIP_INGEST_ORIGIN
+#   echo "2" | npx wrangler secret put ALLOWED_PROJECT_IDS
+#   npx wrangler secret put SENTRY_RELAY_SECRET   # same value as app_settings.sentry_relay_secret
 #
-# Secrets survive `wrangler deploy`; plain-text vars do not — deploys are
-# declarative about [vars], so a dashboard-set var is wiped on the next
-# deploy and a committed var clobbers a same-named secret. (The
-# page-views-beacon ran with origin enforcement silently off until
-# 2026-08-31 for exactly this reason.)
+# Secrets survive `wrangler deploy`; plain-text vars do not. Deploys are
+# declarative about [vars], so a dashboard-set var is wiped on the next deploy
+# and a committed var clobbers a same-named secret. (The page-views-beacon ran
+# with origin enforcement silently off until 2026-08-31 for exactly this
+# reason.)
 #
 # ALLOWED_ORIGINS — comma-separated public-site origins checked against the
-#   browser Origin header. Unset disables the check: dev only, MUST be set
-#   in production.
+#   browser Origin header. Unset disables the check: dev only, MUST be set in
+#   production.
 # ALLOWED_PROJECT_IDS — comma-separated GlitchTip project ids the relay
-#   forwards (the open-proxy guard). Unset = fail closed: forwards nothing.
-# GLITCHTIP_INGEST_ORIGIN — path-scoped Tailscale Funnel base URL fronting
-#   GlitchTip's ingest, e.g. "https://<host>.<tailnet>.ts.net". A secret
-#   also for privacy: the operator's tailnet hostname never lands in this
-#   repo or in browser source. The Worker forwards envelopes to
-#   ${GLITCHTIP_INGEST_ORIGIN}/api/<project_id>/envelope/.
+#   queues (the open-proxy guard). Unset = fail closed: queues nothing.
+# SENTRY_RELAY_SECRET — bearer for /pending and /ack. Unset = the Worker
+#   answers 503 to everything.
 
-# Custom domain — route your own subdomain (e.g. sentry-relay.example.com) to
-# this Worker via the CF dashboard or `wrangler routes add`. Don't commit a
-# route block with an operator-specific hostname (feedback_no_operator_info_to_public_repo).
+# Custom domain — route your own subdomain (e.g. errors.example.com) to this
+# Worker via the CF dashboard or `wrangler routes add`. Don't commit a route
+# block with an operator-specific hostname.

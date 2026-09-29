@@ -54,7 +54,7 @@ const DATA_CATEGORIES = [
     value: 'advertising',
     label: 'Advertising data / Google AdSense (if consented)',
   },
-  { value: 'errors', label: 'Error monitoring data (Sentry)' },
+  { value: 'errors', label: 'Error monitoring data' },
   { value: 'cookies', label: 'Cookie preferences' },
   { value: 'logs', label: 'Server logs (IP addresses)' },
   { value: 'comments', label: 'Comments (Giscus/GitHub)' },

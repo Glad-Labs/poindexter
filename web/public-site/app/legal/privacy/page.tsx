@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default function PrivacyPolicy() {
-  const lastUpdated = new Date('2026-04-13').toLocaleDateString('en-US', {
+  const lastUpdated = new Date('2026-09-28').toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -27,12 +27,12 @@ export default function PrivacyPolicy() {
     {
       question: 'How long do you keep my data?',
       answer:
-        'Sentry error data: 90 days. Server logs: 90 days. If you consent to Google Analytics: 14 months. If you consent to AdSense: up to 30 months.',
+        'Error reports: 90 days. Server logs: 90 days. If you consent to Google Analytics: 14 months. If you consent to AdSense: up to 30 months.',
     },
     {
       question: 'What third parties have access to my data?',
       answer:
-        'Always active: Vercel (Hosting), Sentry (Error Monitoring), GitHub (Giscus Comments). Consent-gated: Google (Analytics & AdSense, only if you opt in). Each has their own privacy policies.',
+        'Always active: Vercel (Hosting), Cloudflare (Error Report Relay), GitHub (Giscus Comments). Error reports themselves go to a tracker we host ourselves. Consent-gated: Google (Analytics & AdSense, only if you opt in). Each has their own privacy policies.',
     },
     {
       question: 'How do I download my data?',
@@ -96,7 +96,7 @@ export default function PrivacyPolicy() {
           </li>
           <li>
             <strong>Legitimate Interest (Article 6(1)(f)):</strong> Error
-            monitoring (Sentry) and site optimization
+            monitoring and site optimization
           </li>
         </ul>
 
@@ -106,9 +106,12 @@ export default function PrivacyPolicy() {
         <h3>3.1 Always-Active Data Collection</h3>
         <ul>
           <li>
-            <strong>Sentry (Error Monitoring):</strong> Sentry captures error
-            data including IP addresses, browser information, and stack traces
-            when something breaks. This helps us fix bugs fast. Legal basis:
+            <strong>Error Monitoring:</strong> When something breaks, the site
+            sends an error report (the error message and stack trace, the page
+            address, and your browser and operating system) through a Cloudflare
+            relay to an error tracker we host ourselves. Reports do not include
+            your IP address: the relay uses it only to rate-limit requests and
+            does not store it. This helps us fix bugs fast. Legal basis:
             Legitimate Interest (Article 6(1)(f)).
           </li>
           <li>
@@ -154,7 +157,7 @@ export default function PrivacyPolicy() {
           <li>
             Understand which content performs well (first-party analytics)
           </li>
-          <li>Fix errors and improve site reliability (Sentry)</li>
+          <li>Fix errors and improve site reliability (error monitoring)</li>
           <li>Ensure security and prevent abuse (server logs)</li>
           <li>Comply with legal obligations</li>
         </ul>
@@ -170,9 +173,9 @@ export default function PrivacyPolicy() {
         </p>
         <ul>
           <li>
-            <strong>Service Providers:</strong> Vercel (hosting), Sentry (error
-            monitoring), GitHub (comments) — only the data necessary for them to
-            provide their services.
+            <strong>Service Providers:</strong> Vercel (hosting), Cloudflare
+            (error report relay), GitHub (comments) — only the data necessary
+            for them to provide their services.
           </li>
           <li>
             <strong>Google (consent-gated):</strong> If you opt in to analytics
@@ -248,8 +251,9 @@ export default function PrivacyPolicy() {
             cookies retained for up to 30 months.
           </li>
           <li>
-            <strong>Sentry Error Data:</strong> Error reports are retained for
-            90 days.
+            <strong>Error Reports:</strong> Retained for 90 days in our
+            self-hosted error tracker. A report waits at most 7 days in the
+            Cloudflare relay before it is delivered or deleted.
           </li>
           <li>
             <strong>Server Logs:</strong> IP addresses and access logs are
@@ -296,11 +300,16 @@ export default function PrivacyPolicy() {
               </td>
             </tr>
             <tr>
-              <td>Sentry (Functional Software Inc)</td>
-              <td>Error Monitoring</td>
-              <td>IP, browser info, error data</td>
+              <td>Cloudflare Inc</td>
+              <td>Error report relay</td>
               <td>
-                <a href="https://sentry.io/privacy/">View Policy</a>
+                Browser info, page address, error data (IP used for rate
+                limiting only, not stored)
+              </td>
+              <td>
+                <a href="https://www.cloudflare.com/privacypolicy/">
+                  View Policy
+                </a>
               </td>
             </tr>
             <tr>
@@ -330,9 +339,9 @@ export default function PrivacyPolicy() {
         <h2>11. International Data Transfers</h2>
         <p>
           Your data may be processed in the United States by our service
-          providers (Vercel, Sentry, Lemon Squeezy, and Google if you consent).
-          These transfers are protected by Standard Contractual Clauses (SCCs)
-          where applicable.
+          providers (Vercel, Cloudflare, Lemon Squeezy, and Google if you
+          consent). These transfers are protected by Standard Contractual
+          Clauses (SCCs) where applicable.
         </p>
 
         <h2>12. Automated Decision Making</h2>

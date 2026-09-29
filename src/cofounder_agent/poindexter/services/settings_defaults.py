@@ -3725,6 +3725,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # wait between them. One retry absorbs a cold start or a provider blip.
     'newsletter_signup_canary_attempts': '2',
     'newsletter_signup_canary_retry_seconds': '30',
+    # Site error relay (infrastructure/cloudflare/sentry-relay). The public
+    # site's Sentry SDK tunnels error envelopes to that Worker, which queues
+    # them in D1; DrainSentryRelayJob pulls the queue into the local GlitchTip
+    # (glitchtip_base_url). Empty by default: a fresh install has no Worker
+    # deployed, and the job is a no-op until this is set. The bearer lives in
+    # the secret sentry_relay_secret, set alongside it:
+    #   poindexter settings set sentry_relay_secret '<same value as the Worker>' --secret --allow-new
+    'sentry_relay_url': '',
+    # Envelopes per /pending page (the Worker caps a page at 50) and pages
+    # per tick, so one tick forwards at most batch_size x max_batches.
+    'sentry_relay_drain_batch_size': '25',
+    'sentry_relay_drain_max_batches': '20',
     'smtp_host': '',
     'smtp_port': '587',
     'smtp_use_tls': 'true',
@@ -3960,6 +3972,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # the org they created in the GlitchTip first-login setup. Lockstep with
     # the baseline seed; the operator overlay restores the operator's own slug.
     'glitchtip_triage_org_slug': 'poindexter',
+    # Per-project page thresholds for the brain triage probe, as a JSON object
+    # {"<GlitchTip project slug>": <count>}. A project not listed pages at
+    # glitchtip_triage_alert_threshold_count. The worker's own project throws
+    # hundreds of repeats of known transients, so its threshold is high; a
+    # public site's project sees little traffic, and one real error there
+    # (a signup that could not be stored) is worth a page, so an operator
+    # sets it to 1: {"public-site": 1}.
+    'glitchtip_triage_alert_threshold_overrides': '{}',
     'template_runner_progress_streaming': 'true',
     # Defaulted true 2026-05-17 (Glad-Labs/poindexter#412) — the
     # AsyncPostgresSaver wiring has been live on prod since 2026-05-13
@@ -4250,6 +4270,27 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.newsletter_signup_capture_broken.fallback': 'discord',
     'findings.newsletter_signup_capture_broken.cooldown_minutes': '1440',
     'findings.newsletter_signup_capture_broken.min_severity': 'warning',
+    # sentry_relay_drain_failed: the relay or GlitchTip is unreachable, or the
+    # bearer is missing. Site errors are not lost yet (they wait in D1 for the
+    # Worker's RETENTION_DAYS), but nobody is seeing them.
+    'findings.sentry_relay_drain_failed.delivery': 'discord',
+    'findings.sentry_relay_drain_failed.fallback': 'discord',
+    'findings.sentry_relay_drain_failed.cooldown_minutes': '180',
+    'findings.sentry_relay_drain_failed.min_severity': 'warning',
+    # sentry_relay_envelope_rejected: GlitchTip refused envelopes outright
+    # (wrong key or project), so they were dropped. Usually a DSN that stopped
+    # matching the site's build, which means every later error is dropped too.
+    'findings.sentry_relay_envelope_rejected.delivery': 'discord',
+    'findings.sentry_relay_envelope_rejected.fallback': 'discord',
+    'findings.sentry_relay_envelope_rejected.cooldown_minutes': '360',
+    'findings.sentry_relay_envelope_rejected.min_severity': 'warning',
+    # sentry_relay_envelopes_expired: the Worker pruned envelopes that waited
+    # past its retention window, so the drain was down for days. The errors
+    # are gone; this says how many.
+    'findings.sentry_relay_envelopes_expired.delivery': 'discord',
+    'findings.sentry_relay_envelopes_expired.fallback': 'discord',
+    'findings.sentry_relay_envelopes_expired.cooldown_minutes': '1440',
+    'findings.sentry_relay_envelopes_expired.min_severity': 'warning',
     # retention_backlog: advisory. A policy that runs clean but does not drain
     # is a slow leak, not an outage — Discord, not a page.
     'findings.retention_backlog.delivery': 'discord',
@@ -6869,6 +6910,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'flux_schnell_server_url': {'owner': 'flux_schnell'},
     'gate_resume_timeout_seconds': {'owner': 'gate_resume', 'value_type': 'integer'},
     'glitchtip_triage_org_slug': {'owner': 'glitchtip_triage_probe', 'value_type': 'string'},
+    'glitchtip_triage_alert_threshold_overrides': {'owner': 'glitchtip_triage_probe', 'value_type': 'json'},
+    'sentry_relay_url': {'owner': 'sentry_relay', 'value_type': 'url'},
+    'sentry_relay_drain_batch_size': {'owner': 'sentry_relay', 'value_type': 'integer'},
+    'sentry_relay_drain_max_batches': {'owner': 'sentry_relay', 'value_type': 'integer'},
     'google_sitemap_ping_url': {'owner': 'publish_service', 'value_type': 'url'},
     'gpu0_headroom_gb': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'ollama_gpu_indexes': {'owner': 'gpu_scheduler', 'value_type': 'string'},

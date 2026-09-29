@@ -61,26 +61,15 @@ export default function WebVitals() {
       );
     }
 
+    // Google Analytics is where vitals are read, every rating included.
+    // Poor vitals deliberately do NOT go to Sentry. Error reports travel
+    // through a relay into GlitchTip, and a public-site issue pages the
+    // operator on its first event. A message carrying the measured value
+    // ("LCP=4523ms") would open a new issue, and a new page, per distinct
+    // number for what is a performance signal, not an error. The dynamic
+    // import that sent it also marked every SDK export as used, which kept
+    // tracing and replay code in the bundle every page loads.
     sendToGoogleAnalytics({ name, value, id });
-
-    // Alert Sentry for poor Core Web Vitals so on-call engineers get notified
-    // when real users experience degraded performance. Uses dynamic import to
-    // avoid bundling Sentry in non-Sentry deployments that omit @sentry/nextjs.
-    if (rating === 'poor' && typeof window !== 'undefined') {
-      import('@sentry/nextjs')
-        .then((Sentry) => {
-          Sentry.captureMessage(
-            `Web Vital degraded: ${name}=${Math.round(value)}ms`,
-            {
-              level: 'warning',
-              tags: { vital: name, rating },
-            }
-          );
-        })
-        .catch(() => {
-          // Sentry not installed — silently skip
-        });
-    }
   });
 
   return null;

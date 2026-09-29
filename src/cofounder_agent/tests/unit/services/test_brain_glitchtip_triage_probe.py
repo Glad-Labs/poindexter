@@ -842,3 +842,112 @@ async def test_fresh_issue_still_alerted_when_threshold_crossed():
     assert summary["alerted_count"] == 1
     assert len(notifies) == 1
     assert "Fresh unresolved boom" in notifies[0]["title"]
+
+
+# ---------------------------------------------------------------------------
+# Per-project thresholds (glitchtip_triage_alert_threshold_overrides)
+# ---------------------------------------------------------------------------
+#
+# One global count cannot fit every project. The worker's project repeats
+# known transients hundreds of times, so it pages at 10+; a public site's
+# project sees one real error (a signup that could not be stored) and then
+# nothing, so it must page on the first event.
+
+
+def _project_issue(id_, title, count, project_slug):
+    issue = _issue(id_, title, count)
+    issue["project"] = {"id": "2", "slug": project_slug, "name": project_slug}
+    return issue
+
+
+async def _run_with_overrides(issues, overrides_raw, threshold="10"):
+    pool = _make_pool(
+        settings={
+            "glitchtip_triage_enabled": "true",
+            "glitchtip_triage_alert_threshold_count": threshold,
+            "glitchtip_triage_alert_threshold_overrides": overrides_raw,
+            "glitchtip_triage_auto_resolve_patterns": "[]",
+        },
+        secrets={"glitchtip_triage_api_token": "tok-abc"},
+    )
+    client = _FakeClient(get_responses=[_FakeResponse(json_data=issues)])
+    notifies: list[dict] = []
+    summary = await gt.run_glitchtip_triage_probe(
+        pool,
+        notify_fn=lambda **kw: notifies.append(kw),
+        http_client_factory=_factory(client),
+    )
+    return summary, notifies
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_project_override_pages_a_single_public_site_error():
+    issues = [
+        _project_issue("501", "TypeError: signup store failed", 1, "public-site"),
+        _project_issue("502", "TimeoutError: transient", 1, "poindexter"),
+    ]
+    summary, notifies = await _run_with_overrides(issues, '{"public-site": 1}')
+
+    assert summary["alerted_count"] == 1
+    [page] = notifies
+    assert "signup store failed" in page["title"]
+    assert "public-site" in page["title"]
+    assert "Project: public-site" in page["detail"]
+    assert "Count: 1 (pages at 1)" in page["detail"]
+    assert summary["alerted"][0]["project"] == "public-site"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_project_override_can_also_quiet_a_noisy_project():
+    issues = [_project_issue("503", "ConnectError: ollama restarting", 500, "poindexter")]
+    summary, notifies = await _run_with_overrides(issues, '{"poindexter": 1000}')
+    assert summary["alerted_count"] == 0
+    assert notifies == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unlisted_project_keeps_the_global_threshold_and_title():
+    issues = [_project_issue("504", "KeyError: novel", 50, "poindexter")]
+    summary, notifies = await _run_with_overrides(issues, '{"public-site": 1}')
+    assert summary["alerted_count"] == 1
+    assert notifies[0]["title"].startswith("GlitchTip novel high-count issue:")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw", ["not json", "[1, 2]", '"public-site"'])
+async def test_malformed_overrides_fall_back_to_the_global_threshold(raw):
+    """A broken map must never silence paging, only lose the override."""
+    issues = [
+        _project_issue("505", "Error: below global", 1, "public-site"),
+        _project_issue("506", "Error: above global", 25, "public-site"),
+    ]
+    summary, notifies = await _run_with_overrides(issues, raw)
+    assert summary["status"] == "completed"
+    assert [n["title"] for n in notifies] == [
+        "GlitchTip novel high-count issue: Error: above global"
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_invalid_override_entries_are_skipped_individually():
+    overrides = gt._read_threshold_overrides
+    pool = _make_pool(
+        settings={
+            "glitchtip_triage_alert_threshold_overrides": (
+                '{"a": 0, "b": -3, "c": "x", "d": true, "e": 2, "f": "4"}'
+            )
+        }
+    )
+    assert await overrides(pool) == {"e": 2, "f": 4}
+
+
+@pytest.mark.unit
+def test_issue_project_slug_tolerates_a_missing_project():
+    assert gt._issue_project_slug({"project": {"slug": "public-site"}}) == "public-site"
+    assert gt._issue_project_slug({}) == ""
+    assert gt._issue_project_slug({"project": "2"}) == ""

@@ -883,6 +883,15 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.probe_newsletter_signup",
             "ProbeNewsletterSignupJob",
         ),
+        # DrainSentryRelayJob — drains the edge error relay into GlitchTip.
+        # Site errors need a public endpoint (browsers and serverless
+        # functions send them); the hop into the LAN-only tracker stays
+        # outbound-only. No-op until the relay URL is set.
+        (
+            "jobs",
+            "poindexter.services.jobs.drain_sentry_relay",
+            "DrainSentryRelayJob",
+        ),
         ("jobs", "poindexter.services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "poindexter.services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

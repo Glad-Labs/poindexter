@@ -1,148 +1,182 @@
 # sentry-relay (Cloudflare Worker)
 
-Public, hardened front door that lets a self-hosted, LAN-only error tracker
-(GlitchTip / any Sentry-compatible ingest) receive errors from **public
-visitors' browsers**. The browser Sentry SDK tunnels error envelopes to this
-Worker; the Worker validates them and forwards the raw envelope to the
-tracker's ingest endpoint, which is reachable from the Cloudflare edge via a
-**path-scoped Tailscale Funnel** (URL kept as a Worker secret).
+Public front door that lets a self-hosted, LAN-only error tracker (GlitchTip,
+or any Sentry-compatible ingest) receive errors from a site's **visitors'
+browsers and serverless functions**, without giving the tracker a public
+address.
 
-## Why a relay
-
-The public site is served from Vercel; the error tracker is self-hosted on the
-operator's LAN. **Neither Vercel functions nor public browsers can reach the
-LAN.** The Sentry SDK's same-origin `tunnelRoute: '/monitoring'` is a Vercel
-route, so it had nowhere to forward to — frontend errors silently went nowhere
-even though the privacy policy advertised error monitoring as active. (Same
-wall that retired the old same-origin `/api/page-views` route.)
-
-This Worker closes the gap the same way the **page-views-beacon** does
-(browser → CF edge → operator backend), with two differences: it _forwards_
-the envelope (rather than writing to Analytics Engine), and the hop from the
-edge to the LAN is a **Tailscale Funnel** instead of a CF-hosted sink.
+The Sentry SDK tunnels each error envelope to this Worker. The Worker checks
+it and **queues** it in D1. Poindexter's `DrainSentryRelayJob` pulls the queue
+outbound every 2 minutes and posts each envelope to GlitchTip over the LAN.
+It is the same split as `unsubscribe-relay` and `ls-webhook-relay`: public
+edge, CF-hosted queue, outbound poll.
 
 ```
-visitor browser ──POST envelope──▶ CF Worker (this) ──▶ Tailscale Funnel ──▶ GlitchTip ingest
-   (Sentry SDK tunnel)              origin + project          (public HTTPS,        (LAN-only)
-                                    allowlist + rate limit     path-scoped)
+browser ──────────┐
+                  ├─POST /relay──▶ this Worker ──▶ D1 `envelopes`
+serverless fn ────┘  (SDK tunnel)   checks + queues        │
+                                                           │
+DrainSentryRelayJob ◀── GET /pending (bearer) ─────────────┘
+(worker, outbound)  ──▶ POST <glitchtip>/api/<id>/envelope/?sentry_key=<key>
+                    ──▶ POST /ack (bearer), once GlitchTip answered
 ```
+
+## Why a queue and not a forward
+
+The tracker is LAN-only, and Vercel functions and public browsers cannot reach
+the LAN. Forwarding from the edge would mean publishing the tracker's ingest
+on a public tunnel. That was this Worker's first design; it was never
+deployed, and it would have failed anyway for two reasons:
+
+- **GlitchTip does not read the key from the envelope.** It authenticates
+  ingest from `?sentry_key=` or `X-Sentry-Auth` only
+  (`apps/event_ingest/authentication.py::auth_from_request`). A tunnelled
+  envelope carries its DSN only in the envelope header, so a raw forward is
+  answered `403 Denied`. The Worker stores the key beside each envelope and
+  the drain puts it back on as a query parameter.
+- **The browser could not reach it.** The site's CSP `connect-src` has to
+  allow the relay's origin. The site now derives that entry from
+  `NEXT_PUBLIC_SENTRY_TUNNEL`, the same variable the SDK sends to.
+
+Pulling instead of pushing keeps the tracker private and the Worker simple:
+it never needs to know where GlitchTip lives.
+
+## What is queued
+
+Only envelopes with an error-type item (`event`, `feedback`, `user_report`).
+Sessions, client reports, transactions and replays are answered `200` and
+dropped. The site's SDK config already sends errors only; the edge check
+means an SDK default that drifts back on cannot fill the queue with page-view
+noise.
 
 ## Security posture
 
-- **Origin allowlist** (`ALLOWED_ORIGINS`) — only the public-site origins may POST.
-- **Project allowlist** (`ALLOWED_PROJECT_IDS`) — the open-proxy guard. The
-  Worker forwards an envelope **only** if its DSN project id is on the list;
-  an empty list **fails closed** (forwards nothing). This stops the relay being
-  abused to pump events at arbitrary projects on your backend.
-- **Per-IP rate limit** — 120 req/min (errors are burstier than page views).
-- **Funnel URL is a Worker secret** — the operator's tailnet hostname never
-  appears in browser source or in this repo. The Funnel is **path-scoped** to
-  the ingest endpoint, so the tracker's dashboard stays unexposed.
-- The forwarded envelope still carries its own DSN key, so the tracker
-  authenticates ingest exactly as it would for a direct send.
+- **Origin allowlist** (`ALLOWED_ORIGINS`): browser POSTs from any other
+  origin get `403`. Server-side sends carry no `Origin` and rely on the next
+  three checks.
+- **Project allowlist** (`ALLOWED_PROJECT_IDS`), the open-proxy guard: only
+  envelopes whose DSN names a listed project are queued. Unset **fails
+  closed** (queues nothing).
+- **Read side is bearer-authenticated** (`/pending`, `/ack`, constant-time
+  compare). `SENTRY_RELAY_SECRET` unset → `503` on every path: an open
+  `/pending` would hand out visitors' error reports.
+- **Per-IP rate limit** of 120 requests/min, a **size cap**
+  (`MAX_ENVELOPE_BYTES`, after gzip decompression) and a **queue cap**
+  (`MAX_QUEUE_ROWS`, answered `503`, never evicts).
+- **Retention** (`RETENTION_DAYS`): `/pending` prunes older rows and reports
+  how many as `expired`, so a drain that was down for days shows up as lost
+  envelopes (a `sentry_relay_envelopes_expired` finding), not a quiet queue.
+- **No IP is stored.** The Worker reads `CF-Connecting-IP` for the rate limit
+  only.
 
-The Worker code here contains **no operator-specific identifiers** (per
-`feedback_no_operator_info_to_public_repo`) — you fill those in at deploy time.
+The code carries no operator-specific identifiers; those are Worker secrets
+and Poindexter settings.
 
 ## Operator setup
 
-### 1. Expose GlitchTip's ingest over a path-scoped Tailscale Funnel
-
-GlitchTip listens on the LAN (e.g. `http://localhost:8080`). Funnel just the
-ingest path so the dashboard stays private:
+### 1. Create a GlitchTip project for the site
 
 ```bash
-# Serve the local GlitchTip ingest publicly, scoped to the envelope path.
-tailscale funnel --set-path /api https://localhost:8080/api
-tailscale funnel status     # note the public https://<host>.<tailnet>.ts.net URL
+docker exec -i poindexter-glitchtip-web python manage.py shell <<'EOF'
+from apps.organizations_ext.models import Organization
+from apps.projects.models import Project, ProjectKey
+org = Organization.objects.get(slug="<your org slug>")
+project = Project.objects.filter(organization=org, slug="public-site").first()
+if project is None:
+    project = Project.objects.create(organization=org, name="public-site",
+                                     platform="javascript-nextjs", scrub_ip_addresses=True)
+key = ProjectKey.objects.filter(project=project, is_active=True).order_by("id").first()
+print(project.id, key.public_key.hex)
+EOF
 ```
 
-> Scope the Funnel to `/api` (ingest) only — never the bare root, which would
-> expose the GlitchTip dashboard. Confirm `https://<host>.<tailnet>.ts.net/`
-> (no path) does **not** serve the dashboard.
+Note the project id and the **dashless** key (`.hex`). The JavaScript SDK's
+DSN parser accepts only word characters in the key, so a DSN built from the
+dashed UUID is rejected at runtime with a console-only `Invalid Sentry Dsn`
+and the SDK never starts. The site's `next.config.js` refuses such a DSN at
+build time.
 
-### 2. Configure + deploy the Worker
+### 2. Deploy the Worker
 
 ```bash
 cd infrastructure/cloudflare/sentry-relay
 npm install
-
-# Mint a deploy token (least privilege): CF dashboard → My Profile → API
-# Tokens → custom token, scope: Account → Workers Scripts → Edit.
-export CLOUDFLARE_API_TOKEN=<token>
-
-npm run deploy   # prints the workers.dev URL it published to
+npx wrangler login     # once per machine
+npx wrangler deploy    # creates the `sentry-relay` D1 database on the first deploy
 ```
 
-Then set the operator config — **all three as Worker secrets** (`wrangler
-secret put` needs the Worker to exist, hence deploy first). Secrets survive
-future deploys; a dashboard-set plain-text var would be wiped by the next
-`wrangler deploy`, and a `[vars]` entry in `wrangler.toml` would clobber a
-same-named secret — which is why the file deliberately declares none:
+`wrangler.toml` names the database but carries no id: wrangler 4 finds the
+database by name, or creates it. The table is created by the Worker on first
+use.
+
+### 3. Set the secrets
 
 ```bash
-# The Funnel base URL (keeps the tailnet hostname out of the repo and
-# browser source). Value is the origin only, no trailing path:
-echo "https://<host>.<tailnet>.ts.net" | npx wrangler secret put GLITCHTIP_INGEST_ORIGIN
-
-# Your public-site origins (scheme + host, no trailing slash):
 echo "https://example.com,https://www.example.com" | npx wrangler secret put ALLOWED_ORIGINS
-
-# Your GlitchTip project id(s) — find it in the project's DSN,
-# https://<key>@.../<project_id>. Unset fails closed (forwards nothing):
-echo "1" | npx wrangler secret put ALLOWED_PROJECT_IDS
+echo "<project id>" | npx wrangler secret put ALLOWED_PROJECT_IDS
+npx wrangler secret put SENTRY_RELAY_SECRET          # any long random string
 ```
 
-### 3. Map a subdomain (recommended)
+Secrets survive deploys; `[vars]` do not, which is why none of these are in
+`wrangler.toml`.
 
-CF dashboard → your zone → Workers Routes → map `sentry-relay.<your-domain>/*`
-→ `sentry-relay`. Avoids leaking the `workers.dev` origin in DevTools and gives
-the browser a same-site tunnel target (better ad-blocker evasion).
+### 4. Point Poindexter at it
 
-### 4. Point the public site at the relay
+```bash
+poindexter settings set sentry_relay_url https://sentry-relay.<you>.workers.dev --category observability
+poindexter settings set sentry_relay_secret '<same value>' --secret --category observability
+# Page on the site project's first event (the default is 10+ repeats):
+poindexter settings set glitchtip_triage_alert_threshold_overrides '{"public-site": 1}'
+```
 
-In Vercel → Environment Variables, set:
+`DrainSentryRelayJob` is a no-op until `sentry_relay_url` is set. It posts to
+`glitchtip_base_url` (default `http://glitchtip-web:8000`, the compose
+hostname).
 
-- `NEXT_PUBLIC_SENTRY_DSN` =
-  `https://<glitchtip_public_key>@sentry-relay.<your-domain>/<project_id>`
-  — the **host is the relay's public domain** (safe to expose); the Worker
-  reads only the project id and forwards to the real backend.
-- `NEXT_PUBLIC_SENTRY_TUNNEL` = `https://sentry-relay.<your-domain>/relay`
-  — the SDK posts envelopes here (see `web/public-site/sentry.client.config.ts`).
+### 5. Point the site at it
 
-Redeploy the public site so the env bakes in. When `NEXT_PUBLIC_SENTRY_TUNNEL`
-is set, the build skips the dead same-origin `/monitoring` route (see
-`web/public-site/next.config.js`).
+Set both, for the environments that should report (production):
+
+- `NEXT_PUBLIC_SENTRY_DSN` = `https://<dashless key>@sentry-relay.<you>.workers.dev/<project id>`
+- `NEXT_PUBLIC_SENTRY_TUNNEL` = `https://sentry-relay.<you>.workers.dev/relay`
+
+Both are baked in at build time, so redeploy after setting them. A production
+build fails if only one is set or the DSN is malformed: a half-configured
+site would say "we've been notified" on its error pages and report nothing.
 
 ## Verification
 
 ```bash
-# 1. Wrong-origin POST is refused (403) once ALLOWED_ORIGINS is set.
-curl -s -o /dev/null -w '%{http_code}\n' -X POST \
-  -H 'Origin: https://evil.example' \
-  https://sentry-relay.<your-domain>/relay            # → 403
+R=https://sentry-relay.<you>.workers.dev
 
-# 2. An envelope for a non-allowlisted project is refused (403).
-printf '%s\n' '{"dsn":"https://k@sentry-relay.example/999"}' '{"type":"event"}' \
-  | curl -s -o /dev/null -w '%{http_code}\n' -X POST --data-binary @- \
-    https://sentry-relay.<your-domain>/relay          # → 403
+# Foreign origin and unauthenticated reads are refused:
+curl -s -o /dev/null -w '%{http_code}\n' -X POST -H 'Origin: https://evil.example' --data-binary x $R/relay   # 403
+curl -s -o /dev/null -w '%{http_code}\n' $R/pending                                                          # 401
 
-# 3. Trigger a real client error on the site, then watch GlitchTip:
-#    your GlitchTip project → Issues shows the new event within ~1 min.
+# Queue contents (a normal, drained queue is empty):
+curl -s -H "Authorization: Bearer <secret>" "$R/pending?limit=5"
 ```
 
-If events don't appear: check `wrangler tail sentry-relay` for the forward
-status, and confirm the Funnel is up (`tailscale funnel status`) and GlitchTip
-is reachable at the Funnel URL + `/api/<project_id>/envelope/`.
+End to end: trigger an error on the site, then within about 2 minutes the
+`drain_sentry_relay` job's `job_run` row reports `forwarded >= 1` and the
+issue appears in the GlitchTip project. The brain's GlitchTip triage probe
+pages it to Discord on its next cycle.
 
-## Local development
+If nothing arrives: check the job's findings (`sentry_relay_drain_failed`,
+`sentry_relay_envelope_rejected`, `sentry_relay_envelopes_expired`), then
+`npx wrangler tail sentry-relay` for the Worker's answers, then the browser's
+network tab for a `connect-src` CSP block on the tunnel URL.
+
+## Tests
 
 ```bash
 npm install
-npm test          # vitest — unit tests for the open-proxy guard helpers
-npm run dev       # wrangler dev — serves on http://localhost:8787
+npm test     # vitest; the queue runs on real SQLite (node:sqlite, Node >= 22.13)
 ```
 
-`npm test` covers the envelope-header / DSN parsing and the project allowlist
-(the fail-closed open-proxy guard). The fetch handler itself is edge-runtime
-glue, verified with the curl smoke tests above.
+The handler tests run the Worker's SQL on real SQLite through a thin D1
+double (`src/test-d1.ts`; D1 is SQLite), with the tunables read from this
+`wrangler.toml`. Only the rate limiter and the secrets are substituted.
+wrangler's `getPlatformProxy` would give a real local D1, but it runs the
+`workerd` binary, which needs glibc 2.35, and the self-hosted CI runner's
+glibc is older: the job died before a single test ran.

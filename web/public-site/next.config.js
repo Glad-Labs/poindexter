@@ -60,6 +60,53 @@ const cspBeaconOrigin = (() => {
   }
 })();
 
+// Error relay (the sentry-relay Cloudflare Worker). The Sentry SDK's `tunnel`
+// POSTs every envelope to this origin, so connect-src must allow it or the
+// browser blocks each send. Derived from the SAME env var the SDK reads
+// (lib/sentry-options.ts), the lesson of the beacon outage above. Until
+// 2026-09-28 no Sentry origin was here at all.
+const sentryDsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const sentryTunnel = process.env.NEXT_PUBLIC_SENTRY_TUNNEL;
+const cspSentryTunnelOrigin = (() => {
+  if (!sentryTunnel) return '';
+  try {
+    return new URL(sentryTunnel).origin;
+  } catch {
+    return '';
+  }
+})();
+
+// Fail a production build on a half-configured relay. The SDK initializes
+// only with both values, so one without the other would ship a site whose
+// error pages say "we've been notified" while every report is dropped, with
+// nothing anywhere saying so.
+(function validateSentryRelayEnv() {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (Boolean(sentryDsn) !== Boolean(sentryTunnel)) {
+    throw new Error(
+      '\n[next.config] NEXT_PUBLIC_SENTRY_DSN and NEXT_PUBLIC_SENTRY_TUNNEL must be set together.\n' +
+        'Set both (DSN https://<key>@<relay host>/<project id>, tunnel https://<relay host>/relay),\n' +
+        'or neither to build without error reporting.\n'
+    );
+  }
+  if (sentryTunnel && !cspSentryTunnelOrigin) {
+    throw new Error(
+      `\n[next.config] NEXT_PUBLIC_SENTRY_TUNNEL="${sentryTunnel}" is not a valid URL.\n`
+    );
+  }
+  // @sentry/core's DSN_REGEX allows only word characters in the public key.
+  // GlitchTip stores keys as dashed UUIDs, and a DSN built from that form is
+  // rejected at runtime with a console-only "Invalid Sentry Dsn": the SDK
+  // never starts and nothing else says so. Use the dashless hex key.
+  if (sentryDsn && !/^https?:\/\/\w+@[\w.-]+(?::\d+)?\/\d+$/.test(sentryDsn)) {
+    throw new Error(
+      '\n[next.config] NEXT_PUBLIC_SENTRY_DSN is not a DSN the Sentry SDK accepts.\n' +
+        'Expected https://<key>@<relay host>/<project id>, with the key as dashless hex\n' +
+        '(the SDK rejects the dashed UUID form).\n'
+    );
+  }
+})();
+
 const nextConfig = {
   // Standalone output for Docker deployments — produces .next/standalone with a self-contained server.js
   output: 'standalone',
@@ -208,7 +255,7 @@ const nextConfig = {
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://giscus.app",
                 "img-src 'self' data: https:",
                 "font-src 'self' data: https://fonts.gstatic.com",
-                `connect-src 'self' ${STATIC_ORIGIN}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
+                `connect-src 'self' ${STATIC_ORIGIN}${cspBeaconOrigin ? ' ' + cspBeaconOrigin : ''}${cspSentryTunnelOrigin ? ' ' + cspSentryTunnelOrigin : ''} https://www.google-analytics.com https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com https://ep1.adtrafficquality.google`,
                 "frame-src 'self' https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net https://giscus.app https://app.lemonsqueezy.com https://gladlabs.lemonsqueezy.com",
               ].join('; ') + ';',
           },
@@ -420,33 +467,31 @@ const nextConfig = {
   reactStrictMode: true,
 };
 
-// Only apply Sentry wrapping if DSN is configured; otherwise pass through unchanged.
-// This prevents build overhead and telemetry when Sentry is not yet set up.
-const hasSentryDsn =
-  Boolean(process.env.SENTRY_DSN) ||
-  Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN);
-
-// poindexter#711 item 2: when an external relay tunnel is configured (the
-// sentry-relay Cloudflare Worker, wired via NEXT_PUBLIC_SENTRY_TUNNEL in
-// sentry.client.config.ts), skip the same-origin `/monitoring` route. That
-// route is a Vercel function that can't reach the LAN-only self-hosted
-// tracker, so it was a dead hop that silently dropped every frontend error.
-// Only fall back to it when no relay is set (e.g. a hosted DSN).
-const hasExternalSentryTunnel = Boolean(process.env.NEXT_PUBLIC_SENTRY_TUNNEL);
-
-// `withSentryConfig` is a static import now, so it is always defined — the
-// only real question left is whether a DSN is configured.
-export default hasSentryDsn
+// Wrap with Sentry only when the relay is configured (validated above), so a
+// build without error reporting (local runs, forks) skips the SDK's webpack
+// plugin. The options keep the build self-contained: no source-map upload,
+// no release creation and no build telemetry. Each of those calls sentry.io,
+// which this site does not use; its errors go to a self-hosted GlitchTip.
+//
+// There is deliberately no `tunnelRoute`. The same-origin `/monitoring`
+// rewrite it creates only works for sentry.io DSNs (the SDK matches
+// `o<org>.ingest.sentry.io` and leaves any other DSN untunnelled), so for a
+// GlitchTip DSN it never did anything. The relay is the tunnel.
+export default sentryDsn && sentryTunnel
   ? withSentryConfig(nextConfig, {
-      // Suppress Sentry CLI output during builds
       silent: true,
-      // Only upload source maps in production
-      disableServerWebpackPlugin: process.env.NODE_ENV !== 'production',
-      disableClientWebpackPlugin: process.env.NODE_ENV !== 'production',
-      // Automatically tree-shake Sentry logger statements
-      disableLogger: true,
-      // Same-origin tunnel to avoid ad-blocker interference — used ONLY when
-      // there's no external relay tunnel (which supersedes it).
-      ...(hasExternalSentryTunnel ? {} : { tunnelRoute: '/monitoring' }),
+      telemetry: false,
+      sourcemaps: { disable: true },
+      // Tag events with the deploy's commit so GlitchTip says which build
+      // an error came from. `create: false` alone would leave the name
+      // unset: the SDK only derives one when it may create the release.
+      release: { create: false, name: process.env.VERCEL_GIT_COMMIT_SHA },
+      // Navigation tracing is off (errors only), so there is deliberately no
+      // onRouterTransitionStart hook in instrumentation-client.ts; exporting
+      // one would pull the routing instrumentation back into every page.
+      suppressOnRouterTransitionStartWarning: true,
+      webpack: {
+        treeshake: { removeDebugLogging: true, removeTracing: true },
+      },
     })
   : nextConfig;

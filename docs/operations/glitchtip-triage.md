@@ -1,7 +1,9 @@
 # GlitchTip noise control
 
-GlitchTip (http://localhost:8080, org `glad-labs`, project `poindexter`) is the
-runtime-error sink for worker / brain / voice. Left alone it accumulates
+GlitchTip (http://localhost:8080, org `glad-labs`) is the runtime-error sink
+for worker / brain / voice (project `poindexter`) and for the public site
+(project `public-site`, whose events arrive through the pull relay described in
+[site-error-relay.md](../architecture/site-error-relay.md)). Left alone it accumulates
 hundreds of "issues" that are mostly not bugs, which is worse than having no
 error tracker: a 364-issue list trains you to ignore the list.
 
@@ -305,6 +307,28 @@ Note `min_age_days` gates on **`firstSeen`**, not `lastSeen` — it means "this
 issue has existed for N days", not "has been quiet for N days". Combined with a
 low `max_count`, that is the intended "old and rare" filter.
 
+### Per-project page thresholds
+
+A novel issue pages Discord once its count reaches
+`glitchtip_triage_alert_threshold_count` (10 on this install). That suits the
+worker's project, which repeats known transients hundreds of times. It does not
+suit a public site's project, where one real error (a signup that could not be
+stored) is the whole signal and the tenth copy may never come.
+
+`glitchtip_triage_alert_threshold_overrides` is a JSON object of project slug to
+threshold. This install sets `{"public-site": 1}`, so the site pages on its
+first event:
+
+```bash
+poindexter settings set glitchtip_triage_alert_threshold_overrides '{"public-site": 1}'
+```
+
+An override can raise a threshold as well as lower it. A malformed map, or an
+entry below 1, falls back to the global threshold with a warning in the brain
+log. It never silences a project. A page for an overridden project is titled
+`GlitchTip novel issue in <slug>: …` and its body names the project and the
+threshold it crossed.
+
 ## Diagnostics
 
 The probe's own helpers are the fastest way to reason about live state, run
@@ -341,9 +365,12 @@ Other traps worth knowing:
   truncates to 80 chars, so several different Ollama `APIConnectionError`
   signatures look identical in a Discord scan. Resolve the permalink/issue ID
   before concluding anything.
-- **Repeat pages for one already-alerted issue** usually mean the brain
-  restarted — per-issue dedupe lives in an in-process set. Documented behavior,
-  not a bug.
+- **Repeat pages for one already-alerted issue** should no longer follow a
+  brain restart: since poindexter#1048 the per-issue dedupe is mirrored into
+  `brain_knowledge` (entity `glitchtip_triage`, 30-day expiry) and restored
+  on start. A repeat after that window is expected; one inside it means the
+  mirror write failed (a `could not persist alerted id` warning in the brain
+  log).
 - **Host reboots generate a burst of name-resolution errors.** Containers point
   at Docker's `127.0.0.11`, which forwards to the host's `systemd-resolved`; when
   that stops during shutdown, in-flight lookups fail. `TerminationSignal: 15` in

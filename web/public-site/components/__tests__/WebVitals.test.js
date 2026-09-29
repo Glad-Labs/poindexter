@@ -2,7 +2,8 @@
  * WebVitals Component Tests
  *
  * Tests the web vitals reporting component.
- * Verifies: Hook invocation, GA event dispatch, Sentry alert for poor vitals
+ * Verifies: Hook invocation, GA event dispatch, and that poor vitals stay out
+ * of Sentry (error reports only)
  */
 
 // Capture the callback passed to useReportWebVitals
@@ -73,34 +74,25 @@ describe('WebVitals Component', () => {
     ).not.toThrow();
   });
 
-  it('should report to Sentry when a vital is rated poor', async () => {
+  it('sends a poor vital to GA and never to Sentry', async () => {
+    // Error reports page the operator on a public-site issue's first event,
+    // and a message carrying the value would open a new issue per number.
+    // GA is where vitals are read.
     const Sentry = require('@sentry/nextjs');
+    Sentry.captureMessage.mockClear();
+    const gtagMock = jest.fn();
+    window.gtag = gtagMock;
 
     render(<WebVitals />);
     // LCP > 4000 = poor
     reportCallback({ name: 'LCP', value: 5000, id: 'lcp-poor' });
-
-    // Wait for the dynamic import promise to resolve
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(Sentry.captureMessage).toHaveBeenCalledWith(
-      'Web Vital degraded: LCP=5000ms',
-      expect.objectContaining({
-        level: 'warning',
-        tags: { vital: 'LCP', rating: 'poor' },
-      })
+    expect(gtagMock).toHaveBeenCalledWith(
+      'event',
+      'LCP',
+      expect.objectContaining({ value: 5000 })
     );
-  });
-
-  it('should not report to Sentry when a vital is rated good', async () => {
-    const Sentry = require('@sentry/nextjs');
-    Sentry.captureMessage.mockClear();
-
-    render(<WebVitals />);
-    reportCallback({ name: 'LCP', value: 1000, id: 'lcp-good' });
-
-    await new Promise((r) => setTimeout(r, 0));
-
     expect(Sentry.captureMessage).not.toHaveBeenCalled();
   });
 
