@@ -46,7 +46,7 @@ async def _get_pool():
     """Get the DB pool via the shared DatabaseService (same pattern
     the CMS routes use — no new service instances per request)."""
     db_service = get_database_dependency()
-    return getattr(db_service, "cloud_pool", None) or db_service.pool
+    return db_service.pool
 
 router = APIRouter(
     tags=["pipeline-events"],

@@ -55,12 +55,7 @@ def _make_task() -> dict[str, Any]:
 
 def _make_db_service() -> Any:
     """Build a DatabaseService stub that records create_post + update_task_status."""
-    # publish_post_from_task does `getattr(db_service, "cloud_pool", None)
-    # or db_service.pool` — set cloud_pool to None explicitly so the
-    # default-MagicMock fallthrough doesn't shadow our async-configured
-    # pool.
     db = MagicMock()
-    db.cloud_pool = None
     db.create_post = AsyncMock(
         side_effect=lambda data: MagicMock(id="22222222-2222-2222-2222-222222222222"),
     )

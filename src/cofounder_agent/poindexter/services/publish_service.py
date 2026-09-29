@@ -583,7 +583,7 @@ async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
         )
         return None
 
-    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    pool = db_service.pool
     try:
         async with pool.acquire() as conn:
             # How many posts published today (by published_at date, UTC)?
@@ -1121,16 +1121,11 @@ async def _send_post_newsletter_bg(
     overlapping seams can't double-mail.
 
     ``pool_or_db`` accepts an asyncpg pool directly or anything carrying
-    ``.cloud_pool`` / ``.pool`` (db_service) — the promote seams only
-    have a pool in scope.
+    ``.pool`` (db_service) — the promote seams only have a pool in scope.
     """
     try:
         from poindexter.services.newsletter_service import send_post_newsletter
-        _pool = (
-            getattr(pool_or_db, "cloud_pool", None)
-            or getattr(pool_or_db, "pool", None)
-            or pool_or_db
-        )
+        _pool = getattr(pool_or_db, "pool", None) or pool_or_db
         # #272 Phase-2b/2g: newsletter_service requires a site_config — pass the
         # run-bound instance threaded from publish_post_from_task.
         result = await send_post_newsletter(
@@ -1269,7 +1264,7 @@ async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> No
         from poindexter.services.webhook_delivery_service import emit_webhook_event
 
         await emit_webhook_event(
-            getattr(db_service, "cloud_pool", None) or db_service.pool,
+            db_service.pool,
             "post.published",
             {"task_id": str(task_id), "title": post_title, "site": "default"},
         )
@@ -1354,7 +1349,7 @@ def _queue_devto_crosspost(
         # fresh empty SiteConfig and crashes on .require("site_url") — observed
         # during the 2026-05-17 auto-publish stress test.
         devto_svc = DevToCrossPostService(
-            getattr(db_service, "cloud_pool", None) or db_service.pool,
+            db_service.pool,
             site_config=site_config,
         )
         if background_tasks:
@@ -1397,7 +1392,7 @@ async def _export_static_post(db_service, slug: str, site_config: SiteConfig) ->
     try:
         from poindexter.services.static_export_service import export_post
 
-        _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+        _pool = db_service.pool
         ok = await export_post(_pool, slug, site_config=site_config)
         if ok:
             logger.info("[STATIC_EXPORT] Synchronous export complete for %s", slug)
@@ -1489,7 +1484,7 @@ async def publish_post_from_task(
     # ---------------------------------------------------------------
     # 1b. Idempotency / approve-then-publish promotion guard — phase 2
     # ---------------------------------------------------------------
-    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    pool = db_service.pool
     _existing_result = await _promote_or_skip_existing(
         pool,
         task_id,
@@ -1886,7 +1881,7 @@ async def fire_post_distribution_hooks(
     """
     # #272 Phase-2g: site_config is REQUIRED — read/thread via _sc below.
     _sc = site_config
-    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    pool = db_service.pool
 
     async with pool.acquire() as conn:
         post_row = await conn.fetchrow(

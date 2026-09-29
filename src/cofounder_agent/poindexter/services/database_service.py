@@ -9,19 +9,20 @@ Orchestrates access to 6 specialized database modules:
 - WritingStyleDatabase: Writing samples for RAG style matching
 - EmbeddingsDatabase: Vector embeddings for similarity search (pgvector)
 
-Supports dual database connections:
-- Cloud pool (self.pool): ContentDatabase, UsersDatabase, AdminDatabase
-- Local pool (self.local_pool): TasksDatabase, WritingStyleDatabase, EmbeddingsDatabase
-
-When LOCAL_DATABASE_URL is not set, self.local_pool = self.pool (backward compatible).
+One connection pool (self.pool) backs every module. This service once supported
+two databases: a local pool beside a hosted "cloud" pool, flipped in worker mode.
+That mode was retired in Glad-Labs/poindexter#1115. The hosted database and the
+sync that fed it are gone, and the two pools always pointed at the same database.
 
 All existing methods are delegated to appropriate modules.
 """
 
 import os
 import sys
+import warnings
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 import asyncpg
 
@@ -55,21 +56,62 @@ from .writing_style_db import WritingStyleDatabase
 
 logger = get_logger(__name__)
 
+# Spellings of the loopback host that name the same database.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _database_identity(url: str) -> tuple[str, int, str] | None:
+    """``(host, port, dbname)`` of a PostgreSQL URL, or ``None`` if it doesn't parse.
+
+    Credentials and query options are deliberately left out. That is what makes
+    two URLs comparable as "the same database", and what makes the result safe
+    to log: this service used to log the first 50 characters of the URL, which
+    carried the credentials.
+    """
+    try:
+        parts = urlsplit(url.strip())
+        host = (parts.hostname or "").lower()
+        port = parts.port or 5432
+    except ValueError:
+        return None
+    if parts.scheme not in ("postgres", "postgresql") or not host:
+        return None
+    return ("localhost" if host in _LOOPBACK_HOSTS else host), port, parts.path.lstrip("/")
+
+
+def _describe_database(url: str) -> str:
+    """Credential-free ``host:port/dbname`` for logs and error messages.
+
+    Uses the host as written (``_database_identity`` folds loopback spellings
+    together only so URLs compare equal), so an operator sees what they typed.
+    """
+    identity = _database_identity(url)
+    if identity is None:
+        return "<unparseable database URL>"
+    _, port, dbname = identity
+    host = urlsplit(url.strip()).hostname or ""
+    return f"[{host}]:{port}/{dbname}" if ":" in host else f"{host}:{port}/{dbname}"
+
+
+def _same_database(first: str, second: str) -> bool:
+    """True when two URLs name the same host, port and database."""
+    a, b = _database_identity(first), _database_identity(second)
+    if a is None or b is None:
+        return first.strip() == second.strip()
+    return a == b
+
 
 class DatabaseService:
     """
     PostgreSQL database service coordinator.
 
-    Delegates to 6 specialized modules:
-    - self.users: User/OAuth operations (cloud pool)
-    - self.tasks: Task management (local pool)
-    - self.content: Posts/quality/metrics (cloud pool)
-    - self.admin: Logging/financial/settings (cloud pool)
-    - self.writing_style: Writing samples for style matching (local pool)
-    - self.embeddings: Vector embeddings for similarity search (local pool)
-
-    Supports dual database connections via LOCAL_DATABASE_URL.
-    When LOCAL_DATABASE_URL is not set, local_pool = pool (backward compatible).
+    Delegates to 6 specialized modules, all on the one pool (``self.pool``):
+    - self.users: User/OAuth operations
+    - self.tasks: Task management
+    - self.content: Posts/quality/metrics
+    - self.admin: Logging/financial/settings
+    - self.writing_style: Writing samples for style matching
+    - self.embeddings: Vector embeddings for similarity search
     """
 
     def __init__(
@@ -83,11 +125,17 @@ class DatabaseService:
         Initialize database service coordinator with asyncpg.
 
         Args:
-            database_url: PostgreSQL connection URL (cloud/primary)
-                         Required: DATABASE_URL env var or passed explicitly
-            local_database_url: PostgreSQL connection URL (local brain DB)
-                               Optional: LOCAL_DATABASE_URL env var or passed explicitly
-                               When not set, local_pool = pool (backward compatible)
+            database_url: PostgreSQL connection URL
+                         Required: DATABASE_URL env var, bootstrap.toml, or passed explicitly
+            local_database_url: DEPRECATED. The dual-pool mode it configured was retired
+                               (Glad-Labs/poindexter#1115). A value naming the same
+                               database as ``database_url`` is ignored with a
+                               DeprecationWarning; one naming a different database
+                               raises ``ValueError``. The ``LOCAL_DATABASE_URL`` env var is
+                               held to the same rule, without the warning, when
+                               ``database_url`` is resolved rather than passed: it is still
+                               the legacy alias for the single database in the
+                               URL-resolution chain.
             site_config: Injected SiteConfig (#272 Phase-2g). REQUIRED. Bootstrap
                          nuance: this service is constructed very early, before
                          ``site_config`` has loaded from the DB (it loads via this
@@ -152,17 +200,41 @@ class DatabaseService:
                     )
             self.database_url = resolved
 
-        # Local database URL (optional — falls back to primary pool when unset)
-        self.local_database_url = local_database_url or os.getenv("LOCAL_DATABASE_URL") or None
-
-        logger.info("DatabaseService initialized with PostgreSQL: %s...", self.database_url[:50])
-        if self.local_database_url:
-            logger.info(
-                "DatabaseService local pool configured: %s...", self.local_database_url[:50]
+        # The dual-pool mode was retired (Glad-Labs/poindexter#1115). A second
+        # URL that names the SAME database is harmless: LOCAL_DATABASE_URL is
+        # still the legacy alias for the single database in the resolution
+        # chain. One that names a DIFFERENT database can no longer be honoured,
+        # and quietly ignoring it would point this service at the wrong
+        # database, so fail loud instead. An explicit ``database_url=`` fully
+        # determines the database, so a stray LOCAL_DATABASE_URL in the
+        # environment is only consulted when the primary URL was itself
+        # resolved from configuration.
+        env_second = None if database_url else os.getenv("LOCAL_DATABASE_URL")
+        second_url = local_database_url or env_second or None
+        if second_url and not _same_database(second_url, self.database_url):
+            raise ValueError(
+                "DatabaseService no longer supports two databases. "
+                f"DATABASE_URL names {_describe_database(self.database_url)} but the "
+                f"local URL (LOCAL_DATABASE_URL / local_database_url=) names "
+                f"{_describe_database(second_url)}. The dual-pool mode was removed in "
+                "Glad-Labs/poindexter#1115. Point DATABASE_URL (or bootstrap.toml's "
+                "database_url) at the single database that holds app_settings, and "
+                "unset LOCAL_DATABASE_URL or set it to the same URL."
+            )
+        if local_database_url:
+            warnings.warn(
+                "DatabaseService(local_database_url=...) is deprecated and ignored: the "
+                "dual-pool mode was retired (Glad-Labs/poindexter#1115). Pass "
+                "database_url= only.",
+                DeprecationWarning,
+                stacklevel=2,
             )
 
+        # Credential-free on purpose. This used to log ``database_url[:50]``,
+        # which put the credentials in every process's log line.
+        logger.info("DatabaseService initialized with PostgreSQL: %s", _describe_database(self.database_url))
+
         self.pool: asyncpg.Pool = None  # type: ignore[assignment]
-        self.local_pool: asyncpg.Pool = None  # type: ignore[assignment]
 
         # Delegate modules will be initialized after pool is created.
         # Typed as non-Optional so delegation methods typecheck without
@@ -182,23 +254,21 @@ class DatabaseService:
         Bootstrap chicken-and-egg: ``SiteConfig`` loads from the DB via the
         very pool this method is sizing, so at pool-creation time
         ``site_config.get`` can only return literal defaults — which left
-        the four seeded ``*_pool_*_size`` keys silently inert (GlitchTip
+        the seeded ``*_pool_*_size`` keys silently inert (GlitchTip
         #560 triage 2026-07-02: bumping ``database_pool_max_size`` had no
         effect). One direct connection at boot makes them real.
 
-        Reads from the local DB when configured (that's where app_settings
-        lives — the spinal cord), else the primary. Any failure (fresh
-        install mid-migration, DB briefly unavailable) returns ``{}`` and
+        Reads from the database itself (that's where app_settings lives — the
+        spinal cord). Any failure (fresh install mid-migration, DB briefly
+        unavailable) returns ``{}`` and
         the caller falls back to defaults — if the DB is truly down, pool
         creation fails loud immediately after anyway.
         """
         keys = [
             "database_pool_min_size",
             "database_pool_max_size",
-            "local_database_pool_min_size",
-            "local_database_pool_max_size",
         ]
-        dsn = self.local_database_url or self.database_url
+        dsn = self.database_url
         try:
             conn = await asyncpg.connect(dsn, timeout=10)
             try:
@@ -224,7 +294,7 @@ class DatabaseService:
             return {}
 
     async def initialize(self) -> None:
-        """Initialize connection pool(s) and all delegate modules."""
+        """Initialize the connection pool and all delegate modules."""
         try:
             # PostgreSQL requires connection pooling
             _config = get_config()
@@ -262,54 +332,14 @@ class DatabaseService:
                 "Database pool initialized (size: %s-%s, query timeout: 30s)", min_size, max_size
             )
 
-            # Create local pool if LOCAL_DATABASE_URL is configured, otherwise reuse primary
-            if self.local_database_url:
-                # GH-92: local pool min stays at 2 — rarely-called paths
-                # (tasks, writing_style, embeddings) shouldn't hoard.
-                local_min = int(
-                    pre.get("local_database_pool_min_size")
-                    or self._site_config.get("local_database_pool_min_size", "2" if is_dev else "2")
-                )
-                local_max = int(
-                    pre.get("local_database_pool_max_size")
-                    or self._site_config.get("local_database_pool_max_size", "10" if is_dev else "20")
-                )
-                self.local_pool = await asyncpg.create_pool(
-                    self.local_database_url,
-                    min_size=local_min,
-                    max_size=local_max,
-                    timeout=30,
-                    command_timeout=30,
-                )
-                logger.info(
-                    "Local database pool initialized (size: %s-%s)", local_min, local_max
-                )
-
-                # Worker mode: flip pools so .pool = local (internal ops default)
-                # and .cloud_pool = production DB (public content only)
-                deployment_mode = os.getenv("DEPLOYMENT_MODE", "coordinator")
-                if deployment_mode == "worker":
-                    self.cloud_pool = self.pool  # Cloud DB for publishing
-                    self.pool = self.local_pool  # Local for everything else
-                    logger.info("Worker mode: pool=local, cloud_pool=cloud")
-                else:
-                    self.cloud_pool = self.pool  # Coordinator: both point to cloud DB
-            else:
-                self.local_pool = self.pool
-                self.cloud_pool = self.pool
-                logger.info("No LOCAL_DATABASE_URL - local_pool = pool (single-pool mode)")
-
-            # Initialize delegate modules routed to appropriate pools
-            # Cloud pool: users, content, admin (production DB for public-facing data)
-            self.users = UsersDatabase(self.cloud_pool)
-            self.content = ContentDatabase(self.cloud_pool)
-            self.admin = AdminDatabase(self.cloud_pool)
-
-            # Local pool: tasks, writing_style, embeddings, audit
-            self.tasks = TasksDatabase(self.local_pool)
-            self.writing_style = WritingStyleDatabase(self.local_pool)
-            self.embeddings = EmbeddingsDatabase(self.local_pool)
-            self.audit = init_global_audit_logger(self.local_pool)
+            # One pool backs every delegate module.
+            self.users = UsersDatabase(self.pool)
+            self.content = ContentDatabase(self.pool)
+            self.admin = AdminDatabase(self.pool)
+            self.tasks = TasksDatabase(self.pool)
+            self.writing_style = WritingStyleDatabase(self.pool)
+            self.embeddings = EmbeddingsDatabase(self.pool)
+            self.audit = init_global_audit_logger(self.pool)
 
             logger.info(
                 "All database modules initialized "
@@ -320,7 +350,7 @@ class DatabaseService:
             raise
 
     async def close(self) -> None:
-        """Close all connection pools."""
+        """Close the connection pool."""
         # Flush in-flight publish-tail fire-and-forget tasks (newsletter /
         # R2 upload / search-engine ping) FIRST: a short-lived owner (the
         # Prefect auto-publish flow subprocess, the CLI publish paths)
@@ -346,14 +376,11 @@ class DatabaseService:
         # closing the pool they run against. Without this, a warn/critical
         # finding emitted moments earlier — e.g. the spend-throttle engage
         # finding in a per-run Prefect flow subprocess that builds+closes its
-        # own pool — races local_pool.close() and dies with
+        # own pool — races pool.close() and dies with
         # InterfaceError('pool is closing'), losing the finding the #303
         # loud-drop path exists to protect (GlitchTip #863). Bounded and never
         # raises, so teardown neither hangs nor is masked.
         await drain_pending_writes()
-        if self.local_pool and self.local_pool is not self.pool:
-            await self.local_pool.close()
-            logger.info("Local database pool closed")
         if self.pool:
             await self.pool.close()
             logger.info("Database pool closed")

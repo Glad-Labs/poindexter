@@ -143,7 +143,7 @@ async def subscribe_to_newsletter(
 
         # Check for existing subscription — return generic message to prevent email enumeration.
         # An attacker must not be able to determine whether an email is already registered.
-        existing = await (getattr(db, "cloud_pool", None) or db.pool).fetchrow(
+        existing = await db.pool.fetchrow(
             """
             SELECT id, unsubscribed_at FROM newsletter_subscribers
             WHERE email = $1
@@ -170,7 +170,7 @@ async def subscribe_to_newsletter(
         # describe whatever called this route (a proxy hop or a server-side
         # fetch), never the subscriber, and nothing read them
         # (Glad-Labs/poindexter#1109).
-        subscriber_id = await (getattr(db, "cloud_pool", None) or db.pool).fetchval(
+        subscriber_id = await db.pool.fetchval(
             """
             INSERT INTO newsletter_subscribers
             (email, first_name, last_name, verified, unsubscribe_token)
@@ -234,7 +234,7 @@ async def unsubscribe_from_newsletter(
     try:
         # Token lookup. Reject unknown tokens by returning the same
         # generic response — leaks zero information about valid tokens.
-        result = await (getattr(db, "cloud_pool", None) or db.pool).execute(
+        result = await db.pool.execute(
             """
             UPDATE newsletter_subscribers
             SET unsubscribed_at = CURRENT_TIMESTAMP,
@@ -282,7 +282,7 @@ async def get_subscriber_count(
 ):
     """Get total active newsletter subscribers count"""
     try:
-        count = await (getattr(db, "cloud_pool", None) or db.pool).fetchval("""
+        count = await db.pool.fetchval("""
             SELECT COUNT(*) FROM newsletter_subscribers
             WHERE unsubscribed_at IS NULL AND verified = TRUE
             """)
@@ -309,7 +309,7 @@ async def get_newsletter_stats(
     try:
         from poindexter.services.newsletter_service import get_newsletter_stats as _stats
 
-        pool = getattr(db, "cloud_pool", None) or db.pool
+        pool = db.pool
         return await _stats(pool)
     except Exception as e:
         logger.error("Newsletter stats error: %s", e, exc_info=True)

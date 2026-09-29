@@ -1026,10 +1026,12 @@ async def _build_default_database_service() -> Any:
     concurrency limits the parallelism.
 
     Matches the worker's ``utils.startup_manager`` init pattern —
-    ``local_database_url=`` kwarg, then ``await initialize()`` to open
-    the pool. The DSN comes from ``brain.bootstrap`` so behavior is
-    identical regardless of whether the flow runs from inside a
-    container, the host shell, or the Prefect worker pool.
+    construct, then ``await initialize()`` to open the pool. The DSN
+    comes from ``brain.bootstrap`` so behavior is identical regardless
+    of whether the flow runs from inside a container, the host shell,
+    or the Prefect worker pool. It opens ONE pool: this used to pass the
+    same DSN as ``local_database_url=`` as well, so every flow run held
+    two pools to one database (Glad-Labs/poindexter#1115).
     """
     from poindexter.brain.bootstrap import resolve_database_url
     from poindexter.services.database_service import DatabaseService
@@ -1042,7 +1044,7 @@ async def _build_default_database_service() -> Any:
     # pool afterwards), so a fresh env-fallback SiteConfig() is correct here —
     # the pool-size reads in ``initialize()`` use defaults, matching the
     # empty module global this path resolved before.
-    db = DatabaseService(local_database_url=dsn, site_config=SiteConfig())
+    db = DatabaseService(database_url=dsn, site_config=SiteConfig())
     await db.initialize()
     return db
 

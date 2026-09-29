@@ -1376,6 +1376,18 @@ For an immediate one-off fix on a table that's already badly bloated: `VACUUM (A
 
 ---
 
+## Startup fails with `DatabaseService no longer supports two databases`
+
+**Symptom.** The worker, a Prefect flow run or a `poindexter` command exits at startup with `ValueError: DatabaseService no longer supports two databases. DATABASE_URL names <host>:<port>/<db> but the local URL (LOCAL_DATABASE_URL / local_database_url=) names <host>:<port>/<db>.` The message names both databases without their credentials.
+
+**Root cause.** `DatabaseService` used to open a second, "local" pool when `LOCAL_DATABASE_URL` was set, for a two-database setup: a local brain DB beside a hosted public-content DB. That mode was retired in Glad-Labs/poindexter#1115. The hosted database and the sync that fed it are gone, and on every shipped setup the two URLs were the same database. A `LOCAL_DATABASE_URL` that names a _different_ database can no longer be honoured, and ignoring it quietly would point the worker at the wrong database, so startup refuses. No shipped compose file sets the variable, so on a stock stack the culprit is a stale export in a shell profile or an `.env` file.
+
+**Fix.** Decide which database is the real one: the one that holds `app_settings` (`poindexter_brain` on a standard install). Point `DATABASE_URL` (or `database_url` in `~/.poindexter/bootstrap.toml`) at it, then `unset LOCAL_DATABASE_URL` or set it to the same URL. `LOCAL_DATABASE_URL` is still accepted as an alias for the single database elsewhere in the URL-resolution chain, so a same-database value is fine. An explicit `database_url=` argument is never checked against the environment variable.
+
+**Related.** Glad-Labs/poindexter#1115; `services/database_service.py::_same_database`.
+
+---
+
 ## How to add a new entry to this doc
 
 1. You hit an issue that took more than 10 minutes to diagnose.

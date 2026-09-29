@@ -15,14 +15,21 @@ later deref). The tests now stub ``brain.bootstrap`` via ``sys.modules``
 so they exercise the production code path unconditionally.
 """
 
+import logging
 import sys
+import warnings
+from contextlib import ExitStack
 from importlib.util import find_spec
 from types import ModuleType
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from poindexter.services.database_service import DatabaseService
+from poindexter.services.database_service import (
+    DatabaseService,
+    _database_identity,
+    _describe_database,
+)
 from poindexter.services.site_config import SiteConfig
 
 
@@ -84,6 +91,18 @@ def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_ambient_local_database_url(monkeypatch):
+    """A developer's exported ``LOCAL_DATABASE_URL`` must not reach these tests.
+
+    ``DatabaseService`` reads it (when the primary URL is resolved rather than
+    passed) to refuse a genuinely two-database configuration, so an ambient
+    value naming another database would make the construction tests fail on
+    that machine. Tests that exercise the variable set it themselves.
+    """
+    monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -272,11 +291,7 @@ class TestDatabaseServiceLifecycle:
         )
         svc = make_service(site_config=fake_site_config)
         mock_pool = AsyncMock()
-        # Capture every asyncpg.create_pool call. ``initialize()`` may
-        # provision a second (local) pool when ``LOCAL_DATABASE_URL`` is
-        # set in the developer environment, which uses different size
-        # settings — recording all calls and asserting against the first
-        # (the primary pool) keeps the test stable across environments.
+        # Capture every asyncpg.create_pool call: there must be exactly one.
         all_calls: list[dict] = []
 
         async def _capture_create_pool(*args, **kwargs):
@@ -292,7 +307,7 @@ class TestDatabaseServiceLifecycle:
         ), patch("poindexter.services.database_service.WritingStyleDatabase"):
             await svc.initialize()
 
-        assert all_calls, "asyncpg.create_pool was never called"
+        assert len(all_calls) == 1, "initialize() must open exactly one pool"
         primary_kwargs = all_calls[0]
         assert primary_kwargs["min_size"] == 3
         assert primary_kwargs["max_size"] == 42
@@ -597,112 +612,57 @@ class TestAdminDelegation:
 
 
 # ===========================================================================
-# Dual-pool initialization (worker mode pool flip)
+# One pool (the dual-pool mode was retired in Glad-Labs/poindexter#1115)
 # ===========================================================================
 
+_MAIN = "postgresql://user:hunter2@db-primary:5432/main"
+_OTHER = "postgresql://user:swordfish@db-other:5432/other"
 
-class TestDualPoolInitialize:
+_DELEGATES = (
+    "UsersDatabase",
+    "ContentDatabase",
+    "AdminDatabase",
+    "TasksDatabase",
+    "WritingStyleDatabase",
+    "EmbeddingsDatabase",
+)
+
+
+class TestSinglePoolInitialize:
     @pytest.mark.asyncio
-    async def test_local_database_url_creates_separate_pool(self, monkeypatch):
-        """When LOCAL_DATABASE_URL is set, a second pool is created."""
-        from poindexter.services.database_service import DatabaseService
+    async def test_one_pool_backs_every_delegate(self):
+        svc = make_service()
+        pool = AsyncMock(name="pool")
 
-        monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
-        svc = DatabaseService(
-            database_url="postgresql://cloud",
-            local_database_url="postgresql://local",
-            site_config=SiteConfig(),
-        )
-
-        cloud_pool = AsyncMock(name="cloud_pool")
-        local_pool = AsyncMock(name="local_pool")
-        # asyncpg.create_pool is called twice (cloud first, then local)
-        create_pool = AsyncMock(side_effect=[cloud_pool, local_pool])
-
-        with patch("asyncpg.create_pool", create_pool), \
-             patch("poindexter.services.database_service.UsersDatabase"), \
-             patch("poindexter.services.database_service.TasksDatabase"), \
-             patch("poindexter.services.database_service.ContentDatabase"), \
-             patch("poindexter.services.database_service.AdminDatabase"), \
-             patch("poindexter.services.database_service.WritingStyleDatabase"), \
-             patch("poindexter.services.database_service.EmbeddingsDatabase"), \
-             patch("poindexter.services.database_service.init_global_audit_logger"):
+        with ExitStack() as stack:
+            delegates = {
+                name: stack.enter_context(patch(f"poindexter.services.database_service.{name}"))
+                for name in _DELEGATES
+            }
+            audit = stack.enter_context(
+                patch("poindexter.services.database_service.init_global_audit_logger")
+            )
+            create_pool = stack.enter_context(
+                patch("asyncpg.create_pool", new=AsyncMock(return_value=pool))
+            )
             await svc.initialize()
 
-        assert create_pool.await_count == 2
-        # In coordinator mode, both pool and cloud_pool point at the cloud DB
-        # and local_pool is the separate local DB
-        assert svc.cloud_pool is cloud_pool
-        assert svc.pool is cloud_pool
-        assert svc.local_pool is local_pool
+        create_pool.assert_awaited_once()
+        assert svc.pool is pool
+        for name, mock in delegates.items():
+            assert mock.call_args_list == [call(pool)], name
+        audit.assert_called_once_with(pool)
 
-    @pytest.mark.asyncio
-    async def test_worker_mode_flips_pools(self, monkeypatch):
-        """In worker mode, .pool becomes the local pool and .cloud_pool stays cloud."""
-        from poindexter.services.database_service import DatabaseService
-
-        monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
-        svc = DatabaseService(
-            database_url="postgresql://cloud",
-            local_database_url="postgresql://local",
-            site_config=SiteConfig(),
-        )
-
-        cloud_pool = AsyncMock(name="cloud_pool")
-        local_pool = AsyncMock(name="local_pool")
-        create_pool = AsyncMock(side_effect=[cloud_pool, local_pool])
-
-        with patch("asyncpg.create_pool", create_pool), \
-             patch("poindexter.services.database_service.UsersDatabase"), \
-             patch("poindexter.services.database_service.TasksDatabase") as MockTasks, \
-             patch("poindexter.services.database_service.ContentDatabase") as MockContent, \
-             patch("poindexter.services.database_service.AdminDatabase"), \
-             patch("poindexter.services.database_service.WritingStyleDatabase"), \
-             patch("poindexter.services.database_service.EmbeddingsDatabase"), \
-             patch("poindexter.services.database_service.init_global_audit_logger"):
-            await svc.initialize()
-
-        # In worker mode the assignment is flipped
-        assert svc.pool is local_pool
-        assert svc.cloud_pool is cloud_pool
-        # Tasks is routed to LOCAL pool (which is now self.pool)
-        MockTasks.assert_called_once_with(local_pool)
-        # Content is routed to CLOUD pool
-        MockContent.assert_called_once_with(cloud_pool)
-
-    @pytest.mark.asyncio
-    async def test_no_local_url_single_pool_mode(self, monkeypatch):
-        """Without LOCAL_DATABASE_URL, all three pool fields point at the same pool."""
-        from poindexter.services.database_service import DatabaseService
-
-        monkeypatch.delenv("LOCAL_DATABASE_URL", raising=False)
-        monkeypatch.setenv("DEPLOYMENT_MODE", "coordinator")
-        svc = DatabaseService(database_url="postgresql://cloud", site_config=SiteConfig())
-
-        only_pool = AsyncMock(name="only_pool")
-        create_pool = AsyncMock(return_value=only_pool)
-
-        with patch("asyncpg.create_pool", create_pool), \
-             patch("poindexter.services.database_service.UsersDatabase"), \
-             patch("poindexter.services.database_service.TasksDatabase"), \
-             patch("poindexter.services.database_service.ContentDatabase"), \
-             patch("poindexter.services.database_service.AdminDatabase"), \
-             patch("poindexter.services.database_service.WritingStyleDatabase"), \
-             patch("poindexter.services.database_service.EmbeddingsDatabase"), \
-             patch("poindexter.services.database_service.init_global_audit_logger"):
-            await svc.initialize()
-
-        # Only one create_pool call
-        assert create_pool.await_count == 1
-        # All three pool fields are the same instance
-        assert svc.pool is only_pool
-        assert svc.local_pool is only_pool
-        assert svc.cloud_pool is only_pool
+    def test_the_retired_pool_attributes_are_gone(self):
+        svc = make_service()
+        for retired in ("cloud_pool", "local_pool", "local_database_url"):
+            assert not hasattr(svc, retired), (
+                f"DatabaseService.{retired} came back: the dual-pool mode was retired "
+                "in Glad-Labs/poindexter#1115"
+            )
 
     @pytest.mark.asyncio
     async def test_initialize_failure_propagates(self):
-        from poindexter.services.database_service import DatabaseService
-
         svc = DatabaseService(database_url="postgresql://bad", site_config=SiteConfig())
 
         with patch("asyncpg.create_pool", new=AsyncMock(side_effect=ConnectionError("refused"))):
@@ -710,34 +670,148 @@ class TestDualPoolInitialize:
                 await svc.initialize()
 
 
-class TestCloseDualPool:
-    @pytest.mark.asyncio
-    async def test_close_closes_both_pools_when_separate(self):
-        from poindexter.services.database_service import DatabaseService
+class TestSecondDatabaseUrl:
+    """A second URL for a DIFFERENT database is refused, loudly.
 
+    Silently ignoring it would point a worker at the wrong database, and this
+    service has no second pool to honour it with any more.
+    """
+
+    def test_kwarg_naming_a_different_database_is_refused(self):
+        with pytest.raises(ValueError) as excinfo:
+            DatabaseService(
+                database_url=_MAIN, local_database_url=_OTHER, site_config=SiteConfig()
+            )
+        message = str(excinfo.value)
+        assert "db-primary:5432/main" in message
+        assert "db-other:5432/other" in message
+        assert "LOCAL_DATABASE_URL" in message
+        assert "poindexter#1115" in message
+        # Naming the databases must not leak the credentials in the URLs.
+        assert "hunter2" not in message
+        assert "swordfish" not in message
+
+    def test_env_var_naming_a_different_database_is_refused_when_the_primary_is_resolved(
+        self, monkeypatch
+    ):
+        _boot = _ensure_brain_bootstrap_stub(monkeypatch)
+        monkeypatch.setattr(_boot, "resolve_database_url", lambda **_kw: _MAIN)
+        monkeypatch.setenv("LOCAL_DATABASE_URL", _OTHER)
+
+        with pytest.raises(ValueError, match="no longer supports two databases"):
+            DatabaseService(site_config=SiteConfig())
+
+    def test_env_var_is_not_consulted_when_database_url_is_explicit(self, monkeypatch):
+        """An explicit ``database_url=`` fully determines the database, so a
+        stray exported LOCAL_DATABASE_URL must not veto it (the CLI passes one)."""
+        monkeypatch.setenv("LOCAL_DATABASE_URL", _OTHER)
+
+        svc = DatabaseService(database_url=_MAIN, site_config=SiteConfig())
+
+        assert svc.database_url == _MAIN
+
+    @pytest.mark.parametrize(
+        "same_database",
+        [
+            _MAIN,
+            "postgres://user:hunter2@db-primary:5432/main",  # scheme alias
+            "postgresql://someone:else@db-primary:5432/main",  # other credentials
+            "postgresql://user:hunter2@db-primary/main",  # default port left out
+            "postgresql://user:hunter2@DB-Primary:5432/main?sslmode=require",  # case + options
+        ],
+    )
+    def test_kwarg_naming_the_same_database_is_ignored_with_a_deprecation_warning(
+        self, same_database
+    ):
+        with pytest.warns(DeprecationWarning, match="local_database_url"):
+            svc = DatabaseService(
+                database_url=_MAIN, local_database_url=same_database, site_config=SiteConfig()
+            )
+
+        assert svc.database_url == _MAIN
+
+    def test_loopback_spellings_are_the_same_database(self):
+        with pytest.warns(DeprecationWarning):
+            DatabaseService(
+                database_url="postgresql://u:p@localhost:5433/db",
+                local_database_url="postgresql://u:p@127.0.0.1:5433/db",
+                site_config=SiteConfig(),
+            )
+
+    def test_env_var_naming_the_same_database_is_accepted_without_a_warning(self, monkeypatch):
+        """LOCAL_DATABASE_URL is still the legacy alias for the single database
+        in the resolution chain, so a same-database value is not a problem."""
+        _boot = _ensure_brain_bootstrap_stub(monkeypatch)
+        monkeypatch.setattr(_boot, "resolve_database_url", lambda **_kw: _MAIN)
+        monkeypatch.setenv("LOCAL_DATABASE_URL", "postgres://user:hunter2@db-primary/main")
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            svc = DatabaseService(site_config=SiteConfig())
+
+        assert svc.database_url == _MAIN
+        assert not [w for w in caught if "local_database_url" in str(w.message)]
+
+    def test_unparseable_dsns_compare_as_strings(self):
+        """Keyword/value DSNs don't parse as URLs: equal strings are the same
+        database, different strings are not."""
+        dsn = "host=db port=5432 dbname=main"
+        with pytest.warns(DeprecationWarning):
+            DatabaseService(database_url=dsn, local_database_url=dsn, site_config=SiteConfig())
+        with pytest.raises(ValueError, match="unparseable database URL"):
+            DatabaseService(
+                database_url=dsn,
+                local_database_url="host=db port=5432 dbname=other",
+                site_config=SiteConfig(),
+            )
+
+
+class TestDatabaseIdentity:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("postgresql://u:p@host:5433/db", ("host", 5433, "db")),
+            ("postgres://u@Host/db?sslmode=require", ("host", 5432, "db")),
+            ("postgresql://u:p@127.0.0.1:5432/db", ("localhost", 5432, "db")),
+            ("postgresql://u:p@[::1]:5432/db", ("localhost", 5432, "db")),
+            ("host=db dbname=x", None),
+            ("mysql://u:p@host/db", None),
+            ("postgresql:///db", None),
+            ("postgresql://u:p@host:notaport/db", None),
+        ],
+    )
+    def test_identity_ignores_credentials_and_options(self, url, expected):
+        assert _database_identity(url) == expected
+
+    def test_describe_database_carries_no_credentials(self):
+        assert _describe_database(_MAIN) == "db-primary:5432/main"
+        assert _describe_database("not a url") == "<unparseable database URL>"
+
+    def test_describe_database_keeps_the_host_as_written(self):
+        """Loopback spellings compare equal but must not be rewritten in messages."""
+        assert _describe_database("postgresql://u:p@127.0.0.1:5433/db") == "127.0.0.1:5433/db"
+        assert _describe_database("postgresql://u:p@[::1]:5433/db") == "[::1]:5433/db"
+
+    def test_construction_logs_no_credentials(self, caplog):
+        """The constructor used to log ``database_url[:50]``, which carried the
+        credentials into every process's log."""
+        with caplog.at_level(logging.INFO):
+            make_service(database_url=_MAIN)
+
+        assert "hunter2" not in caplog.text
+        assert "db-primary:5432/main" in caplog.text
+
+
+class TestClose:
+    @pytest.mark.asyncio
+    async def test_close_closes_the_pool_once(self):
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
-        cloud_pool = AsyncMock(name="cloud")
-        local_pool = AsyncMock(name="local")
-        svc.pool = cloud_pool
-        svc.local_pool = local_pool
+        pool = AsyncMock(name="pool")
+        svc.pool = pool
 
         await svc.close()
-        cloud_pool.close.assert_awaited_once()
-        local_pool.close.assert_awaited_once()
 
-    @pytest.mark.asyncio
-    async def test_close_does_not_double_close_shared_pool(self):
-        """When local_pool is the same instance as pool, close it only once."""
-        from poindexter.services.database_service import DatabaseService
-
-        svc = DatabaseService(database_url="x", site_config=SiteConfig())
-        shared = AsyncMock(name="shared")
-        svc.pool = shared
-        svc.local_pool = shared
-
-        await svc.close()
-        # Should be called exactly once, not twice
-        shared.close.assert_awaited_once()
+        pool.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_close_drains_audit_writes_before_closing_pool(self):
@@ -745,17 +819,12 @@ class TestCloseDualPool:
         writes before closing the pool they run against, else a warn finding
         emitted moments earlier (e.g. the spend-throttle engage finding) races
         pool.close() and dies with InterfaceError('pool is closing')."""
-        from poindexter.services.database_service import DatabaseService
-
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
-        cloud_pool = AsyncMock(name="cloud")
-        local_pool = AsyncMock(name="local")
-        svc.pool = cloud_pool
-        svc.local_pool = local_pool
+        pool = AsyncMock(name="pool")
+        svc.pool = pool
 
         order: list[str] = []
-        local_pool.close.side_effect = lambda *a, **k: order.append("local_close")
-        cloud_pool.close.side_effect = lambda *a, **k: order.append("cloud_close")
+        pool.close.side_effect = lambda *a, **k: order.append("pool_close")
 
         async def _record_drain(*a, **k):
             order.append("drain")
@@ -767,6 +836,6 @@ class TestCloseDualPool:
             await svc.close()
 
         drain.assert_awaited_once()
-        # The drain MUST precede any pool close, or the write it is flushing
+        # The drain MUST precede the pool close, or the write it is flushing
         # would hit an already-closing pool.
-        assert order and order[0] == "drain", order
+        assert order == ["drain", "pool_close"], order

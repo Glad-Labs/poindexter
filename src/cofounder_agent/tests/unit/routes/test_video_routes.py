@@ -93,7 +93,6 @@ class TestVideoFeed:
     def test_empty_feed_when_no_videos(self, mock_gs):
         mock_db = MagicMock()
         mock_db.pool = None
-        mock_db.cloud_pool = None
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = client.get("/api/video/feed.xml")
@@ -127,7 +126,7 @@ class TestVideoFeed:
         mock_pool.acquire.return_value = ctx
 
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = client.get("/api/video/feed.xml")
@@ -163,7 +162,7 @@ class TestVideoFeed:
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = ctx
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = client.get("/api/video/feed.xml")
@@ -187,7 +186,7 @@ class TestVideoFeed:
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = ctx
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = client.get("/api/video/feed.xml")
@@ -209,7 +208,7 @@ def _pool_serving(rows=None, captured=None):
     mock_pool = MagicMock()
     mock_pool.acquire.return_value = ctx
     mock_db = MagicMock()
-    mock_db.cloud_pool = mock_pool
+    mock_db.pool = mock_pool
     return mock_db
 
 

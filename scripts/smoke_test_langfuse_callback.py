@@ -52,7 +52,8 @@ def _resolve_db_url() -> str:
 async def main() -> int:
     db_url = _resolve_db_url()
 
-    print(f"[smoke] connecting to {db_url[:40]}...")
+    # host:port/db only: a URL prefix would carry the credentials.
+    print(f"[smoke] connecting to {db_url.rsplit('@', 1)[-1]}")
     pool = await asyncpg.create_pool(db_url, min_size=1, max_size=2)
 
     # Build a minimal SiteConfig from the live DB so configure_langfuse_callback

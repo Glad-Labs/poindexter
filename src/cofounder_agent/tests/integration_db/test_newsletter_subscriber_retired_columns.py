@@ -105,7 +105,6 @@ async def _route_statements(monkeypatch, payload: dict[str, Any]) -> tuple[tuple
     pool.fetchval = AsyncMock(return_value=1)
     db = MagicMock()
     db.pool = pool
-    db.cloud_pool = None
 
     app = FastAPI()
     app.include_router(newsletter_routes.router)

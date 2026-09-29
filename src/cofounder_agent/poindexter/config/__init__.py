@@ -27,7 +27,6 @@ class Config:
 
     # Database configuration
     database_url: str = ""
-    local_database_url: str | None = None
 
     # LLM configuration (Ollama-only policy)
     ollama_base_url: str | None = None
@@ -121,7 +120,6 @@ def get_config() -> Config:
 
     return Config(
         database_url=resolve_database_url() or "",
-        local_database_url=os.getenv("LOCAL_DATABASE_URL") or None,
         ollama_base_url=os.getenv("OLLAMA_BASE_URL"),
         environment=environment,
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),

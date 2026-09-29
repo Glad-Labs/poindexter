@@ -6071,8 +6071,6 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'plugin.llm_provider.gemini.embed_model': '',
     'plugin.llm_provider.gemini.request_timeout_s': '',
     # Local (non-cloud) asyncpg pool bounds (database_service.py).
-    'local_database_pool_min_size': '2',
-    'local_database_pool_max_size': '20',
     # GPU model -> TDP watts JSON override for the electricity-cost estimator
     # (update_utility_rates.py); '' keeps the shipped DEFAULT_GPU_TDP_MAP.
     'gpu_tdp_map': '',
@@ -7688,8 +7686,6 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'plugin.llm_provider.gemini.default_model': {'owner': 'gemini', 'value_type': 'model'},
     'plugin.llm_provider.gemini.embed_model': {'owner': 'gemini', 'value_type': 'model'},
     'plugin.llm_provider.gemini.request_timeout_s': {'owner': 'gemini', 'value_type': 'integer'},
-    'local_database_pool_min_size': {'owner': 'database_service', 'value_type': 'integer'},
-    'local_database_pool_max_size': {'owner': 'database_service', 'value_type': 'integer'},
     'gpu_tdp_map': {'owner': 'update_utility_rates', 'value_type': 'string'},
     'hallucination_whitelist_additions': {'owner': 'content_validator', 'value_type': 'string'},
     'known_references_json': {'owner': 'research_service', 'value_type': 'string'},

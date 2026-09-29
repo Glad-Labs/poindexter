@@ -102,7 +102,7 @@ async def podcast_feed(
     from poindexter.utils.route_utils import get_services
 
     db = get_services().get_database()
-    pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+    pool = db.pool if db else None
 
     # Source episodes from media_assets (#689 Stage-3) — the canonical file
     # registry — NOT a local-disk scan, so atom-produced (task-keyed) episodes
@@ -378,7 +378,7 @@ async def generate_episode(
     from poindexter.utils.route_utils import get_services
 
     db = get_services().get_database()
-    pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+    pool = db.pool if db else None
     if not pool:
         raise HTTPException(status_code=503, detail="Database not available")
 

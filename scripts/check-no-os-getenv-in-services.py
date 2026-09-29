@@ -41,8 +41,8 @@ LINT = "check-no-os-getenv-in-services"
 ALLOWED_FILES: dict[str, str] = {
     # --- bootstrap-time reads (run before site_config.load) ---
     "services/database_service.py": (
-        "Bootstrap: resolves DATABASE_URL / LOCAL_DATABASE_URL / DEPLOYMENT_MODE "
-        "before the pool exists, so site_config can't be consulted yet."
+        "Bootstrap: resolves DATABASE_URL / LOCAL_DATABASE_URL before the pool "
+        "exists, so site_config can't be consulted yet."
     ),
     "services/logger_config.py": (
         "Bootstrap: ENVIRONMENT / LOG_LEVEL / LOG_FORMAT / LOG_DIR / LOG_FILE_NAME / "

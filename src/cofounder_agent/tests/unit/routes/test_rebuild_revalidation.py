@@ -16,7 +16,6 @@ from poindexter.routes import cms_routes
 @pytest.mark.asyncio
 async def test_rebuild_triggers_revalidation_on_success():
     db = MagicMock()
-    db.cloud_pool = None
     db.pool = object()
     sc = MagicMock()
     with patch(
@@ -40,7 +39,6 @@ async def test_rebuild_triggers_revalidation_on_success():
 @pytest.mark.asyncio
 async def test_rebuild_does_not_revalidate_on_failure():
     db = MagicMock()
-    db.cloud_pool = None
     db.pool = object()
     sc = MagicMock()
     with patch(

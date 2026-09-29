@@ -120,8 +120,7 @@ async def _build_resume_handles(site_config: Any) -> tuple[Any, Any]:
     ``services.flows.content_generation``: a real ``DatabaseService`` — whose
     ``initialize()`` also installs the global ``AuditLogger`` that
     ``build_platform_for_subprocess`` reads — plus the capability-scoped
-    ``platform``. The worker container runs single-pool (no
-    ``LOCAL_DATABASE_URL``), so one pool over ``_dsn()`` backs every delegate.
+    ``platform``. One pool over ``_dsn()`` backs every delegate.
     The caller owns ``await database_service.close()``.
     """
     from poindexter.services.database_service import DatabaseService

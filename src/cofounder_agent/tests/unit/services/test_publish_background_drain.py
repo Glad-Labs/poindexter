@@ -125,14 +125,11 @@ class TestCloseDrainsPublishBackgroundTasks:
         from poindexter.services.database_service import DatabaseService
 
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
-        cloud_pool = AsyncMock(name="cloud")
-        local_pool = AsyncMock(name="local")
-        svc.pool = cloud_pool
-        svc.local_pool = local_pool
+        pool = AsyncMock(name="pool")
+        svc.pool = pool
 
         order: list[str] = []
-        local_pool.close.side_effect = lambda *a, **k: order.append("local_close")
-        cloud_pool.close.side_effect = lambda *a, **k: order.append("cloud_close")
+        pool.close.side_effect = lambda *a, **k: order.append("pool_close")
 
         async def _publish_drain(*a, **k):
             order.append("publish_drain")
@@ -152,13 +149,12 @@ class TestCloseDrainsPublishBackgroundTasks:
         publish_drain.assert_awaited_once()
         audit_drain.assert_awaited_once()
         # Publish-tail tasks schedule their audit writes as they finish, so
-        # they must be flushed BEFORE the audit drain, and both before any
-        # pool close.
+        # they must be flushed BEFORE the audit drain, and both before the
+        # pool closes.
         assert order == [
             "publish_drain",
             "audit_drain",
-            "local_close",
-            "cloud_close",
+            "pool_close",
         ], order
 
     @pytest.mark.asyncio
@@ -168,18 +164,16 @@ class TestCloseDrainsPublishBackgroundTasks:
         A newsletter spawned fire-and-forget moments before
         ``DatabaseService.close()`` (exactly what the Prefect auto-publish
         flow and the CLI publish paths do) must still complete AND land its
-        ``newsletter_campaign_sent`` audit row before the pools close.
+        ``newsletter_campaign_sent`` audit row before the pool closes.
         """
         from poindexter.services.database_service import DatabaseService
 
-        local_pool = _FakePool("local")
-        cloud_pool = _FakePool("cloud")
+        pool = _FakePool("main")
 
         svc = DatabaseService(database_url="x", site_config=SiteConfig())
-        svc.pool = cloud_pool
-        svc.local_pool = local_pool
+        svc.pool = pool
 
-        audit_mod.init_global_audit_logger(local_pool)
+        audit_mod.init_global_audit_logger(pool)
 
         async def slow_send(pool, title, excerpt, slug, site_config=None):
             # Still "emailing" when close() begins — batches sleep between
@@ -204,7 +198,7 @@ class TestCloseDrainsPublishBackgroundTasks:
 
         newsletter_rows = [
             args
-            for (sql, args) in local_pool.executed
+            for (sql, args) in pool.executed
             if args and args[0] == "newsletter_campaign_sent"
         ]
         assert newsletter_rows, (

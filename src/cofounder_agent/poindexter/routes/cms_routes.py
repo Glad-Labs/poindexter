@@ -64,7 +64,7 @@ async def get_db_pool():
     DatabaseService mid-request, which would bypass the connection pool.
     """
     db_service = get_database_dependency()
-    return getattr(db_service, "cloud_pool", None) or db_service.pool
+    return db_service.pool
 
 
 # ============================================================================
@@ -649,7 +649,7 @@ async def rebuild_static_export(
     Regenerates: posts index, individual post files, JSON feed,
     categories, authors, sitemap, and manifest.
     """
-    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    pool = db_service.pool
 
     try:
         from poindexter.services.static_export_service import export_full_rebuild

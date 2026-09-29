@@ -1155,15 +1155,6 @@ async def api_health():
                 "min_size": pool.get_min_size(),
                 "max_size": pool.get_max_size(),
             }
-            # Include local pool stats if it's a separate pool
-            local_pool = getattr(database_service, "local_pool", None)
-            if local_pool and local_pool is not pool:
-                pool_stats["local"] = {
-                    "size": local_pool.get_size(),
-                    "idle": local_pool.get_idle_size(),
-                    "min_size": local_pool.get_min_size(),
-                    "max_size": local_pool.get_max_size(),
-                }
             health_data["components"]["connection_pool"] = pool_stats
             # Flag degraded if pool health monitor reports issues
             if pool_health and pool_health.is_pool_degraded():

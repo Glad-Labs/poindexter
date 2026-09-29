@@ -86,11 +86,10 @@ def _make_pool(*, fetchval_return=None, execute_return=None, fetchrow_return=Non
     return pool, conn
 
 
-def _make_db_service(pool=None, cloud_pool=None):
+def _make_db_service(pool=None):
     """Database service double covering every surface the helper touches."""
     db = MagicMock()
     db.pool = pool
-    db.cloud_pool = cloud_pool or pool
     db.update_task = AsyncMock()
     db.mark_model_performance_outcome = AsyncMock()
     db.get_setting_value = AsyncMock(return_value=None)

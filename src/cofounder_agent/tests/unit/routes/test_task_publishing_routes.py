@@ -636,9 +636,8 @@ class TestApproveTask:
         )
         mock_db.get_task = AsyncMock(side_effect=[task, task])
         mock_db.create_post = AsyncMock(return_value=MagicMock(id="post-abc"))
-        # Idempotency guard in publish_service checks cloud_pool.fetchrow for existing post
-        mock_db.cloud_pool = AsyncMock()
-        mock_db.cloud_pool.fetchrow = AsyncMock(return_value=None)
+        # Idempotency guard in publish_service checks pool.fetchrow for existing post
+        mock_db.pool.fetchrow = AsyncMock(return_value=None)
 
         app = _build_app(mock_db)
         with (
@@ -745,10 +744,9 @@ class TestApproveFeaturedImageOverride:
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=self._task())
         mock_db.create_post = AsyncMock(return_value=MagicMock(id="post-abc"))
-        # publish_service's idempotency guard reads cloud_pool first: no
-        # existing post, so it goes on to create one.
-        mock_db.cloud_pool = AsyncMock()
-        mock_db.cloud_pool.fetchrow = AsyncMock(return_value=None)
+        # publish_service's idempotency guard reads pool.fetchrow: no existing
+        # post, so it goes on to create one.
+        mock_db.pool.fetchrow = AsyncMock(return_value=None)
         return mock_db
 
     @pytest.fixture

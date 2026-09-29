@@ -151,10 +151,7 @@ async def _read_preview_token(database_service: Any, task_id: str) -> str | None
     link (degraded but non-fatal) and a WARNING is logged with the
     task_id so the regression is visible in Grafana / Loki.
     """
-    pool = (
-        getattr(database_service, "cloud_pool", None)
-        or getattr(database_service, "pool", None)
-    )
+    pool = getattr(database_service, "pool", None)
     if pool is None:
         logger.warning(
             "[POST_PIPELINE] preview_token lookup skipped for %s — "
@@ -337,10 +334,7 @@ async def _auto_curate(
 
     # task.auto_rejected webhook — best-effort.
     try:
-        _pool = (
-            getattr(database_service, "cloud_pool", None)
-            or getattr(database_service, "pool", None)
-        )
+        _pool = getattr(database_service, "pool", None)
         await emit_webhook_event(
             _pool,
             "task.auto_rejected",
@@ -610,10 +604,7 @@ async def _read_task_status(
     must never be silenced by a transient read hiccup. The miss is logged
     (``feedback_no_silent_defaults``).
     """
-    pool = (
-        getattr(database_service, "cloud_pool", None)
-        or getattr(database_service, "pool", None)
-    )
+    pool = getattr(database_service, "pool", None)
     if pool is None:
         return None, None
     try:
@@ -752,10 +743,7 @@ async def run_post_pipeline_actions(
 
     # 1. task.completed webhook — fires unconditionally on success.
     try:
-        _pool = (
-            getattr(database_service, "cloud_pool", None)
-            or getattr(database_service, "pool", None)
-        )
+        _pool = getattr(database_service, "pool", None)
         final_status = (
             result.get("status", "awaiting_approval")
             if isinstance(result, dict)

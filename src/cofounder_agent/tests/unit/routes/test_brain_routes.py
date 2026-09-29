@@ -50,7 +50,6 @@ def _make_pool(counts_row, knowledge_count, recent_rows):
     pool.fetch = AsyncMock(return_value=recent_rows)
     db = MagicMock()
     db.pool = pool
-    db.cloud_pool = None  # force route to use db.pool path
     return db
 
 

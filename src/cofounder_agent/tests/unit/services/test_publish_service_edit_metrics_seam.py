@@ -58,7 +58,6 @@ def _make_task() -> dict[str, Any]:
 def _make_db_service() -> Any:
     """DatabaseService stub — same shape as test_publish_service_stage_only."""
     db = MagicMock()
-    db.cloud_pool = None
     db.create_post = AsyncMock(
         side_effect=lambda data: MagicMock(id="22222222-2222-2222-2222-222222222222"),
     )

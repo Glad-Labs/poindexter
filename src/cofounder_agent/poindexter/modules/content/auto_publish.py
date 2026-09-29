@@ -133,13 +133,12 @@ async def auto_publish_task(
         )
         return False
 
-    # Daily limit — check the cloud (production) posts table when we have
-    # a separate cloud_pool, otherwise fall back to the local pool. The
-    # date arithmetic runs on the DB so we never have a timezone-skew
-    # bug between the worker's clock and the published_at column.
+    # Daily limit — count today's published posts. The date arithmetic runs
+    # on the DB so we never have a timezone-skew bug between the worker's
+    # clock and the published_at column.
     try:
         daily_limit = int(await _get_setting(database_service, "daily_post_limit", "1"))
-        check_pool = getattr(database_service, "cloud_pool", None) or database_service.pool
+        check_pool = database_service.pool
         published_today = await check_pool.fetchval(
             "SELECT COUNT(*) FROM posts "
             "WHERE status = 'published' AND published_at::date = CURRENT_DATE"
@@ -422,7 +421,7 @@ async def _stage_with_veto_window(
         )
         return False
 
-    pool = getattr(database_service, "cloud_pool", None) or database_service.pool
+    pool = database_service.pool
     publish_at = datetime.now(timezone.utc) + timedelta(hours=delay_hours)
 
     # Stamp the veto-window marker BEFORE scheduling, so the fire-time guard

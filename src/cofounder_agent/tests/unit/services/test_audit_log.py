@@ -483,7 +483,7 @@ class TestLoudOnDroppedFindings:
 # GlitchTip #863 root cause A — a fire-and-forget audit write scheduled right
 # before a short-lived pool's teardown (e.g. the spend-throttle engage finding
 # in a Prefect flow subprocess that builds+closes its own pool per run) raced
-# ``local_pool.close()`` and died with ``InterfaceError('pool is closing')`` —
+# ``pool.close()`` and died with ``InterfaceError('pool is closing')`` —
 # losing a warn finding, the exact loss the #303 loud-drop path is meant to make
 # impossible. ``audit_log_bg`` now registers each background write, and
 # ``drain_pending_writes`` lets an owner flush them BEFORE closing the pool.

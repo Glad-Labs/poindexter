@@ -9,7 +9,7 @@ Usage:
     from poindexter.services.audit_log import AuditLogger, audit_log_bg
 
     # With an explicit instance (preferred when you have the pool):
-    audit = AuditLogger(local_pool)
+    audit = AuditLogger(pool)
     await audit.log("task_created", "content_router", {"topic": "AI trends"}, task_id=tid)
 
     # Fire-and-forget helper (uses the global singleton):

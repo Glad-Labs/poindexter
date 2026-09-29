@@ -42,7 +42,7 @@ async def get_host_health_route(
     writer, so an un-aged answer would turn a stopped brain daemon into a
     permanently green runtime.
     """
-    pool = getattr(db, "cloud_pool", None) or db.pool
+    pool = db.pool
     # Empty or unparseable falls back to the service's own default rather than
     # silently widening the window to "never stale" — a bad value must not
     # disable the age gate that keeps a dead daemon from reading green.

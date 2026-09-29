@@ -55,7 +55,7 @@ from older callers and ignores them; see the
 - `await send_post_newsletter(pool, title, excerpt, slug) -> dict` —
   the only public function. `pool` is an asyncpg connection pool
   (the caller in `publish_service` passes
-  `db_service.cloud_pool or db_service.pool`). Returns
+  `db_service.pool`). Returns
   `{"sent": int, "failed": int, "skipped": int,
 "total_subscribers": int, "skipped_reason": str?}` — `skipped_reason`
   is set when the function exits early (`disabled`, `no_api_key`,

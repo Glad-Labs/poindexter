@@ -443,20 +443,15 @@ class StartupManager:
         backoff_s = 1.0
 
         try:
-            from poindexter.config import get_config
             from poindexter.services.database_service import DatabaseService
 
-            config = get_config()
             # #272 Phase-2g: DatabaseService takes a REQUIRED site_config.
             # Pass the instance threaded into this manager. It is not loaded
             # yet: loading needs this pool, and ``_load_site_config`` runs
             # once migrations have settled app_settings. So
             # ``initialize()`` pre-reads its pool-size keys over a direct
             # connection instead of asking the SiteConfig.
-            self.database_service = DatabaseService(
-                local_database_url=config.local_database_url,
-                site_config=self._site_config,
-            )
+            self.database_service = DatabaseService(site_config=self._site_config)
 
             for attempt in range(1, max_attempts + 1):
                 try:

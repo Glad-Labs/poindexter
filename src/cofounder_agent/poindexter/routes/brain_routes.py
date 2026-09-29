@@ -30,5 +30,5 @@ async def get_brain_stats_route(
     Returns decisions_24h/7d, avg confidence, last cycle timestamp,
     knowledge entry count, and the 10 most recent decision rows.
     """
-    pool = getattr(db, "cloud_pool", None) or db.pool
+    pool = db.pool
     return await get_brain_stats(pool)

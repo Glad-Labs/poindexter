@@ -436,8 +436,10 @@ SCHEDULER_JOB_LAST_RUN_OK = Gauge(
 # so existing Grafana queries don't break when the old exposer is removed.
 # ---------------------------------------------------------------------------
 
-# asyncpg pool metrics. Labeled by ``pool`` ("cloud"/"local") — legacy emitted
-# the same label values, keep them identical so dashboards keep working.
+# asyncpg pool metrics. Labeled by ``pool``. The one pool is emitted as "cloud",
+# the historical name from when a distinct "local" pool could also exist
+# (retired in Glad-Labs/poindexter#1115); the value is kept so the series and
+# the dashboards that read them stay continuous.
 DB_POOL_SIZE = Gauge(
     "poindexter_db_pool_size",
     "Current number of connections in pool",
@@ -729,10 +731,10 @@ async def refresh_metrics(
     will alert on the endpoint being down.
 
     ``db_service`` is the full ``DatabaseService`` (has ``.tasks``,
-    ``.local_pool``, etc.) — required for metrics that don't live on
-    the cloud pool alone (task counts, per-pool stats). Passed
-    optionally so callers that only hand over a raw ``pool`` keep
-    working; the extra metrics just skip in that case.
+    etc.) — required for metrics that need a delegate module rather
+    than the raw pool (task counts). Passed optionally so callers that
+    only hand over a raw ``pool`` keep working; the extra metrics just
+    skip in that case.
     """
     import time
 
@@ -973,21 +975,15 @@ async def refresh_metrics(
     # Metrics migrated from /api/prometheus (Gitea #269).
     # -----------------------------------------------------------------
 
-    # asyncpg pool stats — per-pool so the label schema matches the
-    # legacy exposer. The cloud pool is the one already passed in; the
-    # local pool (if distinct) is read off db_service.
+    # asyncpg pool stats. There is one pool now (Glad-Labs/poindexter#1115).
+    # It is still emitted under the historical label value "cloud" so the
+    # series, and every dashboard that reads them, stay continuous.
     try:
         if pool is not None:
             DB_POOL_SIZE.labels(pool="cloud").set(pool.get_size())
             DB_POOL_IDLE.labels(pool="cloud").set(pool.get_idle_size())
             DB_POOL_MIN_SIZE.labels(pool="cloud").set(pool.get_min_size())
             DB_POOL_MAX_SIZE.labels(pool="cloud").set(pool.get_max_size())
-        local_pool = getattr(db_service, "local_pool", None) if db_service else None
-        if local_pool is not None and local_pool is not pool:
-            DB_POOL_SIZE.labels(pool="local").set(local_pool.get_size())
-            DB_POOL_IDLE.labels(pool="local").set(local_pool.get_idle_size())
-            DB_POOL_MIN_SIZE.labels(pool="local").set(local_pool.get_min_size())
-            DB_POOL_MAX_SIZE.labels(pool="local").set(local_pool.get_max_size())
     except Exception as e:
         _note_refresh_error("db_pool", e)
 

@@ -82,7 +82,6 @@ _OVERRIDES: dict[str, str] = {
     "allowed_origins": "infrastructure",
     "disable_auth_for_dev": "infrastructure",
     "internal_api_base_url": "infrastructure",
-    "local_database_url": "infrastructure",
     "local_llm_api_url": "models",
     "use_prefect": "pipeline",
     "skill_importer_allowed_licenses": "plugins",
@@ -105,8 +104,6 @@ _OVERRIDES: dict[str, str] = {
     # Seed-gap audit 2026-09-25 (scripts/ci/settings_phantom_read_lint.py):
     # same reasoning as the 2026-08-26 block above.
     "known_references_json": "content",  # research_service.py curated-reference override
-    "local_database_pool_min_size": "infrastructure",  # asyncpg pool bound
-    "local_database_pool_max_size": "infrastructure",  # asyncpg pool bound
     "retention_janitor_interval_hours": "infrastructure",  # background sweep cadence
 }
 

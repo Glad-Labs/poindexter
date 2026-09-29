@@ -275,7 +275,6 @@ class TestPodcastFeed:
     def test_empty_feed_when_no_episodes(self, mock_gs):
         mock_db = MagicMock()
         mock_db.pool = None
-        mock_db.cloud_pool = None
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = client.get("/api/podcast/feed.xml")
@@ -309,7 +308,6 @@ class TestPodcastFeed:
         mock_pool = MagicMock()
         mock_pool.acquire.return_value = ctx
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
         mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
@@ -484,7 +482,6 @@ class TestGenerateEpisode:
         tc = self._make_app_with_auth_override()
         mock_db = MagicMock()
         mock_db.pool = None
-        mock_db.cloud_pool = None
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = tc.post("/api/podcast/generate/abc123")
@@ -503,7 +500,7 @@ class TestGenerateEpisode:
         mock_pool.acquire.return_value = ctx
 
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
         resp = tc.post("/api/podcast/generate/nonexistent")
@@ -528,7 +525,7 @@ class TestGenerateEpisode:
         mock_pool.acquire.return_value = ctx
 
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
         mock_result = MagicMock()
@@ -566,7 +563,7 @@ class TestGenerateEpisode:
         mock_pool.acquire.return_value = ctx
 
         mock_db = MagicMock()
-        mock_db.cloud_pool = mock_pool
+        mock_db.pool = mock_pool
         mock_gs.return_value.get_database.return_value = mock_db
 
         mock_result = MagicMock()

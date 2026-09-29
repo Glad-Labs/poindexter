@@ -96,7 +96,6 @@ def _make_db(
     # Idempotency guard in publish_service calls pool.fetchrow directly
     pool.fetchrow = AsyncMock(return_value=None)
     db.pool = pool
-    db.cloud_pool = None  # Ensure cloud_pool fallback uses db.pool
 
     return db
 
@@ -1255,7 +1254,6 @@ class TestFirePostDistributionHooks:
 
         db = MagicMock()
         db.pool = pool
-        db.cloud_pool = None
 
         result = await fire_post_distribution_hooks(db, "ghost-post", site_config=_TEST_SC)
         assert result == {"fired": False, "reason": "post_not_found"}
@@ -1268,7 +1266,6 @@ class TestFirePostDistributionHooks:
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=True)
         db = MagicMock()
         db.pool = pool
-        db.cloud_pool = None
 
         # All the lazy imports
         social_mod = MagicMock()
@@ -1311,7 +1308,6 @@ class TestFirePostDistributionHooks:
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
         db = MagicMock()
         db.pool = pool
-        db.cloud_pool = None
 
         social_mod = MagicMock()
         devto_mod = MagicMock()
@@ -1346,7 +1342,6 @@ class TestFirePostDistributionHooks:
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
         db = MagicMock()
         db.pool = pool
-        db.cloud_pool = None
 
         social_mod = MagicMock()
         devto_mod = MagicMock()
@@ -1378,7 +1373,6 @@ class TestFirePostDistributionHooks:
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=False)
         db = MagicMock()
         db.pool = pool
-        db.cloud_pool = None
 
         # devto raises, the search-engine ping succeeds — overall result still
         # fired=True, devto NOT in hooks, the sibling hook still fires. Proves
@@ -1400,19 +1394,24 @@ class TestFirePostDistributionHooks:
 
     @pytest.mark.asyncio
     @patch("poindexter.services.publish_service._should_run_post_publish_hooks", return_value=False)
-    async def test_uses_cloud_pool_when_present(self, _hooks):
-        """If db_service has a cloud_pool, that's the pool used (not db.pool)."""
+    async def test_uses_the_single_db_pool(self, _hooks):
+        """fire_post_distribution_hooks reads through db_service.pool, the only pool.
+
+        This used to prefer ``db_service.cloud_pool`` over ``db_service.pool``
+        (Glad-Labs/poindexter#1115 retired the dual-pool mode), so a stray
+        ``cloud_pool`` attribute on a double must no longer be consulted.
+        """
         from poindexter.services.publish_service import fire_post_distribution_hooks
         post_row = _make_post_row()
-        cloud_pool, _conn = _make_pool_for_fire(post_row, pending_gates=False)
+        pool, _conn = _make_pool_for_fire(post_row, pending_gates=False)
 
-        # local pool — should NEVER be acquired
-        local_pool = MagicMock()
-        local_pool.acquire = MagicMock(side_effect=AssertionError("should use cloud_pool"))
+        # A leftover attribute must be ignored: acquiring from it fails the test.
+        stale = MagicMock()
+        stale.acquire = MagicMock(side_effect=AssertionError("cloud_pool must not be used"))
 
         db = MagicMock()
-        db.pool = local_pool
-        db.cloud_pool = cloud_pool
+        db.pool = pool
+        db.cloud_pool = stale
 
         social_mod = MagicMock()
         devto_mod = MagicMock()

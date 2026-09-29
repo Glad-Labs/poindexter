@@ -56,7 +56,6 @@ def _make_db(
     daily_limit="1",
     task=None,
     pool=None,
-    cloud_pool=None,
 ):
     """DatabaseService double covering the surface auto_publish_task uses.
 
@@ -67,12 +66,9 @@ def _make_db(
     pool = pool if pool is not None else _make_pool()
     db = MagicMock()
     db.pool = pool
-    db.cloud_pool = cloud_pool  # None → check_pool falls back to db.pool
 
-    # The daily-limit check uses check_pool.fetchval — set it on whichever
-    # pool check_pool resolves to (cloud_pool or pool).
-    check_pool = cloud_pool if cloud_pool is not None else pool
-    check_pool.fetchval = AsyncMock(return_value=published_today)
+    # The daily-limit check uses the pool's fetchval.
+    pool.fetchval = AsyncMock(return_value=published_today)
 
     db.get_setting_value = AsyncMock(return_value=daily_limit)
     db.get_task = AsyncMock(return_value=task)
@@ -216,9 +212,8 @@ class TestAutoPublishBails:
             "task_metadata": {},
         }
         db = _make_db(published_today=0, daily_limit="1", task=task)
-        # Make the daily-limit COUNT(*) raise on whichever pool check_pool uses.
-        check_pool = db.cloud_pool if db.cloud_pool is not None else db.pool
-        check_pool.fetchval = AsyncMock(side_effect=RuntimeError("connection reset"))
+        # Make the daily-limit COUNT(*) raise.
+        db.pool.fetchval = AsyncMock(side_effect=RuntimeError("connection reset"))
 
         pub_mock = AsyncMock(return_value=_publish_result())
         with patch("poindexter.services.publish_service.publish_post_from_task", pub_mock):

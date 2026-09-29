@@ -91,7 +91,7 @@ async def video_feed(
     from poindexter.utils.route_utils import get_services
 
     db = get_services().get_database()
-    pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
+    pool = db.pool if db else None
 
     episodes: list[dict] = []
     if pool:

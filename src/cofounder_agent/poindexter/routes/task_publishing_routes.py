@@ -1002,7 +1002,7 @@ async def go_live(
     site_config_dep = Depends(get_site_config_dependency),
 ):
     """Promote a draft post to published status. Triggers RSS, social, revalidation."""
-    pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+    pool = db_service.pool
 
     # Verify post exists and is a draft
     row = await pool.fetchrow(
