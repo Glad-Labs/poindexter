@@ -7,12 +7,16 @@
 #
 # What it does:
 #   1. Checks prerequisites (Docker, Node.js, Python, Ollama)
-#   2. Starts infrastructure (PostgreSQL + pgvector, Grafana)
-#   3. Runs database migrations
-#   4. Seeds default app_settings (all configurable, no hardcoding)
-#   5. Pulls required Ollama models
-#   6. Installs dependencies
-#   7. Prints next steps
+#   2. Writes the environment configuration
+#   3. Starts infrastructure (PostgreSQL + pgvector, Grafana)
+#   4. Installs Node.js and Python dependencies
+#   5. Verifies database connectivity
+#   6. Detects hardware
+#   7. Pulls the required Ollama models
+#   8. Prints next steps
+#
+# Migrations and the app_settings seed are not its job: the worker runs the
+# migrations and the brain daemon seeds the core settings when the stack comes up.
 #
 # After running this, you can:
 #   - Start the full stack: docker compose -f docker-compose.local.yml up -d
@@ -41,7 +45,7 @@ command -v docker >/dev/null 2>&1 || fail "Docker not found. Install: https://do
 command -v node >/dev/null 2>&1 || fail "Node.js not found. Install: https://nodejs.org (v22+)"
 command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || fail "Python not found. Install: https://python.org (3.12+)"
 command -v ollama >/dev/null 2>&1 || warn "Ollama not found. Install: https://ollama.com — needed for local LLM inference"
-command -v psql >/dev/null 2>&1 || warn "psql (postgresql-client) not found — the settings-seed step will be skipped. The worker container runs migrations regardless, but you will miss the seeded defaults in app_settings. Install postgresql-client to fix."
+command -v psql >/dev/null 2>&1 || warn "psql (postgresql-client) not found — the database connectivity check will be skipped. That is non-critical: the worker container runs migrations regardless. Install postgresql-client to run the check."
 command -v openssl >/dev/null 2>&1 || warn "openssl not found — will fall back to python3 for secret generation"
 
 ok "Prerequisites found"
@@ -147,6 +151,12 @@ ok "Dependencies installed"
 # ============================================================
 # 5. Verify database connectivity
 # ============================================================
+# Read-only on purpose. This script never creates or seeds app_settings: the
+# worker's migrations create it, and the brain daemon seeds the free-tier core
+# settings on first boot (poindexter/brain/seed_loader.py). A copy made here runs
+# before either exists, so it wins the first-writer race with whatever it
+# carries, and a table it creates narrower than the baseline's crashed the
+# worker's migration (poindexter#1097).
 info "Verifying database connectivity..."
 if PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p "${POSTGRES_HOST_PORT:-5433}" -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "SELECT 1" >/dev/null 2>&1; then
     ok "Database reachable (migrations will run automatically when the worker starts)"
@@ -156,78 +166,7 @@ else
 fi
 
 # ============================================================
-# 6. Seed default settings
-# ============================================================
-info "Seeding default app_settings..."
-
-# These are the configurable knobs — change them in the DB, not in code
-PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p "${POSTGRES_HOST_PORT:-5433}" -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "
-CREATE TABLE IF NOT EXISTS app_settings (
-    id SERIAL PRIMARY KEY,
-    key VARCHAR(255) UNIQUE NOT NULL,
-    value TEXT DEFAULT '',
-    category VARCHAR(100) DEFAULT 'general',
-    description TEXT DEFAULT '',
-    is_secret BOOLEAN DEFAULT false,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-INSERT INTO app_settings (key, value, category, description, is_secret) VALUES
--- Site identity (CHANGE THESE)
-('site_name', 'My Content Site', 'site', 'Your site/brand name', false),
-('site_domain', 'localhost:3000', 'site', 'Production domain (e.g. example.com)', false),
-('site_description', 'AI-powered content platform', 'site', 'Site meta description', false),
-('api_base_url', 'http://localhost:8000', 'site', 'Backend API URL', false),
-
--- Quality thresholds
-('qa_overall_score_threshold', '70', 'quality', 'Minimum quality score to pass QA (0-100)', false),
-('qa_final_score_threshold', '70', 'quality', 'Multi-model QA approval threshold', false),
-('qa_critical_dimension_floor', '50', 'quality', 'Minimum score on any single dimension', false),
-('qa_validator_weight', '0.4', 'quality', 'Weight for programmatic validator', false),
-('qa_critic_weight', '0.6', 'quality', 'Weight for LLM critic', false),
-('content_validator_warning_reject_threshold', '3', 'quality', 'Promote validator warnings to critical when any single rule exceeds this count (GH-91)', false),
-('content_validator_warning_qa_penalty', '3', 'quality', 'Points subtracted from final QA score per validator warning (GH-91)', false),
-
--- Model selections — defaults match what Ollama models are auto-pulled
--- below. Override these in app_settings (or via the API) once you've
--- pulled a larger writer/critic model. See README for upgrade options.
-('pipeline_writer_model', 'ollama/qwen3:8b', 'models', 'Content generation model', false),
-('pipeline_critic_model', 'ollama/gemma3:27b', 'models', 'QA/review model', false),
-('pipeline_seo_model', 'ollama/qwen3:8b', 'models', 'SEO metadata model', false),
-('pipeline_fallback_model', 'ollama/gemma3:27b', 'models', 'Fallback when primary unavailable', false),
-
--- Token limits
-('qa_thinking_model_max_tokens', '8000', 'tokens', 'Max tokens for thinking models in QA', false),
-('qa_standard_max_tokens', '1500', 'tokens', 'Max tokens for standard models in QA', false),
-('qa_temperature', '0.3', 'tokens', 'Temperature for QA reviews', false),
-('content_temperature', '0.7', 'tokens', 'Temperature for content generation', false),
-('max_tokens_default', '800', 'tokens', 'Default max tokens', false),
-
--- Content rules
-('content_min_word_count', '800', 'content', 'Minimum word count for posts', false),
-('content_target_word_count', '1500', 'content', 'Target word count', false),
-('content_max_refinement_attempts', '3', 'content', 'Max quality refinement attempts', false),
-
--- Cost limits
-('daily_spend_limit_usd', '2.0', 'cost', 'Max daily cloud API spend (USD; read by services/cost_guard.py)', false),
-('monthly_spend_limit_usd', '10.0', 'cost', 'Max monthly cloud API spend (USD; read by services/cost_guard.py)', false),
-('cost_alert_threshold_pct', '80', 'cost', 'Alert when spend exceeds this %', false),
-('ollama_electricity_cost_per_1k_tokens', '0.000256', 'cost', 'Ollama electricity cost per 1K tokens', false),
-
--- Pipeline config
-('max_task_retries', '3', 'pipeline', 'Max retry attempts for failed tasks', false),
-('stale_task_timeout_minutes', '60', 'pipeline', 'Minutes before stale task reset', false),
-('task_sweep_interval_seconds', '300', 'pipeline', 'Seconds between stale task sweeps', false),
-
--- Image config
-('enable_featured_image', 'true', 'image', 'Generate/search featured images', false),
-('image_primary_source', 'pexels', 'image', 'Image source: pexels or ai_generation', false)
-ON CONFLICT (key) DO NOTHING;
-" 2>/dev/null && ok "Default settings seeded" || warn "Settings seed skipped (table may not exist yet — will be created on first backend start)"
-
-# ============================================================
-# 7. Detect hardware and recommend models
+# 6. Detect hardware and recommend models
 # ============================================================
 info "Detecting hardware..."
 if command -v python3 >/dev/null 2>&1; then
@@ -239,7 +178,7 @@ else
 fi
 
 # ============================================================
-# 8. Pull Ollama models (based on hardware detection)
+# 7. Pull Ollama models (based on hardware detection)
 # ============================================================
 if command -v ollama >/dev/null 2>&1; then
     # Check Ollama is actually running
