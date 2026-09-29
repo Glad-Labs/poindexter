@@ -263,7 +263,7 @@ ragas = { version = ">=0.2,<0.5", optional = true }
 # #840 is the open follow-up that actually lifts the pin).
 langchain-community = { version = ">=0.4,<0.4.2", optional = true }
 langchain-ollama = { version = "^1.1.0", optional = true }
-llama-index-core = { version = "^0.14.24", optional = true }
+llama-index-core = { version = "^0.14.25", optional = true }
 llama-index-embeddings-ollama = { version = "^0.10.0", optional = true }
 # Cross-encoder reranker for the LlamaIndex rag_engine Phase C wrapper
 # (services/rag_engine.py::_build_rerank_retriever_class). The warmup
