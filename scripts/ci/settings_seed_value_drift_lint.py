@@ -13,8 +13,9 @@ poindexter#819 named and did not close:
 Why it matters
 ==============
 
-Three files seed ``app_settings``, all with ``INSERT ... ON CONFLICT (key) DO
-NOTHING``. First writer wins, so a disagreement means the loser's value is
+Three files seed ``app_settings``. The baseline and ``settings_defaults`` insert
+with ``ON CONFLICT (key) DO NOTHING``, and the brain seed also refills any
+empty value. First writer wins, so a disagreement means the loser's value is
 simply unreachable -- and which one loses depends on the install path:
 
   * ``docker compose up`` on an empty DB -> the brain daemon seeds first
@@ -25,7 +26,8 @@ simply unreachable -- and which one loses depends on the install path:
     baseline failed on its first index over a missing one, and the worker
     restart-looped (poindexter#1097).
   * ``poindexter setup`` -> migrations + ``seed_all_defaults`` run before any
-    container, so **baseline > settings_defaults** and the brain seed no-ops.
+    container, so **baseline > settings_defaults**. The brain seed does not
+    no-op when the stack then comes up: it still refills every empty value.
 
 That made fresh-install values nondeterministic by container topology. This
 guard makes the sources agree, so the precedence only still matters for the
@@ -112,7 +114,11 @@ TIER_POLICY: dict[str, str] = {
     # The brain seed's purpose is "minimum viable config to make the pipeline
     # runnable -- docker compose up, visit /api/health, submit a task", so it
     # ships working placeholders. The reference seed leaves identity empty for
-    # the operator to fill via `poindexter setup`.
+    # the operator to fill via `poindexter setup`. The brain refills an empty
+    # value, so these placeholders land on every install path.
+    # settings_defaults.apply_operator_overrides therefore accepts the brain's
+    # value as untuned, and test_operator_overlay pins that for every
+    # overlaid key.
     "site_name": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
     "site_url": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
     "site_domain": "brain seeds a runnable placeholder; the reference seed leaves identity empty",

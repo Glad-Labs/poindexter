@@ -639,8 +639,10 @@ stack#3928, which halted every Stage-2 video render 2026-09-22). Pattern:
 
 **But three sources seed `app_settings`, and they must agree.** `DEFAULTS` is
 NOT the only seed home: `0000_baseline.seeds.sql` seeds 673 non-secret keys
-and `poindexter/brain/seed_app_settings.json` seeds 80. All three use `ON CONFLICT DO
-NOTHING`, so **first writer wins**, and the order varies by install path:
+and `poindexter/brain/seed_app_settings.json` seeds 80. The baseline and `DEFAULTS` use
+`ON CONFLICT DO NOTHING`, so **first writer wins**. The brain seed runs on every
+brain boot and also refills any **empty** value (`seed_loader` reads `''` as
+unconfigured). The order varies by install path:
 
 - `docker compose up` on an empty DB → the brain daemon seeds first (`worker`
   declares `depends_on: brain-daemon: service_healthy`, and `seed_loader`
@@ -661,7 +663,9 @@ NOTHING`, so **first writer wins**, and the order varies by install path:
   migrations-first run, object for object.
 - `poindexter setup` → migrations + `seed_all_defaults` run before any
   container, so **baseline > `DEFAULTS`**, and the brain seed only fills keys
-  still missing or empty.
+  still missing or empty. That still matters: once the stack comes up, the
+  identity keys the reference seed leaves empty (`site_name`, `company_name`,
+  `site_url`, …) hold the brain's runnable placeholders on this path too.
 
 Consequence: for the ~332 keys the baseline **also** seeds, `DEFAULTS` is
 unreachable on a fresh install unless it matches the baseline. So a key the
@@ -676,6 +680,13 @@ the baseline only, so `image_generation_model` (seeded by `DEFAULTS` and the
 brain, not the baseline) started `poindexter setup` installs on `'image_gen'`,
 which is no model the image-gen server knows. A NEW key that no other source
 seeds is `DEFAULTS`-only and unaffected by this.
+
+The operator overlay (`settings_defaults.apply_operator_overrides`) overwrites a
+row only while it holds a seeded value. So its guard accepts the brain's value
+as well as `DEFAULTS[key]`. Before 2026-09-28 it accepted `DEFAULTS[key]` alone,
+and a fresh operator install kept "My Company" / "My Content Site".
+`tests/unit/services/test_operator_overlay.py` derives both values from the seed
+files.
 
 Read [`docs/operations/migrations.md`](docs/operations/migrations.md)
 for the convention. Verify against a fresh DB with

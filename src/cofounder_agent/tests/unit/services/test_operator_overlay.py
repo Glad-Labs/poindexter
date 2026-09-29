@@ -2,10 +2,11 @@
 
 ``apply_operator_overrides`` re-pins the operator's custom local models,
 personal settings, AND branded niches over the public OSS defaults on a fresh
-install / settings reset, but only when a row still holds the OSS default (so
-live ``poindexter settings set`` tuning and hand-edited niche prompts survive
-a reboot). On OSS installs the private ``services.operator_overrides`` module
-is absent and the overlay is a no-op.
+install / settings reset, but only when a row still holds a seeded value — the
+OSS default, or the brain daemon's free-tier seed value — so live
+``poindexter settings set`` tuning and hand-edited niche prompts survive a
+reboot. On OSS installs the private ``services.operator_overrides`` module is
+absent and the overlay is a no-op.
 
 Settings restore via a conditional UPSERT on ``app_settings``; niches restore
 via a conditional UPDATE on ``niches`` guarded by the OSS-default
@@ -14,6 +15,8 @@ via a conditional UPDATE on ``niches`` guarded by the OSS-default
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 import sys
 from pathlib import Path
@@ -31,6 +34,10 @@ from poindexter.services.settings_defaults import (
 
 _BASELINE_SEEDS = (
     Path(_sd.__file__).resolve().parent / "migrations" / "0000_baseline.seeds.sql"
+)
+# The brain daemon's free-tier seed: poindexter/brain/seed_app_settings.json.
+_BRAIN_SEED = (
+    Path(_sd.__file__).resolve().parents[1] / "brain" / "seed_app_settings.json"
 )
 _SEED_KV_RE = re.compile(r"VALUES\s*\(\s*'((?:[^']|'')*)'\s*,\s*'((?:[^']|'')*)'")
 
@@ -51,6 +58,13 @@ def _baseline_seed_map() -> dict[str, str]:
         k.replace("''", "'"): v.replace("''", "'")
         for k, v in _SEED_KV_RE.findall(text)
     }
+
+
+def _brain_seed_map() -> dict[str, str]:
+    """key -> value for every row of the brain's seed, read straight from the
+    JSON rather than through ``seed_loader``, the reader the overlay uses."""
+    data = json.loads(_BRAIN_SEED.read_text(encoding="utf-8"))
+    return {row["key"]: str(row["value"]) for row in data["settings"]}
 
 
 def _baseline_niche_map() -> dict[str, dict[str, str]]:
@@ -80,16 +94,39 @@ def _all_overrides(oo):
     return {**oo.OPERATOR_MODEL_PINS, **oo.OPERATOR_SETTING_OVERRIDES}
 
 
+async def _guard_values_by_key() -> dict[str, list[str]]:
+    """key -> the seeded values ``apply_operator_overrides`` binds as the
+    conditional UPSERT's guard (``$4``). Every row is reported as tuned, so
+    nothing counts as applied; only the binds matter here."""
+    calls = []
+
+    def _fetchval(query, *args):
+        calls.append((query, args))
+        return None
+
+    pool, _conn = _mock_pool(fetchval_side_effect=_fetchval)
+    await apply_operator_overrides(pool)
+    return {
+        args[0]: list(args[3]) for query, args in calls if "INSERT INTO app_settings" in query
+    }
+
+
 @pytest.mark.asyncio
 async def test_apply_is_noop_when_overlay_absent(monkeypatch):
-    """OSS install: importing the private overlay fails -> no DB writes."""
+    """OSS install: importing the private overlay fails -> no DB writes, and
+    the brain seed is never read."""
+    from poindexter.brain import seed_loader
+
     monkeypatch.setitem(sys.modules, "poindexter.services.operator_overrides", None)
+    read_seed = MagicMock(side_effect=AssertionError("OSS install read the brain seed"))
+    monkeypatch.setattr(seed_loader, "load_seed_file", read_seed)
     pool, conn = _mock_pool(fetchval_side_effect=lambda *a, **k: None)
 
     applied = await apply_operator_overrides(pool)
 
     assert applied == 0
     conn.fetchval.assert_not_awaited()
+    read_seed.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -98,13 +135,14 @@ async def test_apply_is_noop_for_none_pool():
 
 
 @pytest.mark.asyncio
-async def test_apply_compares_against_oss_default_and_counts_changes():
+async def test_apply_compares_against_seeded_values_and_counts_changes():
     """Overlay present: each setting issues a conditional UPSERT keyed on the
-    OSS default, each niche a conditional UPDATE, and only rows that actually
-    changed are counted."""
+    values the seeders write, each niche a conditional UPDATE, and only rows
+    that actually changed are counted."""
     oo = pytest.importorskip("poindexter.services.operator_overrides")
     overrides = _all_overrides(oo)
     niche_entries = oo.OPERATOR_NICHE_OVERRIDES
+    brain = _brain_seed_map()
 
     calls = []
 
@@ -128,9 +166,14 @@ async def test_apply_compares_against_oss_default_and_counts_changes():
     # CRUD state, never overlay-seeded (test_apply_does_not_seed_remediation_rules).
     assert not [q for q, _ in calls if "remediation_rules" in q]
     assert len(calls) == len(setting_calls) + len(niche_calls)
-    for _query, (key, value, _desc, oss_default, category) in setting_calls:
-        # The overlay only overwrites the public OSS default for that key...
-        assert oss_default == DEFAULTS.get(key)
+    for query, (key, value, _desc, seeded_values, category) in setting_calls:
+        # The overlay only overwrites a row still holding a seeded value: the
+        # public OSS default first, plus the brain seed's value where it
+        # differs. It accepts nothing else, so a value tuned at runtime is never
+        # clobbered...
+        assert "WHERE app_settings.value = ANY($4::text[])" in query
+        assert seeded_values[0] == DEFAULTS.get(key)
+        assert set(seeded_values) <= {DEFAULTS.get(key), brain.get(key)}
         # ...with the operator's private value.
         assert value == overrides[key]
         # ...and stamps the resolver's canonical category (bound as $5).
@@ -248,22 +291,72 @@ def test_overrides_differ_from_oss_default():
     )
 
 
-def test_overlaid_keys_seed_matches_defaults():
-    """The overlay overwrites a row only WHERE it still equals ``DEFAULTS[key]``,
-    so the value ``0000_baseline.seeds.sql`` actually seeds must equal
-    ``DEFAULTS[key]`` — otherwise the overlay silently no-ops on a fresh operator
-    install and the operator loses that value. Guards hand-transcribed seeds like
-    the multi-line voice prompt against DEFAULTS/baseline drift."""
+@pytest.mark.asyncio
+async def test_guard_accepts_every_seeded_value_on_both_install_paths():
+    """The overlay overwrites a row only while it still holds a seeded value,
+    so its guard must accept whatever value each seeder writes for an overlaid
+    key. Which seeder writes first depends on the install path:
+
+    * ``poindexter setup`` applies ``0000_baseline.seeds.sql`` through the
+      migrations, then ``DEFAULTS`` through ``seed_all_defaults``.
+    * ``docker compose up`` boots the brain daemon before the worker
+      (``depends_on: brain-daemon: service_healthy``). On an empty DB the
+      brain's free-tier seed is the first writer. After ``poindexter setup``
+      the brain still refills every empty value, and the reference seed leaves
+      ``site_name`` / ``company_name`` empty.
+
+    Until 2026-09-28 the guard accepted ``DEFAULTS[key]`` alone, so both keys
+    kept the brain's 'My Content Site' / 'My Company' placeholders on a fresh
+    operator install. This test reads the seeded values from the three files,
+    and the key set comes from the overlay itself, so neither is hand-listed.
+    A miss means the operator's value is silently lost on that path. The
+    usual causes are a baseline value that drifted from ``DEFAULTS`` (set the
+    same value in both) or an overlaid key missing from ``DEFAULTS``, which
+    the overlay skips."""
     oo = pytest.importorskip("poindexter.services.operator_overrides")
-    seeds = _baseline_seed_map()
-    drift = {
-        key: {"baseline": seeds[key], "defaults": DEFAULTS.get(key)}
-        for key in _all_overrides(oo)
-        if key in seeds and seeds[key] != DEFAULTS.get(key)
-    }
-    assert not drift, (
-        "baseline.seeds.sql and settings_defaults.DEFAULTS disagree on the OSS "
-        f"default for overlaid keys, so the overlay won't re-apply on reset: {drift}"
+    baseline, brain = _baseline_seed_map(), _brain_seed_map()
+    assert baseline, f"{_BASELINE_SEEDS} parsed to no app_settings rows"
+    assert brain, f"{_BRAIN_SEED} parsed to no settings rows"
+    guard = await _guard_values_by_key()
+
+    missed: dict[str, dict[str, str]] = {}
+    for key in nonempty(_all_overrides(oo), "operator overlay keys"):
+        seeded = {"settings_defaults.DEFAULTS": DEFAULTS.get(key)}
+        if key in baseline:
+            seeded["0000_baseline.seeds.sql"] = baseline[key]
+        if key in brain:
+            seeded["brain/seed_app_settings.json"] = brain[key]
+        accepted = guard.get(key, [])
+        rejected = {src: value for src, value in seeded.items() if value not in accepted}
+        if rejected:
+            missed[key] = rejected
+    assert not missed, (
+        "the operator overlay's guard rejects a value a seeder writes for these "
+        f"overlaid keys, so the operator loses them on that install path: {missed}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_unreadable_brain_seed_falls_back_to_the_oss_default_guard(
+    monkeypatch, caplog
+):
+    """A missing or broken brain seed must not cost the whole overlay. The
+    guard falls back to the OSS default alone, the pre-2026-09-28 behaviour,
+    and says so at WARNING rather than raising and skipping every override."""
+    oo = pytest.importorskip("poindexter.services.operator_overrides")
+    from poindexter.brain import seed_loader
+
+    def _unreadable():
+        raise FileNotFoundError("seed_app_settings.json not found")
+
+    monkeypatch.setattr(seed_loader, "load_seed_file", _unreadable)
+    with caplog.at_level(logging.WARNING, logger=_sd.__name__):
+        guard = await _guard_values_by_key()
+
+    assert guard == {k: [DEFAULTS[k]] for k in _all_overrides(oo) if k in DEFAULTS}
+    assert any(
+        r.levelno == logging.WARNING and "could not read the brain seed" in r.getMessage()
+        for r in caplog.records
     )
 
 

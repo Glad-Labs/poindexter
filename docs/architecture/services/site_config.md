@@ -93,15 +93,16 @@ for the current inventory, or run
 
 ### Who seeds `app_settings` (fresh install)
 
-Three sources seed the table, all with `INSERT ... ON CONFLICT (key) DO
-NOTHING` — so **first writer wins**, and which one wins depends on the install
-path:
+Three sources seed the table. The baseline and `DEFAULTS` insert with
+`ON CONFLICT (key) DO NOTHING`, so **first writer wins**. The brain seed also
+refills any empty value, since `seed_loader` reads `''` as unconfigured. Which
+one wins depends on the install path:
 
-| source                                    | keys | when                                                                                                               |
-| ----------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
-| `poindexter/brain/seed_app_settings.json` | 81   | brain daemon boot, if the table is empty or missing a `REQUIRED_KEYS` value (free-tier profile, `_meta.tier=free`) |
-| `0000_baseline.seeds.sql`                 | ~692 | migration runner, every boot                                                                                       |
-| `settings_defaults.py::DEFAULTS`          | ~734 | `seed_all_defaults`, every boot, after migrations                                                                  |
+| source                                    | keys   | when                                                                                                        |
+| ----------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
+| `poindexter/brain/seed_app_settings.json` | 80     | brain daemon, every boot: inserts missing keys, refills empty values (free-tier profile, `_meta.tier=free`) |
+| `0000_baseline.seeds.sql`                 | ~680   | migration runner, once per database: the baseline records itself, so later boots skip it                    |
+| `settings_defaults.py::DEFAULTS`          | ~1,560 | `seed_all_defaults`, every boot, after migrations                                                           |
 
 On `docker compose up` against an empty DB the brain seeds first (`worker`
 declares `depends_on: brain-daemon: service_healthy`) and creates `app_settings`
@@ -116,14 +117,22 @@ They differ only in the free-tier caps and quality bars the value-drift lint's
 `TIER_POLICY` lists (`daily_post_limit`, `qa_final_score_threshold`, …), where
 the brain's value lands first and stays, giving the precedence
 `brain > baseline > DEFAULTS`. Via `poindexter setup`, migrations plus
-`seed_all_defaults` run before any container, so the brain seed no-ops and the
-order is `baseline > DEFAULTS`. Either way, for a key the baseline also seeds,
-the `DEFAULTS` value is only reachable if it matches the baseline.
+`seed_all_defaults` run before any container, so the order is
+`baseline > DEFAULTS`. The brain seed does not no-op when the stack then comes
+up. It inserts its brain-only keys and refills every empty value, so identity
+keys the reference seed leaves empty (`site_name`, `company_name`, …) hold its
+runnable placeholders on both paths. Either way, for a key the baseline also
+seeds, the `DEFAULTS` value is only reachable if it matches the baseline.
 `settings_defaults.py` and `0000_baseline.seeds.sql` must therefore agree on
 every overlapping key; `poindexter/brain/seed_app_settings.json` may differ only via the
 declared `TIER_POLICY` allowlist. All three are held consistent by
 `scripts/ci/settings_seed_value_drift_lint.py` (in the `migrations-smoke`
 check).
+
+The operator overlay (`settings_defaults.apply_operator_overrides`, a no-op on
+OSS installs) restores the operator's values over any row still holding a
+seeded value. Its guard accepts `DEFAULTS[key]` or the brain seed's value, and
+never a value tuned at runtime.
 
 A sibling gate, `scripts/ci/settings_phantom_read_lint.py` (in `test-backend`),
 catches the mirror-image bug: a literal `app_settings` key **read** in

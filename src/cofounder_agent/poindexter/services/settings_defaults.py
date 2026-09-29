@@ -7735,6 +7735,34 @@ _OPERATOR_OVERLAY_DESC = (
 NICHE_OVERRIDE_COLUMNS: tuple[str, ...] = ("slug", "name", "writer_prompt_override")
 
 
+def _brain_seed_values() -> dict[str, str]:
+    """key -> value that the brain daemon's free-tier seed writes into app_settings.
+
+    Read through ``seed_loader.load_seed_file``, the same reader the brain uses,
+    so the overlay sees exactly the file the brain seeded from.
+
+    On failure this logs a WARNING and returns ``{}``. The overlay then
+    guards on the OSS default alone, so it still applies every override except
+    where a row holds a brain placeholder. That is the pre-2026-09-28
+    behaviour, and it beats raising, which would skip every override. The
+    seed ships inside the package beside ``seed_loader``, so a failure here
+    means a packaging regression.
+    """
+    try:
+        from poindexter.brain.seed_loader import load_seed_file
+
+        rows = load_seed_file()
+    except Exception as exc:  # noqa: BLE001 -- logged at WARNING; see docstring
+        logger.warning(
+            "operator overlay: could not read the brain seed (%s: %s) -- a row "
+            "still holding a brain free-tier placeholder will not be restored",
+            type(exc).__name__,
+            exc,
+        )
+        return {}
+    return {row["key"]: str(row["value"]) for row in rows}
+
+
 async def apply_operator_overrides(pool: Any) -> int:
     """Re-apply Glad Labs operator overrides over the public OSS defaults.
 
@@ -7747,10 +7775,17 @@ async def apply_operator_overrides(pool: Any) -> int:
     operator's branded niches (``OPERATOR_NICHE_OVERRIDES``), whose public seeds
     ship generic slug/name/prompt text.
 
-    A row is overwritten ONLY while it still holds the OSS public default —
+    A row is overwritten ONLY while it still holds a value a seeder wrote —
     i.e. a freshly-seeded or post-reset row — never a value tuned at runtime.
-    For settings the guard is ``app_settings.value = DEFAULTS[key]`` (so a key
-    absent from ``DEFAULTS`` is skipped rather than clobbered); for niches it is
+    For settings the guard is ``app_settings.value = ANY(<seeded values>)``:
+    ``DEFAULTS[key]`` (which ``0000_baseline.seeds.sql`` must match), plus the
+    brain daemon's free-tier seed value when it differs. The brain value is
+    needed because the brain boots before the worker. On an empty DB it is
+    the first writer. After ``poindexter setup`` it still refills any empty
+    value (``seed_loader``'s refill-empty rule). Either way a key like
+    ``site_name`` holds the brain's runnable placeholder, not the empty OSS
+    default, by the time this runs. A key absent from ``DEFAULTS`` is skipped
+    rather than clobbered. For niches the guard is
     ``writer_prompt_override = <the baseline-seeded prompt>`` (pinned to the
     seeds by ``test_operator_overlay.test_niche_override_expect_matches_baseline_seed``).
     So an operator reset reliably restores the operator's values, while live
@@ -7773,12 +7808,17 @@ async def apply_operator_overrides(pool: Any) -> int:
     except ImportError:  # overlay predates niche overrides
         OPERATOR_NICHE_OVERRIDES = ()
     overrides = {**OPERATOR_MODEL_PINS, **OPERATOR_SETTING_OVERRIDES}
+    brain_seed = _brain_seed_values()
     applied = 0
     async with pool.acquire() as conn:
         for key, operator_value in overrides.items():
             oss_default = DEFAULTS.get(key)
             if oss_default is None:
                 continue
+            seeded_values = [oss_default]
+            brain_value = brain_seed.get(key)
+            if brain_value is not None and brain_value != oss_default:
+                seeded_values.append(brain_value)
             applied_key = await conn.fetchval(
                 """
                 INSERT INTO app_settings
@@ -7786,13 +7826,13 @@ async def apply_operator_overrides(pool: Any) -> int:
                 VALUES ($1, $2, $5, $3, FALSE, TRUE, NOW())
                 ON CONFLICT (key) DO UPDATE
                     SET value = EXCLUDED.value, updated_at = NOW()
-                    WHERE app_settings.value = $4
+                    WHERE app_settings.value = ANY($4::text[])
                 RETURNING key
                 """,
                 key,
                 operator_value,
                 _OPERATOR_OVERLAY_DESC,
-                oss_default,
+                seeded_values,
                 resolve_category(key),
             )
             if applied_key is not None:

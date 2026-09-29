@@ -1,17 +1,22 @@
-"""seed_loader — bootstrap app_settings from the embedded core seed on first boot.
+"""seed_loader — bootstrap app_settings from the embedded core seed on every boot.
 
-When a fresh Poindexter install comes up, the brain daemon runs this before
-anything else. If the `app_settings` table is empty (or the required
-boot-critical keys aren't present), we load the core seed from
-`brain/seed_app_settings.json` using `INSERT ... ON CONFLICT DO NOTHING` so
-any human-applied edits win over the seed.
+The brain daemon runs this at startup, before anything else, and the brain
+container starts before the worker. It upserts every row of
+`brain/seed_app_settings.json`. A missing key is inserted. An empty value is
+refilled, since empty means unconfigured. A non-empty value is left alone, so
+human edits win over the seed. The refill still fires after `poindexter setup`,
+which leaves identity keys like `site_name` and `company_name` empty. Once the
+stack comes up they hold this seed's runnable placeholders.
 
 The core seed is the free-tier starter pack. The Pro tier's tuned seed
 ships through the private `poindexter-pro` repo (GitHub collaborator
 invite, glad-labs-stack#3216) and is applied by that repo's own scripts,
-never by this loader. Operator-specific model pins are applied separately by
-`settings_defaults.apply_operator_model_overrides` from the mirror-stripped
-`services/operator_overrides.py` — see `project-oss-vs-operator-model-defaults`.
+never by this loader. Operator-specific values are applied separately by
+`settings_defaults.apply_operator_overrides` from the mirror-stripped
+`services/operator_overrides.py`. That overlay reads this seed through
+`load_seed_file` and treats a row still holding this seed's value as untuned,
+so the operator's values replace the placeholders. See
+`project-oss-vs-operator-model-defaults`.
 
 This module has no external dependencies beyond asyncpg; it runs inside the
 brain container which ships asyncpg in its image.
