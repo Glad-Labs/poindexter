@@ -4,17 +4,16 @@ Unit tests for routes/task_publishing_routes.py.
 Tests cover:
 - POST /{task_id}/approve     — approve_task (happy path, reject via approved=false, 404, invalid status, invalid ID)
 - POST /{task_id}/publish     — publish_task (happy path, 404, non-approved status, invalid ID)
-- POST /{task_id}/generate-image — generate_task_image (invalid source, 404, pexels missing key,
-                                   image_gen render arguments)
+- POST /{task_id}/generate-image — retired: 410 Gone for every legacy request, Link to
+                                   regen-image / replace-image, no side effects
 - Utility function            — clean_generated_content
 
 Auth and DB are overridden via FastAPI dependency_overrides so no real I/O occurs.
 """
 
-import inspect
 import json
+import re
 import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1474,295 +1473,242 @@ class TestPublishTaskIdempotency:
         assert resp.status_code == 409
 
 
+def _parse_link_header(value: str) -> list[tuple[str, dict[str, str]]]:
+    """Split an RFC 8288 ``Link`` header into ``(target, params)`` pairs, in order.
+
+    httpx's ``Response.links`` keys its result by ``rel``, so two successors
+    sharing ``rel="successor-version"`` would collapse into one there.
+    """
+    out = []
+    for target, params in re.findall(r'<([^>]*)>((?:\s*;\s*[a-z]+="(?:[^"\\]|\\.)*")*)', value):
+        out.append((target, dict(re.findall(r'([a-z]+)="((?:[^"\\]|\\.)*)"', params))))
+    return out
+
+
 @pytest.mark.unit
-class TestGenerateTaskImage:
-    def _post_generate(self, client, task_id=VALID_TASK_ID, body=None):
-        if body is None:
-            body = {"source": "pexels", "topic": "AI Marketing"}
-        return client.post(f"/{task_id}/generate-image", json=body)
+class TestGenerateImageRetired:
+    """``POST /{task_id}/generate-image`` was retired on 2026-09-28.
 
-    def test_task_not_found_returns_404(self):
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=None)
+    It answers 410 Gone and points at the two PostEditService routes that
+    replaced its sources: ``regen-image`` for ``source=image_gen`` and
+    ``replace-image`` for ``source=pexels``. The backcompat contract is 410
+    plus a pointer to the replacement, never a 404, because a client that was
+    never updated has to learn where the work went.
+    """
 
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_generate(client)
-
-        assert resp.status_code == 404
-        assert "not found" in resp.json()["detail"]
-
-    def test_invalid_source_returns_400(self):
-        mock_db = make_mock_db()
-        task = _make_task()
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_generate(client, body={"source": "dalle", "topic": "AI"})
-
-        assert resp.status_code == 400
-        assert "Invalid image source" in resp.json()["detail"]
-
-    def test_pexels_missing_api_key_returns_error(self):
-        """When PEXELS_API_KEY is missing, the HTTPException(400) is raised inside the
-        inner try block but caught by the outer except-Exception handler which returns 500.
-        This tests the actual behavior of the code.
-        """
-        mock_db = make_mock_db()
-        task = _make_task()
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-        with patch("poindexter.routes.task_publishing_routes.os.getenv", return_value=None):
-            client = TestClient(app)
-            resp = self._post_generate(client)
-
-        # The HTTPException(400) is caught by the broad except-Exception handler
-        # and re-raised as 500 — this is a known code-level issue.
-        assert resp.status_code == 500
-
-    def test_ownership_bypass_in_solo_operator_mode(self):
-        mock_db = make_mock_db()
-        task = _make_task(user_id="someone-else")
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        resp = self._post_generate(client)
-
-        # Solo-operator: token auth bypasses ownership
-        assert resp.status_code in (200, 404, 500)
-
-    def test_pexels_success(self):
-        """Pexels happy path: API returns photos, image URL stored and returned."""
-        mock_db = make_mock_db()
-        task = _make_task()
-        mock_db.get_task = AsyncMock(return_value=task)
-        mock_db.update_task = AsyncMock(return_value=True)
-
-        pexels_response_data = {
-            "photos": [
-                {
-                    "src": {
-                        "large": "https://images.pexels.com/photos/123/large.jpg",
-                        "original": "https://images.pexels.com/photos/123/original.jpg",
-                    },
-                    "photographer": "Test Photographer",
-                }
-            ]
-        }
-
-        app = _build_app(mock_db)
-
-        # Build nested async context managers for aiohttp
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=pexels_response_data)
-
-        mock_get_ctx = MagicMock()
-        mock_get_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_get_ctx.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=mock_get_ctx)
-
-        mock_session_cls = MagicMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch("poindexter.routes.task_publishing_routes.os.getenv", return_value="test-pexels-key"),
-            patch("aiohttp.ClientSession", mock_session_cls),
-        ):
-            client = TestClient(app)
-            resp = self._post_generate(client)
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["source"] == "pexels"
-        assert "image_url" in data
-        assert data["image_url"] == "https://images.pexels.com/photos/123/large.jpg"
-        mock_db.update_task.assert_called()
-
-    def test_pexels_rate_limit_returns_error(self):
-        """Pexels 429 response: the HTTPException(429) is raised inside the inner try
-        but caught by the outer except-Exception handler, resulting in 500.
-        """
-        mock_db = make_mock_db()
-        task = _make_task()
-        mock_db.get_task = AsyncMock(return_value=task)
-
-        app = _build_app(mock_db)
-
-        mock_resp = MagicMock()
-        mock_resp.status = 429
-
-        mock_get_ctx = MagicMock()
-        mock_get_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_get_ctx.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=mock_get_ctx)
-
-        mock_session_cls = MagicMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch("poindexter.routes.task_publishing_routes.os.getenv", return_value="test-key"),
-            patch("aiohttp.ClientSession", mock_session_cls),
-        ):
-            client = TestClient(app)
-            resp = self._post_generate(client)
-
-        # The HTTPException(429) is caught by the broad except-Exception and re-raised as 500
-        assert resp.status_code == 500
-
-    def test_default_request_body(self):
-        """Endpoint accepts minimal request body with defaults."""
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=None)
-
-        app = _build_app(mock_db)
-        client = TestClient(app)
-        # Send empty body — defaults to source="pexels", page=1
-        resp = client.post(f"/{VALID_TASK_ID}/generate-image", json={})
-
-        # Should get 404 (task not found) rather than validation error
-        assert resp.status_code == 404
-
-    def test_pexels_key_read_via_get_secret(self):
-        """Regression: pexels_api_key is stored as a secret (is_secret=true) and
-        excluded from the SiteConfig in-memory cache. The route must use get_secret()
-        so it hits the DB, not get() which always returns None for secret keys.
-
-        A SiteConfig where get() returns empty but get_secret() returns the key
-        reproduces the pre-fix failure mode: using get() means no key → 400/500;
-        using get_secret() means the key is found → Pexels call proceeds."""
-        mock_db = make_mock_db()
-        task = _make_task()
-        mock_db.get_task = AsyncMock(return_value=task)
-        mock_db.update_task = AsyncMock(return_value=True)
-
-        app = _build_app(mock_db)
-
-        class _SecretAwareCfg:
-            """Simulates a SiteConfig where pexels_api_key is a secret (not in cache)."""
-
-            def get(self, key, default=""):
-                return default  # secret excluded from in-memory cache
-
-            async def get_secret(self, key, default=""):
-                return "fake-pexels-key" if key == "pexels_api_key" else default
-
-        from poindexter.utils.route_utils import get_site_config_dependency
-
-        app.dependency_overrides[get_site_config_dependency] = lambda: _SecretAwareCfg()
-
-        pexels_data = {"photos": [{"src": {"large": "https://img.px.com/1.jpg", "original": "..."}, "photographer": "X"}]}
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=pexels_data)
-        mock_get_ctx = MagicMock()
-        mock_get_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_get_ctx.__aexit__ = AsyncMock(return_value=None)
-        mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=mock_get_ctx)
-        mock_session_cls = MagicMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("aiohttp.ClientSession", mock_session_cls):
-            client = TestClient(app)
-            resp = self._post_generate(client)
-
-        assert resp.status_code == 200, (
-            "get_secret() should find the pexels key even when get() returns empty"
-        )
-
-    def _post_image_gen(self, monkeypatch, tmp_path, body):
-        """POST an image_gen request through a stand-in renderer.
-
-        Returns the response and the renderer call's arguments, bound to
-        ``ImageService.generate_image_result``'s real signature. The stand-in
-        is autospec'd, so a call that signature would reject fails here too,
-        and an argument passed positionally binds as surely as a keyword.
-        HOME points at ``tmp_path`` because the route writes its preview file
-        under ``~/Downloads``.
-        """
-        from poindexter.services.image_service import ImageGenOutcome, ImageService
-        from poindexter.services.site_config import SiteConfig
-        from poindexter.utils.route_utils import get_site_config_dependency
-
-        async def render(_self, prompt, output_path, *args, **kwargs):
-            Path(output_path).write_bytes(b"\x89PNG not really")
-            return ImageGenOutcome(True)
-
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        mock_db = make_mock_db()
-        mock_db.get_task = AsyncMock(return_value=_make_task(topic="AI Trends"))
-        mock_db.update_task = AsyncMock(return_value=True)
-        app = _build_app(mock_db)
-        app.dependency_overrides[get_site_config_dependency] = (
-            lambda: SiteConfig(initial_config={})
-        )
-
-        with patch.object(
-            ImageService, "generate_image_result", autospec=True, side_effect=render,
-        ) as generate:
-            resp = TestClient(app).post(f"/{VALID_TASK_ID}/generate-image", json=body)
-
-        assert resp.status_code == 200, resp.text
-        assert generate.call_count == 1
-        bound = inspect.signature(ImageService.generate_image_result).bind(
-            *generate.call_args.args, **generate.call_args.kwargs,
-        )
-        bound.apply_defaults()
-        return resp, bound.arguments
-
-    def test_image_gen_leaves_steps_and_guidance_to_the_image_gen_server(
-        self, monkeypatch, tmp_path,
-    ):
-        """The route sent 50 steps / CFG 7.5, Stable Diffusion XL base values
-        that outlived the move to z_image_turbo, which is distilled to run in
-        9 steps at CFG 0. Every pipeline render path sends neither and lets
-        the image-gen server's per-model registry decide. This operator
-        surface must do the same."""
-        resp, args = self._post_image_gen(
-            monkeypatch, tmp_path, {"source": "image_gen", "topic": "AI Marketing"},
-        )
-
-        assert args["num_inference_steps"] is None
-        assert args["guidance_scale"] is None
-        assert args["task_id"] == VALID_TASK_ID
-        assert resp.json()["image_url"].startswith(str(tmp_path))
+    _URL = f"/{VALID_TASK_ID}/generate-image"
 
     @pytest.mark.parametrize(
-        "body, prompt",
+        "body",
         [
+            pytest.param(None, id="no-body"),
+            pytest.param({}, id="empty-body-was-the-pexels-default"),
+            pytest.param({"source": "pexels", "topic": "AI Marketing", "page": 2}, id="pexels"),
             pytest.param(
-                {"source": "image_gen", "topic": "AI Marketing"}, "AI Marketing",
-                id="request-topic",
+                {
+                    "source": "image_gen",
+                    "topic": "AI Marketing",
+                    "content_summary": "How AI is changing marketing",
+                },
+                id="image_gen",
             ),
-            pytest.param({"source": "image_gen"}, "AI Trends", id="task-topic"),
-            pytest.param(
-                {"source": "image_gen", "content_summary": "How AI is changing marketing"},
-                "AI Trends: How AI is changing marketing",
-                id="task-topic-with-summary",
-            ),
+            pytest.param({"source": "dalle"}, id="unknown-source-was-a-400"),
+            pytest.param({"source": ["x"], "page": "two"}, id="bad-types-were-a-422"),
         ],
     )
-    def test_image_gen_prompt_uses_the_request_topic_else_the_tasks(
-        self, monkeypatch, tmp_path, body, prompt,
-    ):
-        """``topic`` is optional in the request body. The pexels branch falls
-        back to the task's topic. This branch formatted the missing value
-        instead and rendered an image of the word "None"."""
-        _, args = self._post_image_gen(monkeypatch, tmp_path, body)
+    def test_every_legacy_request_gets_410_not_404_or_422(self, body):
+        """Whatever the old client sends, and whether or not the task exists,
+        the answer is the same 410. get_task returning None would have been a
+        404 before, and the malformed bodies a 400 or 422."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        client = TestClient(_build_app(mock_db))
 
-        assert args["prompt"] == prompt
+        resp = client.post(self._URL) if body is None else client.post(self._URL, json=body)
+
+        assert resp.status_code == 410, resp.text
+        assert resp.json()["retired"] is True
+
+    def test_the_410_reads_no_task_renders_nothing_and_writes_nothing(
+        self, monkeypatch, tmp_path,
+    ):
+        """The old route read the task, rendered into ~/Downloads (or called
+        Pexels), then wrote the result back twice. The stub must do none of
+        it."""
+        from poindexter.services.image_service import ImageService
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+        mock_db.update_task = AsyncMock(return_value=True)
+        client = TestClient(_build_app(mock_db))
+
+        with (
+            patch.object(ImageService, "generate_image_result", autospec=True) as render,
+            patch("aiohttp.ClientSession") as pexels_session,
+        ):
+            for source in ("image_gen", "pexels"):
+                resp = client.post(self._URL, json={"source": source, "topic": "AI"})
+                assert resp.status_code == 410, resp.text
+
+        mock_db.get_task.assert_not_awaited()
+        mock_db.update_task.assert_not_awaited()
+        render.assert_not_called()
+        pexels_session.assert_not_called()
+        assert not (tmp_path / "Downloads").exists()
+
+    def test_headers_mark_it_deprecated_and_link_both_successors(self):
+        resp = TestClient(_build_app()).post(self._URL, json={"source": "image_gen"})
+
+        assert resp.headers["Deprecation"] == "true"
+        assert resp.headers["Warning"].startswith('299 - "')
+        assert "generate-image is retired" in resp.headers["Warning"]
+        assert _parse_link_header(resp.headers["Link"]) == [
+            (
+                f"/{VALID_TASK_ID}/regen-image",
+                {"rel": "successor-version", "title": "source=image_gen"},
+            ),
+            (
+                f"/{VALID_TASK_ID}/replace-image",
+                {"rel": "successor-version", "title": "source=pexels"},
+            ),
+        ]
+
+    def test_body_names_each_successor_with_its_cli_and_mcp_spelling(self):
+        body = TestClient(_build_app()).post(self._URL, json={}).json()
+
+        assert body["error_code"] == "GONE"
+        assert "regen-image" in body["message"]
+        assert "replace-image" in body["message"]
+        assert body["detail"] == body["message"]
+        assert body["successors"] == [
+            {
+                "method": "POST",
+                "href": f"/{VALID_TASK_ID}/regen-image",
+                "replaces": "source=image_gen",
+                "cli": (
+                    f"poindexter tasks regen-image {VALID_TASK_ID} "
+                    '--which featured --prompt "<prompt>"'
+                ),
+                "mcp_tool": "regen_post_image",
+            },
+            {
+                "method": "POST",
+                "href": f"/{VALID_TASK_ID}/replace-image",
+                "replaces": "source=pexels",
+                "cli": (
+                    f"poindexter tasks replace-image {VALID_TASK_ID} "
+                    "--which featured --url <image-url>"
+                ),
+                "mcp_tool": "replace_post_image",
+            },
+        ]
+
+    def test_the_app_error_machinery_passes_the_410_through_intact(self):
+        """In production the app registers its own exception handlers and the
+        request-id middleware. The HTTPException handler rebuilds a response
+        from scratch and drops the exception's headers, which is why the stub
+        returns its 410 instead of raising it. Through that machinery the
+        response keeps its Link and speaks the app's error envelope, with the
+        request ID the middleware assigned."""
+        from middleware.request_id import RequestIDMiddleware
+        from poindexter.utils.exception_handlers import register_exception_handlers
+
+        app = FastAPI()
+        register_exception_handlers(app)
+        app.add_middleware(RequestIDMiddleware)
+        app.include_router(publishing_router, prefix="/api/tasks")
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+
+        resp = TestClient(app).post(
+            f"/api/tasks{self._URL}", json={}, headers={"X-Request-ID": "probe-123"},
+        )
+
+        assert resp.status_code == 410, resp.text
+        assert resp.headers["X-Request-ID"] == "probe-123"
+        body = resp.json()
+        assert body["error_code"] == "GONE"
+        assert body["request_id"] == "probe-123"
+        assert body["retired"] is True
+        assert [target for target, _ in _parse_link_header(resp.headers["Link"])] == [
+            f"/api/tasks/{VALID_TASK_ID}/regen-image",
+            f"/api/tasks/{VALID_TASK_ID}/replace-image",
+        ]
+
+    def test_links_follow_the_prefix_the_router_is_mounted_under(self):
+        """The hrefs come from url_for, not a hardcoded prefix. In the app the
+        router sits under /api/tasks, and the Link has to say so."""
+        app = FastAPI()
+        app.include_router(publishing_router, prefix="/api/tasks")
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+
+        resp = TestClient(app).post(f"/api/tasks{self._URL}", json={})
+
+        assert resp.status_code == 410, resp.text
+        assert [target for target, _ in _parse_link_header(resp.headers["Link"])] == [
+            f"/api/tasks/{VALID_TASK_ID}/regen-image",
+            f"/api/tasks/{VALID_TASK_ID}/replace-image",
+        ]
+
+    def test_the_successors_it_names_are_live_routes(self, monkeypatch):
+        """Follow the pointers: each Link target must reach its PostEditService
+        handler. If either route is renamed or removed, url_for raises and the
+        410 itself fails here, so the pointer cannot dangle."""
+        calls: dict = {}
+        client = TestDraftEditingRoutes()._client_with_fake_service(monkeypatch, calls)
+
+        gone = client.post(self._URL, json={"source": "image_gen"})
+        assert gone.status_code == 410, gone.text
+        (regen_href, _), (replace_href, _) = _parse_link_header(gone.headers["Link"])
+
+        regen = client.post(
+            regen_href, json={"which": "featured", "prompt": "a teal server rack"},
+        )
+        assert regen.status_code == 200, regen.text
+        assert calls["regen_image"] == (
+            VALID_TASK_ID, {"which": "featured", "prompt": "a teal server rack"},
+        )
+
+        replace = client.post(
+            replace_href, json={"which": "featured", "url": "https://images.example/1.jpg"},
+        )
+        assert replace.status_code == 200, replace.text
+        assert calls["replace_image"] == (
+            VALID_TASK_ID, {"which": "featured", "url": "https://images.example/1.jpg"},
+        )
+
+    def test_a_crafted_task_id_cannot_inject_a_header(self):
+        """The path parameter arrives decoded, so %0D%0A in the URL is a real
+        CR/LF by the time the handler sees it. It must reach the Link header
+        percent-encoded, not as a line break."""
+        resp = TestClient(_build_app()).post("/abc%0D%0AX-Injected:%201/generate-image")
+
+        assert resp.status_code == 410, resp.text
+        assert "x-injected" not in {name.lower() for name in resp.headers}
+        assert [target for target, _ in _parse_link_header(resp.headers["Link"])] == [
+            "/abc%0D%0AX-Injected%3A%201/regen-image",
+            "/abc%0D%0AX-Injected%3A%201/replace-image",
+        ]
+
+    def test_it_still_requires_auth(self):
+        """Retiring the route must not open an unauthenticated surface: the
+        router-level token check still runs before the 410."""
+        app = FastAPI()
+        app.include_router(publishing_router)
+
+        resp = TestClient(app).post(self._URL, json={})
+
+        assert resp.status_code == 401
+
+    def test_openapi_marks_it_deprecated_and_documents_the_410(self):
+        operation = _build_app().openapi()["paths"]["/{task_id}/generate-image"]["post"]
+
+        assert operation["deprecated"] is True
+        assert "410" in operation["responses"]
+        assert "regen-image" in operation["summary"]
+        assert "replace-image" in operation["summary"]
+        # No request schema: an old client's body is ignored, never validated.
+        assert "requestBody" not in operation
 
 
 # ===========================================================================

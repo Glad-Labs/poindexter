@@ -1564,7 +1564,8 @@ DEFAULTS: dict[str, str] = {
     'gpu_sched_media_max_wait_s': '120',
     # Wait budget (seconds) for operator single-image renders — poindexter#914
     # P2 group 3 (services/image_service.py, behind `poindexter tasks
-    # regen-image` / `add-image` and POST /api/tasks/{id}/generate-image).
+    # regen-image` / `add-image`; POST /api/tasks/{id}/generate-image was a
+    # third caller until it was retired to a 410 on 2026-09-28).
     #
     # Unlike groups 1-2 this caller is not fail-soft in itself: a human asked
     # for the image and is holding an open HTTP request. What bounds it is the

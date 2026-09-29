@@ -103,6 +103,34 @@ in one breaking big-bang — matching the issue's "mechanical sweep" framing and
   window needed.
 - New endpoints adopt the contract from day one.
 
+### Retiring an endpoint
+
+A route that no longer works answers **410 Gone**, never a 404, through
+`utils/deprecation.py::retired_endpoint_response`. A 404 reads as a typo to
+the client that made the call and leaves an agent nothing to try next. The 410
+names where the work went:
+
+- `Deprecation: true` and a `Warning: 299` carrying the message, as for any
+  deprecated route.
+- `Link: <…>; rel="successor-version"; title="…"`, one entry per replacement,
+  in order.
+- A JSON body in the app's error envelope: `error_code: "GONE"`, `message`,
+  and a `request_id` matching `X-Request-ID`. `detail` repeats the message for
+  clients written against FastAPI's default shape. It adds `retired: true` and
+  `successors`: method, href, what each replaces, and its CLI and MCP spelling.
+
+The handler keeps its method and path, reads and writes nothing, and declares
+no request model, so an old client's body gets the 410 rather than a 422. It
+returns the response rather than raising `HTTPException(410)`, because the
+app's HTTPException handler rebuilds the response without the exception's
+headers and would drop the `Link`. Mark
+the decorator `deprecated=True`: a summary that says "Retired" without it
+fails `test_api_deprecation_contract.py`. Build each successor's href with
+`request.url_for(...)` and percent-encode anything taken from the request
+first, so a renamed successor fails the route's own test instead of leaving a
+dangling pointer. First use: `POST /api/tasks/{task_id}/generate-image`,
+retired 2026-09-28 (see [post-editing.md](../operations/post-editing.md)).
+
 ## Conformance ratchet
 
 A structural unit test (sibling to `test_operator_routers_require_auth.py`)

@@ -340,6 +340,35 @@ These five each return `{ok, field, detail, warnings, new_url}`.
 `image_source`) and applies it through `replace-image` before approving. See
 [Choosing the image when you approve](#choosing-the-image-when-you-approve).
 
+### Retired: `POST /api/tasks/{task_id}/generate-image`
+
+The image route from before `PostEditService`, retired 2026-09-28. It now
+answers **410 Gone** to every request, whatever the body and whether or not the
+task exists. It reads nothing, writes nothing, and names its replacements:
+
+| Old request                    | Use instead                                                         | CLI                                                  | MCP                  |
+| ------------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------- | -------------------- |
+| `source: image_gen`            | `POST /api/tasks/{task_id}/regen-image` `{which: featured, prompt}` | `tasks regen-image <id> --which featured --prompt …` | `regen_post_image`   |
+| `source: pexels` (the default) | `POST /api/tasks/{task_id}/replace-image` `{which: featured, url}`  | `tasks replace-image <id> --which featured --url …`  | `replace_post_image` |
+
+The 410 carries `Deprecation: true`, a `Warning: 299` with the same message,
+and a `Link` header with one `rel="successor-version"` entry per replacement,
+for the same task id. The JSON body is the API's usual error envelope
+(`error_code: "GONE"`, `message`, `request_id`, with `detail` repeating the
+message). It adds `retired: true` and `successors`: method, href, what each
+replaces, and its CLI and MCP spelling.
+
+It was retired rather than repaired because both replacements already did its
+job properly, and nothing called it: its last in-repo client (the old admin
+UI) went in March 2026. Its `image_gen` source stored a path inside the worker
+container as the featured image, and nothing uploaded the file, so a post
+published from that task could not load it. Neither source reached a post that
+was already staged or published, and neither wrote an audit row.
+`regen-image` and `replace-image` upload or set the image, reach staged and
+published posts, and are audited. There is no "pick a random stock photo" replacement.
+Choose one and pass its URL to `replace-image`, or let
+`rebuild-images --allow-stock` fall back to stock where generation fails.
+
 ## Auditability
 
 Every edit writes an `audit_log` row so the change is traceable:

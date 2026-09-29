@@ -393,8 +393,9 @@ def operator_image_wait_budget_s() -> float | None:
     """Wait budget (s) for operator single-image renders, or ``None`` for legacy.
 
     poindexter#914 P2 caller migration, group 3 — the ``ImageService``
-    generate path behind ``poindexter tasks regen-image`` / ``add-image`` /
-    ``generate-image``. Unlike groups 1-2 this caller is NOT fail-soft in
+    generate path behind ``poindexter tasks regen-image`` / ``add-image``
+    (``POST /api/tasks/{id}/generate-image`` was also one until it was
+    retired to a 410 on 2026-09-28). Unlike groups 1-2 this caller is NOT fail-soft in
     itself: a human asked for an image and is holding an open HTTP request
     for it. What bounds it is the client, not the work — the CLI/API budget
     is ``post_edit_regen_image_timeout_s`` (300s) and the render alone can

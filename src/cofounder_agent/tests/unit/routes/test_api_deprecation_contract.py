@@ -15,6 +15,10 @@ ship as a comment that no machine ever sees.
 The audit (poindexter#752 item 4) found two prose-only surfaces:
 ``PUT /{task_id}/status/validated`` and the legacy ``skip`` alias on
 ``GET /api/posts``.
+
+A route that no longer works at all is *retired*, not deprecated: it answers
+410 Gone with a pointer to its replacement (``retired_endpoint_response``,
+pinned below), and a summary that says so must be machine-deprecated too.
 """
 
 from __future__ import annotations
@@ -49,13 +53,16 @@ def _all_api_routes() -> list[tuple[str, APIRoute]]:
 
 
 def _summary_marks_deprecated(route: APIRoute) -> bool:
-    """True if the route advertises deprecation in its (human-only) summary."""
-    return "deprecated" in (route.summary or "").lower()
+    """True if the route advertises deprecation, or retirement, in its
+    (human-only) summary. A retired route is the stronger case: it answers
+    410 Gone (``utils.deprecation.retired_endpoint_response``)."""
+    summary = (route.summary or "").lower()
+    return "deprecated" in summary or "retired" in summary
 
 
 def test_prose_deprecated_routes_are_machine_deprecated() -> None:
-    """A route whose summary says DEPRECATED must also carry FastAPI
-    ``deprecated=True`` so OpenAPI / Swagger / client codegen see it."""
+    """A route whose summary says DEPRECATED or RETIRED must also carry
+    FastAPI ``deprecated=True`` so OpenAPI / Swagger / client codegen see it."""
     drifted = [
         f"{','.join(sorted(route.methods or []))} {route.path}  ({mod})"
         for mod, route in _all_api_routes()
@@ -162,3 +169,136 @@ class TestDeprecationHeaders:
             message="x", link="https://example.test/migrate"
         )
         assert headers["Link"] == '<https://example.test/migrate>; rel="deprecation"'
+
+    def test_warning_text_is_an_escaped_quoted_string(self) -> None:
+        """A quote in the message must not end the RFC 7234 warn-text early."""
+        from poindexter.utils.deprecation import deprecation_headers
+
+        headers = deprecation_headers(message='use "PUT /x" \\ not this')
+        assert headers["Warning"] == '299 - "use \\"PUT /x\\" \\\\ not this"'
+
+    def test_non_ascii_message_is_refused_up_front(self) -> None:
+        """Header values go out as latin-1, so an em-dash would otherwise blow
+        up inside the response constructor as a 500 that names nothing."""
+        from poindexter.utils.deprecation import deprecation_headers
+
+        with pytest.raises(ValueError, match="ASCII"):
+            deprecation_headers(message="deprecated — use PUT /x")
+
+
+class TestRetiredEndpointResponse:
+    """``utils.deprecation.retired_endpoint_response``: the answer for a route
+    that no longer works. 410 Gone, never a 404, with the replacement named in
+    an RFC 8288 ``Link; rel="successor-version"`` and again in the body, so a
+    client that was never updated learns where to go (the backcompat rule)."""
+
+    @staticmethod
+    def _successors():
+        from poindexter.utils.deprecation import Successor
+
+        return [
+            Successor(
+                method="POST",
+                href="/api/things/1/new",
+                replaces="mode=a",
+                cli="poindexter things new 1",
+                mcp_tool="new_thing",
+            ),
+            Successor(method="GET", href="/api/things/1/other", replaces="mode=b"),
+        ]
+
+    def test_answers_410_in_the_error_envelope_with_structured_successors(self) -> None:
+        """The body is the app's error envelope (error_code / message /
+        request_id, as utils/exception_handlers.py builds it), with ``detail``
+        repeating the message for FastAPI-shaped clients, then the successors."""
+        import json
+
+        from poindexter.utils.deprecation import retired_endpoint_response
+
+        resp = retired_endpoint_response(
+            message="POST /api/things/{id} is retired",
+            successors=self._successors(),
+            request_id="req-123",
+        )
+
+        assert resp.status_code == 410
+        assert resp.headers["X-Request-ID"] == "req-123"
+        assert json.loads(resp.body) == {
+            "error_code": "GONE",
+            "message": "POST /api/things/{id} is retired",
+            "request_id": "req-123",
+            "detail": "POST /api/things/{id} is retired",
+            "retired": True,
+            "successors": [
+                {
+                    "method": "POST",
+                    "href": "/api/things/1/new",
+                    "replaces": "mode=a",
+                    "cli": "poindexter things new 1",
+                    "mcp_tool": "new_thing",
+                },
+                {
+                    "method": "GET",
+                    "href": "/api/things/1/other",
+                    "replaces": "mode=b",
+                    "cli": None,
+                    "mcp_tool": None,
+                },
+            ],
+        }
+
+    def test_request_id_is_generated_when_none_is_given(self) -> None:
+        """Outside the request-id middleware there is no ID to reuse. A fresh
+        UUID goes in both the body and the header, as the exception handlers
+        do."""
+        import json
+        import uuid
+
+        from poindexter.utils.deprecation import retired_endpoint_response
+
+        resp = retired_endpoint_response(message="gone", successors=self._successors())
+
+        request_id = json.loads(resp.body)["request_id"]
+        assert str(uuid.UUID(request_id)) == request_id
+        assert resp.headers["X-Request-ID"] == request_id
+
+    def test_error_code_matches_the_http_exception_handlers_410(self) -> None:
+        """A retired endpoint's 410 and any HTTPException(410) must carry the
+        same error_code, or a client branching on it sees two kinds of Gone."""
+        from poindexter.utils.deprecation import RETIRED_ERROR_CODE
+        from poindexter.utils.exception_handlers import _STATUS_TO_ERROR_CODE
+
+        assert _STATUS_TO_ERROR_CODE[410] == RETIRED_ERROR_CODE
+
+    def test_headers_carry_deprecation_warning_and_ordered_successor_links(self) -> None:
+        from poindexter.utils.deprecation import retired_endpoint_response
+
+        resp = retired_endpoint_response(message="gone", successors=self._successors())
+
+        assert resp.headers["Deprecation"] == "true"
+        assert resp.headers["Warning"] == '299 - "gone"'
+        assert resp.headers["Link"] == (
+            '</api/things/1/new>; rel="successor-version"; title="mode=a", '
+            '</api/things/1/other>; rel="successor-version"; title="mode=b"'
+        )
+
+    def test_refuses_to_retire_without_a_successor(self) -> None:
+        from poindexter.utils.deprecation import retired_endpoint_response
+
+        with pytest.raises(ValueError, match="successor"):
+            retired_endpoint_response(message="gone", successors=[])
+
+    @pytest.mark.parametrize(
+        "href",
+        ["/api/a b/new", "/api/a\r\nX-Injected: 1/new", "/api/<a>/new", "/api/é/new"],
+    )
+    def test_refuses_an_href_that_is_not_percent_encoded(self, href) -> None:
+        """Whatever came from the request must be encoded before it reaches the
+        Link header, or a crafted value could break out of it."""
+        from poindexter.utils.deprecation import Successor, retired_endpoint_response
+
+        with pytest.raises(ValueError, match="percent-encoded"):
+            retired_endpoint_response(
+                message="gone",
+                successors=[Successor(method="POST", href=href, replaces="x")],
+            )

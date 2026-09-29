@@ -299,8 +299,9 @@ _MIGRATED_CALLERS = {
     "modules/content/short_hook_repair.py":
         "fail-soft refinement — original opener kept + finding",
     # P2 group 3 (poindexter#1005) — operator single-image renders behind
-    # `poindexter tasks regen-image` / `add-image` and POST
-    # /api/tasks/{id}/generate-image. NOT fail-soft in itself: a human is
+    # `poindexter tasks regen-image` / `add-image` (POST
+    # /api/tasks/{id}/generate-image was a third until it was retired to a 410
+    # on 2026-09-28). NOT fail-soft in itself: a human is
     # holding an open HTTP request, so nothing is silently skipped — a reject
     # becomes an immediate 503 naming the holder ETA, which the operator
     # retries. What makes the budget safe is that the CLIENT is already

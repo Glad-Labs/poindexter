@@ -654,7 +654,8 @@ class ImageService:
 
         **VRAM guard (poindexter#1005).** This method is the only render path
         that operator surfaces reach — ``poindexter tasks regen-image`` /
-        ``add-image`` and ``POST /api/tasks/{id}/generate-image`` — and until
+        ``add-image`` (``POST /api/tasks/{id}/generate-image`` was the third,
+        retired to a 410 on 2026-09-28) — and until
         now it POSTed straight at the image-gen server with no GPU
         coordination at all, so it raced whatever happened to be resident.
         The pipeline never had that problem: ``content.plan_image_markers``

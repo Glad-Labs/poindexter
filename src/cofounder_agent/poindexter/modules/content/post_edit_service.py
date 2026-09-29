@@ -654,8 +654,10 @@ class PostEditService:
 
     async def _sync_task_featured(self, task_id: str, url: str | None) -> None:
         """Best-effort mirror of the featured URL into ``pipeline_tasks.result`` /
-        ``task_metadata`` (matches the generate-image route). Advisory only — the
-        canonical field is ``pipeline_versions.featured_image_url``, already written."""
+        ``task_metadata``, the pair ``publish_post_from_task`` reads a featured
+        image from (the retired generate-image route wrote the same pair). Advisory
+        only — the canonical field is ``pipeline_versions.featured_image_url``,
+        already written."""
         if self._db_service is None:
             return
         import json

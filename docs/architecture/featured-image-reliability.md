@@ -24,10 +24,11 @@ node. In order:
    `z_image_turbo` (9 steps / CFG 0) and Lightning (4 / 0), it pins them
    whatever a caller sends. `sdxl_base` runs real guidance and keeps a caller's
    numbers. Every other render path follows the same rule, operator surfaces
-   included. `POST /api/tasks/{id}/generate-image` sent 50 / 7.5 until
-   2026-09-28. Those were Stable Diffusion XL base values left over from before
-   the move to Z-Image-Turbo, so a render there ran all 50 steps, ~5.5x the
-   denoise time.
+   included (`poindexter tasks regen-image` / `add-image`). The last caller that
+   broke it was `POST /api/tasks/{id}/generate-image`, which sent 50 / 7.5, Stable
+   Diffusion XL base values left over from before the move to Z-Image-Turbo, so
+   a render there ran all 50 steps, ~5.5x the denoise time. It stopped on
+   2026-09-28, and the route was retired to a 410 the same day.
 5. **Upload** — R2, then `posts.featured_image_data` carries the
    reproducibility blob (model, seed, prompt, negative prompt, dimensions).
 

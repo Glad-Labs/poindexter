@@ -98,6 +98,9 @@ _STATUS_TO_ERROR_CODE = {
     403: "FORBIDDEN",
     404: "NOT_FOUND",
     409: "CONFLICT",
+    # Same code utils/deprecation.retired_endpoint_response puts on a retired
+    # endpoint's 410, so a 410 reads the same however it was produced.
+    410: "GONE",
     422: "INVALID_STATE",
     429: "RATE_LIMITED",
     500: "INTERNAL_ERROR",

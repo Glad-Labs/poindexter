@@ -8,8 +8,9 @@ server alone knows which model is live, so it pins both numbers to the
 registry and ignores whatever the request carried.
 
 Z-Image-Turbo's steps were not pinned until 2026-09-28, and a stale caller
-showed why they have to be. ``POST /api/tasks/{id}/generate-image`` still
-sent Stable Diffusion XL base's 50 steps / CFG 7.5 from before the model
+showed why they have to be. ``POST /api/tasks/{id}/generate-image`` (since
+retired to a 410) was still sending Stable Diffusion XL base's 50 steps /
+CFG 7.5 from before the model
 moved. The server zeroed the guidance but rendered all 50 steps: about 5.5x
 the denoise time per render (median 2.79 it/s on the live card, so ~18 s
 instead of ~3 s), paid again on every OCR-gate re-roll.

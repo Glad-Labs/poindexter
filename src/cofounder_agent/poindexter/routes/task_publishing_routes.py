@@ -1,34 +1,40 @@
 """
-Task Publishing Routes - Approve, publish, and image generation.
+Task Publishing Routes - Approve, publish, and draft/post editing.
 
 Sub-router for task_routes.py. Handles:
 - POST /{task_id}/approve — Approve task for publishing
 - POST /{task_id}/publish — Publish approved task
-- POST /{task_id}/generate-image — Generate or fetch image for task
+- POST /{task_id}/edit-body, retitle, replace-image, regen-image, brand-hero,
+  remove-image, add-image, rebuild-images — PostEditService edits
+- POST /{task_id}/generate-image — retired: answers 410 Gone, pointing at
+  regen-image / replace-image
 
 NOTE: POST /{task_id}/reject lives in routes/approval_routes.py (the only
 reject handler — approval_routes registers before this sub-router).
 """
 
-import asyncio
 import json
 import os
 import re
-import uuid as uuid_lib
+import shlex
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from middleware.request_id import get_request_id
 from poindexter.modules.content.api import EditResult, PostEditService, enqueue_image_rebuild
 from poindexter.schemas.model_converter import ModelConverter
 from poindexter.schemas.unified_task_response import UnifiedTaskResponse
 from poindexter.services.database_service import DatabaseService
 from poindexter.services.image_markers import strip_unresolved_image_markers
 from poindexter.services.logger_config import get_logger
+from poindexter.utils.deprecation import Successor, retired_endpoint_response
 from poindexter.utils.json_encoder import convert_decimals, safe_json_dumps
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 from poindexter.utils.uuid_prefix import resolve_task_id_prefix
@@ -1084,399 +1090,104 @@ async def go_live(
     }
 
 
-class GenerateImageRequest(BaseModel):
-    """Request model for image generation"""
+# ============================================================================
+# RETIRED — POST /{task_id}/generate-image (410 Gone)
+# ============================================================================
+# Retired 2026-09-28. No client called it: the last one in the repo, the
+# Oversight Hub admin UI, was deleted 2026-03-27, and no request to it shows
+# in the retained access logs or request metrics. Each of its two sources had
+# become a worse copy of a PostEditService route below:
+#
+# - source=image_gen rendered into the worker's ~/Downloads and stored that
+#   in-container path as the task's featured_image_url. Nothing uploaded the
+#   file. If the task had not been staged yet, publishing copied the path into
+#   posts.featured_image_url, where no browser can fetch it. On a staged or
+#   published task the write never reached the post at all. regen-image
+#   renders under the same operator GPU lease, uploads to object storage,
+#   reaches staged and published posts and writes an audit row.
+# - source=pexels set a random stock photo with the same reach, and its
+#   recently-used list never persisted: the route's second update_task
+#   replaced stage_data.task_metadata wholesale. replace-image sets the
+#   featured image from any URL, stock photos included.
+#
+# The path answers 410 rather than 404 so a surviving client learns where to
+# go. The Link header names both successors for the same task, and the body
+# repeats them with their CLI and MCP spellings. It reads no task, calls no
+# image source and writes nothing.
 
-    source: str = "pexels"  # "pexels" or "image_gen"
-    topic: str | None = None
-    content_summary: str | None = None
-    page: int = 1  # Pagination for Pexels results (1-based)
+_GENERATE_IMAGE_RETIRED = (
+    "POST /api/tasks/{task_id}/generate-image is retired. For source=image_gen, "
+    "use POST /api/tasks/{task_id}/regen-image with {which: featured, prompt}. "
+    "For source=pexels, use POST /api/tasks/{task_id}/replace-image with "
+    "{which: featured, url}."
+)
 
 
 @publishing_router.post(
     "/{task_id}/generate-image",
-    response_model=dict,
-    summary="Generate or fetch image for task",
+    summary="Retired (410 Gone): use regen-image or replace-image",
+    deprecated=True,
+    status_code=410,
+    response_model=None,
+    response_description=(
+        "Gone. The Link header and the body's `successors` name the routes "
+        "that replace this one."
+    ),
     tags=["content"],
 )
-async def generate_task_image(
-    task_id: str,
-    request: GenerateImageRequest,
-    token: str = Depends(verify_api_token),
-    db_service: DatabaseService = Depends(get_database_dependency),
-    site_config_dep = Depends(get_site_config_dependency),
-) -> dict[str, str]:
+async def generate_task_image(task_id: str, request: Request) -> JSONResponse:
+    """Retired: answers 410 Gone, pointing at the routes that replaced it.
+
+    - `source=image_gen` moved to `POST /api/tasks/{task_id}/regen-image` with
+      `{"which": "featured", "prompt": ...}` (`poindexter tasks regen-image`,
+      MCP `regen_post_image`). It uploads the render and reaches staged and
+      published posts; this route stored a path inside the worker container.
+    - `source=pexels` moved to `POST /api/tasks/{task_id}/replace-image` with
+      `{"which": "featured", "url": ...}` (`poindexter tasks replace-image`,
+      MCP `replace_post_image`).
+
+    Any request body is accepted and ignored, so an old client gets the 410,
+    not a validation error.
     """
-    Generate or fetch an image for a task using Pexels or image-gen.
-
-    **Request Body Parameters:**
-    - source: Image source - "pexels" or "image_gen" (default: "pexels")
-    - topic: Topic for image search/generation (optional)
-    - content_summary: Summary of content for image generation (optional)
-
-    **Returns:**
-    - { "image_url": "https://..." }
-
-    **Example cURL:**
-    ```bash
-    curl -X POST http://localhost:8002/api/tasks/550e8400-e29b-41d4-a716-446655440000/generate-image \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-      -d '{
-        "source": "image_gen",
-        "topic": "AI Marketing",
-        "content_summary": "How AI is transforming marketing..."
-      }'
-    ```
-    """
-    try:
-        # Validate task exists
-        task = await db_service.get_task(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        # Ownership check
-        if isinstance(task, dict):
-            _check_task_ownership(task, token)
-
-        # Extract source from request for consistency
-        source = request.source
-        logger.info("Generating image for task %s using %s", task_id, source)
-
-        image_url = None
-
-        if source == "pexels":
-            # Use Pexels API to search for images
-            try:
-                import aiohttp
-
-                pexels_key = await site_config_dep.get_secret("pexels_api_key")
-                if not pexels_key:
-                    raise HTTPException(status_code=400, detail="Pexels API key not configured")
-
-                search_query = request.topic or task.get("topic", "business")
-                current_image_url = task.get("featured_image_url")
-                page = max(1, request.page)  # Ensure page is at least 1
-
-                logger.info("Pexels API request:")
-                logger.info("   - Query: '%s'", search_query)
-                logger.info("   - Page: %s", page)
-                logger.info("   - Per page: 50")
-                if current_image_url:
-                    logger.info("   - Current featured image: %s...", current_image_url[:80])
-                else:
-                    logger.info("   - No current image")
-
-                _pex_base = site_config_dep.get(
-                    "pexels_api_base", "https://api.pexels.com/v1",
-                ).rstrip("/")
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{_pex_base}/search",
-                        params={
-                            "query": str(search_query or ""),
-                            "per_page": 50,  # Get more results for better variety
-                            "page": page,
-                            "orientation": "landscape",
-                        },
-                        headers={"Authorization": pexels_key},
-                        timeout=10.0,  # type: ignore[arg-type]
-                    ) as resp:
-                        if resp.status == 200:
-                            try:
-                                import random
-
-                                data = await resp.json()
-                                logger.info("Pexels API response: %s OK", resp.status)
-                                logger.info("   - Response size: %s bytes", len(str(data)))
-
-                                if data.get("photos"):
-                                    photos_count = len(data.get("photos", []))
-                                    logger.info("   - Total photos in response: %s", photos_count)
-                                    # Filter out the current image URL AND recent images to get variety
-                                    # Get list of recently used image URLs from task metadata
-                                    recently_used = []
-                                    if task_metadata := task.get("task_metadata"):
-                                        if isinstance(task_metadata, dict):
-                                            recently_used = task_metadata.get(
-                                                "recent_image_urls", []
-                                            )
-                                        elif isinstance(task_metadata, str):
-                                            try:
-                                                meta = json.loads(task_metadata)
-                                                recently_used = meta.get("recent_image_urls", [])
-                                            except json.JSONDecodeError:
-                                                logger.warning(
-                                                    "[update_task_image] task_metadata is not valid JSON for task %s — skipping recent_image_urls",
-                                                    task_id,
-                                                )
-                                                recently_used = []
-
-                                    # Create comprehensive exclusion list
-                                    excluded_urls = set(recently_used) if recently_used else set()
-                                    if current_image_url:
-                                        excluded_urls.add(current_image_url)
-
-                                    logger.debug(
-                                        "Image filtering: Pexels returned %s photos, "
-                                        "currently using: %s, excluded: %s URLs",
-                                        len(data["photos"]), current_image_url, len(excluded_urls),
-                                    )
-
-                                    # Filter out any previously used images
-                                    photos = [
-                                        p
-                                        for p in data["photos"]
-                                        if p["src"]["large"] not in excluded_urls
-                                    ]
-
-                                    logger.info(
-                                        "   - After filtering: %s available photos", len(photos)
-                                    )
-
-                                    # If no new images available (rare), use the original list
-                                    if not photos:
-                                        logger.warning(
-                                            "No new images after filtering, using all %s available",
-                                            len(data["photos"]),
-                                        )
-                                        photos = data["photos"]
-
-                                    if photos:
-                                        # Randomly select instead of always picking first
-                                        photo = random.choice(photos)
-                                        image_url = photo["src"]["large"]
-                                        logger.info(
-                                            "Selected image #%s: %s", photos.index(photo) + 1, image_url
-                                        )
-                                        logger.info(
-                                            "   - Photographer: %s", photo.get("photographer", "Unknown")
-                                        )
-                                        logger.info("   - Source: %s", photo["src"]["original"])
-
-                                        # Store image URL and metadata in task for persistence
-                                        # Track this image URL in recent_image_urls for future filtering
-                                        updated_recent_urls = (
-                                            [*recently_used, image_url]
-                                            if recently_used
-                                            else [image_url]
-                                        )
-                                        # Keep only last 10 images to avoid list getting too long
-                                        updated_recent_urls = updated_recent_urls[-10:]
-
-                                        await db_service.update_task(
-                                            task_id,
-                                            {
-                                                "featured_image_url": image_url,
-                                                "task_metadata": {
-                                                    "featured_image_url": image_url,
-                                                    "featured_image_source": "pexels",
-                                                    "featured_image_photographer": photo.get(
-                                                        "photographer", "Unknown"
-                                                    ),
-                                                    "recent_image_urls": updated_recent_urls,
-                                                },
-                                            },
-                                        )
-                            except json.JSONDecodeError as je:
-                                logger.error(
-                                    "Failed to parse Pexels response JSON: %s", je, exc_info=True
-                                )
-                                raise ValueError(f"Invalid JSON from Pexels API: {je!s}") from je
-                        elif resp.status == 429:
-                            logger.warning("Pexels rate limit exceeded")
-                            raise HTTPException(
-                                status_code=429,
-                                detail="Image service rate limit exceeded. Please try again later.",
-                            )
-                        else:
-                            logger.warning("Pexels API returned %s", resp.status)
-                            raise ValueError(f"Pexels API error: HTTP {resp.status}")
-
-            except ValueError as ve:
-                logger.error("Pexels API error: %s", ve, exc_info=True)
-                raise HTTPException(
-                    status_code=500, detail="Error fetching image from Pexels"
-                ) from ve
-            except asyncio.TimeoutError as exc:
-                logger.warning("Pexels API timeout for query: %s", search_query, exc_info=True)
-                raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.") from exc
-            except Exception as e:
-                logger.error(
-                    "Unexpected error fetching from Pexels: %s: %s", type(e).__name__, e, exc_info=True
-                )
-                raise HTTPException(
-                    status_code=500, detail="Unexpected error fetching image from Pexels"
-                ) from e
-
-        elif source == "image_gen":
-            # Use image-gen server to generate an image.
-            #
-            # What the client is told on failure is decided HERE, up front, and
-            # is only ever renderer-authored text (ImageGenOutcome.message —
-            # a fixed reason vocabulary plus the image-gen server's own error
-            # body). The caught exception is never interpolated into the
-            # response: this block also raises OSError from makedirs on a path
-            # under the server's home directory, and echoing that back is the
-            # information disclosure scripts/ci/lint_http_detail_leak.py exists
-            # to stop. The exception still reaches the operator via the log.
-            #
-            # 500 unless the renderer says the GPU was merely busy, in which
-            # case 503 — "retry shortly" and "the server is broken" are
-            # different instructions and the operator acts on them differently.
-            failure_status = 500
-            failure_detail = "Image generation failed."
-            try:
-                from pathlib import Path
-
-                from poindexter.services.image_service import ImageService
-
-                image_service = ImageService(site_config=site_config_dep)
-
-                # Build generation prompt from topic and content. The topic
-                # falls back to the task's own, as the pexels search above
-                # does: request.topic is optional, and formatting a missing
-                # one rendered an image of the literal word "None".
-                topic = request.topic or task.get("topic") or ""
-                generation_prompt = topic
-                if request.content_summary:
-                    # Extract key concepts from content summary
-                    generation_prompt = f"{topic}: {request.content_summary[:200]}"
-
-                logger.info("Generating image: %s", generation_prompt)
-
-                # Save to user's Downloads folder for preview
-                downloads_path = str(Path.home() / "Downloads" / "glad-labs-generated-images")
-                os.makedirs(downloads_path, exist_ok=True)
-
-                # Create filename with UUID to prevent collisions (UUID instead of timestamp)
-                unique_id = str(uuid_lib.uuid4())[:8]
-                output_file = f"image_gen_{unique_id}.png"
-                output_path = os.path.join(downloads_path, output_file)
-
-                logger.info("Generating image to: %s", output_path)
-
-                # Generate image. Runs under gpu.lock("image_gen") inside
-                # ImageService (poindexter#1005), so the resident writer LLM is
-                # evicted first instead of this racing it into a CUDA OOM.
-                #
-                # Steps and guidance are left to the image-gen server's
-                # per-model registry, as on every pipeline render path. This
-                # call used to send 50 / 7.5, Stable Diffusion XL base values
-                # that outlived the move to z_image_turbo: the server zeroed
-                # the guidance but rendered all 50 steps on a model distilled
-                # to run in 9. #image-zimage-and-variety.
-                outcome = await image_service.generate_image_result(
-                    prompt=generation_prompt,
-                    output_path=output_path,
-                    task_id=task_id,
-                )
-
-                if outcome.ok and os.path.exists(output_path):
-                    logger.info("Image generated: %s", output_path)
-                    image_url = output_path
-                    logger.info("   Generated image saved locally for preview")
-                elif outcome.ok:
-                    raise RuntimeError(
-                        "image generation reported success but wrote no file"
-                    )
-                else:
-                    if outcome.reason == "gpu_busy":
-                        failure_status = 503
-                    failure_detail = outcome.message
-                    raise RuntimeError(outcome.message)
-
-            except asyncio.TimeoutError as exc:
-                logger.warning("Image generation timeout for task %s", task_id, exc_info=True)
-                raise HTTPException(
-                    status_code=408,
-                    detail="Image generation timeout. Please try again with 'pexels' source.",
-                ) from exc
-            except (OSError, RuntimeError, ValueError) as e:
-                logger.error(
-                    "Image generation error - %s: %s", type(e).__name__, e, exc_info=True
-                )
-                # Surface the renderer's own diagnosis (CUDA OOM, degraded
-                # server, GPU busy) — the fixed "Ensure GPU available" string
-                # gave the operator nothing to act on, and was wrong as often
-                # as not. The pexels hint stays: it is the real workaround.
-                raise HTTPException(
-                    status_code=failure_status,
-                    detail=f"{failure_detail} Or retry with the 'pexels' source.",
-                ) from e
-            except Exception as e:
-                logger.critical(
-                    "Unexpected error in image generation: %s: %s", type(e).__name__, e, exc_info=True
-                )
-                raise HTTPException(
-                    status_code=500, detail="Internal server error during image generation"
-                ) from e
-        else:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'image_gen'"
-            )
-
-        if not image_url:
-            raise HTTPException(status_code=500, detail="Failed to generate or fetch image")
-
-        # Update task metadata with generated image URL
-        task_result = task.get("result")
-
-        # Handle None, empty string, or JSON string
-        if task_result is None:
-            task_result = {}
-        elif isinstance(task_result, str):
-            try:
-                task_result = json.loads(task_result) if task_result.strip() else {}
-            except (json.JSONDecodeError, AttributeError):
-                logger.warning(
-                    "[update_task_featured_image] result is not valid JSON for task %s — defaulting to {}",
-                    task_id,
-                )
-                task_result = {}
-        elif not isinstance(task_result, dict):
-            task_result = {}
-
-        # Also update task_metadata for consistency
-        task_metadata = task.get("task_metadata", {})
-        if isinstance(task_metadata, str):
-            try:
-                task_metadata = json.loads(task_metadata) if task_metadata.strip() else {}
-            except (json.JSONDecodeError, AttributeError):
-                logger.warning(
-                    "[update_task_featured_image] task_metadata is not valid JSON for task %s — defaulting to {}",
-                    task_id,
-                )
-                task_metadata = {}
-
-        # task.get("task_metadata") can be None (or a non-dict) even with a {}
-        # default — the default only applies when the key is absent, not when the
-        # stored value is null. Coerce so the indexed assignment below is safe.
-        if not isinstance(task_metadata, dict):
-            task_metadata = {}
-
-        task_result["featured_image_url"] = image_url
-        task_metadata["featured_image_url"] = image_url
-
-        await db_service.update_task(
-            task_id,
-            {
-                "result": safe_json_dumps(task_result),
-                "task_metadata": safe_json_dumps(task_metadata),
-            },
-        )
-
-        return {
-            "image_url": image_url,
-            "source": source,
-            "message": f"✅ Image generated/fetched from {source}",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to generate image for task %s: %s", task_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to generate image") from e
+    # Percent-encode the id before it goes into the Link header: the path
+    # parameter arrives decoded, so a crafted URL could otherwise put a
+    # CR/LF or a '>' into a response header.
+    encoded_id = quote(task_id, safe="")
+    regen_href = request.url_for("regen_task_image", task_id=encoded_id).path
+    replace_href = request.url_for("replace_task_image", task_id=encoded_id).path
+    shell_id = shlex.quote(task_id)
+    logger.warning(
+        "Retired endpoint called: POST generate-image for task %r answered 410. "
+        "The caller should move to regen-image (source=image_gen) or "
+        "replace-image (source=pexels).",
+        task_id,
+    )
+    return retired_endpoint_response(
+        message=_GENERATE_IMAGE_RETIRED,
+        request_id=get_request_id(),
+        successors=[
+            Successor(
+                method="POST",
+                href=regen_href,
+                replaces="source=image_gen",
+                cli=(
+                    f"poindexter tasks regen-image {shell_id} "
+                    '--which featured --prompt "<prompt>"'
+                ),
+                mcp_tool="regen_post_image",
+            ),
+            Successor(
+                method="POST",
+                href=replace_href,
+                replaces="source=pexels",
+                cli=(
+                    f"poindexter tasks replace-image {shell_id} "
+                    "--which featured --url <image-url>"
+                ),
+                mcp_tool="replace_post_image",
+            ),
+        ],
+    )
 
 
 # ============================================================================

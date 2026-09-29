@@ -1,9 +1,10 @@
 """ImageService renders under the GPU lock and says why it failed (#1005).
 
 Two contracts, one root cause. The operator single-image endpoints
-(``poindexter tasks regen-image`` / ``add-image``, ``POST
-/api/tasks/{id}/generate-image``) reach the renderer only through
-``ImageService``, and that path used to POST straight at the image-gen server:
+(``poindexter tasks regen-image`` / ``add-image``, and until its retirement to
+a 410 on 2026-09-28 ``POST /api/tasks/{id}/generate-image``) reach the
+renderer only through ``ImageService``, and that path used to POST straight at
+the image-gen server:
 no lock, so no Ollama eviction, so a regen issued while the ~19 GB writer was
 warm raced it and lost to a CUDA OOM on a 31 GB card. It then reported that
 OOM as "image generation produced no output" — a symptom, describing an output
