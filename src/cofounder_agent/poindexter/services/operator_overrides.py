@@ -84,6 +84,13 @@ When you call a tool, do NOT also say "let me check" or "one moment" — just em
 
 If Matt says something you cannot answer with a tool, answer plainly. Never claim you cannot hear or that you only process text — you are receiving live audio transcribed by Whisper."""
 
+# The operator's public R2 bucket, which is ``storage_public_url``. Every object
+# URL the rig serves hangs off it (the podcast cover below is one), so it is
+# spelled once: a bucket move edits this line and cannot leave a URL on the old
+# host. The public site's ``DEFAULT_STATIC_URL`` must name the same bucket, and
+# ``tests/unit/test_bucket_host_agreement.py`` fails when the two drift.
+_R2_PUBLIC_URL = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"
+
 # Setting key -> the operator's personal value (genericised in the public seeds).
 # The OSS seed for each is the code's own generic default (empty, or the
 # content_validator fallback) so a fresh public install behaves as designed; the
@@ -149,7 +156,7 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     "social_x_handle": "@_gladlabs",
     "social_x_url": "https://x.com/_gladlabs",
     "storage_bucket": "gladlabs-media",
-    "storage_public_url": "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev",
+    "storage_public_url": _R2_PUBLIC_URL,
     # R2 access key ID (is_secret=false half of the keypair; the secret half
     # is storage_secret_key, kept encrypted in the DB / bootstrap, never here).
     # Restored on the operator rig so R2 uploads work after a fresh reseed.
@@ -163,7 +170,7 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # the Glad Labs tenant); restored here on the operator rig.
     "podcast_spotify_show_id": "033obxyUXdxhXyQ6erC07G",
     "podcast_spotify_url": "https://open.spotify.com/show/033obxyUXdxhXyQ6erC07G",
-    "podcast_cover_url": "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/podcast/cover.jpg",
+    "podcast_cover_url": f"{_R2_PUBLIC_URL}/podcast/cover.jpg",
     # TTS engine cutover (2026-07-11 bake-off, Glad-Labs/glad-labs-stack#2269):
     # Chatterbox (voice-cloning) replaces Speaches/Kokoro as the podcast
     # narration engine. exaggeration/cfg_weight stay at the seeded 0.5/0.5

@@ -137,10 +137,17 @@ copy sent one surface to the old bucket with no error, and when the CSP
 allow-list and the fetch URL drifted apart, `/search` silently returned no
 results (Gitea #262).
 
-The worker and operator side still spell the bucket's host in a few defaults,
-outside the site: the operator overrides seed, the brain's R2 connectivity
-probe, and the DR, backfill and health-check scripts. Search `src` and
-`scripts` for the old host when you move.
+The bucket's host is also spelled outside the site, in the few places that have
+nowhere else to read it from: the DR re-import tool (it runs when the database
+is gone, so its default is a literal on purpose), the operator's settings
+overlay, and two operator scripts. The brain's R2 probe used to be one of them.
+It now reads `storage_public_url` and reports `not_configured` when that is
+unset, so an install no longer probes another operator's bucket by default.
+
+`tests/unit/test_bucket_host_agreement.py` compares every such spelling with the
+site's `DEFAULT_STATIC_URL`. A bucket move that misses one fails there, and the
+failure lists each stale `file:line`, so there is nothing to search for by hand.
+The DR tool's default is held to the site's exactly, path included.
 
 ## Operator runbook
 

@@ -1588,12 +1588,39 @@ def _check_r2_sync(r2_url: str) -> dict:
         return {"ok": False, "detail": f"R2 CDN unreachable: {str(e)[:100]}"}
 
 
-async def probe_r2_connectivity(_pool) -> dict:
-    """Probe: Verify R2 CDN is reachable by fetching the podcast feed."""
-    return await asyncio.to_thread(
-        _check_r2_sync,
-        os.getenv("R2_PUBLIC_URL", "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev"),
-    )
+async def probe_r2_connectivity(pool) -> dict:
+    """Probe: Verify the public R2 bucket is reachable by fetching the podcast feed.
+
+    The bucket is ``app_settings.storage_public_url``, the setting the worker
+    builds every public object URL from, so the probe watches the bucket the
+    install actually publishes to. There is deliberately no default. This
+    module ships in the public package, and a literal here made every install
+    probe (and report as its own) one operator's bucket. An install with no
+    public bucket configured reports ``not_configured``, which is not a fault.
+    """
+    try:
+        raw = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1", "storage_public_url"
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "detail": (
+                "could not read app_settings.storage_public_url: "
+                f"{str(exc)[:160]}"
+            ),
+        }
+    r2_url = str(raw or "").strip().rstrip("/")
+    if not r2_url:
+        return {
+            "ok": True,
+            "status": "not_configured",
+            "detail": (
+                "skipped — app_settings.storage_public_url is unset, so this "
+                "install has no public R2 bucket to probe (not a fault)"
+            ),
+        }
+    return await asyncio.to_thread(_check_r2_sync, r2_url)
 
 
 async def probe_traffic_anomaly(pool) -> dict:

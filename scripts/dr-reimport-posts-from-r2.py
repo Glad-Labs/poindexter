@@ -32,6 +32,11 @@ from typing import Any
 logger = logging.getLogger("dr-reimport")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+# A literal on purpose: this tool runs when the database is gone, so it cannot
+# read ``storage_public_url``. It must name the same bucket as the public
+# site's ``DEFAULT_STATIC_URL``, path included, and
+# ``tests/unit/test_bucket_host_agreement.py`` fails when the two drift. A stale
+# default would restore from the OLD bucket, and only on the day it is needed.
 _DEFAULT_R2_URL = "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static"
 
 

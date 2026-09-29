@@ -441,7 +441,6 @@ _ENV_KEYS_TO_ISOLATE = (
     "SITE_NAME",
     "SITE_DOMAIN",
     "ENVIRONMENT",
-    "R2_PUBLIC_URL",
     # configure_langfuse_callback and configure_cloud_api_keys copy credentials
     # into os.environ, and their tests' ``monkeypatch.delenv(..., raising=False)``
     # records nothing for a var that was absent, so the values outlived the
