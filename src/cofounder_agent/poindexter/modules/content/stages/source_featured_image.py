@@ -1388,9 +1388,10 @@ async def _resolve_gen_featured_response(
     returns JSON, rather than trusting the in-container path. The image-gen
     and worker containers both run as ``appuser`` with ephemeral
     in-container homes — the volume mount that was supposed to bridge
-    them lands on ``/root/.poindexter/`` while the image-gen server writes
-    to ``/home/appuser/.poindexter/``, so the worker never sees the
-    file on disk. Closes Glad-Labs/poindexter#459.
+    them landed on ``/root/.poindexter/`` (since removed) while the
+    image-gen server wrote to ``/home/appuser/.poindexter/``, so the worker
+    never saw the file on disk. Fetching over HTTP keeps the two containers
+    free of any filesystem coupling. Closes Glad-Labs/poindexter#459.
 
     Returns ``(local_path, gen_meta)`` — ``gen_meta`` carries the
     JSON the image-gen server emitted on the JSON branch, empty dict on

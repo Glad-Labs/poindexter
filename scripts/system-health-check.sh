@@ -374,14 +374,14 @@ check publish "Recent published post exists" bash -c '
 '
 
 check publish "Recent podcast mp3 exists" bash -c '
-  count=$(docker exec poindexter-worker sh -c "ls -1 /root/.poindexter/podcast/*.mp3 2>/dev/null | wc -l")
+  count=$(docker exec poindexter-worker sh -c "ls -1 /home/appuser/.poindexter/podcast/*.mp3 2>/dev/null | wc -l")
   count=${count:-0}
   if [ "$count" = "0" ]; then echo "no podcast mp3s — backfill_podcasts may be broken"; exit 1; fi
-  echo "$count podcast mp3s in /root/.poindexter/podcast/"
+  echo "$count podcast mp3s in /home/appuser/.poindexter/podcast/"
 '
 
 check publish "Recent video mp4 exists" bash -c '
-  count=$(docker exec poindexter-worker sh -c "ls -1 /root/.poindexter/video/*.mp4 2>/dev/null | wc -l")
+  count=$(docker exec poindexter-worker sh -c "ls -1 /home/appuser/.poindexter/video/*.mp4 2>/dev/null | wc -l")
   count=${count:-0}
   if [ "$count" = "0" ]; then echo "no video mp4s — backfill_videos may be broken"; exit 1; fi
   echo "$count video mp4s"

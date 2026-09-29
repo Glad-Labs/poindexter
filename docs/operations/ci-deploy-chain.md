@@ -1202,12 +1202,23 @@ so. The launcher's own decisions go into `deploy-checkout-sync.log` tagged
   bootstrap. When the clone's copy differs, every pass logs
   `launcher out of date` and adds it to the status detail, and `--report` says
   so. Re-run the installer, as for the unit files.
-- It is no harder to tamper with than what the driver already ran. The
-  worker, pipeline-bot and prefect-worker containers mount the whole
-  `~/.poindexter` read-write at `/root/.poindexter` (a legacy mount). That
-  covers `deploy-sync/`, and it has always covered the deploy clone, whose
+- It is no harder to tamper with than what the driver already ran. Until
+  stack#4186 the worker, pipeline-bot and prefect-worker containers mounted
+  the whole `~/.poindexter` read-write at `/root/.poindexter` (a legacy
+  mount). That covered `deploy-sync/` and the deploy clone, whose
   `start-stack.sh`, health gate and identity check the driver executes on
-  every pass. Narrowing that mount is a separate change.
+  every pass. That mount is gone, and
+  `scripts/ci/compose_poindexter_home_mount_lint.py` fails CI if any service
+  mounts `deploy-sync/`, `cli-venv/`, `bootstrap.toml` or the whole directory
+  again (see
+  [worker-container-filesystem.md](../architecture/worker-container-filesystem.md#never-the-whole-directory)).
+  Three containers can still write into the deploy clone (checked with
+  `docker inspect` 2026-09-28). The brain mounts the whole clone for the
+  migration-drift self-heal, and it holds the Docker socket anyway. Grafana
+  mounts `infrastructure/grafana/provisioning` and the worker mounts its
+  `alerting/` subdirectory. Both are bare `./` mounts, which resolve inside
+  the clone because compose runs from it. The host executes nothing in either
+  directory.
 
 **The other host units.** The docker watchdog moved to the deploy clone in the
 same change. Its timer reads the script on every fire, so a merged fix runs

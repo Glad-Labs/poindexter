@@ -113,8 +113,10 @@ def host_path_from_storage_path(
 ) -> Path | None:
     """Translate a container ``storage_path`` to its host bind-mount path.
 
-    Container paths look like ``/home/appuser/.poindexter/podcast/<f>.mp3`` or
-    ``/root/.poindexter/video/<f>.mp4``; the host root is ``~/.poindexter``.
+    Container paths look like ``/home/appuser/.poindexter/podcast/<f>.mp3``,
+    or ``/root/.poindexter/video/<f>.mp4`` on rows from before the 2026-05-12
+    appuser-home fix (the legacy mount, since removed); the host root is
+    ``~/.poindexter``.
     Splits on the ``.poindexter/`` segment and rejoins under ``host_root``.
     Returns None for empty paths or paths with no ``.poindexter/`` segment —
     nothing safe to map, so nothing to delete.
@@ -158,13 +160,16 @@ def _resolve_db_url(cli_value: str | None) -> str:
 
 
 def _data_root() -> Path:
-    """Host media root — ``~/.poindexter`` on Matt's PC (the bind-mount source)."""
+    """Media root — ``~/.poindexter``.
+
+    On the host that is the bind-mount source; inside the worker it is
+    ``/home/appuser/.poindexter``, where podcast/ and video/ are mounted. It
+    no longer prefers ``/root/.poindexter``: inside the worker that was a
+    mount appuser could not list, and it is gone (glad-labs-stack#4186).
+    """
     override = os.environ.get("POINDEXTER_DATA_ROOT")
     if override:
         return Path(override)
-    root_mount = Path("/root/.poindexter")
-    if root_mount.is_dir():
-        return root_mount
     return Path(os.path.expanduser("~")) / ".poindexter"
 
 

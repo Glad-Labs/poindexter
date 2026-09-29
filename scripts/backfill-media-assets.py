@@ -50,14 +50,16 @@ DEFAULT_DB_URL = (
 # Filesystem layout — matches services.podcast_service.PODCAST_DIR /
 # services.video_service.VIDEO_DIR (without importing the modules so
 # the backfill script can run on a checkout that doesn't have the
-# full backend Python deps installed).
+# full backend Python deps installed). ``~`` is right in both places this
+# runs: the host's ~/.poindexter, and /home/appuser/.poindexter inside the
+# worker, where podcast/ and video/ are bind-mounted. It used to prefer
+# /root/.poindexter whenever that existed, which inside the worker was a
+# mount appuser could not list, so an in-container run saw no media at all
+# (that mount is gone, glad-labs-stack#4186).
 def _data_root() -> Path:
     override = os.environ.get("POINDEXTER_DATA_ROOT")
     if override:
         return Path(override)
-    root_mount = Path("/root/.poindexter")
-    if root_mount.is_dir():
-        return root_mount
     return Path(os.path.expanduser("~")) / ".poindexter"
 
 

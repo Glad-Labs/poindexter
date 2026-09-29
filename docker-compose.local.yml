@@ -605,7 +605,6 @@ services:
       # no code reads these env vars; removed from the worker env to keep the
       # "no env-var drift, app_settings is the single source" contract clean.
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
-      HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       # OpenTelemetry — exposed as env vars so services/telemetry.py's
       # module-level setup_telemetry() call in main.py can wire the
       # FastAPIInstrumentor middleware BEFORE the FastAPI middleware
@@ -692,6 +691,15 @@ services:
       # priority 1, and the host file's DSN points at localhost:5433
       # (the postgres host publish, see postgres-local.ports) which is
       # unreachable from inside the worker container.
+      #
+      # Never mount the whole ~/.poindexter, at any container path. It holds
+      # bootstrap.toml (the master key), the deploy clone and deploy-sync
+      # launcher that the HOST executes, and the host CLI's venv. Until
+      # glad-labs-stack#4186 this service, pipeline-bot and prefect-worker
+      # mounted it read-write at /root/.poindexter, a leftover no code read.
+      # scripts/ci/compose_poindexter_home_mount_lint.py fails CI on a
+      # whole-dir mount or an undeclared subdirectory. A new media dir goes
+      # in that lint's ALLOWED_ENTRIES, with a reason.
       - ${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast
       - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
@@ -714,17 +722,15 @@ services:
       # Singer tap venvs (GA4 / GSC — docs/integrations/setup-gsc-and-ga4.md).
       # Host-persisted so `pip install tap-ga4 tap-google-search-console`
       # survives container recreates. The old Windows-era layout reached these
-      # through the legacy /root/.poindexter mount below, but the container's
-      # /root is 0700 and the worker runs as appuser — docker-ce enforces the
-      # traversal denial Docker Desktop ignored (run_taps PermissionError,
-      # found in the 2026-07-23 post-migration audit). external_taps rows
-      # point at /home/appuser/.poindexter/singer-venv/<tap>/bin/....
+      # through a whole-dir /root/.poindexter mount (removed, #4186), but the
+      # host's ~/.poindexter is 0700 and the worker runs as appuser — docker-ce
+      # enforces the traversal denial Docker Desktop ignored (run_taps
+      # PermissionError, found in the 2026-07-23 post-migration audit).
+      # external_taps rows point at
+      # /home/appuser/.poindexter/singer-venv/<tap>/bin/.... Read-write because
+      # the setup runbook pip-installs the taps from inside this container.
       - ${USERPROFILE:-${HOME}}/.poindexter/singer-venv:/home/appuser/.poindexter/singer-venv
-      # Legacy /root mount stays for code paths that still reference
-      # /root/.poindexter or HOST_HOME=/root.
-      - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${USERPROFILE:-${HOME}}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
-      - ${USERPROFILE:-${HOME}}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
       # Corsair iCUE LINK CSV exports — read-only mount so the
       # tap.corsair_csv handler (services/integrations/handlers/
       # tap_corsair_csv.py) can ingest sensor data without leaving the
@@ -892,7 +898,10 @@ services:
       # ``brain.*`` roots are gone since poindexter#1046 step 5).
       PYTHONPATH: "/app"
     volumes:
-      - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
+      # No ~/.poindexter mount. The bot and the `/cli` subprocesses it spawns
+      # take the DSN and secret key from the env above. The read-write
+      # /root/.poindexter mount this service used to carry is gone (#4186);
+      # see the worker's volumes comment.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     extra_hosts:
@@ -1045,8 +1054,8 @@ services:
       - 8.8.8.8
     command: ["prefect", "worker", "start", "--pool", "content-pool", "--name", "prefect-worker-1", "--type", "process"]
     environment:
-      # Database lives in the postgres-local container; bootstrap.toml
-      # mounted below resolves to the same DSN.
+      # Database lives in the postgres-local container. bootstrap.toml is
+      # deliberately NOT mounted (#4186), so this env var is the DSN.
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       # Don't write to /app/logs (read-only mount); Docker captures
@@ -1100,7 +1109,6 @@ services:
       # outage, third silent gap). Same value the legacy worker sets.
       DEPLOYMENT_MODE: worker
     volumes:
-      - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # This container runs as `appuser` (UID 1001), so ``~/.poindexter``
@@ -1108,14 +1116,17 @@ services:
       # (media_pipeline: TTS narration, shot-list renders, compositor
       # output) run HERE, not in the legacy worker. Same failure mode the
       # worker service fixed on 2026-05-12 (see its volumes comment): with
-      # only the /root mount above, media writes land in the container's
-      # ephemeral filesystem — invisible to the uploader jobs in
+      # only a whole-dir /root/.poindexter mount, media writes land in the
+      # container's ephemeral filesystem — invisible to the uploader jobs in
       # poindexter-worker and lost on recreate. Windows' loose WSL bind
       # permissions masked this; real POSIX perms on Linux surfaced it
       # (the host dir is 0700 uid-1000, unreadable by appuser anyway).
       # Pinpoint-subdir mounts, NOT the whole dir, so bootstrap.toml
       # stays out of appuser's HOME (resolve_database_url would read its
-      # host DSN, which is unreachable from inside the container).
+      # host DSN, which is unreachable from inside the container). That
+      # read-write /root/.poindexter mount is gone too (#4186): this is the
+      # container that runs LLM-driven pipeline code, and the whole dir holds
+      # the master key and scripts the host executes.
       - ${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast
       - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images

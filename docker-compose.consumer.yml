@@ -399,7 +399,6 @@ services:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
-      HOST_HOME: ${HOST_HOME:-${USERPROFILE:-/root}}
       API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       LOG_TO_FILE: "false"
@@ -439,10 +438,13 @@ services:
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
       - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
       - ${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/home/appuser/.poindexter/backups
-      # Legacy /root mount for code paths that still reference /root/.poindexter.
-      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      # Never mount the whole ~/.poindexter, at any container path: it holds
+      # bootstrap.toml (the master key) and, on an operator host, the deploy
+      # clone and scripts the HOST executes. The read-write /root/.poindexter
+      # mount this service, pipeline-bot and prefect-worker used to carry was
+      # read by no code (stack#4186). scripts/ci/compose_poindexter_home_mount_lint.py
+      # fails CI on a whole-dir mount or an undeclared subdirectory.
       - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
-      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
       - ${USERPROFILE:-.}/sensor_logs:/host/sensor_logs:ro
       # Source code — read-only bind mount; restart picks up changes without rebuild.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
@@ -491,7 +493,8 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONPATH: "/app"
     volumes:
-      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      # No ~/.poindexter mount: the bot and its `/cli` subprocesses take the
+      # DSN and secret key from the env above.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     extra_hosts:
@@ -609,17 +612,17 @@ services:
       # outage, third silent gap). Same value the legacy worker sets.
       DEPLOYMENT_MODE: worker
     volumes:
-      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
       # Runs as `appuser` (UID 1001): Stage-2 media flows resolve
       # ``~/.poindexter`` to /home/appuser/.poindexter, so media output
       # needs these pinpoint-subdir mounts (mirrors the worker service —
-      # same 2026-05-12 fix; the /root mount alone strands media writes
-      # in the container's ephemeral filesystem). Whole-dir mount is
-      # avoided on purpose: bootstrap.toml must stay out of appuser's
-      # HOME or resolve_database_url reads the host DSN, unreachable
-      # from inside the container.
+      # same 2026-05-12 fix; a whole-dir /root mount alone strands media
+      # writes in the container's ephemeral filesystem). Whole-dir mount is
+      # avoided on purpose, at any path: bootstrap.toml must stay out of
+      # appuser's HOME or resolve_database_url reads the host DSN,
+      # unreachable from inside the container, and this container runs
+      # LLM-driven pipeline code that has no business near the master key.
       - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
       - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images

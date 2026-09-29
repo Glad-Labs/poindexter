@@ -136,6 +136,15 @@ jobs:
       - name: Lint python -m launch paths resolve
         run: python scripts/ci/module_launch_paths_lint.py
 
+      # ~/.poindexter holds bootstrap.toml (the master key) and, on an operator
+      # host, the deploy clone and scripts the HOST executes. worker,
+      # pipeline-bot and prefect-worker mounted the whole directory read-write
+      # at /root/.poindexter until stack#4186, a leftover no code read. This
+      # fails a whole-dir or ancestor mount, a protected entry, or an
+      # undeclared subdirectory, in any compose file. Static, no DB. (2026-09-28)
+      - name: Lint compose mounts of ~/.poindexter
+        run: python scripts/ci/compose_poindexter_home_mount_lint.py
+
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py
 

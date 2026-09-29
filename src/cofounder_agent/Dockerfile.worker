@@ -185,16 +185,16 @@ RUN python -m playwright install chromium && \
 # Copy application code
 COPY . .
 
-# Non-root user. chmod 0711 on /root so appuser can *traverse* it to reach
-# image-gen-generated images under /root/.poindexter/generated-images/ (via the
-# compose volume mount) — the directory's own 0777 perms let appuser read
-# files; only /root itself blocked traversal until now. Without this,
-# featured-image generation silently fell back to Pexels because
-# os.path.exists() on the image-gen-returned path raised PermissionError.
+# Non-root user. /root keeps the base image's 0700: appuser has no business
+# under it. Everything appuser reads or writes is mounted at its own home
+# (/home/appuser/.poindexter/<subdir>, see the worker's compose volumes). The
+# `chmod 0711 /root` that used to sit here only let appuser traverse to the
+# legacy /root/.poindexter and /root/Downloads mounts, both removed with
+# glad-labs-stack#4186. Don't reopen it to make a /root mount work; mount at
+# /home/appuser instead.
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
-    chown -R appuser:appgroup /app && \
-    chmod 0711 /root
+    chown -R appuser:appgroup /app
 USER appuser
 
 # Health check endpoint

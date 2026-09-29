@@ -3,7 +3,8 @@
 The image-gen server and the worker both run as ``appuser`` (uid 1001) in
 their respective containers, with ephemeral in-container ``$HOME`` of
 ``/home/appuser``. The docker-compose volume mount that was supposed to
-bridge them lands on ``/root/.poindexter/`` in both containers — but
+bridge them landed on ``/root/.poindexter/`` in both containers (that
+mount has since been removed) — but
 the image-gen server writes to ``~/.poindexter/generated-images/`` which
 resolves to ``/home/appuser/.poindexter/generated-images/`` and is
 *not* on the shared mount. Result: the image-gen server returned a JSON
