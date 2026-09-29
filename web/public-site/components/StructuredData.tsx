@@ -4,6 +4,7 @@
  */
 
 import { SITE_NAME, SITE_URL, SUPPORT_EMAIL } from '@/lib/site.config';
+import { siteImageObject, siteImageUrl } from '@/lib/site-image';
 
 /**
  * Breadcrumb Schema
@@ -75,7 +76,7 @@ export function OrganizationSchema() {
     description:
       'AI and digital innovation research organization focused on autonomous intelligence',
     url: SITE_URL,
-    logo: `${SITE_URL}/og-image.jpg`,
+    logo: siteImageUrl(),
     sameAs: [
       'https://twitter.com/GladLabsAI',
       'https://linkedin.com/company/glad-labs',
@@ -130,12 +131,7 @@ export function BlogPostingSchema({
     publisher: {
       '@type': 'Organization',
       name: SITE_NAME,
-      logo: {
-        '@type': 'ImageObject',
-        url: `${SITE_URL}/og-image.jpg`,
-        width: 1200,
-        height: 630,
-      },
+      logo: siteImageObject(),
     },
   };
 
@@ -175,12 +171,7 @@ export function NewsArticleSchema({
     publisher: {
       '@type': 'Organization',
       name: SITE_NAME,
-      logo: {
-        '@type': 'ImageObject',
-        url: `${SITE_URL}/og-image.jpg`,
-        width: 1200,
-        height: 630,
-      },
+      logo: siteImageObject(),
     },
   };
 

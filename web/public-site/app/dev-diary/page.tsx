@@ -9,6 +9,7 @@ import {
   postExcerpt,
 } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { siteOgImage } from '@/lib/site-image';
 
 // Time-based ISR backstop (1h) — on-demand revalidateTag('posts') on publish
 // is primary; this floor self-heals if a publish path skips it (poindexter#575).
@@ -22,9 +23,7 @@ export const metadata: Metadata = {
     title: `Dev Diary — ${SITE_NAME}`,
     description: 'Daily founder notes from building Glad Labs.',
     type: 'website',
-    images: [
-      { url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME },
-    ],
+    images: [siteOgImage(SITE_NAME)],
   },
 };
 

@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { OrganizationSchema } from '../components/StructuredData';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { siteOgImage } from '@/lib/site-image';
 import {
   postFeaturedImage,
   sortPostsNewestFirst,
@@ -33,12 +34,7 @@ export const metadata = {
     locale: 'en_US',
     url: `${SITE_URL}/`,
     images: [
-      {
-        url: '/og-image.jpg',
-        width: 1200,
-        height: 630,
-        alt: `${SITE_NAME} - AI, Hardware & the Edges Where They Meet`,
-      },
+      siteOgImage(`${SITE_NAME} - AI, Hardware & the Edges Where They Meet`),
     ],
   },
 };

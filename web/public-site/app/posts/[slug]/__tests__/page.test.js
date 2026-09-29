@@ -9,11 +9,13 @@
  * - Unknown slug: calls notFound()
  * - generateMetadata: returns correct title and description for known post
  * - generateMetadata: returns "not found" metadata for unknown slug
+ * - generateMetadata: og:image declares a size only for the site image
  * - API error: returns null, calls notFound()
  */
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { SITE_IMAGE } from '@/lib/site-image';
 
 // Mock next/link
 jest.mock('next/link', () => {
@@ -240,5 +242,45 @@ describe('generateMetadata', () => {
     ).rejects.toThrow('NEXT_NOT_FOUND');
 
     expect(mockNotFound).toHaveBeenCalled();
+  });
+
+  // Every post used to declare og:image 1200x630 for its cover, while 39 of
+  // the 40 newest covers were 1024x1024 (2026-09-28). A cover goes out with
+  // no size, and crawlers measure it.
+  it('declares no size for a cover image', async () => {
+    const cover = 'https://cdn.example/images/featured/cover.webp';
+    mockFetchForPost({
+      ...SAMPLE_POST,
+      featured_image_url: cover,
+      featured_image_alt: 'A GPU on a bench',
+    });
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'ai-in-healthcare' }),
+    });
+
+    expect(metadata.openGraph.images).toEqual([
+      { url: cover, alt: 'A GPU on a bench' },
+    ]);
+    expect(metadata.twitter.images).toEqual([cover]);
+  });
+
+  it('falls back to the site image, with its real size and format', async () => {
+    mockFetchForPost(SAMPLE_POST);
+
+    const metadata = await generateMetadata({
+      params: Promise.resolve({ slug: 'ai-in-healthcare' }),
+    });
+
+    expect(metadata.openGraph.images).toEqual([
+      {
+        url: SITE_IMAGE.url,
+        width: SITE_IMAGE.width,
+        height: SITE_IMAGE.height,
+        type: SITE_IMAGE.type,
+        alt: metadata.openGraph.title,
+      },
+    ]);
+    expect(metadata.twitter.images).toEqual([SITE_IMAGE.url]);
   });
 });

@@ -51,6 +51,7 @@ web/public-site/
 │   ├── static-url.js            # The one place the R2 bucket is named (STATIC_URL, STATIC_ORIGIN)
 │   ├── seo.js                   # Metadata generation
 │   ├── structured-data.js       # JSON-LD generators
+│   ├── site-image.js            # og-image.jpg's path, size and format (test checks the file)
 │   ├── site.config.js           # Site name + URL
 │   └── logger.js                # Client-side logging
 ├── styles/globals.css           # Tailwind global styles

@@ -10,6 +10,7 @@ import {
   SITE_TAGLINE,
   PODCAST_NAME,
 } from '@/lib/site.config';
+import { siteOgImage } from '@/lib/site-image';
 import '../styles/globals.css';
 
 export const metadata = {
@@ -24,14 +25,7 @@ export const metadata = {
     title: SITE_NAME,
     description:
       'Deep dives into AI, hardware, and the edges where they meet — AI-written, human-reviewed, free to read.',
-    images: [
-      {
-        url: '/og-image.jpg',
-        width: 1200,
-        height: 630,
-        alt: SITE_NAME,
-      },
-    ],
+    images: [siteOgImage(SITE_NAME)],
   },
   twitter: {
     card: 'summary_large_image',

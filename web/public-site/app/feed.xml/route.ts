@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { siteImageUrl } from '@/lib/site-image';
 import { sortPostsNewestFirst, cleanPostTitle, postExcerpt } from '@/lib/posts';
 import { STATIC_URL } from '@/lib/static-url';
 
@@ -130,7 +131,7 @@ export async function GET() {
     <lastBuildDate>${latestDate}</lastBuildDate>
     <atom:link href="${SITE_URL}/feed.xml" rel="self" type="application/rss+xml" />
     <image>
-      <url>${SITE_URL}/og-image.jpg</url>
+      <url>${siteImageUrl()}</url>
       <title>${SITE_NAME}</title>
       <link>${SITE_URL}</link>
     </image>

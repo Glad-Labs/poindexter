@@ -10,6 +10,7 @@ import {
   postExcerpt,
 } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { siteOgImage } from '@/lib/site-image';
 
 // Time-based ISR backstop (1h) — see app/page.js. On-demand
 // revalidateTag('posts') on publish is primary; this floor self-heals if a
@@ -60,9 +61,7 @@ export async function generateMetadata({
       type: 'website',
       // Next.js does not inherit the root layout's og:image when a page sets
       // its own openGraph, so include the site default explicitly (audit #7).
-      images: [
-        { url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME },
-      ],
+      images: [siteOgImage(SITE_NAME)],
     },
   };
 }

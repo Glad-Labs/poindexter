@@ -26,6 +26,7 @@ import {
   type Post,
 } from '../../../lib/posts';
 import { SITE_NAME, SITE_URL, ADSENSE_SLOT_ID } from '@/lib/site.config';
+import { SITE_IMAGE, siteOgImage } from '@/lib/site-image';
 
 // #945: Bounded generateStaticParams — pre-generate recent post pages at build time
 // for faster first-hit latency and better SEO indexing. Long-tail slugs still
@@ -62,12 +63,15 @@ export async function generateMetadata({
     notFound();
   }
 
-  const imageUrl =
-    post.featured_image_url || post.cover_image_url || '/og-image.jpg';
+  const coverUrl = postFeaturedImage(post);
+  const imageUrl = coverUrl || SITE_IMAGE.url;
   // Audit #2/#5: same display-layer guards as the page body — no "Title:"
   // prefixes or placeholder excerpts in <title>, OG, or Twitter cards.
   const description = post.seo_description || postExcerpt(post, 200) || '';
   const title = cleanPostTitle(post.seo_title || post.title);
+  // Prefer the vision-generated alt (describes the actual image); fall back to
+  // the title when absent.
+  const imageAlt = post.featured_image_alt || title;
   const canonicalUrl = generateCanonicalURL(post.slug, SITE_URL);
   const publishDate = post.published_at || post.created_at;
 
@@ -88,15 +92,12 @@ export async function generateMetadata({
       url: canonicalUrl,
       title: title,
       description: buildMetaDescription(description),
+      // A cover image is whatever size the pipeline rendered (1024x1024 on 39
+      // of the 40 newest posts on 2026-09-28), so it declares no width/height
+      // and crawlers measure it. Only the site-image fallback declares a
+      // size, and lib/site-image.test.js holds that one to the file.
       images: [
-        {
-          url: imageUrl,
-          width: 1200,
-          height: 630,
-          // Prefer the vision-generated alt (describes the actual image);
-          // fall back to the title when absent.
-          alt: post.featured_image_alt || title,
-        },
+        coverUrl ? { url: coverUrl, alt: imageAlt } : siteOgImage(imageAlt),
       ],
       publishedTime: publishDate,
       modifiedTime: publishDate,

@@ -11,9 +11,14 @@
  * The fallback image and the publisher logo used to be /og-image.png and
  * /logo.png, which this site does not serve (both 404 on www.gladlabs.io), so
  * the tests check the file on disk rather than trusting a hardcoded name.
+ *
+ * Only the site image declares a width and height, and lib/site-image.test.js
+ * holds those to the file. Every cover image used to claim 1200x630, while
+ * 39 of the 40 newest were 1024x1024 (2026-09-28).
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { SITE_IMAGE } from './site-image';
 import { generateBlogPostingSchema } from './structured-data';
 import { STATIC_ORIGIN } from './static-url';
 
@@ -100,5 +105,31 @@ describe('generateBlogPostingSchema image URLs', () => {
 
   it('returns null for no post', () => {
     expect(generateBlogPostingSchema(null, SITE)).toBeNull();
+  });
+});
+
+describe('generateBlogPostingSchema image sizes', () => {
+  const siteImage = {
+    '@type': 'ImageObject',
+    url: `${SITE}${SITE_IMAGE.url}`,
+    width: SITE_IMAGE.width,
+    height: SITE_IMAGE.height,
+  };
+
+  it('declares no size for a cover image', () => {
+    expect(schemaFor('https://cdn.example/cover.webp').image).toEqual({
+      '@type': 'ImageObject',
+      url: 'https://cdn.example/cover.webp',
+    });
+  });
+
+  it('declares the site image with its size when the post has no cover', () => {
+    expect(schemaFor(undefined).image).toEqual(siteImage);
+  });
+
+  it('declares the publisher logo with its size', () => {
+    expect(schemaFor('https://cdn.example/cover.webp').publisher.logo).toEqual(
+      siteImage
+    );
   });
 });

@@ -6,6 +6,7 @@ import logger from '@/lib/logger';
 import { Button, Card, Display, Eyebrow } from '@glad-labs/brand';
 import { getAllPublishedPosts, postFeaturedImage } from '@/lib/posts';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
+import { SITE_IMAGE, siteOgImage } from '@/lib/site-image';
 import { STATIC_URL } from '@/lib/static-url';
 
 interface Post {
@@ -90,20 +91,13 @@ export async function generateMetadata({
       description,
       type: 'website',
       url: `${SITE_URL}/category/${slug}`,
-      images: [
-        {
-          url: '/og-image.jpg',
-          width: 1200,
-          height: 630,
-          alt: `${category.name} articles on ${SITE_NAME}`,
-        },
-      ],
+      images: [siteOgImage(`${category.name} articles on ${SITE_NAME}`)],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: ['/og-image.jpg'],
+      images: [SITE_IMAGE.url],
     },
   };
 }

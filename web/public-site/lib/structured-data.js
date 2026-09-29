@@ -1,9 +1,5 @@
 import { SITE_NAME, SITE_URL } from './site.config';
-
-// The one image this site serves for itself (public/og-image.jpg). It stands
-// in for a missing cover image and is the publisher logo, matching the
-// Organization schema in components/StructuredData.tsx.
-const SITE_IMAGE_PATH = '/og-image.jpg';
+import { siteImageObject } from './site-image';
 
 /**
  * Resolve an image URL for schema.org, which wants an absolute URL.
@@ -59,22 +55,23 @@ export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
   } = post;
 
   const publishDate = date || publishedAt;
-  const imageUrl = absoluteImageURL(
-    coverImage?.url || SITE_IMAGE_PATH,
-    siteUrl
-  );
+  // A cover image is whatever size the pipeline rendered (1024x1024 on 39 of
+  // the 40 newest posts on 2026-09-28), so it goes out with no width/height
+  // rather than a guessed 1200x630. The site image stands in when a post has
+  // no cover, and its size is known.
+  const image = coverImage?.url
+    ? {
+        '@type': 'ImageObject',
+        url: absoluteImageURL(coverImage.url, siteUrl),
+      }
+    : siteImageObject(siteUrl);
 
   return {
     '@context': 'https://schema.org',
     '@type': 'BlogPosting',
     headline: title,
     description: excerpt,
-    image: {
-      '@type': 'ImageObject',
-      url: imageUrl,
-      width: 1200,
-      height: 630,
-    },
+    image,
     datePublished: formatDateISO(publishDate),
     dateModified: formatDateISO(publishDate),
     author: {
@@ -85,10 +82,7 @@ export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
     publisher: {
       '@type': 'Organization',
       name: SITE_NAME,
-      logo: {
-        '@type': 'ImageObject',
-        url: absoluteImageURL(SITE_IMAGE_PATH, siteUrl),
-      },
+      logo: siteImageObject(siteUrl),
     },
     mainEntityOfPage: {
       '@type': 'WebPage',

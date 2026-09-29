@@ -17,6 +17,7 @@ import {
   BlogPostingSchema,
   NewsArticleSchema,
 } from '../StructuredData';
+import { SITE_IMAGE } from '@/lib/site-image';
 
 /**
  * Parse the JSON-LD from a rendered <script type="application/ld+json"> tag.
@@ -26,6 +27,15 @@ function parseSchema(container) {
   expect(script).not.toBeNull();
   return JSON.parse(script.innerHTML);
 }
+
+// The publisher logo's declared size is the file's real one, which
+// lib/site-image.test.js checks against the image on disk.
+const SITE_IMAGE_OBJECT = {
+  '@type': 'ImageObject',
+  url: `https://www.gladlabs.io${SITE_IMAGE.url}`,
+  width: SITE_IMAGE.width,
+  height: SITE_IMAGE.height,
+};
 
 // ---------------------------------------------------------------------------
 // BreadcrumbSchema
@@ -191,6 +201,13 @@ describe('OrganizationSchema', () => {
     expect(schema.contactPoint).toBeDefined();
     expect(schema.contactPoint.email).toBeTruthy();
   });
+
+  test('logo is the site image', () => {
+    const { container } = render(<OrganizationSchema />);
+    expect(parseSchema(container).logo).toBe(
+      `https://www.gladlabs.io${SITE_IMAGE.url}`
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -275,6 +292,11 @@ describe('BlogPostingSchema', () => {
     const { container } = render(<BlogPostingSchema {...props} />);
     expect(parseSchema(container).publisher.name).toBe('Glad Labs');
   });
+
+  test('publisher logo is the site image, with its real size', () => {
+    const { container } = render(<BlogPostingSchema {...props} />);
+    expect(parseSchema(container).publisher.logo).toEqual(SITE_IMAGE_OBJECT);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -307,5 +329,10 @@ describe('NewsArticleSchema', () => {
   test('publisher type is Organization', () => {
     const { container } = render(<NewsArticleSchema {...props} />);
     expect(parseSchema(container).publisher['@type']).toBe('Organization');
+  });
+
+  test('publisher logo is the site image, with its real size', () => {
+    const { container } = render(<NewsArticleSchema {...props} />);
+    expect(parseSchema(container).publisher.logo).toEqual(SITE_IMAGE_OBJECT);
   });
 });
