@@ -62,6 +62,19 @@ class TestRenderPreviewPage:
         assert "Podcast Ready" in html
         assert "<video" not in html
 
+    def test_a_long_bare_url_link_wraps_instead_of_scrolling_the_page_sideways(self):
+        """A link whose text is a bare URL has no break opportunity, so on a phone it
+        pushed the whole page sideways: on the evidence draft one Wikipedia link was
+        578 px wide in a 358 px column (page scrollWidth 618 at a 390 px viewport).
+        Links wrap at any character. The rule is scoped to links on purpose:
+        ``article {overflow-wrap:anywhere}`` would also let table columns shrink and
+        break words mid-cell, which hides the wide-table overflow the qa.vision leg
+        exists to report."""
+        html = render_preview_page({"title": "T", "content": "<p>x</p>"})
+        assert "article a{color:#22d3ee;overflow-wrap:anywhere}" in html
+        article_rule = next(line for line in html.splitlines() if line.startswith("article{"))
+        assert "overflow-wrap" not in article_rule
+
     def test_csp_forbids_scripts(self):
         directives = dict(
             d.strip().split(" ", 1) for d in PREVIEW_PAGE_CSP.split(";") if d.strip()

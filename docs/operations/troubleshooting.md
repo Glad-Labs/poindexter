@@ -286,12 +286,49 @@ leg got no verdict. The finding's reason names which step failed:
   memory);
 - `qa_preview_vision_model is not set`: set it, or turn the leg off;
 - `vision model … returned no text` / `unparseable vision verdict`: the judge
-  model (see the `[VISION_QA]` lines for the dispatch-level cause).
+  model (see the `[VISION_QA]` lines for the dispatch-level cause). If that line
+  says `exceed_context_size_error` (HTTP 400, "request (N tokens) exceeds the
+  available context size"), the tiles no longer fit the judge's context: lower
+  `qa_preview_max_tiles`, or raise `pinned_llm_endpoint_num_ctx` after checking
+  the judge GPU's VRAM headroom. The judge rejects an oversized request; it does
+  not truncate one.
 
 The leg renders the draft in-process and fetches no URL, so a URL or DNS
 problem is never the cause here. The draft still goes through every other
 rail. See
 [../architecture/preview-links.md](../architecture/preview-links.md).
+
+**A `[PREVIEW_QA] qa_preview_max_tiles=N does not fit the judge's … context`
+warning** is the guard doing its job, not a fault. The leg sent fewer tiles than
+configured (10 at most on the 16,384-token judge, at 1280×1024 per tile). The
+verdict is still produced. Change the cap or the context to make the warning
+stop.
+
+**The verdict lists `Image failed to load: "<alt>" …` or `Content spills N px past
+the right edge`.** Those two are measured by the browser, not judged by the model,
+so they are true whatever the judge thought. A failed image means the `<img>` URL
+does not serve an image: open the draft's HTML, or the tile the verdict names, and
+check the URL: the object it names does not exist (eight drafts from late August
+and early September point at `/images/screenshots/…` objects that 404 now).
+Chromium blocks the HTML error page it gets back
+(`net::ERR_BLOCKED_BY_ORB`), which is why `naturalWidth` is 0. Overflow means
+something on the page is wider than the viewport: usually a table, a code block, or
+a long bare URL. Neither is a judge or a tile-budget problem, so do not change the
+model or the tile settings for them.
+
+**The verdict says `sampled N tiles of a Mpx page`.** The draft is taller than
+`qa_preview_max_tiles` tiles can cover at `qa_preview_min_scale`, so the judge saw
+an even spread of it with gaps rather than every row. A 1280 px wide page in the
+default config is whole up to about 22,700 px.
+
+**The judge seems to read only some of the tiles.** Ollama silently drops every
+second image of a multi-image message. `LiteLLMProvider` prevents that by sending
+one image per message over `/api/chat`. If a caller does not go through the
+provider (a script posting to `:11435` directly), send one image per message
+yourself. Do not change a model's prefix to `ollama_chat/` in a `*_model` setting
+to get this: the pin map is keyed on the exact resolved name and the call would
+load the judge on the wrong GPU
+([model-endpoint-routing.md](model-endpoint-routing.md)).
 
 ---
 

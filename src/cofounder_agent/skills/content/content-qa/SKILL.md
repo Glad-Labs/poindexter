@@ -55,7 +55,7 @@ metadata:
       description: "Vision-QA: per-image relevance scoring. A vision-capable Ollama model rates each inline image 0-100 on how well it represents the article's subject, and separately estimates what share of the frame rendered text covers (always a defect — the generator is told to draw none). Used by MultiModelQA._check_image_relevance, which subtracts a proportional text penalty. Migrated from inline string 2026-05-28; text_coverage added 2026-09-23."
     - key: qa.vision_preview_screenshot
       output_format: json
-      description: 'Vision-QA: full-page screenshot review. A vision-capable Ollama model rates the rendered preview 0-100 on layout, image rendering, and visual professionalism. Used by MultiModelQA.review_preview_screenshot. Migrated from inline string 2026-05-28.'
+      description: "Vision-QA: rendered-preview review. A vision-capable Ollama model rates the page 0-100 on layout, image rendering, and visual professionalism from consecutive viewport-sized tiles of one full-page screenshot (tiles arrive at native scale; a single full-page image of a long draft was downscaled until its text was unreadable). The browser's own measurements (images that failed to load, sideways overflow) are given to it as facts and enforced in code, because the model cannot be relied on to notice a broken-image icon. Used by MultiModelQA._check_rendered_preview_outcome. Migrated from inline string 2026-05-28."
     - key: qa.video_shot_quality
       output_format: json
       description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one frame of an AI shot 0-100 on topic and looks, and labels its large lettering none / readable / garbled; the label caps a garbled frame under the repair threshold. Hero clips are judged on their 1 s frame and on the final frame the compositor holds. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
@@ -490,18 +490,28 @@ image, in the same order:
 ## qa.vision_preview_screenshot
 
 ```text
-You are the final visual reviewer for a blog post before it goes live. The attached image is a full-page screenshot of the post as it will appear to readers.
+You are the final visual reviewer for a blog post before it goes live. The attached images (tile count: {tile_count}) are consecutive tiles of one full-page screenshot of the post as it will appear to readers, in order from the top of the page to the bottom.
 
 TITLE: {title}
 TOPIC: {topic}
 
+The page rows each tile shows:
+{tile_guide}
+
+Tiles are cut at fixed rows, so a paragraph, image, table or code block can run from the bottom of one tile into the top of the next; the next tile shows the rest of it. Where rows are missing between two tiles, judge the rows you can see.
+
+The browser measured these facts while it rendered the page. They are exact and are reported separately, so take them as given and leave them out of your issues:
+{page_facts}
+
 Rate 0-100 how professional and readable the rendered page looks. Deductions for:
-  - Broken or missing images (placeholder icons, alt text showing)
+  - Broken or missing images (a broken-image icon, or alt text standing where a picture belongs)
   - Layout problems (overflowing tables, code blocks spilling outside the container)
   - Empty or near-empty sections
   - Mangled HTML (raw tags visible, unclosed quotes, escaped entities)
   - Visually unbalanced pages (a wall of text with no breaks)
   - Anything that would make a reader bounce in 3 seconds
+
+An image is loaded when its tile shows a picture there: a photograph, an illustration or a chart. Judge every image by what its tile shows, and name the tile for every issue, for example "Tile 3: the table's last column runs past the right edge".
 
 A clean, professional post scores 80+. A post with any ONE serious visual defect scores below 60.
 

@@ -634,10 +634,10 @@ The `qa.vision` rail runs two vision-model checks the deleted
 - **Rendered-preview screenshot** (`_check_rendered_preview_outcome` →
   reviewer `rendered_preview`) — renders THIS draft as the operator's preview
   page (`services/preview_page.py`, the renderer `GET /preview/{token}`
-  serves), screenshots it with headless chromium (JavaScript off), and feeds
-  the PNG to a vision model to catch layout breaks, missing CSS, overflowing
-  tables, broken images. Opt-in via `qa_preview_screenshot_enabled`. **Needs
-  no URL** (see below).
+  serves), screenshots it with headless chromium (JavaScript off), and shows a
+  vision model the page as viewport-sized **tiles** (not one image, see below)
+  to catch layout breaks, missing CSS, overflowing tables, broken images.
+  Opt-in via `qa_preview_screenshot_enabled`. **Needs no URL** (see below).
 
 Both checks went cold after the #355 cutover (Glad-Labs/poindexter#563): they
 only ever lived inside `review()`, which the live path stopped calling, and
@@ -662,6 +662,51 @@ verdict emits the shared `qa_rail_degraded` finding (`rail=rendered_preview`) wi
 account: [preview-links.md](preview-links.md). `test_qa_vision_atom.py`,
 `test_multi_model_qa_rendered_preview.py` and `test_verify_task_preview.py`
 pin it.
+
+##### The judge could not read a 13,000 px screenshot
+
+A leg that renders is not yet a leg that _sees_. The judge's image encoder reads at
+most 4.19 megapixels per image (Ollama 0.32.1 → llama.cpp, `image_max_pixels:
+4194304`), so a 1280×13141 draft screenshot reached it at 0.47 scale: 16 px body text
+arrived 7-8 px tall. It failed in both directions, and both are measured:
+
+- **False objections.** On that draft (`3ceda1c0`) the unmodified leg flagged 12 of 20
+  runs (score 75, `approved: false`) with claims the DOM disproves: a "placeholder"
+  hero with a made-up filename, "missing images" under sections whose 720×720 images
+  had loaded, the banner `IN_PROGRESS | Q: 82` read back as `TL_PROJECTS | 0:30`. The
+  four shorter clean drafts drew 0 objections in 80 runs, so the noise tracks page height.
+- **Missed defects.** Injecting one known defect into real pages and running each
+  10 times (3 drafts × 10), the unmodified leg objected to a dead hero image in 13% of
+  runs, a dead inline image 13%, literal `&lt;details&gt;` / `**bold**` text 20%, four
+  empty headings in a row 27%, an overflowing table 63%, a page with no CSS 63%.
+
+An advisory rail that both invents complaints and misses real ones puts noise on
+exactly the instruments that decide whether `vision_gate` can graduate ("shipped over
+an advisory objection", per-rail objection rate). The leg now shows the judge
+viewport-sized tiles at native scale, in one call, with the page rows each covers:
+[What the judge is shown](preview-links.md#what-the-judge-is-shown) has the design,
+the measurements and the limits.
+
+Tiles cured the invented complaints (12 of 100 clean-page runs objected before, 1 of
+100 after; the evidence draft 12 of 20 → 0 of 20) and not the misses. A dead image is
+a 16 px icon and a line of alt text, and the judge read it as a caption in every real
+case, under five different prompts; a prompt that told it to hunt found "problems" on
+every clean page instead. So the browser reports what it can measure and the leg
+enforces it ([Measured facts](preview-links.md#measured-facts-not-the-judges-eyes)):
+any `<img>` that did not load, and any horizontal overflow, becomes the first issue of
+the review, caps the score under the pass line and un-approves it, whatever the judge
+said. On the eight real drafts whose screenshot URLs now 404 the unmodified leg
+objected in 1 of 80 runs and the new one in 80 of 80; injected dead images and a wide
+table went from 13-63% to 100%. What the browser does not measure (leaked markup,
+empty sections) still rests on a judge that did not object to any of 35 such pages, so
+those stay with `qa.programmatic` and the text rails. The full tables are in
+[Results](preview-links.md#results-before-and-after). Two related defects are fixed with it. Ollama
+silently drops every second image of a multi-image message, so `LiteLLMProvider` now
+sends one image per message over `/api/chat` (the same bug poindexter#1078 worked
+around per call). And the worker image rendered the page in monospace, 21% taller
+than a phone draws it, because JetBrains Mono had captured the generic font families.
+`test_preview_screenshot.py`, `test_vision_image_budget.py`,
+`test_litellm_multi_image_route.py` and `test_worker_generic_fonts.py` pin them.
 
 ##### Graduating `vision_gate` to `required_to_pass` (#563)
 

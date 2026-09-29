@@ -56,6 +56,22 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Rendered-preview tiling (the ``qa.vision`` preview leg).
+#
+# The judge holds ONE context (pinned_llm_endpoint_num_ctx, 16384 tokens) and a
+# viewport-sized tile costs ~1,280 of it (services.vision_image_budget), so the
+# number of tiles a call may carry is a hard budget: past it the server rejects
+# the request. That is why there is a cap at all; qa_preview_max_tiles is the
+# operator's dial below it and _clamp_preview_tiles is the floor under it.
+# Defaults match settings_defaults.py (test-enforced).
+_PREVIEW_DEFAULT_MAX_TILES = 8
+_PREVIEW_DEFAULT_MIN_SCALE = 0.6
+# Context kept free of images for the prompt (~500 tokens: the rubric, the title
+# and one line per tile) and the JSON verdict (~150-450), with room to spare.
+_PREVIEW_CONTEXT_RESERVE_TOKENS = 3072
+
+
+# ---------------------------------------------------------------------------
 # Skip-type taxonomy for ``qa_reviewer_skipped`` audit events (#1181).
 #
 # The QaRailFullySkipped alert (driven by metrics_exporter's
@@ -2659,9 +2675,16 @@ class MultiModelQA:
         up the per-model ``model_api_base_overrides`` (the GPU-pinned instance)
         for free — no bespoke httpx/URL plumbing. Images are passed as
         OpenAI-multimodal ``image_url`` data URIs; LiteLLM translates them to
-        Ollama's native ``images`` array. LiteLLM's ``ollama_chat`` path also
-        handles qwen3-vl's thinking channel (verified), so no explicit
-        ``think`` flag is needed. ``dispatch_complete`` additionally holds the
+        Ollama's native ``images`` array. A single-image call goes out on the
+        model's own ``ollama/`` route (``/api/generate``). Several images in one
+        message would NOT all arrive there or on ``/api/chat``: Ollama 0.32.1 drops
+        every second one, silently, so ``LiteLLMProvider`` sends a multi-image call
+        one image per message over ``/api/chat`` (``route_multi_image_for_ollama``;
+        the pin is still looked up under ``model``). Callers may pass as many
+        images as the judge's context holds, in page order; the rendered-preview
+        leg passes up to ``qa_preview_max_tiles``. Neither route needs an
+        explicit ``think`` flag for qwen3-vl (verified).
+        ``dispatch_complete`` additionally holds the
         reentrant ``gpu.lock("ollama")``, serialising the call against writer /
         media renders — the eviction the #2075 GPU pin was chasing.
 
@@ -3148,6 +3171,42 @@ class MultiModelQA:
             )
         return judged, _COVERAGE_JUDGED
 
+    async def _clamp_preview_tiles(self, wanted: int, tile_width: int, tile_height: int) -> int:
+        """``wanted`` tiles, or fewer if the judge's context cannot hold that many.
+
+        ``qa_preview_max_tiles`` is a preference; the pinned judge's context
+        (``pinned_llm_endpoint_num_ctx``) is a fact. A request that overruns it
+        fails outright, so an operator who raises the cap (or shrinks the context)
+        gets fewer tiles and a warning instead of a dark leg. Fails open to
+        ``wanted``: this guard must never be the reason there is no verdict.
+        """
+        wanted = max(1, wanted)
+        try:
+            from poindexter.services.llm_providers.dispatcher import pinned_endpoint_num_ctx
+            from poindexter.services.vision_image_budget import tiles_that_fit
+
+            context = await pinned_endpoint_num_ctx(self.pool, site_config=self._site_config)
+            if not context:
+                return wanted  # pinning is off; the call's context is per-phase and unknown here
+            fits = tiles_that_fit(
+                context, _PREVIEW_CONTEXT_RESERVE_TOKENS, tile_width, tile_height,
+            )
+        except Exception as exc:  # noqa: BLE001 — a guard must not gate the verdict
+            logger.warning(
+                "[PREVIEW_QA] could not check the tile budget against the judge's "
+                "context (%s); sending %d tile(s) as configured",
+                describe_exception(exc), wanted,
+            )
+            return wanted
+        if wanted > fits:
+            logger.warning(
+                "[PREVIEW_QA] qa_preview_max_tiles=%d does not fit the judge's %d-token "
+                "context at %dx%d per tile; sending %d tile(s). Lower qa_preview_max_tiles "
+                "or raise pinned_llm_endpoint_num_ctx (check the 3090's VRAM headroom first).",
+                wanted, context, tile_width, tile_height, fits,
+            )
+        return min(wanted, fits)
+
     async def _check_rendered_preview(
         self, title: str, topic: str, preview_url: str
     ) -> ReviewerResult | None:
@@ -3197,12 +3256,24 @@ class MultiModelQA:
           the leg sat dark for months behind a dead URL with nobody told
           (``docs/architecture/preview-links.md``).
 
+        The judge is shown the page as TILES, not as one image. A full-page
+        screenshot of a long draft is millions of pixels tall, and the judge's
+        image encoder reads at most ~4.2 megapixels per image, so a 1280x13141
+        page reached it at half scale: 16 px text became 8 px and the model read
+        the banner ``IN_PROGRESS | Q: 82`` as ``TL_PROJECTS | 0:30``. Its verdict
+        on that page was "placeholder hero, missing images" in 12 of 20 runs, and
+        neither was true. Viewport-sized tiles arrive at native scale (see
+        ``services.preview_screenshot.plan_tiles`` and
+        ``docs/architecture/preview-links.md``).
+
         Settings:
             qa_preview_screenshot_enabled  — default "false"
             qa_preview_vision_model        — default "qwen3-vl:30b-a3b-instruct"
             qa_preview_pass_threshold      — default 70 (min score)
             qa_preview_viewport_width      — default 1280
-            qa_preview_viewport_height     — default 1024
+            qa_preview_viewport_height     — default 1024 (also the tile height)
+            qa_preview_max_tiles           — most tiles sent in one call
+            qa_preview_min_scale           — smallest scale a tall page is shrunk to
         """
         import base64
         import json
@@ -3229,6 +3300,12 @@ class MultiModelQA:
             viewport_height = int(
                 await self.settings.get("qa_preview_viewport_height") or 1024
             )
+            max_tiles = int(
+                await self.settings.get("qa_preview_max_tiles") or _PREVIEW_DEFAULT_MAX_TILES
+            )
+            min_scale = float(
+                await self.settings.get("qa_preview_min_scale") or _PREVIEW_DEFAULT_MIN_SCALE
+            )
             num_predict = int(
                 await self.settings.get("qa_vision_num_predict") or 1024
             )
@@ -3253,9 +3330,14 @@ class MultiModelQA:
 
         try:
             from poindexter.services.preview_screenshot import (
+                PageTile,
                 PreviewScreenshotError,
-                capture_html_screenshot,
+                TiledScreenshot,
+                capture_html_tiles,
                 capture_preview_screenshot,
+                describe_page_facts,
+                measured_issues,
+                png_dimensions,
             )
         except Exception as e:
             from poindexter.utils.findings import emit_finding
@@ -3273,18 +3355,21 @@ class MultiModelQA:
             )
             return None, "failed", f"services.preview_screenshot import failed: {describe_exception(e)}"
 
-        png_bytes: bytes | None
+        shot: TiledScreenshot
         if preview_html:
+            max_tiles = await self._clamp_preview_tiles(max_tiles, viewport_width, viewport_height)
             try:
-                png_bytes = await capture_html_screenshot(
+                shot = await capture_html_tiles(
                     preview_html,
                     viewport_width=viewport_width,
                     viewport_height=viewport_height,
-                    full_page=True,
+                    max_tiles=max_tiles,
+                    min_scale=min_scale,
                 )
             except PreviewScreenshotError as exc:
                 return None, "failed", f"screenshot of the rendered draft failed: {exc}"
         else:
+            # Legacy review() path: a served page as ONE full-page image.
             png_bytes = await capture_preview_screenshot(
                 preview_url or "",
                 viewport_width=viewport_width,
@@ -3296,24 +3381,39 @@ class MultiModelQA:
                     f"screenshot of {preview_url} failed; the [preview_screenshot] "
                     "warning in the worker log names the cause"
                 )
+            width, height = png_dimensions(png_bytes) or (viewport_width, viewport_height)
+            shot = TiledScreenshot(
+                tiles=(PageTile(png=png_bytes, top=0, bottom=height, width=width, height=height),),
+                page_width=width, page_height=height, scale=1.0, complete=True,
+            )
 
-        b64 = base64.b64encode(png_bytes).decode("ascii")
-
+        logger.info(
+            "[PREVIEW_QA] judging %d tile(s) of a %dx%d page (scale %.2f, %s)",
+            len(shot.tiles), shot.page_width, shot.page_height, shot.scale,
+            "whole page" if shot.complete else "sampled",
+        )
+        tile_guide = "\n".join(
+            f"Tile {n}: page rows {tile.top}-{tile.bottom}"
+            for n, tile in enumerate(shot.tiles, start=1)
+        )
         prompt = get_prompt_manager().get_prompt(
             "qa.vision_preview_screenshot",
             title=title,
             topic=topic,
+            tile_count=len(shot.tiles),
+            tile_guide=tile_guide,
+            page_facts=describe_page_facts(shot.facts),
         )
 
-        # Preview screenshot (PNG) scored via the LiteLLM dispatcher — same
+        # Preview tiles (PNG) scored via the LiteLLM dispatcher — same
         # cost/trace/GPU-lock/api_base-override benefits as the image-relevance
-        # leg. Longer timeout: a full-page screenshot is a heavier prompt.
+        # leg. Longer timeout: several tiles are a heavier prompt than one image.
         # Same thinking-budget headroom as the image-relevance leg — qwen3-vl's
         # <think> trace would otherwise truncate the JSON verdict (RCA 2026-07-12).
         num_predict = await self._maybe_bump_vision_thinking_budget(model, num_predict)
         text = await self._vision_complete(
             prompt=prompt,
-            images_b64=[b64],
+            images_b64=[base64.b64encode(tile.png).decode("ascii") for tile in shot.tiles],
             model=model,
             num_predict=num_predict,
             phase="qa_vision_preview",
@@ -3355,8 +3455,24 @@ class MultiModelQA:
         passed = score >= pass_threshold and (
             bool(parsed.get("approved", True)) if "approved" in parsed else True
         )
+        # What the browser measured is not left to the judge. Shown broken-image icons
+        # and asked pointedly, tile by tile, it answered "no broken image" on every one
+        # of 32 runs over 8 real drafts with a dead image, and hunting instead made it
+        # flag every clean page. A failed image or sideways overflow is a serious visual
+        # defect by the rubric itself, so it is an objection whatever the judge said:
+        # listed first, the score capped under the pass line, the review not approved.
+        measured = measured_issues(shot.facts)
+        if measured:
+            issues = [*measured, *issues]
+            score = min(score, float(pass_threshold) - 1)
+            passed = False
 
         feedback_parts = [f"Preview screenshot QA: {int(score)}/100"]
+        if not shot.complete:
+            # A verdict that saw only part of the page says so.
+            feedback_parts.append(
+                f"sampled {len(shot.tiles)} tiles of a {shot.page_height}px page"
+            )
         if issues:
             feedback_parts.append(
                 "Issues: " + "; ".join(str(i)[:60] for i in issues[:3])

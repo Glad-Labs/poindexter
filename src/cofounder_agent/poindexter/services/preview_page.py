@@ -32,7 +32,7 @@ from poindexter.utils.content_formatting import convert_markdown_to_html
 # attacker-controlled markup, which is why this policy exists. A page rendered
 # without an HTTP response (the QA screenshot) has no header to carry it, so
 # that capture disables JavaScript in the browser context instead
-# (``services.preview_screenshot.capture_html_screenshot``).
+# (``services.preview_screenshot.capture_html_tiles``).
 PREVIEW_PAGE_CSP = (
     "default-src 'none'; "
     "style-src 'unsafe-inline'; "
@@ -175,7 +175,7 @@ article{{color:#e2e8f0;line-height:1.8;font-size:16px}}
 article h1,article h2,article h3{{color:#fff}}
 article h2{{font-size:22px;margin:24px 0 12px;border-bottom:1px solid #334155;padding-bottom:8px}}
 article h3{{font-size:18px;margin:20px 0 8px}}
-article a{{color:#22d3ee}}
+article a{{color:#22d3ee;overflow-wrap:anywhere}}
 article code{{background:#1e293b;padding:2px 6px;border-radius:4px;font-size:14px;color:#67e8f9}}
 article pre{{background:#1e293b;padding:16px;border-radius:8px;overflow-x:auto;border:1px solid #334155}}
 article blockquote{{border-left:3px solid #22d3ee55;background:#1e293b44;padding:8px 16px;margin:16px 0;border-radius:0 8px 8px 0}}

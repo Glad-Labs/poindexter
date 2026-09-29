@@ -14,8 +14,11 @@ but NOT the vision legs, so both went cold (Glad-Labs/poindexter#563):
 2. **Rendered-preview screenshot** (``_check_rendered_preview_outcome`` →
    reviewer ``rendered_preview``). Renders THIS draft as the operator's preview
    page (``services.preview_page``, the renderer ``GET /preview/{token}``
-   serves) and feeds a screenshot to a vision model to catch layout breaks,
-   missing CSS, overflowing tables, broken images. Opt-in via
+   serves) and shows a vision model the page as viewport-sized tiles, to catch
+   layout breaks, missing CSS, overflowing tables, broken images. The browser
+   itself reports the images that failed to load and any horizontal overflow,
+   because the model cannot see either reliably; those become issues in code
+   (``docs/architecture/preview-links.md``). Opt-in via
    ``qa_preview_screenshot_enabled``.
 
    The leg renders in-process and never fetches the page. This rail runs

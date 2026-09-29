@@ -111,6 +111,25 @@ requires a second endpoint.
   2026-09-25 it had no such rule, and every cold load of the reference judge
   ran the ladder in the middle of renders.
 
+- **Several images in one request go one per message, over `/api/chat`.**
+  Ollama 0.32.1 serving qwen3-vl through llama-server drops every second image
+  of a request whose images share one message (the 1st, 3rd, 5th arrive; the
+  2nd, 4th never do) with HTTP 200 and no warning. `LiteLLMProvider` works
+  around it (`route_multi_image_for_ollama`): a request with more than one image
+  to an Ollama model gets one image per message, and an `ollama/` model reaches
+  LiteLLM as `ollama_chat/`. The route changes and the endpoint does not: the pin
+  above is still looked up under the name the caller used, so the judge stays on
+  its own instance. **Do not switch a model's prefix to `ollama_chat/` in a
+  `*_model` setting to get this behavior.** The map is keyed on the exact
+  resolved name, so `ollama_chat/qwen3-vl:...` would miss the pin and load the
+  judge onto the default endpoint's GPU. Requests with one image or none, and
+  every non-Ollama model, are untouched. How many images a call may carry is a
+  context budget: each 1280×1024 image costs the judge about 1,282 of its
+  `pinned_llm_endpoint_num_ctx` tokens, and a request past the context is
+  rejected with HTTP 400 `exceed_context_size_error` (never truncated). The
+  measurements are in
+  [preview-links.md](../architecture/preview-links.md#why-the-judge-sees-every-tile).
+
 ## Recipe: a second Ollama pinned to a specific GPU
 
 Ollama has no per-model GPU affinity — one instance schedules across

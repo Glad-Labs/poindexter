@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/poindexter/modules/content/multi_model_qa.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_multi_model_qa.py`
-**Last reviewed:** 2026-06-22
+**Last reviewed:** 2026-09-28
 
 ## What it does
 
@@ -111,9 +111,17 @@ Gates (mostly opt-in):
     `verify_content_urls` (programmatic layer).
   - `services.citation_verifier` (HTTP HEAD path).
   - `services.web_research.WebResearcher` (DuckDuckGo fact check).
-  - `services.preview_screenshot.capture_html_screenshot` (Playwright; the
-    `qa.vision` leg's in-process render) and `capture_preview_screenshot`
-    (the legacy URL path).
+  - `services.preview_screenshot.capture_html_tiles` (Playwright; the
+    `qa.vision` leg's in-process render, cut into viewport-sized tiles the
+    judge can read) and `capture_preview_screenshot` (the legacy URL path).
+  - `services.vision_image_budget` — what an image costs the judge in context
+    tokens; `_clamp_preview_tiles` uses it to keep the tile count inside the
+    pinned judge's context.
+  - `capture_html_tiles` also returns `PageFacts` (images that failed to load,
+    horizontal overflow) read from the same browser session.
+    `_check_rendered_preview_outcome` gives them to the prompt as exact facts and
+    enforces them itself through `measured_issues`: they lead the review's issues,
+    cap the score one under `qa_preview_pass_threshold` and un-approve it.
   - `services.preview_page.render_preview_page` — the page `qa.vision`
     screenshots, the same renderer `GET /preview/{token}` serves.
   - `services.ollama_client.OllamaClient` (deliberately concrete — it

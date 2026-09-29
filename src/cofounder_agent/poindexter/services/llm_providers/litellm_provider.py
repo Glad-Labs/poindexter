@@ -309,6 +309,91 @@ def pinned_api_base_for(
     return pinned
 
 
+# ---------------------------------------------------------------------------
+# Multi-image requests to Ollama
+# ---------------------------------------------------------------------------
+# Ollama 0.32.1 serving qwen3-vl through llama-server DROPS EVERY SECOND IMAGE of
+# a request whose images share one message: the 1st, 3rd, 5th... reach the model,
+# the 2nd, 4th... never do, with HTTP 200 and no warning. LiteLLM's ``ollama/``
+# route (/api/generate) merges every image into one list, so it drops them too,
+# and ``ollama_chat/`` (/api/chat) drops them when they share a message. ONE
+# IMAGE PER MESSAGE over /api/chat delivers all of them. Measured 2026-09-28
+# against the pinned judge with distinct, randomly numbered images and no index
+# hint in the text: N images in one message read back correctly in 0 of 10
+# requests (N = 2..10); one image per message read back correctly in 10 of 10,
+# through N = 10 (docs/architecture/preview-links.md, "Why the judge sees every
+# tile"). poindexter#1078 hit the same bug ("the judge does not reliably keep
+# image order") and worked around it with one call per image.
+#
+# The route change is made HERE, after the endpoint has been chosen, and never by
+# a caller swapping ``ollama/`` for ``ollama_chat/`` in its model string:
+# ``model_api_base_overrides`` is keyed on the resolved name, so a differently
+# spelled model would miss its pin and land on the default endpoint, where the
+# ~20 GB vision judge would load onto the writer's GPU.
+
+_OLLAMA_MODEL_PREFIXES = ("ollama/", "ollama_chat/")
+
+
+def count_image_parts(messages: list[dict[str, Any]]) -> int:
+    """How many ``image_url`` parts the messages carry between them."""
+    total = 0
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            total += sum(
+                1 for part in content
+                if isinstance(part, dict) and part.get("type") == "image_url"
+            )
+    return total
+
+
+def one_image_per_message(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The same conversation with every image in a message of its own.
+
+    A message carrying several images becomes one message per image, then one
+    message with its text: the images first, as Ollama's own renderer orders
+    them inside a single message. A message with at most one image, and every
+    text-only message, passes through untouched.
+    """
+    out: list[dict[str, Any]] = []
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        parts = content if isinstance(content, list) else []
+        images = [p for p in parts if isinstance(p, dict) and p.get("type") == "image_url"]
+        if len(images) <= 1:
+            out.append(message)
+            continue
+        rest = [p for p in parts if not (isinstance(p, dict) and p.get("type") == "image_url")]
+        shell = {k: v for k, v in message.items() if k != "content"}
+        out.extend({**shell, "content": [image]} for image in images)
+        if rest:
+            out.append({**shell, "content": rest})
+    return out
+
+
+def route_multi_image_for_ollama(
+    resolved_model: str, messages: list[dict[str, Any]],
+) -> tuple[str, list[dict[str, Any]]]:
+    """``(model for LiteLLM, messages)`` that deliver every image to Ollama.
+
+    Unchanged unless the model is served by Ollama AND the request carries more
+    than one image. Then every image gets a message of its own and an
+    ``ollama/`` model is handed to LiteLLM as ``ollama_chat/`` (the /api/chat
+    route). Callers keep using ``resolved_model`` for everything about WHERE the
+    call lands (pin lookup, api_base, logged identity): only the wire route
+    changes.
+    """
+    if (
+        not resolved_model.lower().startswith(_OLLAMA_MODEL_PREFIXES)
+        or count_image_parts(messages) < 2
+    ):
+        return resolved_model, messages
+    litellm_model = resolved_model
+    if resolved_model.lower().startswith("ollama/"):
+        litellm_model = "ollama_chat/" + resolved_model[len("ollama/"):]
+    return litellm_model, one_image_per_message(messages)
+
+
 class LangfuseConfigError(RuntimeError):
     """Raised when ``langfuse_tracing_enabled=true`` but a credential is
     missing.
@@ -1092,9 +1177,23 @@ class LiteLLMProvider:
         call_messages = messages
         if self._anthropic_prompt_caching and _is_anthropic_model(resolved_model):
             call_messages = _annotate_system_cache_control(messages)
+        # Several images to Ollama: one per message, over /api/chat (see the note
+        # above route_multi_image_for_ollama). ``resolved_model`` keeps deciding
+        # where the call lands; only the route LiteLLM takes changes.
+        litellm_model, routed_messages = route_multi_image_for_ollama(
+            resolved_model, call_messages,
+        )
+        if routed_messages is not call_messages:
+            logger.info(
+                "[litellm_provider] %d images in one request to %s: sending one "
+                "image per message over /api/chat (Ollama drops every second image "
+                "of a multi-image message)",
+                count_image_parts(routed_messages), resolved_model,
+            )
+            call_messages = routed_messages
         timeout = float(kwargs.pop("timeout_s", self._timeout))
         completion_kwargs: dict[str, Any] = {
-            "model": resolved_model,
+            "model": litellm_model,
             "messages": call_messages,
             "timeout": timeout,
             "stream": False,
@@ -1311,9 +1410,11 @@ class LiteLLMProvider:
         resolved_model = self._resolve_model(model)
         self._enforce_paid_endpoint_policy(resolved_model)
         timeout = float(kwargs.pop("timeout_s", self._timeout))
+        # Mirrors complete(): several images to Ollama go one per message over /api/chat.
+        litellm_model, call_messages = route_multi_image_for_ollama(resolved_model, messages)
         completion_kwargs: dict[str, Any] = {
-            "model": resolved_model,
-            "messages": messages,
+            "model": litellm_model,
+            "messages": call_messages,
             "timeout": timeout,
             "stream": True,
         }

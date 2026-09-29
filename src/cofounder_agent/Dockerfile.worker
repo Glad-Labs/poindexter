@@ -182,6 +182,46 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN python -m playwright install chromium && \
     chmod -R a+rX /opt/ms-playwright
 
+# Placed here, after the heavy dependency layers, on purpose: a Docker layer inserted above
+# `poetry install` or `playwright install chromium` would invalidate their cache and rebuild
+# both (minutes and gigabytes) on every host that pulls this change. Only `COPY . .` and the
+# user setup follow, and those rebuild on every source change anyway.
+# Point the generic font families at the sans/serif faces installed above.
+#
+# fonts-liberation (Arial/Helvetica/Times metrics) is installed, but the generic
+# names CSS falls back to (`sans-serif`, `system-ui`, `serif`) did not resolve to
+# it. fontconfig's default preference lists name DejaVu / Noto, neither of which
+# is installed, so once fonts-jetbrains-mono arrived for VHS it won every generic
+# family (`fc-match sans-serif` -> JetBrains Mono). Every page that asks for the
+# system font rendered in monospace: the qa.vision preview screenshot (the page
+# is `font-family: -apple-system, system-ui, sans-serif`) showed the judge text
+# ~21% wider than a phone draws it, so a 10,861 px page (Roboto, the Android UI
+# font) came out 13,141 px tall. Liberation Sans lands within 0.5% of Roboto's
+# page height and is already here, so the alias costs no image size; DejaVu would
+# add a package and still run ~9% wide. Measured 2026-09-28 with Chromium's own
+# CSS.getPlatformFontsForNode (docs/architecture/preview-links.md).
+#
+# `monospace` is left alone on purpose: VHS and every explicit `'JetBrains Mono'`
+# consumer (brand hero, video thumbnails) keep it. The alias is inline, not a
+# COPY'd file, because deploy-checkout-sync rebuilds this image only when
+# Dockerfile.worker (or its dependency locks) changes; a separate conf file
+# would be a merged edit that never reaches the container.
+RUN printf '%s\n' \
+        '<?xml version="1.0"?>' \
+        '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' \
+        '<fontconfig>' \
+        '  <alias binding="same"><family>sans-serif</family><prefer><family>Liberation Sans</family></prefer></alias>' \
+        '  <alias binding="same"><family>sans</family><prefer><family>Liberation Sans</family></prefer></alias>' \
+        '  <alias binding="same"><family>system-ui</family><prefer><family>Liberation Sans</family></prefer></alias>' \
+        '  <alias binding="same"><family>serif</family><prefer><family>Liberation Serif</family></prefer></alias>' \
+        '</fontconfig>' \
+        > /etc/fonts/conf.d/61-poindexter-generic-families.conf \
+    && fc-match sans-serif | grep -q 'Liberation Sans' \
+    && fc-match system-ui | grep -q 'Liberation Sans' \
+    && fc-match serif | grep -q 'Liberation Serif' \
+    && fc-match monospace | grep -q 'JetBrains Mono' \
+    && echo '[BUILD] generic fonts OK: sans-serif/system-ui -> Liberation Sans, serif -> Liberation Serif, monospace -> JetBrains Mono'
+
 # Copy application code
 COPY . .
 

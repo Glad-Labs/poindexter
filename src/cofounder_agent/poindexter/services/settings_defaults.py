@@ -2376,6 +2376,24 @@ DEFAULTS: dict[str, str] = {
     'qa_preview_pass_threshold': '70',
     'qa_preview_viewport_width': '1280',
     'qa_preview_viewport_height': '1024',
+    # The rendered-preview leg shows the judge the page as TILES of viewport
+    # size (height = qa_preview_viewport_height) instead of one full-page image:
+    # the judge's encoder reads at most ~4.2 MP per image, so a 1280x13141
+    # screenshot reached it at half scale and it reported "placeholder" heroes
+    # and missing images that were on the page (12 of 20 runs on that draft).
+    # max_tiles is a CONTEXT budget, not a taste: each 1280x1024 tile costs the
+    # pinned judge ~1,282 of its 16,384-token context
+    # (services/vision_image_budget.py), so 8 tiles + the prompt use ~13.3k with
+    # the answer reserved. A call past the context is rejected, and
+    # MultiModelQA._clamp_preview_tiles clamps to it. Raise it only together with
+    # pinned_llm_endpoint_num_ctx, after checking the 3090's ~1.8 GB VRAM
+    # headroom. min_scale: a page too tall for max_tiles at native scale is
+    # shrunk to fit, but never below this, so the judge sees every row of a page
+    # up to ~22,700 px at >= 0.6x (16 px text stays >= 9.6 px). 1.0 = never
+    # shrink: sample tiles down the page instead, leaving gaps (4 of 6 real
+    # drafts would be sampled). Test-pinned to multi_model_qa's defaults.
+    'qa_preview_max_tiles': '8',
+    'qa_preview_min_scale': '0.6',
     'qa_vision_max_images': '3',
     # qa.freshness — stale news-take veto (2026-09-15). A draft anchored to a
     # moment (relative-time phrasing) or sourced from a news feed must reach QA
@@ -7634,6 +7652,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_preview_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_preview_viewport_width': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_preview_viewport_height': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_preview_max_tiles': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_preview_min_scale': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_vision_max_images': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_web_factcheck_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'research_min_snippet_length': {'owner': 'research_quality_service', 'value_type': 'integer'},
