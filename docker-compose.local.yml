@@ -629,8 +629,9 @@ services:
       # shipper (Loki/Promtail later) can read from there.
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
-      # brain (poindexter/brain, imported as `brain.*`) rides in the /app bind
-      # mount with the rest of the backend since poindexter#1046 step 2.
+      # /app is the backend root (the bind mount above); every backend module,
+      # brain included, is imported as `poindexter.*` from there. The flat
+      # `services.*` / `brain.*` roots are gone (poindexter#1046 step 5).
       PYTHONPATH: "/app"
       # Prefect 3 — content pipeline orchestration (#206). Worker
       # imports the @flow decorated entry point and submits flow runs
@@ -887,8 +888,8 @@ services:
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
-      # /app for ``services.*`` and ``brain.*`` imports (brain lives under
-      # poindexter/ since poindexter#1046 step 2).
+      # /app for ``poindexter.*`` imports (the flat ``services.*`` /
+      # ``brain.*`` roots are gone since poindexter#1046 step 5).
       PYTHONPATH: "/app"
     volumes:
       - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
@@ -2371,7 +2372,7 @@ services:
     # recovery path. Voice isn't load-bearing; add "voice" to compose_profiles
     # in bootstrap.toml once scripts/Dockerfile.voice-agent builds again.
     profiles: ["voice"]
-    command: ["python", "-m", "services.voice_agent_livekit", "--service"]
+    command: ["python", "-m", "poindexter.services.voice_agent_livekit", "--service"]
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       # Symmetric key for pgcrypto-decrypted is_secret rows. The voice
@@ -2478,7 +2479,7 @@ services:
     #   docker compose --profile voice-dev up -d voice-agent-claude-code
     # Host-brain mode additionally needs its host daemon/scheduled task enabled.
     profiles: ["voice-dev"]
-    command: ["python", "-m", "services.voice_agent_livekit", "--service", "--service-profile", "claude-code"]
+    command: ["python", "-m", "poindexter.services.voice_agent_livekit", "--service", "--service-profile", "claude-code"]
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       # Symmetric key for pgcrypto-decrypted is_secret rows. The claude-code
@@ -2536,7 +2537,7 @@ services:
   # the same Whisper → Ollama → Kokoro pipeline as livekit but via
   # Pipecat's SmallWebRTC prebuilt UI, which never settled into Matt's
   # daily flow and duplicated maintenance surface area. The shared
-  # voice utilities (services/voice_agent.py, voice_pipecat.py,
+  # voice utilities (poindexter/services/voice_agent.py, voice_pipecat.py,
   # voice_agent_claude_code.py) stay as livekit's dependency tree.
 
   # ===========================================

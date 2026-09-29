@@ -11,14 +11,13 @@ zero env-var dependency per the project's standard pattern).
 
 ## Surfaces
 
-- **Local mic loop** (``run_local()``, ``python -m services.voice_agent``)
-- **WebRTC over Tailscale** (``services.voice_agent_webrtc``) — phone /
-  laptop access from anywhere on the tailnet, same pipeline. Runs as
-  the always-on ``voice-agent-webrtc`` Docker service (#383).
-- **LiveKit room participant** (``services.voice_agent_livekit``) —
+- **Local mic loop** (``run_local()``, ``python -m poindexter.services.voice_agent``)
+- **LiveKit room participant** (``poindexter.services.voice_agent_livekit``) —
   multi-party voice room. Runs as the always-on
   ``voice-agent-livekit`` Docker service (#383). See
   ``docs/operations/voice-stt-tts.md``.
+- The WebRTC-over-Tailscale surface (``voice_agent_webrtc``, the
+  ``voice-agent-webrtc`` Docker service) was retired 2026-05-08.
 - Future: Discord voice bot adapter, multi-agent voice rooms.
 
 The pipeline-builder (``build_voice_pipeline_task``) is the shared
@@ -48,7 +47,7 @@ Subsequent runs are warm (everything cached under ``~/.cache/``).
 
 ## Run (local mic loop)
 
-    python -m services.voice_agent
+    python -m poindexter.services.voice_agent
 
 Talk into your default mic. Ctrl+C to exit.
 

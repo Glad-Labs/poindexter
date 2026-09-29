@@ -189,9 +189,9 @@ public release). To smoke that path:
 
 1. Bring the stack up: `docker compose -f docker-compose.local.yml up -d livekit voice-agent-livekit`
 2. The bridge selects the `PipecatAudioMediaPlane` by default now (shared
-   `services/voice_pipecat.py`); no manual wiring needed.
+   `poindexter/services/voice_pipecat.py`); no manual wiring needed.
 3. Open `https://meet.livekit.io`, plug in `LIVEKIT_URL` + a client
-   token (`python -m services.voice_agent_livekit --print-client-token
+   token (`python -m poindexter.services.voice_agent_livekit --print-client-token
 --room claude-bridge --identity me`), join the room.
 4. Run `voice-on`, talk; verify `.in` fills; trigger `voice-speak` from
    the session; verify the room hears the TTS.

@@ -124,6 +124,18 @@ jobs:
       - name: Lint compose mounts anchored to deploy root
         run: python scripts/ci/compose_mount_deploy_root_lint.py
 
+      # `python -m <module>` resolves its module only at launch, so a stale path
+      # in a compose command, Dockerfile CMD, shell launcher or runbook fails at
+      # container start and never in CI. poindexter#1046 deleted the flat roots
+      # and four voice launch strings kept `services.voice_agent_livekit`: parked
+      # voice hid it, and un-parking would have crash-looped both containers.
+      # Resolves every `-m poindexter.*` against the tree and refuses a flat
+      # root. Lives here, not in test-backend, because this job has no
+      # changed-paths gate: a compose-only or runbook-only PR is still checked.
+      # Static, no DB. (2026-09-28)
+      - name: Lint python -m launch paths resolve
+        run: python scripts/ci/module_launch_paths_lint.py
+
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py
 

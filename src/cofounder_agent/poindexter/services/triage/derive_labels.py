@@ -6,9 +6,9 @@ so the caller leaves the axis bare. A missing label is the triage signal;
 this module never invents a default.
 
 Self-contained (stdlib ``re`` only) so it runs three ways from one source:
-  * imported as ``services.triage.derive_labels`` by tests + the weekly sweep,
+  * imported as ``poindexter.services.triage.derive_labels`` by tests + the weekly sweep,
   * run as a bare script by the triage-on-open GitHub Action,
-  * ``python -m services.triage.derive_labels --title "..."``.
+  * ``python -m poindexter.services.triage.derive_labels --title "..."``.
 """
 from __future__ import annotations
 

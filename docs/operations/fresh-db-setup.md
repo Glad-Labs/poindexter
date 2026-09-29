@@ -318,7 +318,7 @@ poindexter setup --check
 ```
 
 `brain daemon` will still `FAIL` (the brain is a separate process —
-start it with `python -m brain.daemon` or your supervisor of choice).
+start it with `python -m poindexter.brain.brain_daemon` or your supervisor of choice).
 `worker API` should now `OK` — the worker registered its own
 `api_base_url` setting via the StartupManager.
 

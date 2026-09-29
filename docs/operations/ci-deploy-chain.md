@@ -172,7 +172,16 @@ the pytest suites CI runs through other workflows (`mcp-server-tests.yml`,
   lint that keeps that list complete: "Which test trees CI runs" above.
 - `.github/workflows/migrations-smoke.yml` — applies every migration
   against a clean Postgres + pgvector. Another branch-protection
-  required check; fires on every PR + push to main.
+  required check; fires on every PR + push to main. Because it has no
+  changed-paths gate it also carries the static, no-DB lints that must
+  see every PR, including `module_launch_paths_lint.py`. That lint
+  resolves every `python -m` launch string that names a backend module
+  (compose `command:`, Dockerfile `CMD`, shell launchers, units,
+  runbooks, docstrings) against the tree, and refuses the flat roots
+  poindexter#1046 retired. An interpreter resolves `-m` only at launch,
+  so a stale one fails at container start and nowhere earlier: four
+  voice launch strings kept the flat spelling behind the parked `voice`
+  profile until 2026-09-28.
 - `.github/workflows/mcp-server-tests.yml` — runs the `mcp-server/`
   pytest suite (its own `uv` venv) as the `mcp-server-tests` status
   check, the **third** branch-protection required check. mcp-server

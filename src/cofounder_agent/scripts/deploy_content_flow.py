@@ -228,7 +228,9 @@ async def main() -> None:
     # ``.apply()`` (also async in 3.x).
     #
     # ``entrypoint_type=MODULE_PATH`` is critical for same-machine
-    # workers: it tells the worker to ``import services.flows.content_generation``
+    # workers: it tells the worker to
+    # ``import poindexter.services.flows.content_generation`` (the entrypoint is
+    # derived from the flow object's own module, so it follows any rename)
     # instead of trying to "download flow code from storage" into a temp
     # dir. With FILE_PATH (the default), the worker creates an empty
     # workdir then errors out trying to load the entrypoint file. With

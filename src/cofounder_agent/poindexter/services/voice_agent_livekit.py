@@ -33,7 +33,7 @@ silence" behaviour of each pipeline.
 
 ## Run (single bot, joining a room called 'matt-test')
 
-    poetry run python -m services.voice_agent_livekit --room matt-test
+    poetry run python -m poindexter.services.voice_agent_livekit --room matt-test
 
 ## Joining the room from a phone or laptop
 
@@ -42,7 +42,7 @@ https://meet.livekit.io . Configure:
 
 - LiveKit URL:  ``ws://<your-tailnet>:7880`` (or ``wss://...`` if behind
   Tailscale Funnel)
-- Token:        run ``poetry run python -m services.voice_agent_livekit
+- Token:        run ``poetry run python -m poindexter.services.voice_agent_livekit
                 --print-client-token --room matt-test --identity phone``
 
 The client token grants the room + a unique identity. Different humans

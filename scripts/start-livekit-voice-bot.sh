@@ -34,9 +34,16 @@ if ! docker ps --filter name=poindexter-livekit --filter status=running --format
     exit 1
 fi
 
-# The bot wants to import poindexter.services.voice_agent_livekit from the worker
-# package. Run it from the cofounder_agent/ directory so the module
-# path resolves cleanly without a poetry venv setup.
+# The bot is poindexter.services.voice_agent_livekit in the worker package.
+# Run it from the cofounder_agent/ directory so `-m` finds the poindexter
+# package there. The flat `services.` spelling stopped resolving when
+# poindexter#1046 deleted the flat roots; scripts/ci/module_launch_paths_lint.py
+# checks every `-m` launch string against the tree.
+#
+# pipecat and livekit are NOT backend poetry dependencies -- only the
+# voice-agent image installs them (scripts/Dockerfile.voice-agent). Install
+# them into this poetry env first (pins in that Dockerfile), or run the
+# containerised voice-agent-livekit service instead.
 cd "$(dirname "$0")/../src/cofounder_agent"
 
-exec poetry run python -m services.voice_agent_livekit "$@"
+exec poetry run python -m poindexter.services.voice_agent_livekit "$@"
