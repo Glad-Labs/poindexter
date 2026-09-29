@@ -31,7 +31,7 @@
     "clean:install": "npm run clean && npm run setup",
     "prepare": "node -e \"process.exit(process.env.CI || process.env.VERCEL ? 0 : 1)\" || husky",
     "// python": "=== PYTHON QUALITY + TESTS (backend poetry env at src/cofounder_agent) ===",
-    "format:python": "cd src/cofounder_agent && poetry run black . && poetry run isort .",
+    "format:python": "cd src/cofounder_agent && poetry run ruff check --select I --fix . && poetry run ruff format .",
     "lint:python": "cd src/cofounder_agent && poetry run ruff check .",
     "type:check": "cd src/cofounder_agent && poetry run python -m mypy --config-file=../../pyproject.toml",
     "type:check:ratchet": "cd src/cofounder_agent && poetry run python ../../scripts/ci/mypy_lint.py",

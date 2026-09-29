@@ -1,4 +1,4 @@
-# Repo-root tool configuration ONLY (pytest / mypy / ruff / isort / black).
+# Repo-root tool configuration ONLY (pytest / mypy / ruff).
 # There is deliberately no [project] or [tool.poetry] here: the ONE Python
 # distribution is src/cofounder_agent/pyproject.toml (poindexter#1046 step 5b),
 # and the brain / MCP servers carry their own manifests. The old root poetry
@@ -77,25 +77,6 @@ exclude = [
     ".venv/",
 ]
 
-[tool.isort]
-# Import sorting configuration
-profile = "black"
-line_length = 100
-skip_gitignore = true
-known_first_party = ["src"]
-
-[tool.black]
-# Code formatting configuration
-line-length = 100
-target-version = ["py310"]
-exclude = '''
-/(
-    \.git
-  | \.venv
-  | venv
-  | tests
-)/
-'''
 [tool.ruff]
 line-length = 100
 # Was inferred from the root [project] requires-python before that table went;
@@ -105,7 +86,7 @@ target-version = "py313"
 [tool.ruff.lint]
 # E4/E7/E9: pycodestyle imports/comparisons/runtime. F: pyflakes. I: isort.
 # B: flake8-bugbear. UP: pyupgrade. C4: comprehensions. ARG: unused-arguments.
-# Deliberately excludes E5 (line-length) — line lengths are enforced by Black.
+# Deliberately excludes E5 (line-length) — line lengths are handled by `ruff format`.
 select = ["E4", "E7", "E9", "F", "I", "B", "UP", "C4", "ARG"]
 ignore = [
     # Handler callbacks receive a fixed positional signature (pool, payload,

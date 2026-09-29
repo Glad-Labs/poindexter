@@ -28,10 +28,13 @@
 #                   scripts/ci/mypy_baseline.json, and only a NET-NEW error
 #                   fails. Same doctrine as the bandit and semgrep ratchets.
 #
-# Ruff is pinned to the same version poetry resolves (0.15.20) so CI and a
-# local `poetry run ruff` can never disagree about what is a violation. mypy
-# needs no pin here: type-check installs it from poetry.lock with the rest of
-# the backend env.
+# Ruff is pinned to the version poetry.lock resolves, so CI and a local
+# `poetry run ruff` can never disagree about what is a violation. Dependabot
+# bumps the lock but cannot see the pin below (four bumps merged past it), so
+# tests/unit/scripts/test_python_lint_workflow.py derives the expected version
+# from poetry.lock and fails the PR when the two drift. mypy needs no pin
+# here: type-check installs it from poetry.lock with the rest of the backend
+# env.
 name: python-lint
 
 # NO `paths:` filter, deliberately. backend-lint and syntax-check are REQUIRED
@@ -64,8 +67,9 @@ permissions:
   contents: read
 
 env:
-  # Keep in lockstep with `ruff = "^0.15.20"` in src/cofounder_agent/pyproject.toml.
-  RUFF_VERSION: '0.15.20'
+  # Must equal the ruff version in src/cofounder_agent/poetry.lock. The test
+  # named in the header comment fails the PR that moves one without the other.
+  RUFF_VERSION: '0.16.7'
   # The poetry that unit-tests.yml installs with. test_mypy_lint.py fails if
   # the two drift, because type-check's baseline is measured in that env.
   POETRY_VERSION: '2.2.1'
