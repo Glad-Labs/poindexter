@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+## [0.151.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.150.0...v0.151.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** POST /api/tasks/{task_id}/generate-image now answers 410 Gone. For source=image_gen, use POST /api/tasks/{task_id}/regen-image with {"which": "featured", "prompt": ...} (poindexter tasks regen-image, MCP regen_post_image). For source=pexels, use POST /api/tasks/{task_id}/replace-image with {"which": "featured", "url": ...} (poindexter tasks replace-image, MCP replace_post_image).
+
+### Features
+
+* **storage:** publish to a local folder served at /site/ when there is no bucket ([#4203](https://github.com/Glad-Labs/glad-labs-stack/issues/4203)) ([9f61c96](https://github.com/Glad-Labs/glad-labs-stack/commit/9f61c96c80011bbeb4a159bc98e5add68278c8b3))
+
+
+### Bug Fixes
+
+* **api:** retire POST /api/tasks/{id}/generate-image to 410 Gone, pointing at regen-image and replace-image ([#4189](https://github.com/Glad-Labs/glad-labs-stack/issues/4189)) ([3036b2e](https://github.com/Glad-Labs/glad-labs-stack/commit/3036b2ed645120a2ab8188b705969c5f529794b1))
+* **approve:** make featured_image_url reach the post, and let featured edits reach staged posts ([#4201](https://github.com/Glad-Labs/glad-labs-stack/issues/4201)) ([ba753ef](https://github.com/Glad-Labs/glad-labs-stack/commit/ba753ef5ccea7e55fbb594a9025eb1f34d5a87c4))
+* **brain:** don't restart a container that started moments ago ([#4231](https://github.com/Glad-Labs/glad-labs-stack/issues/4231)) ([3853699](https://github.com/Glad-Labs/glad-labs-stack/commit/38536993937fd7203023c1ca88df008049ad22f7))
+* **brain:** drop the retired qa_overall_score_threshold from REQUIRED_KEYS; record [#1097](https://github.com/Glad-Labs/glad-labs-stack/issues/1097) in the seed docs ([#4212](https://github.com/Glad-Labs/glad-labs-stack/issues/4212)) ([ab95f37](https://github.com/Glad-Labs/glad-labs-stack/commit/ab95f3752983444cf433f8de3712f8b30a046b49))
+* **brain:** let the migration-drift resync run git on the host user's checkout ([#4192](https://github.com/Glad-Labs/glad-labs-stack/issues/4192)) ([bf236cb](https://github.com/Glad-Labs/glad-labs-stack/commit/bf236cbefb0fdd56c000fc9580fe66557f441d8b))
+* **brain:** move the seven probe-owned docker restarts onto the shared helper ([#4196](https://github.com/Glad-Labs/glad-labs-stack/issues/4196)) ([4711ac8](https://github.com/Glad-Labs/glad-labs-stack/commit/4711ac8a43e7b9cbce7a9994cffe6562779526f8))
+* **brain:** page when data_freshness_feeds is set but unusable ([#4194](https://github.com/Glad-Labs/glad-labs-stack/issues/4194)) ([14933cc](https://github.com/Glad-Labs/glad-labs-stack/commit/14933cc21e0f196c77e20142ea72476f5bcba56d))
+* **brain:** probe the bucket in storage_public_url, not a hardcoded host ([#4235](https://github.com/Glad-Labs/glad-labs-stack/issues/4235)) ([e05653e](https://github.com/Glad-Labs/glad-labs-stack/commit/e05653e11e9db260069576321f0ff3a1e22faea8))
+* **brain:** run the port-forward probe's reachability checks off the event loop ([#4214](https://github.com/Glad-Labs/glad-labs-stack/issues/4214)) ([47e3b81](https://github.com/Glad-Labs/glad-labs-stack/commit/47e3b81b61277891347177ae15cabb0e9071f220))
+* **ci:** make the lints correct on the public mirror's stripped tree ([#4202](https://github.com/Glad-Labs/glad-labs-stack/issues/4202)) ([dc1e842](https://github.com/Glad-Labs/glad-labs-stack/commit/dc1e84270514557b9614192d5d9398e597720d71))
+* **ci:** pin ruff to the poetry.lock version; move the last black/isort/pylint scripts to ruff ([#4227](https://github.com/Glad-Labs/glad-labs-stack/issues/4227)) ([c56dd99](https://github.com/Glad-Labs/glad-labs-stack/commit/c56dd99ff56a6aeb424feac0c7bdcab8b7574063))
+* **ci:** run the repo-root tests/ tree in CI and hold it to the unit-test-dirs lint ([#4223](https://github.com/Glad-Labs/glad-labs-stack/issues/4223)) ([9301e0d](https://github.com/Glad-Labs/glad-labs-stack/commit/9301e0d1244c52b81001740c6094765a9ce78070))
+* **ci:** stop the mirror sync aborting on the repo name in two systemd unit comments ([#4218](https://github.com/Glad-Labs/glad-labs-stack/issues/4218)) ([6d8056a](https://github.com/Glad-Labs/glad-labs-stack/commit/6d8056acf84161919584211c9d83f55c0ffc2718)), closes [#4215](https://github.com/Glad-Labs/glad-labs-stack/issues/4215)
+* **compose:** stop mounting the whole ~/.poindexter into worker, pipeline-bot and prefect-worker ([#4198](https://github.com/Glad-Labs/glad-labs-stack/issues/4198)) ([944c6ce](https://github.com/Glad-Labs/glad-labs-stack/commit/944c6cef8520aacff04281272c0ad669e4cb48a3))
+* **deploy:** let the installer refresh the connector and recovery-agent units, where the host has them ([#4234](https://github.com/Glad-Labs/glad-labs-stack/issues/4234)) ([e050bcb](https://github.com/Glad-Labs/glad-labs-stack/commit/e050bcb045fe9d9540cdc7fb5a7808bee3621b81)), closes [#4232](https://github.com/Glad-Labs/glad-labs-stack/issues/4232)
+* **deploy:** make the health gate's rollback target survive the rebuild ([#4197](https://github.com/Glad-Labs/glad-labs-stack/issues/4197)) ([da15c4e](https://github.com/Glad-Labs/glad-labs-stack/commit/da15c4eee09db78f8627717f77fa9206cc5b76f4))
+* **deploy:** restart host daemons when their files change, and run the GPU scraper from the deploy clone ([#4188](https://github.com/Glad-Labs/glad-labs-stack/issues/4188)) ([#4199](https://github.com/Glad-Labs/glad-labs-stack/issues/4199)) ([72652e3](https://github.com/Glad-Labs/glad-labs-stack/commit/72652e3c82e76f2fa2bca72e9f40dd85618ad165))
+* **deploy:** run the merged deploy driver every fire, behind a last-known-good fallback ([#4180](https://github.com/Glad-Labs/glad-labs-stack/issues/4180)) ([ca70e9b](https://github.com/Glad-Labs/glad-labs-stack/commit/ca70e9bf803f282e851a61479c16667f9932be86))
+* **deploy:** scope the health gate to the stack's own compose project ([#4219](https://github.com/Glad-Labs/glad-labs-stack/issues/4219)) ([76bd58a](https://github.com/Glad-Labs/glad-labs-stack/commit/76bd58a695c10fbdf9f047cc0e0b35199eaa1c11))
+* **e2e:** aim backend specs at PLAYWRIGHT_API_URL, and fail rather than skip when a configured backend is unusable ([#4205](https://github.com/Glad-Labs/glad-labs-stack/issues/4205)) ([3e86cae](https://github.com/Glad-Labs/glad-labs-stack/commit/3e86caeeb02b614a64921ec256e82971f6c62b91))
+* **e2e:** tag spec reads its known tag from the live post index and requires its posts ([#4190](https://github.com/Glad-Labs/glad-labs-stack/issues/4190)) ([f2f2666](https://github.com/Glad-Labs/glad-labs-stack/commit/f2f2666f43cfaa42de22718cf335db10d005b30e))
+* **image-gen:** stop the generate-image route forcing 50 steps on z_image_turbo ([#4174](https://github.com/Glad-Labs/glad-labs-stack/issues/4174)) ([fe85955](https://github.com/Glad-Labs/glad-labs-stack/commit/fe8595559b44f91302cf9e74465f51a118183d5d))
+* **image:** retire the worker's image-model registry and image_model, and seed image_generation_model with a real model ([#4181](https://github.com/Glad-Labs/glad-labs-stack/issues/4181)) ([7a57c86](https://github.com/Glad-Labs/glad-labs-stack/commit/7a57c86a38d8f85a6344be97868d66906ec8625b))
+* **media:** repair podcast rows the [#884](https://github.com/Glad-Labs/glad-labs-stack/issues/884) de-dup left on undelivered renders ([#4185](https://github.com/Glad-Labs/glad-labs-stack/issues/4185)) ([d766633](https://github.com/Glad-Labs/glad-labs-stack/commit/d766633796d762c7e2e5931cff26d483431aaa8d))
+* **migrations:** converge the app_settings the brain creates first, so a compose-first fresh install migrates ([#4211](https://github.com/Glad-Labs/glad-labs-stack/issues/4211)) ([09d2855](https://github.com/Glad-Labs/glad-labs-stack/commit/09d2855d69a08b53a6553890cf6dd8a64f92dc19))
+* **mypy:** type database_service's resolver pre-binding and narrow the post-write atom ([#4183](https://github.com/Glad-Labs/glad-labs-stack/issues/4183)) ([2e9e25d](https://github.com/Glad-Labs/glad-labs-stack/commit/2e9e25d796bb0546d6ea3bdb28e717933fa0d849))
+* **newsletter:** ask only for email and name; fix the modal's layering, backdrop click and focus ([#4195](https://github.com/Glad-Labs/glad-labs-stack/issues/4195)) ([e12b744](https://github.com/Glad-Labs/glad-labs-stack/commit/e12b7442021efcfd372202a230b9f8cd6b9c723a))
+* **newsletter:** capture public signups in Resend and pull them home; add a signup canary ([#4177](https://github.com/Glad-Labs/glad-labs-stack/issues/4177)) ([377db70](https://github.com/Glad-Labs/glad-labs-stack/commit/377db709d3bcb788cbc97b111d4959425c16548d))
+* **newsletter:** stop storing subscriber fields nothing reads; drop their columns ([#4213](https://github.com/Glad-Labs/glad-labs-stack/issues/4213)) ([05512c5](https://github.com/Glad-Labs/glad-labs-stack/commit/05512c59cd55a35912e6186c554790a28fe4a04b))
+* **observability:** route public-site errors to GlitchTip through a pull relay ([#4204](https://github.com/Glad-Labs/glad-labs-stack/issues/4204)) ([a611218](https://github.com/Glad-Labs/glad-labs-stack/commit/a611218c4510159c9351a5bf66b4d175be675bd7)), closes [#4182](https://github.com/Glad-Labs/glad-labs-stack/issues/4182)
+* **preview:** give the operator's preview link and the QA screenshot their own paths ([#4207](https://github.com/Glad-Labs/glad-labs-stack/issues/4207)) ([74e3693](https://github.com/Glad-Labs/glad-labs-stack/commit/74e36937d2670872d92d0553203f6be435dcc729))
+* **public-site:** document every env var the site reads; fail when .env.example drifts ([#4210](https://github.com/Glad-Labs/glad-labs-stack/issues/4210)) ([e51d6eb](https://github.com/Glad-Labs/glad-labs-stack/commit/e51d6eb33d41157f7dd67a0ba68e613616e20699))
+* **public-site:** make og-image.jpg the 1200x630 JPEG every page declares ([#4208](https://github.com/Glad-Labs/glad-labs-stack/issues/4208)) ([b614838](https://github.com/Glad-Labs/glad-labs-stack/commit/b6148385d78b0403bf2999d9bfd9eacbaef8bd06))
+* **public-site:** retire NEXT_PUBLIC_API_BASE_URL; the site has no backend URL ([#4184](https://github.com/Glad-Labs/glad-labs-stack/issues/4184)) ([25c1615](https://github.com/Glad-Labs/glad-labs-stack/commit/25c161553919b292a5cb3f1297087d0fb411e629))
+* **public-site:** stale chunks in next dev, and tsc --noEmit on TypeScript 6 ([#4224](https://github.com/Glad-Labs/glad-labs-stack/issues/4224)) ([41d6650](https://github.com/Glad-Labs/glad-labs-stack/commit/41d6650f2d897e5b721f757d83bb9853783f65dd))
+* **qa-vision:** show the rendered-preview judge tiles it can read, deliver every image, and measure what the browser can measure ([#4241](https://github.com/Glad-Labs/glad-labs-stack/issues/4241)) ([f906be6](https://github.com/Glad-Labs/glad-labs-stack/commit/f906be67a06ee7630bd47b53c8a13e6809438e21))
+* **scripts:** retire the two stale app_settings seeders the brain replaced, and guard against a third ([#4240](https://github.com/Glad-Labs/glad-labs-stack/issues/4240)) ([ba1c94a](https://github.com/Glad-Labs/glad-labs-stack/commit/ba1c94a22e4fbc6ea479a463e2435121c37fe545))
+* **sentry:** keep credentials out of GlitchTip — scrub breadcrumbs and events, stop sending stack-frame locals ([#4206](https://github.com/Glad-Labs/glad-labs-stack/issues/4206)) ([247972c](https://github.com/Glad-Labs/glad-labs-stack/commit/247972c096ced58999ad7e9c2a3676f1da23ef31))
+* **sentry:** stop sentry_sdk.init auto-enabling integrations, which imported torch on every flow run ([#4176](https://github.com/Glad-Labs/glad-labs-stack/issues/4176)) ([d97dad4](https://github.com/Glad-Labs/glad-labs-stack/commit/d97dad4261a5509c04cf5edfa1691dd22a10ec34))
+* **settings-cli:** stop `settings set` re-filing and blanking the rows it updates ([#4221](https://github.com/Glad-Labs/glad-labs-stack/issues/4221)) ([b14ddeb](https://github.com/Glad-Labs/glad-labs-stack/commit/b14ddebc3352832e8f9608aa24b9d8c29f7e2d79))
+* **settings:** let the operator overlay restore values over the brain seed's placeholders ([#4187](https://github.com/Glad-Labs/glad-labs-stack/issues/4187)) ([561bbb4](https://github.com/Glad-Labs/glad-labs-stack/commit/561bbb49589676656b255ca077da7bf31001ee78))
+* **settings:** SettingsService.set and AdminDatabase.set_setting keep what the caller omitted ([#4229](https://github.com/Glad-Labs/glad-labs-stack/issues/4229)) ([9f7447f](https://github.com/Glad-Labs/glad-labs-stack/commit/9f7447fe134281eeebb4019132098f5d6575b532))
+* **stack:** pipeline-bot idles until Telegram is configured instead of restart-looping ([#4242](https://github.com/Glad-Labs/glad-labs-stack/issues/4242)) ([910a45e](https://github.com/Glad-Labs/glad-labs-stack/commit/910a45e8125f799d58296de541323f8e289fbf11))
+* **startup:** check ollama_chat/ model pins at boot, and require every seeded bare *_model key to be classified ([#4193](https://github.com/Glad-Labs/glad-labs-stack/issues/4193)) ([d60f232](https://github.com/Glad-Labs/glad-labs-stack/commit/d60f232bb8320e3c423f437aded175eddcbe465e))
+* **startup:** load settings before any startup step reads them ([#4179](https://github.com/Glad-Labs/glad-labs-stack/issues/4179)) ([07fd3b1](https://github.com/Glad-Labs/glad-labs-stack/commit/07fd3b1db5c65bf525102a75d3a621caedfed074))
+* **taps:** make the memory tap's directory settings real; drop its operator default ([#4222](https://github.com/Glad-Labs/glad-labs-stack/issues/4222)) ([a7efb74](https://github.com/Glad-Labs/glad-labs-stack/commit/a7efb74d71ce3d6db824cd7e3b654123de74dea5))
+* **voice:** launch the voice agents as poindexter.services.voice_agent_livekit, and fail CI on any python -m path that will not load ([#4191](https://github.com/Glad-Labs/glad-labs-stack/issues/4191)) ([b7f750f](https://github.com/Glad-Labs/glad-labs-stack/commit/b7f750f365541e5fab654721e434ad2c117db5ca))
+
+
+### Code Refactoring
+
+* **site:** name the R2 static export bucket in one module ([#4225](https://github.com/Glad-Labs/glad-labs-stack/issues/4225)) ([4b5def1](https://github.com/Glad-Labs/glad-labs-stack/commit/4b5def105cbb2c3f08691d65c91129533b1cbdbe))
+
 ## [0.150.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.149.1...v0.150.0) (2026-09-28)
 
 
