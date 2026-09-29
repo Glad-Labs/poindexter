@@ -120,6 +120,14 @@ stands in for. Everything in the folder, including images for drafts not yet
 approved, is readable by anyone who can reach the worker's port. That is the
 same exposure a public bucket has.
 
+**Metrics.** Every request under the mount is one series,
+`route="/site/*"`, on `poindexter_http_requests_total` and
+`poindexter_http_request_duration_seconds`. The metrics middleware used to label a
+Mount's requests with the raw path, so each file and each post URL got its own
+series and a scanner requesting random paths could grow the registry without
+bound (poindexter#1121). `http_route_label` now labels anything handled by a
+Mount `<prefix>/*`; `/console` is one series the same way.
+
 ### Site identity
 
 Publishing calls `site_config.require("site_url")`, and the static export also

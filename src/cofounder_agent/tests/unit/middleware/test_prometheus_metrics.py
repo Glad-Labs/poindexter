@@ -170,3 +170,146 @@ def test_unmatched_path_collapses_to_one_series(app):
 
     # Two distinct 404 URLs share the single "unmatched" series.
     assert _count("poindexter_http_requests_total", labels) == before + 2
+
+
+# ---------------------------------------------------------------------------
+# Mounted sub-apps: one series per mount, never one per URL under it
+#
+# Starlette pops a Mount's remainder out of path_params and sets `endpoint` to
+# the mounted app, so a mount looks like a static route and used to be labelled
+# with its raw path: 80 distinct /site/... URLs produced 86 series. The /site
+# viewer (storage_provider=local) and /console are mounts.
+# ---------------------------------------------------------------------------
+
+
+def test_route_label_mounted_sub_app_is_the_prefix_wildcard():
+    scope = {
+        "endpoint": object(),
+        "path": "/site/images/inline/a.webp",
+        "path_params": {},
+        "root_path": "/site",
+        "app_root_path": "",
+    }
+    assert http_route_label(scope) == "/site/*"
+
+
+def test_route_label_mount_behind_a_proxy_root_path_drops_the_proxy_prefix():
+    # uvicorn --root-path /proxy: root_path carries the proxy prefix too, and
+    # app_root_path remembers it, so the label is the mount alone.
+    scope = {
+        "endpoint": object(),
+        "path": "/site/x/y.png",
+        "path_params": {},
+        "root_path": "/proxy/site",
+        "app_root_path": "/proxy",
+    }
+    assert http_route_label(scope) == "/site/*"
+
+
+def test_route_label_plain_route_behind_a_proxy_root_path_is_unchanged():
+    # A proxy-supplied root_path alone must not make every route look mounted:
+    # plain routes never carry app_root_path.
+    scope = {
+        "endpoint": object(),
+        "path": "/api/health",
+        "path_params": {},
+        "root_path": "/proxy",
+    }
+    assert http_route_label(scope) == "/api/health"
+
+
+def test_route_label_mount_with_a_path_param_is_templated():
+    # A mount whose prefix carries a param must not put the raw value back.
+    scope = {
+        "endpoint": object(),
+        "path": "/tenant/123/files/a.txt",
+        "path_params": {"tid": "123"},
+        "root_path": "/tenant/123",
+        "app_root_path": "",
+    }
+    assert http_route_label(scope) == "/tenant/{tid}/*"
+
+
+def test_route_label_without_app_root_path_keeps_the_raw_path_behaviour():
+    # Older Starlette does not set app_root_path; do not guess a mount from
+    # root_path alone.
+    scope = {
+        "endpoint": object(),
+        "path": "/site/a.png",
+        "path_params": {},
+        "root_path": "/site",
+    }
+    assert http_route_label(scope) == "/site/a.png"
+
+
+@pytest.fixture
+def mounted_app(tmp_path) -> FastAPI:
+    from starlette.responses import PlainTextResponse
+    from starlette.staticfiles import StaticFiles
+
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "b.txt").write_text("b")
+
+    async def viewer(scope, receive, send):
+        await PlainTextResponse("ok")(scope, receive, send)
+
+    application = FastAPI()
+    application.add_middleware(PrometheusMetricsMiddleware)
+
+    @application.get("/api/health")
+    async def health():
+        return {"ok": True}
+
+    application.mount("/mnt-viewer", viewer)
+    application.mount("/mnt-static", StaticFiles(directory=tmp_path))
+    return application
+
+
+def _route_values(prefix: str) -> set[str]:
+    """Every ``route`` label value the registry holds for request counts under ``prefix``."""
+    return {
+        s.labels["route"]
+        for metric in REGISTRY.collect()
+        if metric.name == "poindexter_http_requests"
+        for s in metric.samples
+        if s.labels.get("route", "").startswith(prefix)
+    }
+
+
+def test_many_urls_under_a_mount_share_one_series(mounted_app):
+    client = TestClient(mounted_app)
+    labels = {"method": "GET", "route": "/mnt-viewer/*", "status": "200"}
+    before = _count("poindexter_http_requests_total", labels)
+
+    for i in range(60):
+        client.get(f"/mnt-viewer/posts/slug-{i}")
+        client.get(f"/mnt-viewer/images/inline/img-{i}.webp")
+
+    assert _count("poindexter_http_requests_total", labels) == before + 120
+    assert _route_values("/mnt-viewer") == {"/mnt-viewer/*"}
+
+
+def test_a_static_files_mount_is_one_series_including_its_404s(mounted_app):
+    client = TestClient(mounted_app)
+    ok = {"method": "GET", "route": "/mnt-static/*", "status": "200"}
+    missing = {"method": "GET", "route": "/mnt-static/*", "status": "404"}
+    ok_before = _count("poindexter_http_requests_total", ok)
+    missing_before = _count("poindexter_http_requests_total", missing)
+
+    client.get("/mnt-static/a.txt")
+    client.get("/mnt-static/b.txt")
+    for i in range(10):
+        client.get(f"/mnt-static/nope-{i}.txt")
+
+    assert _count("poindexter_http_requests_total", ok) == ok_before + 2
+    assert _count("poindexter_http_requests_total", missing) == missing_before + 10
+    assert _route_values("/mnt-static") == {"/mnt-static/*"}
+
+
+def test_plain_routes_next_to_a_mount_keep_their_own_labels(mounted_app):
+    labels = {"method": "GET", "route": "/api/health", "status": "200"}
+    before = _count("poindexter_http_requests_total", labels)
+
+    TestClient(mounted_app).get("/api/health")
+
+    assert _count("poindexter_http_requests_total", labels) == before + 1

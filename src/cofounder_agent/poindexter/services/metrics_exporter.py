@@ -616,6 +616,15 @@ def http_route_label(scope: Mapping[str, Any]) -> str:
 
     Returns ``"unmatched"`` when no route matched (no ``endpoint`` in scope) —
     collapsing 404s / bot path-scans into one series instead of one-per-URL.
+
+    A request handled by a **mounted sub-app** (``StaticFiles``, a raw ASGI app
+    such as the ``/site`` viewer) is labelled ``<mount prefix>/*``. Without
+    this, the "no path params, so the path IS the template" shortcut below
+    returns the raw path for it: Starlette pops the mount's remainder out of
+    ``path_params`` and sets ``endpoint`` to the mounted app, so a mount looks
+    exactly like a static route. Every distinct file or URL under the mount
+    then became its own series, and anyone requesting random paths could grow
+    the registry (and Prometheus) without bound.
     """
     if scope.get("endpoint") is None:
         # No route matched (404, or a raw-ASGI path) — do not let arbitrary
@@ -624,10 +633,39 @@ def http_route_label(scope: Mapping[str, Any]) -> str:
 
     path = scope.get("path") or "/"
     path_params = scope.get("path_params") or {}
+
+    mount = _mount_prefix(scope)
+    if mount:
+        return _template_path(mount, path_params) + "/*"
+
     if not path_params:
         # Static route (e.g. /api/health) — the path IS already the template.
         return path
+    return _template_path(path, path_params)
 
+
+def _mount_prefix(scope: Mapping[str, Any]) -> str:
+    """The prefix of the ``Mount`` that handled this request, or ``""``.
+
+    Starlette sets ``scope['app_root_path']`` only when it routes into a Mount,
+    and extends ``scope['root_path']`` by the matched prefix, so the prefix is
+    what ``root_path`` has beyond ``app_root_path``. Plain routes never carry
+    ``app_root_path``, so a proxy-supplied ``root_path`` (``--root-path``) does
+    not make every route look mounted. Older Starlette without the key falls
+    back to the raw-path behaviour rather than guessing.
+    """
+    if "app_root_path" not in scope:
+        return ""
+    base = scope.get("app_root_path") or ""
+    root = scope.get("root_path") or ""
+    return root[len(base) :] if root.startswith(base) else root
+
+
+def _template_path(path: str, path_params: Mapping[str, Any]) -> str:
+    """Swap each whole segment of ``path`` that equals a captured path-param
+    value for ``{param_name}``."""
+    if not path_params:
+        return path
     # Map each captured value -> its param name, then swap matching segments.
     value_to_name = {
         str(v): name for name, v in path_params.items() if v is not None

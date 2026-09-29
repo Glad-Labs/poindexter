@@ -23,6 +23,10 @@ middleware holds a reference to that dict and reads the populated values after
 separate task and does not reliably surface those scope mutations, so it can't
 see the matched route. Pure ASGI is also cheaper (no per-request task group).
 
+A request handled by a mounted sub-app (``/console``, ``/site``) has no route
+template of its own, so it is labelled ``<mount prefix>/*``: one series per
+mount, never one per file or URL under it.
+
 The status code is captured from the ``http.response.start`` ASGI event. If the
 inner app raises before sending a response, the ``finally`` block still records
 the request with status ``500`` so error rate stays honest.
