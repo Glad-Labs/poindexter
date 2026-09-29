@@ -453,6 +453,19 @@ async def up(pool) -> None:
 should be in the module docstring — what was the table for, why is
 it being dropped, what replaces it.
 
+Prefer the plain form when the audit finds nothing that depends on the
+table. An unexpected view then fails the migration and names itself,
+where `CASCADE` would drop it without a word. The first table drop after
+the baseline is
+`20260928_231739_drop_the_sync_metrics_table_orphaned_by_the_sync_service_removal.py`.
+It counts the rows first so the log says what was removed, leaves
+`0000_baseline.schema.sql` alone (a frozen snapshot: a fresh install
+creates the table there and drops it here), and its `down()` recreates
+the structure only. `test_drop_sync_metrics_table.py` in
+`tests/unit/services/migrations/` pins those choices, compares `down()`
+with the baseline's column definitions, and fails if a backend module or
+dashboard names the table again.
+
 ---
 
 ## Anti-patterns
