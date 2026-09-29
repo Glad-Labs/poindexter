@@ -13,12 +13,6 @@ the bug surfaced as inflated "X new today" numbers.
 
 from __future__ import annotations
 
-# brain/ is a standalone package outside the poindexter distro.
-# brain_daemon.py uses bare ``from health_probes import ...`` for
-# runtime-container compatibility, so we add brain/ directly to sys.path
-# BEFORE importing. Tests without this prelude fail to collect with
-# ``ModuleNotFoundError: No module named 'health_probes'``.
-#
 # brain is the ``poindexter.brain`` package (poindexter#1046 step 2), shipped
 # wherever the backend is -- host and container alike -- so locate it through the
 # import system rather than by walking parents. (The old walk for a repo-root

@@ -1,5 +1,5 @@
 [tool.poetry]
-# Standalone package for the Poindexter brain daemon.
+# Standalone dependency set for the Poindexter brain daemon's image.
 #
 # Why a separate pyproject.toml from src/cofounder_agent?
 # -------------------------------------------------------
@@ -7,11 +7,14 @@
 # agent) so that a broken worker venv or pyproject can never take the
 # watchdog down with it. The same reasoning applies to dependency management.
 #
-# Operationally, the docker-compose build context for `brain-daemon` is
-# `./brain` (not the repo root), so the brain Dockerfile cannot reach
-# `src/cofounder_agent/pyproject.toml` without widening the build context.
-# Widening the context would defeat the isolation principle and force the
-# brain image to receive the entire worker source tree on every rebuild.
+# Operationally, the `brain-daemon` image builds from the `src/cofounder_agent`
+# context (docker-compose.local.yml, docker-compose.consumer.yml and
+# .github/workflows/docker-build.yml), because the brain is the
+# `poindexter.brain` package and its Dockerfile copies `poindexter/__init__.py`
+# beside `poindexter/brain/`. That context holds the whole worker tree, so the
+# isolation lives in the Dockerfile, not the context: it installs from this
+# pyproject + lockfile, never the worker's, and copies only
+# `poindexter/__init__.py` and `poindexter/brain/` into the image.
 #
 # A small, self-contained pyproject + lockfile keeps:
 #   - the dep set lockable + auditable (closes Glad-Labs/poindexter#173)

@@ -9,19 +9,9 @@ Covers the bugs fixed in poindexter#XXXX:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain.alert_sync import (  # noqa: E402
+from poindexter.brain.alert_sync import (
     _hash_rule,
     _is_sql_query,
     _rule_uid,

@@ -15,21 +15,11 @@ helper introduced alongside the fix.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import brain_daemon as bd
 
 
 def test_worker_is_always_a_restart_target():

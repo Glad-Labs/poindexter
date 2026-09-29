@@ -16,25 +16,13 @@ pages.
 from __future__ import annotations
 
 import subprocess
-import sys
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# brain/ lives outside the poindexter distro; mirror the path-prelude the
-# other brain_daemon tests use so its flat sibling imports resolve.
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain import brain_daemon as bd  # noqa: E402
-from poindexter.brain import docker_utils  # noqa: E402
+from poindexter.brain import brain_daemon as bd
+from poindexter.brain import docker_utils
 
 pytestmark = pytest.mark.asyncio
 

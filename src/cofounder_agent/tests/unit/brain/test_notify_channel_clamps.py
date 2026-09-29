@@ -15,23 +15,11 @@ wire, not on an internal variable.
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-# brain/ is a standalone package outside the cofounder_agent distro.
-# Mirror the path-prelude pattern from test_brain_daemon_silent_failures.py.
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain import brain_daemon as bd  # noqa: E402
+from poindexter.brain import brain_daemon as bd
 
 
 class _FakeResponse:

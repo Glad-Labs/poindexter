@@ -13,25 +13,13 @@ from __future__ import annotations
 
 import base64
 import json
-import sys
 import time
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 
-# Put brain/ on sys.path so we can import the brain-local module.
-# Same prelude as test_brain_alert_sync.py.
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain import oauth_client as oac  # noqa: E402
+from poindexter.brain import oauth_client as oac
 
 
 def _make_jwt(exp_offset: int = 3600) -> str:

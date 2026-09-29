@@ -21,23 +21,11 @@ from __future__ import annotations
 import sys
 import urllib.error
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Put brain/ on sys.path so the test can import ``brain.alert_sync``
-# AND ``brain.brain_daemon`` — same prelude as
-# test_brain_daemon_auto_remediate.py.
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain import alert_sync as asx  # noqa: E402
+from poindexter.brain import alert_sync as asx
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                     #

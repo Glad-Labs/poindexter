@@ -27,24 +27,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 
-# brain/ is a standalone package outside the cofounder_agent distro.
-# Mirror the path-prelude pattern from test_brain_alert_dispatcher.py.
-_REPO_ROOT = next(
-    p for p in Path(__file__).resolve().parents
-    if (p / "pyproject.toml").exists() and (p / "src").exists()
-)
-_BRAIN_DIR = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter" / "brain"
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from poindexter.brain import alert_dispatcher as ad  # noqa: E402
+from poindexter.brain import alert_dispatcher as ad
 
 # ---------------------------------------------------------------------------
 # Fixtures + helpers
