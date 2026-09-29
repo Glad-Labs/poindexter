@@ -18,6 +18,7 @@ stubs are async and answer with a ``ContainerRestart``
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -861,6 +862,90 @@ class TestRecoverBackoffAndSync:
         )
 
         assert len(restart_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_sync_failure_is_loud(self, caplog):
+        # Every resync from 2026-08-15 to 2026-09-28 failed on git's
+        # ownership check, and all anyone could have seen was an INFO line
+        # and an info audit row. A failure now logs WARNING, writes a warning
+        # audit row and raises a migration_drift_resync_failed finding
+        # carrying the error and the attempt it cost.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            **{mdp.AUTO_SYNC_SETTING_KEY: "true"}
+        )
+        error = (
+            "/host-deploy is not a git work tree (fatal: detected dubious "
+            "ownership in repository at '/host-deploy'"
+        )
+
+        with caplog.at_level(logging.INFO, logger="brain.migration_drift_probe"):
+            await mdp.run_migration_drift_probe(
+                pool,
+                notify_fn=lambda **k: None,
+                restart_fn=restart_stub(),
+                sync_fn=lambda p: (False, error),
+                wait_fn=lambda: (True, _health_with_drift(0)),
+                health_fetcher=lambda: _health_with_drift(2),
+            )
+
+        assert any(
+            r.levelno == logging.WARNING
+            and "deploy resync ok=False" in r.getMessage()
+            for r in caplog.records
+        )
+        audit = {
+            call.args[1]: call.args[4]
+            for call in pool.execute.call_args_list
+            if "'finding'" not in call.args[0]
+        }
+        assert audit["probe.migration_drift_sync_failed"] == "warning"
+        findings = [
+            json.loads(call.args[2])
+            for call in pool.execute.call_args_list
+            if "'finding'" in call.args[0]
+        ]
+        assert [f["kind"] for f in findings] == [mdp.FINDING_KIND_RESYNC_FAILED]
+        extra = findings[0]["extra"]
+        assert extra["error"] == error
+        assert extra["deploy_path"] == mdp._DEFAULT_DEPLOY_PATH
+        assert (extra["pending"], extra["attempt"], extra["max_attempts"]) == (2, 1, 3)
+        assert findings[0]["dedup_key"] == (
+            f"{mdp.FINDING_KIND_RESYNC_FAILED}:{mdp._DEFAULT_DEPLOY_PATH}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_sync_success_raises_no_finding(self, caplog):
+        # The post-deploy check greps for ``deploy resync ok=True``; a clean
+        # resync stays at INFO with an info audit row and no finding.
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            **{mdp.AUTO_SYNC_SETTING_KEY: "true"}
+        )
+
+        with caplog.at_level(logging.INFO, logger="brain.migration_drift_probe"):
+            await mdp.run_migration_drift_probe(
+                pool,
+                notify_fn=lambda **k: None,
+                restart_fn=restart_stub(),
+                sync_fn=lambda p: (True, "reset --hard origin/main + clean -fd → HEAD abc1234"),
+                wait_fn=lambda: (True, _health_with_drift(0)),
+                health_fetcher=lambda: _health_with_drift(1),
+            )
+
+        assert any(
+            r.levelno == logging.INFO
+            and "deploy resync ok=True" in r.getMessage()
+            for r in caplog.records
+        )
+        assert not any(
+            "'finding'" in call.args[0] for call in pool.execute.call_args_list
+        )
+        synced = [
+            call.args[4] for call in pool.execute.call_args_list
+            if call.args[1] == "probe.migration_drift_synced"
+        ]
+        assert synced == ["info"]
 
     @pytest.mark.asyncio
     async def test_count_change_resets_episode(self):

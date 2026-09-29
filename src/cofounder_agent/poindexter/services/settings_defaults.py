@@ -4226,6 +4226,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.deploy_sync_driver_fallback.fallback': 'discord',
     'findings.deploy_sync_driver_fallback.cooldown_minutes': '120',
     'findings.deploy_sync_driver_fallback.min_severity': 'warning',
+    # migration_drift_resync_failed: the migration-drift self-heal could not
+    # reset the deploy checkout, so it restarts the worker without the reset
+    # (poindexter/brain/migration_drift_probe.py). The restart still runs,
+    # and the cause is usually persistent (it was git's ownership check for
+    # six weeks, 12 attempts, logged only at INFO), so it informs once a day
+    # rather than pages.
+    'findings.migration_drift_resync_failed.delivery': 'discord',
+    'findings.migration_drift_resync_failed.fallback': 'discord',
+    'findings.migration_drift_resync_failed.cooldown_minutes': '1440',
+    'findings.migration_drift_resync_failed.min_severity': 'warning',
     # resend_delivery_poll_failed: the newsletter still SENDS when this
     # fires — only the receipt feed is down, so it informs rather than
     # pages. Its predecessor (the unreachable webhook) failed silently for

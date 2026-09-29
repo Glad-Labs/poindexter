@@ -233,6 +233,14 @@ def _read_local_head(git_dir: str) -> tuple[str, str]:
 
     Raises RuntimeError on any git failure (missing mount, not a repo,
     git binary absent) so the caller fails loud.
+
+    Keep ``--git-dir``. The brain runs as root and /host-git belongs to the
+    host user, and git skips its repository-ownership check only when the
+    git dir is given explicitly. ``git -C <worktree>`` discovers the repo and
+    refuses it ("detected dubious ownership"), which is how the
+    migration-drift resync failed from 2026-08-15 to 2026-09-28 (see
+    ``migration_drift_probe._run_git``). This read never writes, so it does
+    not need that probe's identity switch.
     """
     def _git(*args: str) -> str:
         try:

@@ -3,6 +3,8 @@
 **Issue:** [Glad-Labs/poindexter#228](https://github.com/Glad-Labs/poindexter/issues/228)
 **Probe:** `poindexter/brain/migration_drift_probe.py`
 **Status:** ships **dark** — `migration_drift_auto_sync_enabled` defaults to `false`.
+On in Matt's prod (`migration_drift_auto_recover_enabled` and
+`migration_drift_auto_sync_enabled` both `true`, path `/host-deploy`).
 
 ## What this is
 
@@ -44,8 +46,13 @@ On each 5-minute brain cycle, when drift is detected **and**
      checkout** mounted at `migration_drift_deploy_checkout_path` (default
      `/host-deploy`): `git reset --hard origin/main` + `git clean -fd`. This
      wipes any stray untracked file and advances past a stale checkout, so the
-     restart applies **correct** migration files. Audited as
-     `probe.migration_drift_synced` / `…_sync_failed`.
+     restart applies **correct** migration files. git runs as the checkout's
+     owner (see
+     [Running git on a checkout another user owns](#running-git-on-a-checkout-another-user-owns)).
+     Audited as `probe.migration_drift_synced` (info) /
+     `…_sync_failed` (warning). A failure also logs at WARNING and raises a
+     `migration_drift_resync_failed` finding (Discord, at most one a day per
+     `findings.migration_drift_resync_failed.*`). The restart still runs.
    - `docker restart poindexter-worker` (the runner applies migrations on boot),
      through the brain's shared `docker_utils.restart_container`: it inspects
      first and waits `brain_docker_restart_timeout_seconds` (default 90), which
@@ -91,6 +98,51 @@ collapses the race: `reset --hard` there is always safe. The network `fetch`
 runs on the host (where git creds live); the in-container probe only resets to
 the already-fetched `origin/main` — local, auth-free, network-free.
 
+### Running git on a checkout another user owns
+
+The brain container runs as root (`user: "0:0"`, for the docker socket), and
+`/host-deploy` is a bind mount of `~/.poindexter/deploy/glad-labs-stack`, which
+the host user owns (uid 1000 on the Pop!_OS box). git refuses a repository
+owned by another user unless it is listed in `safe.directory`:
+
+```
+fatal: detected dubious ownership in repository at '/host-deploy'
+```
+
+The resync worked 35 times from 2026-06-08 to 2026-07-12. On the Windows host,
+Docker Desktop presented the bind mount as root-owned, so root git saw its own
+repository. After the move to Linux the ownership was real, and every attempt
+failed: 12 from 2026-08-15 to 2026-09-28, according to the audit log. The failure
+went to an INFO log line and an info-severity `probe.migration_drift_sync_failed`
+row, so nobody saw it. Each time the probe restarted the worker anyway, and the
+drift cleared only because the host deploy-sync had already moved the clone.
+
+`_run_git` now does two things:
+
+- **`git -c safe.directory=<path>`**, with the configured path resolved first.
+  This trusts exactly that checkout, and it follows
+  `migration_drift_deploy_checkout_path` if the setting changes. A
+  `safe.directory=*` in the image would trust every repository. The path is
+  resolved because older git compares the setting to the resolved working-tree
+  path as written. On the host's git 2.43 a trailing slash or a symlink in the
+  setting does not match. The brain image's git 2.47 normalizes both sides.
+- **Run git as the checkout's owner** when the brain is root and the checkout
+  is not root-owned. It uses the owner's uid and gid, no supplementary groups,
+  and no `HOME` (the owner cannot read root's). `safe.directory` alone would let
+  root git in, and root git leaves root-owned files behind. Reproduced
+  2026-09-28 in a scratch clone: a root `reset --hard` that creates a directory
+  leaves it `root:root 755`. The next host deploy-sync reset that writes into
+  it, which runs as the owner, fails with
+  `fatal: Could not reset index file to revision 'origin/main'`. That would
+  wedge the deploy path.
+
+With both in place, prod git runs as the owner and never consults
+`safe.directory`. That part covers a brain that cannot switch users (not root)
+or a run on the host. `branch_drift_probe` reads `/host-git` with an explicit
+`--git-dir`, and git skips the ownership check for an explicit git dir, so it
+was never affected. Keep it that way. A regression test fails if that read
+switches to `-C`.
+
 ## Settings (seeded dark)
 
 Seeded by migration `20260608_020831_seed_migration_drift_auto_sync_settings.py`
@@ -106,6 +158,11 @@ Pre-existing companion knob: `migration_drift_auto_recover_enabled` (the master
 switch for restart-based recovery; also defaults `false`).
 
 ## Cutover (operator steps)
+
+These are the original Windows cutover steps (June 2026). On the Linux host
+the 10-minute sync is the `poindexter-deploy-sync` systemd timer, installed by
+`bash scripts/linux/install-deploy-sync.sh`; see
+[`ci-deploy-chain.md`](ci-deploy-chain.md).
 
 Until these are done, the system is a behavior no-op: an empty `/host-deploy`
 makes the sync step a graceful no-op that falls back to a plain restart, and the
@@ -172,12 +229,24 @@ restore the old sync-only behavior. Source of truth:
 # The deploy checkout is a real work tree at origin/main:
 git -C ~/.poindexter/deploy/glad-labs-stack rev-parse --short HEAD
 
-# Brain sees the mount:
-docker exec poindexter-brain-daemon git -C /host-deploy rev-parse --is-inside-work-tree
+# Brain can run git on the mount, through the probe's own helper, with the
+# identity and trust the resync uses. Read-only. Expect "0 <sha>" and no
+# stderr; "128 … dubious ownership" is the pre-fix failure:
+docker exec poindexter-brain-daemon python -c "from poindexter.brain.migration_drift_probe import _run_git; p = _run_git('/host-deploy', 'rev-parse', '--short', 'HEAD'); print(p.returncode, p.stdout.strip(), p.stderr.strip())"
+
+# Plain `docker exec poindexter-brain-daemon git -C /host-deploy …` still
+# refuses the repo on Linux (root vs the host user). That is expected: only
+# the probe's helper carries the owner identity and the scoped safe.directory.
+
+# Nothing git wrote is root-owned (the brain runs git as the clone's owner):
+find ~/.poindexter/deploy/glad-labs-stack/.git -user root
 
 # Watch the audit trail during/after an episode:
 #   probe.migration_drift_detected → _synced → _recovered   (happy path)
 #   … → _recover_attempt_failed (x N) → _recover_suppressed  (exhausted)
+#   … → _sync_failed + a migration_drift_resync_failed finding (resync broken)
+# The brain log line is "[MIGRATION_DRIFT] deploy resync ok=True|False (…)";
+# ok=False logs at WARNING.
 ```
 
 Query recent probe audits:

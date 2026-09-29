@@ -15,11 +15,14 @@ Covers the probe's decision paths:
    in test_branch_drift_probe_failure_episodes.py.
 
 All external I/O (asyncpg pool, GitHub via httpx, git via subprocess) is
-mocked through the probe's injection seams.
+mocked through the probe's injection seams, except the last test, which runs
+real git to pin why the local-HEAD read must keep ``--git-dir``.
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -554,3 +557,36 @@ async def test_default_client_factory_is_zero_arg_callable():
     client = factory()  # must not raise (was: TypeError, 0-arg called with token)
     assert isinstance(client, _httpx.AsyncClient)
     await client.aclose()
+
+
+def test_local_head_read_survives_a_foreign_owned_repo(tmp_path, monkeypatch):
+    # Regression guard for the read that must keep ``--git-dir``. The brain
+    # runs as root and /host-git belongs to the host user. git runs its
+    # ownership check only when it discovers a repo, and ``git -C`` does
+    # discover: that is how the migration-drift resync failed from
+    # 2026-08-15 to 2026-09-28 with "detected dubious ownership". Every other
+    # test here stubs git_runner, so a switch to -C would go unnoticed until
+    # prod. GIT_TEST_ASSUME_DIFFERENT_OWNER makes git refuse the repo as it
+    # refuses a foreign-owned one.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)  # no runner-wide safe.directory=*
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.delenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", raising=False)
+    repo = tmp_path / "checkout"
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], capture_output=True, text=True)
+
+    assert git("init", "-q", "-b", "main", str(repo)).returncode == 0
+    assert git(
+        "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+        "commit", "-q", "--allow-empty", "-m", "c1",
+    ).returncode == 0
+    head = git("-C", str(repo), "rev-parse", "HEAD").stdout.strip()
+
+    monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+    control = git("-C", str(repo), "rev-parse", "HEAD")
+    assert control.returncode != 0 and "dubious ownership" in control.stderr, (
+        f"git did not refuse the repo, so this test proves nothing: {control.stderr!r}"
+    )
+
+    assert bdp._read_local_head(str(repo / ".git")) == (head, "main")

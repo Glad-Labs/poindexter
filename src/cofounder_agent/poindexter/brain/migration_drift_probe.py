@@ -20,8 +20,13 @@ Probe behavior every 5-min cycle:
    a. Always emit a ``probe.migration_drift_detected`` audit event.
    b. If ``migration_drift_auto_recover_enabled = true`` (an
       app_setting that defaults to ``"false"`` for safety in case of bad
-      migrations) — restart ``poindexter-worker`` through the brain's
-      shared ``docker_utils.restart_container`` (inspect first, then
+      migrations) — when ``migration_drift_auto_sync_enabled`` is also
+      true, first reset the dedicated deploy checkout to origin/main
+      (:func:`_sync_deploy_checkout`; git runs as the checkout's owner, see
+      :func:`_run_git`, and a failure raises a
+      ``migration_drift_resync_failed`` finding). Then restart
+      ``poindexter-worker`` through the brain's shared
+      ``docker_utils.restart_container`` (inspect first, then
       ``docker restart`` bounded by
       ``app_settings.brain_docker_restart_timeout_seconds``, which must
       outlast the worker's 75 s stop grace), using the Docker socket the
@@ -29,9 +34,12 @@ Probe behavior every 5-min cycle:
       docker-compose.local.yml). Then wait up to 60s for the worker to
       report healthy via /api/health and re-check drift. If it cleared,
       emit ``probe.migration_drift_recovered`` and stop. If it didn't,
-      escalate via :func:`brain.operator_notifier.notify_operator`. A
-      worker missing mid-recreate, or restarted moments ago, is not
-      restarted and not paged; see ``run_migration_drift_probe``.
+      retry with exponential backoff and page once via
+      :func:`brain.operator_notifier.notify_operator` only after
+      ``migration_drift_recover_max_attempts`` attempts. A worker missing
+      mid-recreate, or restarted moments ago, is not restarted and not
+      paged; see ``run_migration_drift_probe``. The runbook is
+      docs/operations/migration-drift-self-heal.md.
    c. If auto-recover is disabled — fire a single ``notify_operator()``
       so the operator knows there's drift, capped at one per cycle so a
       stuck restart-loop can't blast Telegram.
@@ -81,6 +89,10 @@ AUTO_RECOVER_SETTING_KEY = "migration_drift_auto_recover_enabled"
 AUTO_SYNC_SETTING_KEY = "migration_drift_auto_sync_enabled"
 DEPLOY_CHECKOUT_PATH_SETTING_KEY = "migration_drift_deploy_checkout_path"
 RECOVER_MAX_ATTEMPTS_SETTING_KEY = "migration_drift_recover_max_attempts"
+
+# Finding kind for a resync that failed. Its delivery policy is the
+# ``findings.migration_drift_resync_failed.*`` block in settings_defaults.py.
+FINDING_KIND_RESYNC_FAILED = "migration_drift_resync_failed"
 
 # In-flight guard (Glad-Labs/poindexter#228). A worker restart mid-content-run
 # orphans a multi-minute ``canonical_blog`` task in status='in_progress' — the
@@ -543,12 +555,16 @@ async def _emit_audit_event(
     *,
     pending: int | None = None,
     extra: dict[str, Any] | None = None,
+    severity: str | None = None,
 ) -> None:
     """Write a row to ``audit_log`` for downstream observability.
 
     Mirrors the schema audit_log_bg uses (event_type, source, details,
     severity) so the brain's audit events show up alongside the
     pipeline's. Best-effort — never raises.
+
+    ``severity`` overrides the default, which is ``warning`` for a
+    ``*detected*`` event and ``info`` for everything else.
     """
     payload: dict[str, Any] = {"detail": detail}
     if pending is not None:
@@ -565,7 +581,7 @@ async def _emit_audit_event(
             event,
             "brain.migration_drift_probe",
             json.dumps(payload),
-            "warning" if "detected" in event else "info",
+            severity or ("warning" if "detected" in event else "info"),
         )
     except Exception as exc:
         # The audit_log table may not exist on a very fresh install, so this
@@ -583,14 +599,135 @@ async def _emit_audit_event(
         )
 
 
+async def _emit_resync_failed_finding(
+    pool,
+    *,
+    deploy_path: str,
+    error: str,
+    pending: int,
+    attempt: int,
+    max_attempts: int,
+) -> None:
+    """Write a ``finding`` row for a deploy-checkout resync that failed.
+
+    The ``probe.migration_drift_sync_failed`` audit row alone reaches no one:
+    every resync from 2026-08-15 to 2026-09-28 failed on git's ownership check,
+    12 attempts, and the only records were that row and an INFO log line.
+    A finding goes through ``findings_alert_router`` under the
+    ``findings.migration_drift_resync_failed.*`` policy (Discord, one a day).
+
+    The shape matches ``utils/findings.py::emit_finding``, which the brain
+    cannot import: ``details={kind,title,body,dedup_key,extra}`` with the
+    severity on the row. Best-effort — never raises.
+    """
+    details = {
+        "kind": FINDING_KIND_RESYNC_FAILED,
+        "title": f"Migration-drift resync of {deploy_path} failed",
+        "body": (
+            f"The migration-drift self-heal could not reset the deploy "
+            f"checkout at {deploy_path} to {_DEPLOY_SYNC_REF}, so recovery "
+            f"attempt {attempt}/{max_attempts} ({pending} migration(s) "
+            f"pending) restarts {WORKER_CONTAINER} without it. A restart "
+            f"alone clears drift only when the host deploy-sync has already "
+            f"moved the checkout. Drift from a stale or polluted checkout "
+            f"stays until the resync works. Error: {error}"
+        ),
+        "dedup_key": f"{FINDING_KIND_RESYNC_FAILED}:{deploy_path}",
+        "extra": {
+            "deploy_path": deploy_path,
+            "error": error,
+            "pending": pending,
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+        },
+    }
+    try:
+        await pool.execute(
+            "INSERT INTO audit_log (event_type, source, details, severity) "
+            "VALUES ('finding', $1, $2::jsonb, 'warning')",
+            "brain.migration_drift_probe",
+            json.dumps(details),
+        )
+    except Exception as exc:
+        logger.warning(
+            "[MIGRATION_DRIFT] Could not write finding %s: %s",
+            FINDING_KIND_RESYNC_FAILED, exc,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Recovery steps. The worker restart itself is the brain's shared
 # ``docker_utils.restart_container``.
 # ---------------------------------------------------------------------------
 
 
+def _git_owner_kwargs(deploy_path: str) -> dict[str, Any]:
+    """``subprocess.run`` kwargs that run git as the deploy checkout's owner.
+
+    This applies to one setup, which is prod's. The brain runs as root
+    (``user: "0:0"`` in docker-compose.local.yml, for the docker socket), and
+    /host-deploy is a bind mount owned by the host user (uid 1000). Run as
+    root, a ``reset --hard`` that creates a directory leaves it
+    ``root:root 755`` inside that user's clone. The host deploy-sync runs as
+    that user, so every later reset of its own that writes into the directory
+    fails with ``fatal: Could not reset index file``. Run as the owner, git
+    writes only what the owner could have written.
+
+    HOME and XDG_CONFIG_HOME are dropped from the child's environment. The
+    owner has no home in this container, and git would otherwise warn on
+    every call that it cannot read root's ``/root/.config/git/*``.
+
+    Returns ``{}`` in every other case: a brain that is not root cannot switch
+    users, and a root-owned checkout needs no switch (Docker Desktop presents
+    bind mounts as root-owned). Also ``{}`` when the path cannot be stat'ed, so
+    that git reports the missing path itself.
+    """
+    geteuid = getattr(os, "geteuid", None)  # absent on Windows
+    if geteuid is None or geteuid() != 0:
+        return {}
+    try:
+        st = os.stat(deploy_path)
+    except OSError:
+        return {}
+    if st.st_uid == 0:
+        return {}
+    return {
+        "user": st.st_uid,
+        "group": st.st_gid,
+        "extra_groups": [],
+        "env": {
+            k: v for k, v in os.environ.items()
+            if k not in ("HOME", "XDG_CONFIG_HOME")
+        },
+    }
+
+
 def _run_git(deploy_path: str, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    """Run a git subcommand against the deploy checkout. Raises on failure."""
+    """Run a git subcommand against the deploy checkout.
+
+    Returns the ``CompletedProcess``; the caller checks ``returncode``. Raises
+    what ``subprocess.run`` raises (``FileNotFoundError`` for a missing git,
+    ``TimeoutExpired``).
+
+    git refuses a repository owned by a user other than the one running it
+    ("detected dubious ownership"). Every resync from 2026-08-15 to
+    2026-09-28 failed that way, the brain running as root against the host
+    user's checkout. Two things fix it:
+
+    * ``-c safe.directory=<path>`` trusts exactly this checkout. It is
+      command-line config, so it follows the configured path and trusts
+      nothing else (a ``safe.directory=*`` in the image would trust every
+      repository). The path is resolved first, because older git compares
+      the setting to the resolved working-tree path as written: git 2.43
+      matches neither a trailing slash nor a symlink, where the brain
+      image's 2.47 normalizes both sides.
+    * :func:`_git_owner_kwargs` runs git as the checkout's owner when the
+      brain is root, so what a reset writes stays the owner's.
+
+    With both in place, prod git runs as the owner and never consults
+    ``safe.directory``. ``safe.directory`` covers the callers that cannot
+    switch users: a brain that is not root, or a host-side run.
+    """
     kwargs: dict[str, Any] = {
         "capture_output": True,
         "text": True,
@@ -598,7 +735,12 @@ def _run_git(deploy_path: str, *args: str, timeout: int = 60) -> subprocess.Comp
     }
     if os.name == "nt":
         kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-    return subprocess.run(["git", "-C", deploy_path, *args], **kwargs)
+    kwargs.update(_git_owner_kwargs(deploy_path))
+    trusted = os.path.realpath(deploy_path)
+    return subprocess.run(
+        ["git", "-c", f"safe.directory={trusted}", "-C", deploy_path, *args],
+        **kwargs,
+    )
 
 
 def _sync_deploy_checkout(deploy_path: str, ref: str = _DEPLOY_SYNC_REF) -> tuple[bool, str]:
@@ -1023,14 +1165,18 @@ async def run_migration_drift_probe(
     # Genuine resolution step: resync the dedicated deploy checkout so the
     # restart has correct, un-polluted migration files to apply. Gated by
     # ``migration_drift_auto_sync_enabled`` (default off until the deploy
-    # checkout is wired). Best-effort: a sync failure is audited but we still
-    # restart (a restart alone may suffice; if not, backoff/exhaustion handle it).
+    # checkout is wired). Best-effort: a failed sync does not stop the restart
+    # (a restart alone may suffice; if not, backoff/exhaustion handle it).
+    # A failure is loud: WARNING plus a finding. It used to be INFO plus an
+    # info audit row, and every resync from 2026-08-15 to 2026-09-28 failed
+    # without anyone seeing it.
     if await _read_bool_setting(pool, AUTO_SYNC_SETTING_KEY):
         deploy_path = await _read_str_setting(
             pool, DEPLOY_CHECKOUT_PATH_SETTING_KEY, _DEFAULT_DEPLOY_PATH
         )
         sync_ok, sync_msg = await asyncio.to_thread(sync_fn, deploy_path)
-        logger.info(
+        logger.log(
+            logging.INFO if sync_ok else logging.WARNING,
             "[MIGRATION_DRIFT] deploy resync ok=%s (%s): %s",
             sync_ok, deploy_path, sync_msg,
         )
@@ -1040,7 +1186,17 @@ async def run_migration_drift_probe(
             else "probe.migration_drift_sync_failed",
             f"deploy checkout resync ({deploy_path}): {sync_msg}",
             pending=pending,
+            severity="info" if sync_ok else "warning",
         )
+        if not sync_ok:
+            await _emit_resync_failed_finding(
+                pool,
+                deploy_path=deploy_path,
+                error=sync_msg,
+                pending=pending,
+                attempt=_recover_attempts,
+                max_attempts=max_attempts,
+            )
 
     logger.info(
         "[MIGRATION_DRIFT] Restarting %s to apply migrations", WORKER_CONTAINER,
