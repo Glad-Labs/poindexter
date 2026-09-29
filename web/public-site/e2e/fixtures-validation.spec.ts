@@ -8,6 +8,12 @@
  * - DatabaseUtils task creation and cleanup
  * - RequestLogger request tracking
  * - VisualTesting accessibility analysis
+ *
+ * Tests that use `apiClient` or `database` call the backend as dev-token, so
+ * they need a DEVELOPMENT_MODE backend at PLAYWRIGHT_API_URL, and the
+ * `database` ones write to it. The apiClient fixture fails them (or, on a
+ * bare local run, skips them) when that backend is unusable; see backend.ts.
+ * The rest never touch the backend.
  */
 
 import { test, expect } from './fixtures';

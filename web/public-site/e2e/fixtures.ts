@@ -9,6 +9,13 @@
  * - Performance metrics
  * - Visual testing utilities
  *
+ * The API client talks to API_URL (PLAYWRIGHT_API_URL, else
+ * http://localhost:8002; see backend.ts) and authenticates every call as
+ * `Bearer dev-token`, so a test that uses `apiClient` or `database` needs a
+ * DEVELOPMENT_MODE backend, and `database` writes to it. The `apiClient`
+ * fixture checks both before the test runs (requireBackend). Tests that use
+ * neither fixture do not touch the backend.
+ *
  * Usage:
  * ```
  * import { test, expect } from './fixtures';
@@ -24,15 +31,16 @@
 
 import { test as base, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { API_URL, DEV_TOKEN_AUTH, requireBackend } from './backend';
 
 /**
  * API Client for backend integration
  */
 class APIClient {
-  private baseUrl: string;
+  readonly baseUrl: string;
   private page: Page;
 
-  constructor(page: Page, baseUrl: string = 'http://localhost:8000') {
+  constructor(page: Page, baseUrl: string = API_URL) {
     this.page = page;
     this.baseUrl = baseUrl;
   }
@@ -44,11 +52,14 @@ class APIClient {
   ) {
     const url = `${this.baseUrl}${endpoint}`;
     const requestOptions = {
-      ...options,
+      // Playwright sends a JSON body from `data`. This used to spread
+      // `options`, whose `body` key Playwright ignores, so every POST and PUT
+      // went out empty.
+      data: options?.body,
       headers: {
         'Content-Type': 'application/json',
-        // Dev auth token - accepted by TokenValidationMiddleware and get_current_user
-        Authorization: 'Bearer dev-token',
+        // Accepted only by a DEVELOPMENT_MODE backend; see backend.ts
+        Authorization: DEV_TOKEN_AUTH,
         ...options?.headers,
       },
     };
@@ -315,6 +326,10 @@ export const test = base.extend<{
   visual: VisualTesting;
 }>({
   apiClient: async ({ page }, use) => {
+    // Every call authenticates as dev-token: fail the test (or, on a bare
+    // local run, skip it) before it sends anything if the backend is
+    // unreachable or refuses dev-token.
+    await requireBackend({ devToken: true });
     const client = new APIClient(page);
     await use(client);
   },

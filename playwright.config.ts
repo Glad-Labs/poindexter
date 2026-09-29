@@ -38,7 +38,11 @@ const outputDir =
   process.env.PLAYWRIGHT_OUTPUT_DIR || 'test-results/playwright';
 
 const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000';
-const apiURL = process.env.PLAYWRIGHT_API_URL || 'http://localhost:8000';
+// The FastAPI base (PLAYWRIGHT_API_URL) is resolved in exactly one place,
+// web/public-site/e2e/backend.ts, which every backend-calling spec imports.
+// This config can't import it: the config is CommonJS and web/public-site is
+// an ESM package, and once the config has required the module the specs can
+// no longer import it.
 
 // True when the target stack is already running (the weekly scheduled run
 // points at production; workflow_dispatch at an operator stack). The
@@ -46,7 +50,8 @@ const apiURL = process.env.PLAYWRIGHT_API_URL || 'http://localhost:8000';
 // enough: Playwright still port-checks `url`, and with reuseExistingServer
 // false under CI it hard-errors "<url> is already used" the moment the
 // target responds. That error killed every scheduled run this workflow ever
-// had (11/11 failures back to 2026-06-15).
+// had (11/11 failures back to 2026-06-15). backend.ts reads SKIP_SERVER_START
+// and CI with this same `!!` test; keep the two in step.
 const skipServerStart = !!process.env.SKIP_SERVER_START;
 
 export default defineConfig({
@@ -296,7 +301,6 @@ export default defineConfig({
 
 export const testConfig = {
   baseURL,
-  apiURL,
   isCI,
   outputDir,
 };

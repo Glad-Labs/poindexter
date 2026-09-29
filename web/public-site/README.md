@@ -54,7 +54,7 @@ web/public-site/
 │   ├── site.config.js           # Site name + URL
 │   └── logger.js                # Client-side logging
 ├── styles/globals.css           # Tailwind global styles
-├── e2e/                         # Playwright E2E tests (~16 specs)
+├── e2e/                         # Playwright E2E tests
 ├── next.config.js               # Next.js config (CSP + security headers, redirects, images)
 └── tailwind.config.cjs
 ```
@@ -122,12 +122,33 @@ without a build.
 ## Testing
 
 - **Unit tests:** Jest + React Testing Library (co-located `*.test.*` files and `__tests__/` dirs)
-- **E2E tests:** Playwright (`e2e/` — 15 spec files covering home, posts, legal, auth, tags, authors, accessibility)
+- **E2E tests:** Playwright (`e2e/` — specs covering home, posts, legal, newsletter signup, auth, tags, authors, accessibility)
+
+Run E2E from the repo root, which holds the Playwright config. Two variables
+aim a run:
+
+- `PLAYWRIGHT_TEST_BASE_URL`: the site (default `http://localhost:3000`).
+- `PLAYWRIGHT_API_URL`: the FastAPI backend (default `http://localhost:8002`,
+  the documented local API). `e2e/backend.ts` is the only place it is read.
 
 ```bash
-# E2E against a site that is already running (the auth and task specs also need the FastAPI worker)
-SKIP_SERVER_START=true npx playwright test --project=chromium
+# Against a site and a backend that are already running
+SKIP_SERVER_START=true PLAYWRIGHT_TEST_BASE_URL=<site> PLAYWRIGHT_API_URL=<backend> \
+  npx playwright test --project=chromium
 ```
+
+Each spec that calls the backend checks it first (`requireBackend` in
+`e2e/backend.ts`). If the backend is unreachable, that spec's tests fail
+whenever `PLAYWRIGHT_API_URL`, `SKIP_SERVER_START` or `CI` is set. They skip,
+with the reason, only on a bare local run with none of those set.
+
+The dev-token specs (`task-workflow`, `manual-publish-pipeline`,
+`workflow-capability`, and the `apiClient` tests in `integration-tests` /
+`fixtures-validation`) authenticate as `Bearer dev-token`. They need a
+DEVELOPMENT_MODE backend and write to it. Production refuses dev-token, so the
+same check stops them there before they send anything. Never aim them at
+production. `auth.spec.ts` sends no credentialed writes and passes against
+either kind.
 
 ## Deployment
 

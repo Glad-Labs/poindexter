@@ -7,28 +7,35 @@
  * These are API-level tests using the `request` fixture so they work
  * reliably without requiring a browser or UI to be running.
  *
- * Auth: All requests use `Authorization: Bearer dev-token` (requires
- * DEVELOPMENT_MODE=true on the backend, which is the dev default).
+ * Auth: every request sends `Authorization: Bearer dev-token`, so this spec
+ * needs a DEVELOPMENT_MODE backend, and it writes to it (it creates tasks).
+ * Never point it at production. requireBackend({ devToken: true }) checks
+ * both before each test; see backend.ts.
  *
- * API base: http://localhost:8000
+ * API base: PLAYWRIGHT_API_URL, else http://localhost:8002 (see backend.ts).
  *
  * Key endpoints exercised:
  *   POST /api/tasks               — create a task
  *   GET  /api/tasks               — list tasks
  *   GET  /api/tasks/:id           — fetch single task
  *   POST /api/tasks/bulk          — bulk pause / resume / cancel
+ *
+ * Stale: the bulk route no longer exists. bulk_task_routes.py was deleted in
+ * d96f43c7a (2026-04-05), so every test that calls it fails against a real
+ * backend until it is rewritten against a live route or retired.
  */
 
 import { test, expect } from '@playwright/test';
+import { API_URL, DEV_TOKEN_AUTH, requireBackend } from './backend';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const API = 'http://localhost:8000';
+const API = API_URL;
 
 const AUTH_HEADERS = {
-  Authorization: 'Bearer dev-token',
+  Authorization: DEV_TOKEN_AUTH,
   'Content-Type': 'application/json',
 };
 
@@ -55,6 +62,16 @@ async function createTask(request: any, suffix: string) {
   return res;
 }
 
+/** Create a task, assert the backend accepted it, and return its ID. */
+async function createTaskId(request: any, suffix: string): Promise<string> {
+  const res = await createTask(request, suffix);
+  expect([200, 201]).toContain(res.status());
+  const body = await res.json();
+  const taskId: string | undefined = body?.id ?? body?.task_id;
+  expect(taskId, 'POST /api/tasks returned no task ID').toBeTruthy();
+  return taskId as string;
+}
+
 async function bulkAction(
   request: any,
   taskIds: string[],
@@ -75,23 +92,12 @@ async function getTask(request: any, taskId: string) {
 // ---------------------------------------------------------------------------
 
 test.describe('Task Pause/Resume Workflow', () => {
-  // -------------------------------------------------------------------------
-  // Backend availability guard
-  // -------------------------------------------------------------------------
-
-  test('backend health check — skip suite if backend is down', async ({
-    request,
-  }) => {
-    const res = await request
-      .get(`${API}/health`, { timeout: 5000 })
-      .catch(() => null);
-
-    if (!res || !res.ok()) {
-      test.skip(
-        true,
-        'Backend not reachable at http://localhost:8000 — skipping task workflow tests'
-      );
-    }
+  // Fails each test when the backend is unreachable or refuses dev-token, if
+  // the run names a target or runs in CI; skips it only on a bare local run.
+  // Per test, not beforeAll, so no test is ever recorded as skipped (see
+  // backend.ts). Nothing below skips on its own.
+  test.beforeEach(async () => {
+    await requireBackend({ devToken: true });
   });
 
   // -------------------------------------------------------------------------
@@ -102,15 +108,6 @@ test.describe('Task Pause/Resume Workflow', () => {
     const res = await createTask(request, 'create-check');
 
     // Some backends return 200, others 201 — accept both.
-    // 401 is also possible when not running in DEVELOPMENT_MODE.
-    if (res.status() === 401) {
-      test.skip(
-        true,
-        'Server not in DEVELOPMENT_MODE — dev-token rejected, skipping task creation test'
-      );
-      return;
-    }
-
     expect([200, 201]).toContain(res.status());
 
     const body = await res.json().catch(() => null);
@@ -123,16 +120,7 @@ test.describe('Task Pause/Resume Workflow', () => {
   });
 
   test('created task appears in the task list', async ({ request }) => {
-    // Create task
-    const createRes = await createTask(request, 'list-check');
-    const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
-
-    // Guard: if creation failed (backend down / auth issue) skip gracefully
-    if (!createRes.ok() || !taskId) {
-      test.skip(true, 'Task creation failed — skipping list-presence check');
-      return;
-    }
+    const taskId = await createTaskId(request, 'list-check');
 
     const listRes = await request.get(`${API}/api/tasks`, {
       headers: AUTH_HEADERS,
@@ -140,8 +128,8 @@ test.describe('Task Pause/Resume Workflow', () => {
     expect(listRes.ok()).toBe(true);
 
     const listBody = await listRes.json().catch(() => null);
-    // API returns {tasks: [...], total: N, ...}
-    const tasks: any[] = listBody?.tasks ?? listBody?.data ?? listBody ?? [];
+    // List envelope: {items, total, limit, offset} (poindexter#745), newest first
+    const tasks: any[] = listBody?.items;
     expect(Array.isArray(tasks)).toBe(true);
 
     const found = tasks.some(
@@ -157,18 +145,7 @@ test.describe('Task Pause/Resume Workflow', () => {
   test('pauses a task via bulk action and status becomes "paused"', async ({
     request,
   }) => {
-    const createRes = await createTask(request, 'pause-test');
-    if (!createRes.ok()) {
-      test.skip(true, 'Task creation failed — skipping pause test');
-      return;
-    }
-
-    const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
-    if (!taskId) {
-      test.skip(true, 'No task ID returned — skipping pause test');
-      return;
-    }
+    const taskId = await createTaskId(request, 'pause-test');
 
     // Issue pause
     const pauseRes = await bulkAction(request, [taskId], 'pause');
@@ -192,25 +169,10 @@ test.describe('Task Pause/Resume Workflow', () => {
   test('bulk pause response contains correct total count', async ({
     request,
   }) => {
-    const [r1, r2] = await Promise.all([
-      createTask(request, 'pause-count-1'),
-      createTask(request, 'pause-count-2'),
+    const ids = await Promise.all([
+      createTaskId(request, 'pause-count-1'),
+      createTaskId(request, 'pause-count-2'),
     ]);
-
-    if (!r1.ok() || !r2.ok()) {
-      test.skip(true, 'Task creation failed — skipping bulk pause count test');
-      return;
-    }
-
-    const [b1, b2] = await Promise.all([r1.json(), r2.json()]);
-    const ids = [b1?.id ?? b1?.task_id, b2?.id ?? b2?.task_id].filter(
-      Boolean
-    ) as string[];
-
-    if (ids.length < 2) {
-      test.skip(true, 'Could not retrieve task IDs — skipping');
-      return;
-    }
 
     const bulkRes = await bulkAction(request, ids, 'pause');
     expect(bulkRes.ok()).toBe(true);
@@ -229,25 +191,11 @@ test.describe('Task Pause/Resume Workflow', () => {
     request,
   }) => {
     // Create
-    const createRes = await createTask(request, 'resume-test');
-    if (!createRes.ok()) {
-      test.skip(true, 'Task creation failed — skipping resume test');
-      return;
-    }
-
-    const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
-    if (!taskId) {
-      test.skip(true, 'No task ID — skipping resume test');
-      return;
-    }
+    const taskId = await createTaskId(request, 'resume-test');
 
     // Pause first
     const pauseRes = await bulkAction(request, [taskId], 'pause');
-    if (!pauseRes.ok()) {
-      test.skip(true, 'Pause failed — skipping resume test');
-      return;
-    }
+    expect(pauseRes.ok()).toBe(true);
 
     // Now resume
     const resumeRes = await bulkAction(request, [taskId], 'resume');
@@ -275,18 +223,7 @@ test.describe('Task Pause/Resume Workflow', () => {
   test('cancels a task via bulk action and status becomes "cancelled"', async ({
     request,
   }) => {
-    const createRes = await createTask(request, 'cancel-test');
-    if (!createRes.ok()) {
-      test.skip(true, 'Task creation failed — skipping cancel test');
-      return;
-    }
-
-    const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
-    if (!taskId) {
-      test.skip(true, 'No task ID — skipping cancel test');
-      return;
-    }
+    const taskId = await createTaskId(request, 'cancel-test');
 
     const cancelRes = await bulkAction(request, [taskId], 'cancel');
     expect(cancelRes.ok()).toBe(true);
@@ -307,18 +244,7 @@ test.describe('Task Pause/Resume Workflow', () => {
   test('cancelled task cannot be paused (operation may report failure)', async ({
     request,
   }) => {
-    const createRes = await createTask(request, 'cancel-then-pause');
-    if (!createRes.ok()) {
-      test.skip(true, 'Task creation failed');
-      return;
-    }
-
-    const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
-    if (!taskId) {
-      test.skip(true, 'No task ID');
-      return;
-    }
+    const taskId = await createTaskId(request, 'cancel-then-pause');
 
     // Cancel first
     await bulkAction(request, [taskId], 'cancel');
@@ -345,16 +271,9 @@ test.describe('Task Pause/Resume Workflow', () => {
       headers: AUTH_HEADERS,
       data: { task_ids: [], action: 'pause' },
     });
-    // 400 = validation error (expected), 401 = server not in DEVELOPMENT_MODE
-    expect([400, 401]).toContain(res.status());
-    if (res.status() === 401) {
-      // Not in dev mode — validation won't run. Document the expected behavior
-      // and skip the specific assertion.
-      test.skip(
-        true,
-        'Server not in DEVELOPMENT_MODE — auth rejected before validation'
-      );
-    }
+    // 400 = validation error. requireBackend() already proved dev-token is
+    // accepted, so a 401 here is a failure, not a mode to tolerate.
+    expect(res.status()).toBe(400);
   });
 
   test('bulk action with invalid action string returns 400', async ({
@@ -367,14 +286,8 @@ test.describe('Task Pause/Resume Workflow', () => {
         action: 'fly',
       },
     });
-    // 400 = validation error (expected), 401 = server not in DEVELOPMENT_MODE
-    expect([400, 401]).toContain(res.status());
-    if (res.status() === 401) {
-      test.skip(
-        true,
-        'Server not in DEVELOPMENT_MODE — auth rejected before validation'
-      );
-    }
+    // 400 = validation error
+    expect(res.status()).toBe(400);
   });
 
   test('bulk action with malformed UUID fails gracefully', async ({
@@ -384,8 +297,8 @@ test.describe('Task Pause/Resume Workflow', () => {
       headers: AUTH_HEADERS,
       data: { task_ids: ['not-a-uuid'], action: 'pause' },
     });
-    // 200 with per-task error, 400 top-level error, or 401 when not in dev mode
-    expect([200, 400, 401]).toContain(res.status());
+    // 200 with per-task error, or 400 top-level error
+    expect([200, 400]).toContain(res.status());
 
     if (res.status() === 200) {
       const body = await res.json().catch(() => null);
@@ -401,18 +314,7 @@ test.describe('Task Pause/Resume Workflow', () => {
   test('full task lifecycle: create → pause → resume → cancel', async ({
     request,
   }) => {
-    const createRes = await createTask(request, 'lifecycle-test');
-    if (!createRes.ok()) {
-      test.skip(true, 'Task creation failed — skipping lifecycle test');
-      return;
-    }
-
-    const createBody = await createRes.json().catch(() => null);
-    const taskId: string | undefined = createBody?.id ?? createBody?.task_id;
-    if (!taskId) {
-      test.skip(true, 'No task ID — skipping lifecycle test');
-      return;
-    }
+    const taskId = await createTaskId(request, 'lifecycle-test');
 
     // --- Pause ---
     const pauseRes = await bulkAction(request, [taskId], 'pause');

@@ -8,6 +8,12 @@
  * - Real-time updates and state management
  * - Error handling and recovery
  * - Performance characteristics
+ *
+ * The site is PLAYWRIGHT_TEST_BASE_URL (the config's baseURL). The API tests
+ * go through fixtures.ts's apiClient, which authenticates as dev-token, so
+ * they need a DEVELOPMENT_MODE backend at PLAYWRIGHT_API_URL, and the create
+ * tests write to it. The fixture fails them (or, on a bare local run, skips
+ * them) when that backend is unusable; see backend.ts.
  */
 
 import { test, expect } from './fixtures';
@@ -32,8 +38,8 @@ test.describe('UI/Backend Integration Tests', () => {
     expect(health).toBeTruthy();
   });
 
-  test('Frontend loads successfully', async ({ page }) => {
-    expect(page.url()).toContain('localhost:3000');
+  test('Frontend loads successfully', async ({ page, baseURL }) => {
+    expect(page.url()).toContain(new URL(baseURL!).host);
     const title = await page.title();
     expect(title).toBeTruthy();
   });
@@ -44,8 +50,8 @@ test.describe('UI/Backend Integration Tests', () => {
 
   test('Can fetch tasks from backend', async ({ apiClient }) => {
     const tasks = await apiClient.get('/api/tasks');
-    // API returns {tasks: [...], total: N, offset: N, limit: N}
-    expect(Array.isArray(tasks) || tasks?.tasks || tasks?.data).toBeTruthy();
+    // List envelope: {items, total, limit, offset} (poindexter#745)
+    expect(Array.isArray(tasks?.items)).toBe(true);
   });
 
   test('Can create task via API', async ({ apiClient, database }) => {
@@ -53,7 +59,8 @@ test.describe('UI/Backend Integration Tests', () => {
       title: 'Integration Test Task',
       description: 'Created by Playwright',
     });
-    expect(task).toBeTruthy();
+    // An error body is truthy too, so check for the created task's id
+    expect(task?.id ?? task?.task_id).toBeTruthy();
   });
 
   test('API errors are handled gracefully', async ({ apiClient }) => {

@@ -14,29 +14,44 @@
  *   7. Verify homepage lists the new post
  *
  * Prerequisites:
- *   - Backend running on port 8000 (DEVELOPMENT_MODE=true)
- *   - Public site running on port 3000
+ *   - A DEVELOPMENT_MODE backend at PLAYWRIGHT_API_URL (default
+ *     http://localhost:8002). Every request sends `Bearer dev-token`, which
+ *     production refuses by design, and this spec creates, approves and
+ *     PUBLISHES a real post: never point it at production.
+ *   - The site that backend publishes to, at PLAYWRIGHT_TEST_BASE_URL
  *   - At least one LLM provider configured (Ollama, Anthropic, OpenAI, etc.)
  *   - PostgreSQL database accessible
  *
+ * requireBackend({ devToken: true }) below checks the backend before each
+ * test and fails it when the backend is unusable (see backend.ts).
+ *
  * Run:
- *   SKIP_SERVER_START=true npx playwright test manual-publish-pipeline --project=chromium
+ *   SKIP_SERVER_START=true PLAYWRIGHT_API_URL=<dev backend> \
+ *     PLAYWRIGHT_TEST_BASE_URL=<its site> \
+ *     npx playwright test manual-publish-pipeline --project=chromium
  */
 
 import { test, expect } from '@playwright/test';
+import { API_URL, DEV_TOKEN_AUTH, requireBackend } from './backend';
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
-const API = process.env.PLAYWRIGHT_API_URL || 'http://localhost:8000';
-const PUBLIC_SITE =
-  process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000';
+// The site is the config's baseURL (PLAYWRIGHT_TEST_BASE_URL), so page
+// navigation below uses relative paths.
+const API = API_URL;
 
 const AUTH_HEADERS = {
-  Authorization: 'Bearer dev-token',
+  Authorization: DEV_TOKEN_AUTH,
   'Content-Type': 'application/json',
 };
+
+// Both suites call the backend with dev-token. Checked before each test, not
+// in beforeAll, so each test fails on its own (see backend.ts).
+test.beforeEach(async () => {
+  await requireBackend({ devToken: true });
+});
 
 // Content generation can take 30-120s depending on the LLM provider.
 // Poll every 5s, give up after 3 minutes.
@@ -120,6 +135,15 @@ async function waitForTaskStatus(
 // ---------------------------------------------------------------------------
 
 test.describe('Manual Publish Pipeline (full E2E)', () => {
+  // Each step uses the task the one before it created (taskId / postSlug),
+  // so the steps must share one worker, in order. Under the config's
+  // fullyParallel they could land in different workers, and a CI retry of a
+  // failed step starts a fresh worker where taskId is undefined. Serial mode
+  // runs them in order and retries the group. After a failed step it does not
+  // run the rest, which need the task that step was meant to produce; the
+  // report lists them as not run, and the run is already red.
+  test.describe.configure({ mode: 'serial' });
+
   // Generous timeout — content generation is the bottleneck
   test.setTimeout(240_000);
 
@@ -207,7 +231,7 @@ test.describe('Manual Publish Pipeline (full E2E)', () => {
 
   test('Step 6: Post renders on the public site', async ({ page }) => {
     // Navigate to the published post on the public site
-    const postUrl = `${PUBLIC_SITE}/posts/${postSlug}`;
+    const postUrl = `/posts/${postSlug}`;
     const response = await page.goto(postUrl, {
       waitUntil: 'domcontentloaded',
     });

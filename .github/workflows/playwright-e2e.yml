@@ -37,7 +37,7 @@
 #     including the write-heavy manual-publish-pipeline. The backend is
 #     Tailnet-only, so this lane is for an operator who has pointed the repo
 #     variables PLAYWRIGHT_TEST_BASE_URL / PLAYWRIGHT_API_URL at a stack this
-#     runner can reach. Its step comment says what it cannot do yet.
+#     runner can reach. Its step comment says what that stack must be.
 #   (glad-labs-stack#1291 made backend-e2e run on a schedule.)
 #
 # A dispatched run does not clear the brain's scheduled_workflow_watch `stale`
@@ -88,7 +88,8 @@ on:
           public-surface = the weekly scheduled lane, now (author + tag specs
           against www.gladlabs.io). full = all eight backend-e2e specs plus
           frontend-e2e, against vars.PLAYWRIGHT_TEST_BASE_URL /
-          vars.PLAYWRIGHT_API_URL (needs a stack this runner can reach).
+          vars.PLAYWRIGHT_API_URL (needs a DEVELOPMENT_MODE stack this runner
+          can reach; never production).
         type: choice
         default: public-surface
         options:
@@ -236,19 +237,29 @@ jobs:
           web/public-site/e2e/tag.spec.ts
 
       - name: Run full backend-dependent specs (lane=full)
-        # Only a dispatch with lane=full. All eight specs, including the
-        # write-heavy ones (task-workflow / manual-publish-pipeline /
-        # workflow-capability), which authenticate as `Bearer dev-token` and
-        # so need a backend with DEVELOPMENT_MODE=true, never production.
-        # Point the repo variables PLAYWRIGHT_TEST_BASE_URL (the site) and
-        # PLAYWRIGHT_API_URL (the FastAPI backend) at a stack this runner can
-        # reach. Unset, as they are today, the site is production and the API
-        # http://localhost:8000; the one run of this lane (2026-06-11) failed.
-        # Known gap: only manual-publish-pipeline reads PLAYWRIGHT_API_URL.
-        # auth / task-workflow / workflow-capability, and integration-tests /
-        # fixtures-validation through fixtures.ts's APIClient, hardcode
-        # http://localhost:8000, so from a hosted runner they skip or fail
-        # whatever the variables say.
+        # Only a dispatch with lane=full. All eight specs. Point the repo
+        # variables PLAYWRIGHT_TEST_BASE_URL (the site) and PLAYWRIGHT_API_URL
+        # (the FastAPI backend) at a stack this runner can reach.
+        # Every backend-calling spec (and fixtures.ts's APIClient) takes its
+        # base from PLAYWRIGHT_API_URL, resolved once in
+        # web/public-site/e2e/backend.ts; unset, it is the documented local
+        # API, http://localhost:8002. Before each backend test, requireBackend()
+        # checks the probe global-setup made, and because this job sets CI and
+        # SKIP_SERVER_START, an unusable backend FAILS the test. Nothing in
+        # this lane can skip to green. The dev-token specs (task-workflow,
+        # manual-publish-pipeline, workflow-capability, and the apiClient
+        # tests in integration-tests / fixtures-validation) also fail unless
+        # the backend accepts `Bearer dev-token`, which only a DEVELOPMENT_MODE
+        # backend does. Use a throwaway dev stack, never production:
+        # manual-publish-pipeline creates, approves and publishes a real post.
+        # auth.spec.ts sends no credentialed writes and passes in either mode.
+        # With the variables unset, as they are today, the site is production
+        # and the API a localhost this runner does not have, so the lane fails
+        # at requireBackend() until they are set.
+        # Stale specs, not a config problem: workflow-capability and
+        # task-workflow's bulk tests call routes deleted in April 2026
+        # (5eb26b517, d96f43c7a), so they fail against any real backend until
+        # they are rewritten or retired.
         if: ${{ env.E2E_LANE == 'full' }}
         env:
           PLAYWRIGHT_TEST_BASE_URL: ${{ vars.PLAYWRIGHT_TEST_BASE_URL || 'https://www.gladlabs.io' }}

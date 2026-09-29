@@ -9,20 +9,26 @@
  * correctly enforce authentication on protected routes.
  *
  * Auth model:
- *   - GitHub OAuth in production
- *   - `Bearer dev-token` accepted when DEVELOPMENT_MODE=true (dev default)
+ *   - OAuth JWTs (client credentials, minted at POST /token) in production
+ *   - `Bearer dev-token` accepted only by a DEVELOPMENT_MODE backend
  *   - Middleware blocks /api/tasks, /api/workflows, etc. without a valid header
  *
- * API base: http://localhost:8000
+ * Mode-agnostic: every dev-token check holds whether the backend accepts
+ * dev-token (DEVELOPMENT_MODE) or refuses it (production), and the only
+ * writes it sends carry no credentials, so they must be refused. It is the
+ * one backend spec that is safe to point at production.
+ *
+ * API base: PLAYWRIGHT_API_URL, else http://localhost:8002 (see backend.ts).
  */
 
 import { test, expect } from '@playwright/test';
+import { API_URL, requireBackend } from './backend';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const API = 'http://localhost:8000';
+const API = API_URL;
 
 /** A protected endpoint — blocked by TokenValidationMiddleware */
 const PROTECTED_ENDPOINT = `${API}/api/tasks`;
@@ -35,24 +41,21 @@ const PUBLIC_HEALTH = `${API}/health`;
 // ---------------------------------------------------------------------------
 
 test.describe('Auth Resilience', () => {
+  // Fails each test when the backend is unreachable and the run names a
+  // target or runs in CI; skips it only on a bare local run. Per test, not
+  // beforeAll, so no test is ever recorded as skipped (see backend.ts).
+  test.beforeEach(async () => {
+    await requireBackend();
+  });
+
   // -------------------------------------------------------------------------
-  // Backend availability guard
+  // Public health endpoint
   // -------------------------------------------------------------------------
 
   test('backend health endpoint is publicly accessible without auth', async ({
     request,
   }) => {
-    const res = await request
-      .get(PUBLIC_HEALTH, { timeout: 5000 })
-      .catch(() => null);
-
-    if (!res) {
-      test.skip(
-        true,
-        'Backend not reachable at http://localhost:8000 — skipping auth tests'
-      );
-      return;
-    }
+    const res = await request.get(PUBLIC_HEALTH);
 
     // /health should return 200 with no auth header at all
     expect(res.status()).toBe(200);
@@ -77,7 +80,7 @@ test.describe('Auth Resilience', () => {
     expect([200, 401]).toContain(res.status());
   });
 
-  test('dev-token in dev mode returns well-formed JSON response body', async ({
+  test('dev-token gets a well-formed JSON response body in either mode', async ({
     request,
   }) => {
     const res = await request.get(PROTECTED_ENDPOINT, {
@@ -86,19 +89,18 @@ test.describe('Auth Resilience', () => {
       },
     });
 
-    if (!res.ok()) {
-      // Backend is not in DEVELOPMENT_MODE — nothing more to check
-      test.skip(
-        true,
-        'dev-token rejected (server not in DEVELOPMENT_MODE) — skipping body shape test'
-      );
-      return;
-    }
-
     const body = await res.json().catch(() => null);
     expect(body).not.toBeNull();
-    // Tasks endpoint returns {tasks: [...], total: N, ...}
-    expect(typeof body === 'object').toBe(true);
+    if (res.ok()) {
+      // DEVELOPMENT_MODE: the list envelope is {items, total, limit, offset}
+      expect(Array.isArray(body.items)).toBe(true);
+    } else {
+      // Not DEVELOPMENT_MODE: a 401 in the API's error envelope
+      // {error_code, message, request_id} (utils/exception_handlers.py)
+      expect(res.status()).toBe(401);
+      expect(body.error_code).toBe('UNAUTHORIZED');
+      expect(typeof body.message).toBe('string');
+    }
   });
 
   // -------------------------------------------------------------------------

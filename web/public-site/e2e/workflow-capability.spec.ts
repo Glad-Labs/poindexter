@@ -27,36 +27,46 @@
  *   GET  /api/tasks/capability/:id             — get a capability task
  *   DELETE /api/tasks/capability/:id           — delete a capability task
  *
- * Auth: Bearer dev-token (requires DEVELOPMENT_MODE=true on backend).
- * All test suites guard against backend unavailability and skip gracefully.
+ * Auth: Bearer dev-token, so this spec needs a DEVELOPMENT_MODE backend, and
+ * it writes to it (it creates capability tasks). Never point it at
+ * production. requireBackend({ devToken: true }) below checks both before
+ * each test, and FAILS it when either is missing if the run names a target or
+ * runs in CI (see backend.ts). It used to skip every test when the backend
+ * did not answer, so a run could report 55 skipped and exit 0.
+ *
+ * API base: PLAYWRIGHT_API_URL, else http://localhost:8002 (see backend.ts).
+ *
+ * Stale: none of these routes exist any more. workflow_routes.py,
+ * workflow_progress_routes.py, custom_workflows_routes.py and
+ * capability_tasks_routes.py were deleted with their unit tests in 5eb26b517
+ * (2026-04-04). Against a real backend these tests fail until this spec is
+ * retired or rewritten against live routes.
  */
 
 import { test, expect } from '@playwright/test';
+import { API_URL, DEV_TOKEN_AUTH, requireBackend } from './backend';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const API = 'http://localhost:8000';
+const API = API_URL;
 
 const AUTH_HEADERS = {
-  Authorization: 'Bearer dev-token',
+  Authorization: DEV_TOKEN_AUTH,
   'Content-Type': 'application/json',
 };
+
+// One gate for the whole file, run before each test: every suite below calls
+// the backend with dev-token. Per test, not beforeAll, so no test is ever
+// recorded as skipped (see backend.ts). No test skips on its own.
+test.beforeEach(async () => {
+  await requireBackend({ devToken: true });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Returns true if the backend is reachable. */
-async function isBackendUp(request: any): Promise<boolean> {
-  try {
-    const res = await request.get(`${API}/health`, { timeout: 5000 });
-    return res.ok();
-  } catch {
-    return false;
-  }
-}
 
 /** Build a minimal valid capability task body. */
 function makeCapabilityTaskBody(suffix: string) {
@@ -74,24 +84,9 @@ function makeCapabilityTaskBody(suffix: string) {
 // ---------------------------------------------------------------------------
 
 test.describe('Workflow Templates API', () => {
-  test('backend health check — skip suite if backend is down', async ({
-    request,
-  }) => {
-    const up = await isBackendUp(request);
-    if (!up) {
-      test.skip(
-        true,
-        'Backend not reachable — skipping workflow template tests'
-      );
-    }
-  });
-
   test('GET /api/workflows/templates returns 200 with array or object', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(`${API}/api/workflows/templates`, {
       headers: AUTH_HEADERS,
       data: {},
@@ -107,9 +102,6 @@ test.describe('Workflow Templates API', () => {
   test('workflow templates endpoint rejects unauthenticated request', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(`${API}/api/workflows/templates`, {
       headers: { 'Content-Type': 'application/json' },
       data: {},
@@ -121,9 +113,6 @@ test.describe('Workflow Templates API', () => {
   test('workflow templates history returns 200 when authenticated', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/workflows/templates/history`, {
       headers: AUTH_HEADERS,
     });
@@ -135,9 +124,6 @@ test.describe('Workflow Templates API', () => {
   test('workflow templates history rejects unauthenticated request', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/workflows/templates/history`);
     expect([401, 403]).toContain(res.status());
   });
@@ -148,18 +134,9 @@ test.describe('Workflow Templates API', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Workflow Executions API', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(true, 'Backend not reachable — skipping execution tests');
-  });
-
   test('GET /api/workflows/executions returns 200 with list', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/workflows/executions`, {
       headers: AUTH_HEADERS,
     });
@@ -174,9 +151,6 @@ test.describe('Workflow Executions API', () => {
   test('GET /api/workflows/executions rejects unauthenticated request', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/workflows/executions`);
     expect([401, 403]).toContain(res.status());
   });
@@ -184,9 +158,6 @@ test.describe('Workflow Executions API', () => {
   test('GET /api/workflows/status/:id returns 404 for non-existent workflow', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000001';
     const res = await request.get(`${API}/api/workflows/status/${fakeId}`, {
       headers: AUTH_HEADERS,
@@ -198,9 +169,6 @@ test.describe('Workflow Executions API', () => {
   test('GET /api/workflows/status/:id rejects unauthenticated request', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000001';
     const res = await request.get(`${API}/api/workflows/status/${fakeId}`);
     expect([401, 403]).toContain(res.status());
@@ -209,9 +177,6 @@ test.describe('Workflow Executions API', () => {
   test('GET /api/workflows/executions/:id/progress returns 404 for non-existent execution', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000002';
     const res = await request.get(
       `${API}/api/workflows/executions/${fakeId}/progress`,
@@ -224,9 +189,6 @@ test.describe('Workflow Executions API', () => {
   test('POST /api/workflows/executions/:id/cancel returns 404 for non-existent execution', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000003';
     const res = await request.post(
       `${API}/api/workflows/executions/${fakeId}/cancel`,
@@ -242,21 +204,9 @@ test.describe('Workflow Executions API', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Workflow State Transitions', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(
-        true,
-        'Backend not reachable — skipping state transition tests'
-      );
-  });
-
   test('POST /api/workflows/:id/pause returns 404 for non-existent workflow', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000010';
     const res = await request.post(`${API}/api/workflows/${fakeId}/pause`, {
       headers: AUTH_HEADERS,
@@ -269,9 +219,6 @@ test.describe('Workflow State Transitions', () => {
   test('POST /api/workflows/:id/resume returns 404 for non-existent workflow', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000011';
     const res = await request.post(`${API}/api/workflows/${fakeId}/resume`, {
       headers: AUTH_HEADERS,
@@ -284,9 +231,6 @@ test.describe('Workflow State Transitions', () => {
   test('POST /api/workflows/:id/cancel returns 404 for non-existent workflow', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000012';
     const res = await request.post(`${API}/api/workflows/${fakeId}/cancel`, {
       headers: AUTH_HEADERS,
@@ -297,9 +241,6 @@ test.describe('Workflow State Transitions', () => {
   });
 
   test('workflow pause requires authentication', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000013';
     const res = await request.post(`${API}/api/workflows/${fakeId}/pause`, {
       headers: { 'Content-Type': 'application/json' },
@@ -310,9 +251,6 @@ test.describe('Workflow State Transitions', () => {
   });
 
   test('workflow resume requires authentication', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000014';
     const res = await request.post(`${API}/api/workflows/${fakeId}/resume`, {
       headers: { 'Content-Type': 'application/json' },
@@ -323,9 +261,6 @@ test.describe('Workflow State Transitions', () => {
   });
 
   test('workflow cancel requires authentication', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000015';
     const res = await request.post(`${API}/api/workflows/${fakeId}/cancel`, {
       headers: { 'Content-Type': 'application/json' },
@@ -338,9 +273,6 @@ test.describe('Workflow State Transitions', () => {
   test('workflow execute with non-existent template returns 404', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(
       `${API}/api/workflows/execute/nonexistent_template_xyz`,
       {
@@ -353,9 +285,6 @@ test.describe('Workflow State Transitions', () => {
   });
 
   test('workflow execute requires authentication', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(
       `${API}/api/workflows/execute/some_template`,
       {
@@ -373,18 +302,9 @@ test.describe('Workflow State Transitions', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Capability Discovery API', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(true, 'Backend not reachable — skipping capability tests');
-  });
-
   test('GET /api/capabilities returns 200 with capabilities list', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/capabilities`, {
       headers: AUTH_HEADERS,
     });
@@ -397,9 +317,6 @@ test.describe('Capability Discovery API', () => {
   });
 
   test('GET /api/capabilities requires authentication', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/capabilities`);
     expect([401, 403]).toContain(res.status());
   });
@@ -407,9 +324,6 @@ test.describe('Capability Discovery API', () => {
   test('GET /api/capabilities/:name returns 404 for unknown capability', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(
       `${API}/api/capabilities/nonexistent_capability_xyz`,
       { headers: AUTH_HEADERS }
@@ -421,9 +335,6 @@ test.describe('Capability Discovery API', () => {
   test('GET /api/capabilities/:name requires authentication', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(
       `${API}/api/capabilities/nonexistent_capability_xyz`
     );
@@ -433,9 +344,6 @@ test.describe('Capability Discovery API', () => {
   test('capabilities list response has correct content-type header', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/capabilities`, {
       headers: AUTH_HEADERS,
     });
@@ -452,18 +360,9 @@ test.describe('Capability Discovery API', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Capability Task CRUD', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(true, 'Backend not reachable — skipping capability task tests');
-  });
-
   test('POST /api/tasks/capability creates a task and returns a task ID', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(`${API}/api/tasks/capability`, {
       headers: AUTH_HEADERS,
       data: makeCapabilityTaskBody('create-test'),
@@ -480,9 +379,6 @@ test.describe('Capability Task CRUD', () => {
   test('POST /api/tasks/capability requires authentication', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(`${API}/api/tasks/capability`, {
       headers: { 'Content-Type': 'application/json' },
       data: makeCapabilityTaskBody('auth-test'),
@@ -494,9 +390,6 @@ test.describe('Capability Task CRUD', () => {
   test('GET /api/tasks/capability returns 200 with list', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/tasks/capability`, {
       headers: AUTH_HEADERS,
     });
@@ -507,9 +400,6 @@ test.describe('Capability Task CRUD', () => {
   test('GET /api/tasks/capability requires authentication', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/tasks/capability`);
     expect([401, 403]).toContain(res.status());
   });
@@ -517,9 +407,6 @@ test.describe('Capability Task CRUD', () => {
   test('GET /api/tasks/capability/:id returns 404 for non-existent task', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000020';
     const res = await request.get(`${API}/api/tasks/capability/${fakeId}`, {
       headers: AUTH_HEADERS,
@@ -531,9 +418,6 @@ test.describe('Capability Task CRUD', () => {
   test('DELETE /api/tasks/capability/:id returns 404 for non-existent task', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000021';
     const res = await request.delete(`${API}/api/tasks/capability/${fakeId}`, {
       headers: AUTH_HEADERS,
@@ -545,9 +429,6 @@ test.describe('Capability Task CRUD', () => {
   test('DELETE /api/tasks/capability/:id requires authentication', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000022';
     const res = await request.delete(`${API}/api/tasks/capability/${fakeId}`);
     expect([401, 403]).toContain(res.status());
@@ -556,9 +437,6 @@ test.describe('Capability Task CRUD', () => {
   test('POST /api/tasks/capability with missing required fields returns 422', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(`${API}/api/tasks/capability`, {
       headers: AUTH_HEADERS,
       data: {}, // Missing task_name and topic
@@ -570,9 +448,6 @@ test.describe('Capability Task CRUD', () => {
   test('capability task list response has correct content-type', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/tasks/capability`, {
       headers: AUTH_HEADERS,
     });
@@ -589,18 +464,9 @@ test.describe('Capability Task CRUD', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Capability Task Execution', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(true, 'Backend not reachable — skipping execution tests');
-  });
-
   test('POST /api/tasks/capability/:id/execute returns 404 for non-existent task', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000030';
     const res = await request.post(
       `${API}/api/tasks/capability/${fakeId}/execute`,
@@ -613,9 +479,6 @@ test.describe('Capability Task Execution', () => {
   test('POST /api/tasks/capability/:id/execute requires authentication', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000031';
     const res = await request.post(
       `${API}/api/tasks/capability/${fakeId}/execute`,
@@ -628,9 +491,6 @@ test.describe('Capability Task Execution', () => {
   test('GET /api/tasks/capability/:id/executions/:execId returns 404 for non-existent execution', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeTaskId = '00000000-0000-0000-0000-000000000032';
     const fakeExecId = '00000000-0000-0000-0000-000000000033';
     const res = await request.get(
@@ -644,9 +504,6 @@ test.describe('Capability Task Execution', () => {
   test('GET /api/tasks/capability/:id/executions returns 404 for non-existent task', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000034';
     const res = await request.get(
       `${API}/api/tasks/capability/${fakeId}/executions`,
@@ -662,18 +519,9 @@ test.describe('Capability Task Execution', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Workflow & Capability Edge Cases', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(true, 'Backend not reachable — skipping edge case tests');
-  });
-
   test('workflow status endpoint with invalid UUID format returns 400 or 404', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.get(`${API}/api/workflows/status/not-a-uuid`, {
       headers: AUTH_HEADERS,
     });
@@ -684,9 +532,6 @@ test.describe('Workflow & Capability Edge Cases', () => {
   test('workflow pause with invalid UUID format returns 400 or 404', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.post(`${API}/api/workflows/not-a-uuid/pause`, {
       headers: AUTH_HEADERS,
       data: {},
@@ -698,9 +543,6 @@ test.describe('Workflow & Capability Edge Cases', () => {
   test('capability task with extremely long task_name is rejected or truncated', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const longName = 'a'.repeat(5001);
     const res = await request.post(`${API}/api/tasks/capability`, {
       headers: AUTH_HEADERS,
@@ -720,9 +562,6 @@ test.describe('Workflow & Capability Edge Cases', () => {
   test('capability task update (PUT) on non-existent task returns 404', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000040';
     const res = await request.put(`${API}/api/tasks/capability/${fakeId}`, {
       headers: AUTH_HEADERS,
@@ -735,9 +574,6 @@ test.describe('Workflow & Capability Edge Cases', () => {
   test('PUT /api/tasks/capability/:id requires authentication', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeId = '00000000-0000-0000-0000-000000000041';
     const res = await request.put(`${API}/api/tasks/capability/${fakeId}`, {
       headers: { 'Content-Type': 'application/json' },
@@ -750,9 +586,6 @@ test.describe('Workflow & Capability Edge Cases', () => {
   test('API responds consistently to repeated identical requests', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const statuses: number[] = [];
     for (let i = 0; i < 3; i++) {
       const res = await request.get(`${API}/api/capabilities`, {
@@ -769,9 +602,6 @@ test.describe('Workflow & Capability Edge Cases', () => {
   test('OPTIONS request to capability endpoint returns appropriate CORS headers or 405', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const res = await request.fetch(`${API}/api/capabilities`, {
       method: 'OPTIONS',
       headers: {
@@ -790,18 +620,9 @@ test.describe('Workflow & Capability Edge Cases', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Concurrent Request Handling', () => {
-  test('backend health check', async ({ request }) => {
-    const up = await isBackendUp(request);
-    if (!up)
-      test.skip(true, 'Backend not reachable — skipping concurrency tests');
-  });
-
   test('3 concurrent GET /api/capabilities requests all return consistent status', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const requests = Array.from({ length: 3 }, () =>
       request.get(`${API}/api/capabilities`, { headers: AUTH_HEADERS })
     );
@@ -817,9 +638,6 @@ test.describe('Concurrent Request Handling', () => {
   test('3 concurrent GET /api/workflows/executions requests all return consistent status', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const requests = Array.from({ length: 3 }, () =>
       request.get(`${API}/api/workflows/executions`, { headers: AUTH_HEADERS })
     );
@@ -834,9 +652,6 @@ test.describe('Concurrent Request Handling', () => {
   test('burst: 5 unauthenticated requests to protected endpoints all return 401/403', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const endpoints = [
       `${API}/api/capabilities`,
       `${API}/api/workflows/executions`,
@@ -856,9 +671,6 @@ test.describe('Concurrent Request Handling', () => {
   test('concurrent POST requests to non-existent workflows return consistent 404s', async ({
     request,
   }) => {
-    const up = await isBackendUp(request);
-    if (!up) test.skip(true, 'Backend not reachable');
-
     const fakeIds = [
       '00000000-0000-0000-0000-000000000050',
       '00000000-0000-0000-0000-000000000051',
