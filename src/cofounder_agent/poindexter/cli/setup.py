@@ -11,29 +11,44 @@ Flow:
        prompts for DB URL, writes bootstrap.toml, tests the connection,
        runs migrations, seeds the minimum app_settings keys.
 
-    2. `poindexter setup --auto`
-       spins up a local Docker Postgres with a generated password,
-       writes bootstrap.toml pointing at it, runs migrations, seeds.
-       Phase 4 — requires Docker to be installed. Emits a stub error
-       for now and points the user at `--interactive`.
+    2. `poindexter setup --auto`  (the quick-start path)
+       generates the stack's secrets, starts the Docker stack's OWN Postgres
+       (the `postgres-local` service of the compose file
+       scripts/start-stack.sh launches), writes bootstrap.toml pointing at
+       it, runs migrations, seeds, provisions the CLI's OAuth client.
+       Needs Docker and a Poindexter checkout (the compose file lives there).
+
+       It used to start a separate `poindexter-postgres-auto` container on
+       port 5434. The stack never read it — every container connects to
+       `postgres-local` — so the CLI queued tasks into a database the
+       pipeline could not see, and its OAuth client was unknown to the
+       worker. One database now, by construction.
 
     3. `poindexter setup --db-url=<url>`
        non-interactive — takes a DB URL directly, verifies, writes,
-       migrates. For CI, automation, and existing DBs.
+       migrates. For CI, automation, and a Postgres you run yourself. The
+       Docker stack keeps using its own `postgres-local`; this path is for
+       running the worker outside that stack.
 
     4. `poindexter setup --check`
        verifies an existing bootstrap.toml still works. Good for ops.
+
+Re-running with `--force` keeps every value the existing bootstrap.toml
+already holds (see `_stack_secrets`): Postgres keeps the password its volume
+was initialised with, and encrypted app_settings rows need the
+poindexter_secret_key they were written with.
 """
 
 from __future__ import annotations
 
 import asyncio
-import secrets
+import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 import click
 
@@ -329,6 +344,57 @@ async def _setting_value(dsn: str, key: str) -> str:
         return ""
 
 
+async def _sync_compose_project_setting(dsn: str, project: str) -> bool:
+    """Point ``app_settings.compose_project_name`` at bootstrap.toml's project.
+
+    Two things name the stack's compose project: bootstrap.toml's
+    ``compose_project_name`` (start-stack.sh exports it as
+    COMPOSE_PROJECT_NAME for every launch) and the app_setting of the same
+    name, which the brain's compose-drift probe uses when it re-creates a
+    drifted container. Both default to ``poindexter``. When setup is run with
+    another name, a stale app_setting would have the brain recreate services
+    in a project that does not own them. Returns True when the row changed.
+    """
+    import asyncpg
+
+    conn = await asyncpg.connect(dsn, timeout=8)
+    try:
+        status = await conn.execute(
+            "UPDATE app_settings SET value = $1, updated_at = now() "
+            "WHERE key = 'compose_project_name' AND value IS DISTINCT FROM $1",
+            project,
+        )
+    finally:
+        await conn.close()
+    return status.endswith(" 1")
+
+
+async def _configured_pull_command(dsn: str) -> str:
+    """``ollama pull …`` for the models THIS database's pipeline is set to call.
+
+    Read from the live app_settings (just seeded by step 2), so an operator
+    who re-pointed a role before re-running setup sees their own models, not
+    the README's defaults. The role list lives in services/required_models.py.
+    """
+    import asyncpg
+
+    from poindexter.services.required_models import (
+        PIPELINE_MODEL_KEYS,
+        pull_command,
+        required_models,
+    )
+
+    conn = await asyncpg.connect(dsn, timeout=8)
+    try:
+        rows = await conn.fetch(
+            "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+            list(PIPELINE_MODEL_KEYS),
+        )
+    finally:
+        await conn.close()
+    return pull_command(required_models({r["key"]: r["value"] for r in rows}))
+
+
 async def _check_brain_heartbeat(dsn: str) -> tuple[bool, str]:
     """Verify the brain daemon has touched its queue recently (last 10 min)."""
     try:
@@ -381,27 +447,41 @@ async def _check_telegram(token: str, chat_id: str) -> tuple[bool, str]:
 
 
 # ---------------------------------------------------------------------------
-# --auto: spin a local Docker Postgres (Phase 4)
+# --auto: provision the Docker stack's own Postgres
 # ---------------------------------------------------------------------------
 
 # Canonical local-dev Postgres host port. Mirrors the POSTGRES_HOST_PORT
-# default published by docker-compose.local.yml — keep the two in sync
-# (guarded by tests/unit/poindexter/cli/test_setup.py). 15432 was retired
-# 2026-06-21 after it landed inside a Windows Hyper-V reserved TCP range
-# and became unbindable (WSAEACCES); see the compose-file comment.
+# default published by docker-compose.local.yml and docker-compose.consumer.yml
+# — keep them in sync (guarded by tests/unit/poindexter/cli/test_setup.py and
+# scripts/ci/ports_lint.py). 15432 was retired 2026-06-21 after it landed
+# inside a Windows Hyper-V reserved TCP range and became unbindable
+# (WSAEACCES); see the compose-file comment.
 _DEFAULT_LOCAL_DB_PORT = 5433
 _DEFAULT_LOCAL_DB_URL = (
     f"postgresql://poindexter:poindexter-brain-local"
     f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/poindexter_brain"
 )
 
-_AUTO_CONTAINER = "poindexter-postgres-auto"
-_AUTO_IMAGE = "pgvector/pgvector:pg16"
-# The --auto path spins a SEPARATE container, one port above the compose
-# default, so it never collides with a running local stack.
-_AUTO_PORT = _DEFAULT_LOCAL_DB_PORT + 1
-_AUTO_DB = "poindexter_brain"
-_AUTO_USER = "poindexter"
+# The compose files scripts/start-stack.sh picks between, in its order: the
+# operator's full stack when the checkout has it, else the public default
+# stack. --auto must provision the database of the file start-stack.sh will
+# launch — tests/unit/scripts/test_start_stack_compose_selection.py pins the
+# two selections together.
+_COMPOSE_FILES = ("docker-compose.local.yml", "docker-compose.consumer.yml")
+# Every stack container connects to this service (postgres-local:5432 on the
+# compose network), and the host reaches it on _DEFAULT_LOCAL_DB_PORT. User and
+# database are the LOCAL_POSTGRES_USER / LOCAL_POSTGRES_DB compose defaults.
+_STACK_DB_SERVICE = "postgres-local"
+_STACK_DB_USER = "poindexter"
+_STACK_DB_NAME = "poindexter_brain"
+# Written to bootstrap.toml as compose_project_name; start-stack.sh exports it
+# as COMPOSE_PROJECT_NAME so every launch lands in the same compose project
+# (launching from a second directory would otherwise fork a parallel stack).
+_DEFAULT_COMPOSE_PROJECT = "poindexter"
+
+# --auto used to start this standalone container on port 5434. The stack never
+# used it, so it is only looked up now to tell the operator it can go.
+_LEGACY_AUTO_CONTAINER = "poindexter-postgres-auto"
 
 
 def _run(cmd: list[str], *, check: bool = True, capture: bool = True) -> subprocess.CompletedProcess[str]:
@@ -429,32 +509,17 @@ def _docker_available() -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
-def _container_exists() -> bool:
+def _legacy_auto_container_exists() -> bool:
     try:
         out = _run(
-            ["docker", "ps", "-a", "--filter", f"name=^{_AUTO_CONTAINER}$", "--format", "{{.Names}}"],
+            ["docker", "ps", "-a", "--filter", f"name=^{_LEGACY_AUTO_CONTAINER}$", "--format", "{{.Names}}"],
             check=False,
         )
-        return _AUTO_CONTAINER in (out.stdout or "").splitlines()
+        return _LEGACY_AUTO_CONTAINER in (out.stdout or "").splitlines()
     except Exception:
-        # silent-ok: `False` is the FAIL-SAFE answer — "assume it isn't there"
-        # makes the caller try to CREATE the container, and docker itself then
-        # fails loudly with a real message if something is actually wrong.
-        # Claiming it exists on an error would strand setup instead.
-        return False
-
-
-def _container_running() -> bool:
-    try:
-        out = _run(
-            ["docker", "ps", "--filter", f"name=^{_AUTO_CONTAINER}$", "--format", "{{.Names}}"],
-            check=False,
-        )
-        return _AUTO_CONTAINER in (out.stdout or "").splitlines()
-    except Exception:
-        # silent-ok: `False` is fail-safe here too — "assume it isn't running"
-        # makes the caller start it, and a genuine docker problem surfaces
-        # from that command with a real error.
+        # silent-ok: this only decides whether to print an advisory about an
+        # old container; "not there" costs nothing but the advisory, and a
+        # real docker problem surfaces from the compose call right after.
         return False
 
 
@@ -473,98 +538,158 @@ def _wait_for_postgres(dsn: str, *, timeout: float = 30.0) -> tuple[bool, str]:
     return False, f"timed out after {timeout:.0f}s — last error: {last_err}"
 
 
-def _auto_provision() -> str:
-    """Spin up (or reuse) a local Docker pgvector container. Returns the DSN.
+def find_stack_root(start: Path | None = None) -> Path | None:
+    """The Poindexter checkout whose Docker stack ``--auto`` provisions.
 
-    Prints each step with click.echo so the operator can see what's happening.
-    Raises click.ClickException on failure.
+    A checkout is a directory holding ``scripts/start-stack.sh`` and one of
+    ``_COMPOSE_FILES``. Searched from ``start`` (default: the working
+    directory) upward, then from this package's own location upward — the
+    quick start's ``pip install -e src/cofounder_agent`` is an editable
+    install, so the package sits inside the checkout wherever the CLI is run
+    from. ``None`` when neither is inside one (a PyPI install carries no
+    compose file).
+    """
+    import poindexter
+
+    bases = [Path(start) if start else Path.cwd(), Path(poindexter.__file__).parent]
+    for base in bases:
+        base = base.resolve()
+        for candidate in (base, *base.parents):
+            if (candidate / "scripts" / "start-stack.sh").is_file() and any(
+                (candidate / name).is_file() for name in _COMPOSE_FILES
+            ):
+                return candidate
+    return None
+
+
+def compose_file_for(root: Path) -> Path:
+    """The compose file scripts/start-stack.sh launches for this checkout."""
+    for name in _COMPOSE_FILES:
+        if (root / name).is_file():
+            return root / name
+    raise FileNotFoundError(
+        f"no stack compose file ({' or '.join(_COMPOSE_FILES)}) in {root}"
+    )
+
+
+def _compose_env(values: dict[str, str]) -> dict[str, str]:
+    """The environment scripts/start-stack.sh hands ``docker compose``.
+
+    start-stack.sh exports every bootstrap.toml key uppercased; doing the same
+    here means the compose file interpolates identically under setup and
+    under every later launch — a compose file refuses to load while any
+    ``${VAR:?...}`` sentinel is unset, even one in a service not being
+    started.
+    """
+    env = dict(os.environ)
+    for key, value in values.items():
+        if value:
+            env[key.upper()] = str(value)
+    return env
+
+
+def _stack_db_port(values: dict[str, str]) -> int:
+    """Host port the stack publishes postgres-local on (POSTGRES_HOST_PORT)."""
+    raw = str(values.get("postgres_host_port") or "").strip()
+    if not raw:
+        return _DEFAULT_LOCAL_DB_PORT
+    try:
+        return int(raw)
+    except ValueError as e:
+        raise click.ClickException(
+            f"postgres_host_port / POSTGRES_HOST_PORT must be a port number, got {raw!r}"
+        ) from e
+
+
+def stack_database_url(values: dict[str, str]) -> str:
+    """The host-side DSN of the stack's postgres-local for these secrets."""
+    password = quote(values["local_postgres_password"], safe="")
+    return (
+        f"postgresql://{_STACK_DB_USER}:{password}"
+        f"@localhost:{_stack_db_port(values)}/{_STACK_DB_NAME}"
+    )
+
+
+def _provision_stack_db(root: Path, values: dict[str, str]) -> str:
+    """Start the stack's postgres-local and return its host-side DSN.
+
+    Uses the compose file and project scripts/start-stack.sh will use, so the
+    container this creates is the one the full stack launch then adopts —
+    the host CLI and every container share one database. Raises
+    click.ClickException on failure.
     """
     click.echo()
-    click.secho("Auto-provisioning a local Docker Postgres…", fg="cyan")
+    click.secho("Provisioning the stack's Postgres…", fg="cyan")
     click.echo()
 
     ok, detail = _docker_available()
     click.echo(f"  docker runtime: {detail}")
     if not ok:
         raise click.ClickException(
-            "Docker is not available. Install Docker Desktop or use "
-            "`poindexter setup --db-url ...` against an existing Postgres."
+            "Docker is not available. Install Docker (Docker Desktop on "
+            "Windows/macOS) or use `poindexter setup --db-url ...` against an "
+            "existing Postgres."
         )
 
-    # If the container already exists from a prior setup, reuse it — but we
-    # need to read back the password somehow. We stored it in bootstrap.toml
-    # last time; if that's missing or pointing elsewhere, we can't recover.
-    # Safest: refuse and tell the operator to remove the container manually.
-    if _container_exists():
-        if _container_running():
-            click.echo(f"  reusing running container '{_AUTO_CONTAINER}'")
-        else:
-            click.echo(f"  starting stopped container '{_AUTO_CONTAINER}'…")
-            _run(["docker", "start", _AUTO_CONTAINER])
-        # Best-effort: pull the DSN from the running bootstrap.toml if it
-        # matches this container.
-        try:
-            from poindexter.brain import bootstrap
+    compose_file = compose_file_for(root)
+    project = values["compose_project_name"]
+    click.echo(f"  stack: {compose_file} (compose project '{project}')")
 
-            existing_dsn = bootstrap.resolve_database_url()
-            if existing_dsn and f":{_AUTO_PORT}/" in existing_dsn:
-                click.secho(
-                    "  reusing DSN from existing bootstrap.toml "
-                    "(the password stays what it was)", fg="green",
-                )
-                return existing_dsn
-        except Exception:
-            # silent-ok: this is a best-effort ATTEMPT to recover a usable
-            # DSN, and failing it is not the end of the story — the very next
-            # statement raises a ClickException carrying full remediation
-            # (remove the container, or pass --db-url). The failure is
-            # reported loudly one line below; warning here would just
-            # duplicate it with less context.
-            pass
-        raise click.ClickException(
-            f"Container '{_AUTO_CONTAINER}' already exists but the password "
-            "isn't recoverable from bootstrap.toml. Either remove it "
-            f"(`docker rm -f {_AUTO_CONTAINER}`) and re-run --auto, or use "
-            "`poindexter setup --db-url ...` to point at a different DB."
+    if _legacy_auto_container_exists():
+        click.secho(
+            f"  note: '{_LEGACY_AUTO_CONTAINER}' (port 5434) is from an older "
+            "`setup --auto`. Nothing uses it now — the stack's own "
+            f"{_STACK_DB_SERVICE} is the database. Once you have copied out "
+            f"anything you need: docker rm -f {_LEGACY_AUTO_CONTAINER}",
+            fg="yellow",
         )
 
-    password = secrets.token_urlsafe(24)
-    click.echo(
-        f"  creating '{_AUTO_CONTAINER}' on port {_AUTO_PORT} "
-        f"(image: {_AUTO_IMAGE})…"
-    )
+    cmd = [
+        "docker", "compose", "-p", project, "-f", str(compose_file),
+        "up", "-d", _STACK_DB_SERVICE,
+    ]
+    click.echo(f"  $ {' '.join(cmd)}")
     try:
-        _run(
-            [
-                "docker", "run", "-d",
-                "--name", _AUTO_CONTAINER,
-                "--restart", "unless-stopped",
-                "-p", f"{_AUTO_PORT}:5432",
-                "-e", f"POSTGRES_DB={_AUTO_DB}",
-                "-e", f"POSTGRES_USER={_AUTO_USER}",
-                "-e", f"POSTGRES_PASSWORD={password}",
-                "-v", f"{_AUTO_CONTAINER}-data:/var/lib/postgresql/data",
-                _AUTO_IMAGE,
-            ]
+        # Not captured: the first run pulls the image, and the operator should
+        # see that progress rather than a silent pause.
+        proc = subprocess.run(
+            cmd, cwd=root, env=_compose_env(values), text=True, timeout=900,
+            check=False,
         )
-    except subprocess.CalledProcessError as e:
+    except subprocess.TimeoutExpired as e:
         raise click.ClickException(
-            f"docker run failed: {e.stderr.strip() if e.stderr else e}"
+            f"`docker compose up -d {_STACK_DB_SERVICE}` did not finish in 15 minutes"
         ) from e
+    if proc.returncode != 0:
+        raise click.ClickException(
+            f"`docker compose up -d {_STACK_DB_SERVICE}` failed (exit "
+            f"{proc.returncode}) — see the compose output above."
+        )
 
-    dsn = f"postgresql://{_AUTO_USER}:{password}@localhost:{_AUTO_PORT}/{_AUTO_DB}"
-
+    dsn = stack_database_url(values)
     click.echo("  waiting for Postgres to accept connections…")
-    ok, reason = _wait_for_postgres(dsn, timeout=45)
+    # A fresh volume runs initdb and restarts once before it accepts TCP.
+    ok, reason = _wait_for_postgres(dsn, timeout=120)
     if not ok:
-        # Surface container logs to help the operator debug.
+        if "password authentication failed" in reason:
+            raise click.ClickException(
+                f"The stack's Postgres volume already exists with a different "
+                f"password than bootstrap.toml's local_postgres_password: {reason}\n\n"
+                "Restore the bootstrap.toml that created it (Postgres keeps "
+                "the password it was first initialised with), or, to start "
+                "over and DELETE that database, run "
+                f"`docker compose -p {project} -f {compose_file.name} down -v` "
+                "and re-run setup."
+            )
         logs = subprocess.run(
-            ["docker", "logs", "--tail", "50", _AUTO_CONTAINER],
-            capture_output=True, text=True, check=False,
+            ["docker", "compose", "-p", project, "-f", str(compose_file),
+             "logs", "--tail", "50", _STACK_DB_SERVICE],
+            cwd=root, env=_compose_env(values), capture_output=True, text=True,
+            check=False,
         )
         raise click.ClickException(
             f"Postgres did not become ready: {reason}\n\n"
-            f"Last 50 log lines from container:\n{logs.stdout or logs.stderr}"
+            f"Last 50 log lines:\n{logs.stdout or logs.stderr}"
         )
     click.secho(f"  Postgres ready — {reason}", fg="green")
     return dsn
@@ -572,6 +697,18 @@ def _auto_provision() -> str:
 
 def _generate_secrets() -> dict[str, str]:
     """Generate the machine secrets that every stack needs.
+
+    Everything a compose file interpolates through a ``${VAR:?...}`` sentinel
+    must be generated here: compose refuses to load a file while ANY sentinel
+    is unset — including one in an opt-in profile's service that is not being
+    started (the Postiz pair below), so a missing key breaks every launch, not
+    just that feature. tests/unit/poindexter/cli/test_setup_auto.py derives the
+    sentinel list from docker-compose.consumer.yml and fails when a new one
+    arrives without a generator here.
+
+    ``poindexter_secret_key`` is the pgcrypto key every ``is_secret=true``
+    app_settings row is encrypted with (plugins/secrets.py). The CLI needs it
+    to store its own OAuth client (step 4/4) and every container reads it.
 
     Note: ``api_token`` is intentionally NOT generated here — Phase 3
     (Glad-Labs/poindexter#249) removed the static-Bearer auth path.
@@ -597,6 +734,11 @@ def _generate_secrets() -> dict[str, str]:
     return {
         "local_postgres_password": secrets.token_hex(32),
         "grafana_password": secrets.token_hex(32),
+        # Encryption-at-rest key for app_settings secrets (plugins/secrets.py).
+        "poindexter_secret_key": secrets.token_hex(32),
+        # Postiz social hub (the opt-in `postiz` compose profile).
+        "postiz_db_password": secrets.token_hex(32),
+        "postiz_jwt_secret": secrets.token_hex(32),
         "pgadmin_password": secrets.token_hex(32),
         "woodpecker_secret": secrets.token_hex(24),
         # LGTM+ observability stack
@@ -614,7 +756,35 @@ def _generate_secrets() -> dict[str, str]:
     }
 
 
-def _prompt_defaults() -> dict[str, str]:
+def _stack_secrets(existing: dict[str, str] | None = None) -> dict[str, str]:
+    """The values to write: everything already on disk, plus what is missing.
+
+    A re-run (``--force``) must NOT regenerate a secret bootstrap.toml already
+    holds. Postgres keeps the password its volume was initialised with,
+    Grafana keeps its admin password, and every encrypted app_settings row
+    needs the poindexter_secret_key it was written with — a fresh value for
+    any of them locks the stack out of its own data. So existing values win,
+    and only keys the file lacks are generated. Non-secret keys the operator
+    added (notification channels, OAuth clients, ``compose_project_name``)
+    are carried over the same way.
+    """
+    values = dict(existing or {})
+    for key, value in _generate_secrets().items():
+        if not values.get(key):
+            values[key] = value
+    if not values.get("compose_project_name"):
+        values["compose_project_name"] = (
+            os.environ.get("COMPOSE_PROJECT_NAME") or _DEFAULT_COMPOSE_PROJECT
+        )
+    # A POSTGRES_HOST_PORT override (5433 reserved on the host) must outlive
+    # this shell: start-stack.sh exports bootstrap.toml, so persisting it keeps
+    # the port compose publishes and the port database_url names in step.
+    if not values.get("postgres_host_port") and os.environ.get("POSTGRES_HOST_PORT"):
+        values["postgres_host_port"] = os.environ["POSTGRES_HOST_PORT"]
+    return values
+
+
+def _prompt_defaults(existing: dict[str, str] | None = None) -> dict[str, str]:
     """Interactive prompts. Returns the values to persist."""
     click.echo()
     click.secho("Poindexter setup — interactive", fg="cyan", bold=True)
@@ -631,7 +801,7 @@ def _prompt_defaults() -> dict[str, str]:
         show_default=True,
     ).strip()
 
-    secrets = _generate_secrets()
+    secrets = _stack_secrets(existing)
     click.echo()
     click.secho("Generated secrets (stored in bootstrap.toml):", fg="cyan")
     click.echo(f"  Postgres:   {secrets['local_postgres_password'][:12]}...")
@@ -648,8 +818,8 @@ def _prompt_defaults() -> dict[str, str]:
     )
 
     return {
-        "database_url": db_url,
         **secrets,
+        "database_url": db_url,
     }
 
 
@@ -658,7 +828,11 @@ def _prompt_defaults() -> dict[str, str]:
 @click.option(
     "--auto",
     is_flag=True,
-    help="Auto-provision a local Docker Postgres (pgvector/pgvector:pg16).",
+    help=(
+        "Quick-start path: start the Docker stack's own Postgres (the "
+        "postgres-local service scripts/start-stack.sh launches) and point "
+        "bootstrap.toml at it. Run from a Poindexter checkout."
+    ),
 )
 @click.option(
     "--check",
@@ -668,7 +842,11 @@ def _prompt_defaults() -> dict[str, str]:
 @click.option(
     "--force",
     is_flag=True,
-    help="Overwrite an existing bootstrap.toml without confirmation.",
+    help=(
+        "Rewrite an existing bootstrap.toml without confirmation. Secrets it "
+        "already holds are kept — regenerating them would lock the stack out "
+        "of its own database and encrypted settings."
+    ),
 )
 def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> None:
     """First-run wizard — writes ~/.poindexter/bootstrap.toml."""
@@ -678,30 +856,35 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
         _run_check(bootstrap)
         return
 
-    if bootstrap.bootstrap_file_exists() and not force:
-        click.secho(
-            f"{bootstrap.BOOTSTRAP_FILE} already exists.", fg="yellow",
-        )
-        click.echo("Re-run with --force to overwrite, or --check to verify it.")
-        sys.exit(1)
+    existing: dict[str, str] = {}
+    if bootstrap.bootstrap_file_exists():
+        if not force:
+            click.secho(
+                f"{bootstrap.BOOTSTRAP_FILE} already exists.", fg="yellow",
+            )
+            click.echo("Re-run with --force to overwrite, or --check to verify it.")
+            sys.exit(1)
+        existing = bootstrap.get_all_bootstrap_values()
 
     if auto:
-        # Spin a local Docker Postgres and use its DSN for the rest of the
-        # wizard. No prompts (other than what _auto_provision itself prints).
-        provisioned_dsn = _auto_provision()
-        secrets = _generate_secrets()
-        values = {
-            "database_url": provisioned_dsn,
-            **secrets,
-        }
+        # Provision the Postgres the stack itself uses, so the CLI and every
+        # container read and write one database. No prompts.
+        root = find_stack_root()
+        if root is None:
+            raise click.ClickException(
+                "--auto starts the Postgres of the Docker stack that lives in a "
+                "Poindexter checkout, and none was found from the current "
+                "directory or from where the poindexter package is installed. "
+                "Run it from your clone (git clone "
+                "https://github.com/Glad-Labs/poindexter.git && cd poindexter), "
+                "or pass --db-url to use a Postgres you run yourself."
+            )
+        values = _stack_secrets(existing)
+        values["database_url"] = _provision_stack_db(root, values)
     elif db_url:
-        secrets = _generate_secrets()
-        values = {
-            "database_url": db_url,
-            **secrets,
-        }
+        values = {**_stack_secrets(existing), "database_url": db_url}
     else:
-        values = _prompt_defaults()
+        values = _prompt_defaults(existing)
 
     click.echo()
     click.secho("1/4 — testing database connection…", fg="cyan")
@@ -727,15 +910,39 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
         )
     else:
         click.secho(f"OK — {reason}", fg="green")
+        try:
+            if asyncio.run(_sync_compose_project_setting(
+                values["database_url"], values["compose_project_name"],
+            )):
+                click.echo(
+                    "  app_settings.compose_project_name -> "
+                    f"{values['compose_project_name']} (matches bootstrap.toml)"
+                )
+        except Exception as e:  # noqa: BLE001
+            click.secho(
+                "  could not align app_settings.compose_project_name with "
+                f"bootstrap.toml ({type(e).__name__}: {e}); set it with "
+                "`poindexter settings set compose_project_name "
+                f"{values['compose_project_name']}`",
+                fg="yellow",
+            )
 
     click.echo()
     click.secho(f"3/4 — writing {bootstrap.BOOTSTRAP_FILE}…", fg="cyan")
+    # database_url first: it is the one line a human opens this file to read.
+    values = {"database_url": values["database_url"], **values}
     try:
         path = bootstrap.write_bootstrap_toml(values)
     except Exception as e:
         click.secho(f"Failed to write bootstrap.toml: {e}", fg="red")
         sys.exit(2)
     click.secho(f"OK — wrote {path}", fg="green")
+
+    # The OAuth client below is stored encrypted, with the key this file now
+    # holds. Load it the way every later CLI invocation will (bootstrap.toml
+    # wins over the shell, as it does in start-stack.sh), so the client this
+    # writes is one the stack can decrypt.
+    os.environ["POINDEXTER_SECRET_KEY"] = values["poindexter_secret_key"]
 
     click.echo()
     click.secho("4/4 — provisioning initial OAuth client…", fg="cyan")
@@ -769,7 +976,26 @@ def setup_command(db_url: str | None, auto: bool, check: bool, force: bool) -> N
 
     click.echo()
     click.secho("Setup complete.", fg="green", bold=True)
-    click.echo("Start the worker and brain daemon — they'll read from bootstrap.toml.")
+    if auto:
+        pulls = ""
+        if migrations_ok:
+            try:
+                pulls = asyncio.run(_configured_pull_command(values["database_url"]))
+            except Exception as e:  # noqa: BLE001
+                click.secho(
+                    f"  (could not read the configured models: {type(e).__name__}: {e})",
+                    fg="yellow",
+                )
+        click.echo("Next:")
+        if pulls:
+            click.echo(f"  1. Pull the models the pipeline is configured to call:\n       {pulls}")
+        else:
+            click.echo("  1. Pull the models listed in the README's quick start.")
+        click.echo("  2. Start the stack:\n       bash scripts/start-stack.sh up -d")
+    else:
+        click.echo(
+            "Start the worker and brain daemon — they'll read from bootstrap.toml."
+        )
 
 
 async def _provision_initial_oauth_client(dsn: str) -> tuple[str, str]:

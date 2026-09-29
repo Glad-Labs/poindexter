@@ -239,6 +239,20 @@ ON_DEMAND_SERVICES_DEFAULT = "wan-server,image-gen-server"
 ACTIVE_PROFILES_ENV_VAR = "COMPOSE_PROFILES"
 ACTIVE_PROFILES_SETTING_KEY = "compose_drift_active_profiles"
 
+# How long a container may sit in ``created`` without ever having started
+# before it counts as drift. ``docker compose up`` creates every service first
+# and starts each one only once its ``depends_on: condition: service_healthy``
+# dependencies are healthy, so on a cold start most of the stack sits in
+# ``created`` for minutes. Treating that as "stopped" had the brain's first
+# cycle (10 s after it came up) recreate six such services from inside its own
+# container — with --force-recreate and dependency convergence, which
+# recreated the brain itself (SIGKILL, exit 137) and failed the outer
+# ``up`` of every fresh install (quickstart-e2e, 2026-09-28). Past this
+# window a never-started container is stuck (an ``up`` killed mid-way), and
+# reviving it is the probe's job again.
+CREATED_GRACE_SETTING_KEY = "compose_drift_created_grace_minutes"
+DEFAULT_CREATED_GRACE_MINUTES = 15
+
 # How long to wait after ``docker compose up -d`` before re-probing.
 RECOVER_WAIT_SECONDS = 30
 
@@ -663,9 +677,58 @@ def _inspect_running(inspect: dict[str, Any] | None) -> bool:
 _STOPPED_STATUSES = frozenset({"exited", "created", "dead"})
 
 
-def _inspect_stopped(inspect: dict[str, Any] | None) -> bool:
+def _parse_docker_time(raw: Any) -> datetime | None:
+    """Docker's RFC 3339 timestamp (nanosecond fraction, ``Z``) as UTC."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    m = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:\d{2})?$", text)
+    if not m:
+        return None
+    frac = (m.group(2) or "")[:7]  # '.' + at most 6 digits for fromisoformat
+    tz = m.group(3) or "Z"
+    try:
+        parsed = datetime.fromisoformat(m.group(1) + frac + ("+00:00" if tz == "Z" else tz))
+    except ValueError:
+        return None
+    return parsed.astimezone(UTC)
+
+
+def _created_in_flight(
+    inspect: dict[str, Any] | None,
+    *,
+    grace_s: float,
+    now: datetime | None = None,
+) -> bool:
+    """A ``created`` container that has never started and is younger than
+    ``grace_s``: compose is still bringing it up (see CREATED_GRACE_SETTING_KEY).
+
+    Unknown age (no ``Created`` timestamp) is NOT in flight — the container is
+    judged the way it always was.
+    """
+    if grace_s <= 0 or not isinstance(inspect, dict):
+        return False
+    state = inspect.get("State")
+    if not isinstance(state, dict) or str(state.get("Status") or "").lower() != "created":
+        return False
+    started_at = str(state.get("StartedAt") or "")
+    if started_at and not started_at.startswith("0001-01-01"):
+        return False  # it ran before and was stopped: that IS drift
+    created = _parse_docker_time(inspect.get("Created"))
+    if created is None:
+        return False
+    return ((now or datetime.now(UTC)) - created).total_seconds() < grace_s
+
+
+def _inspect_stopped(
+    inspect: dict[str, Any] | None,
+    *,
+    created_grace_s: float = 0.0,
+) -> bool:
     state = (inspect or {}).get("State")
     if not isinstance(state, dict) or state.get("Running"):
+        return False
+    if _created_in_flight(inspect, grace_s=created_grace_s):
         return False
     return str(state.get("Status") or "").lower() in _STOPPED_STATUSES
 
@@ -673,6 +736,8 @@ def _inspect_stopped(inspect: dict[str, Any] | None) -> bool:
 def _diff_service(
     yaml_block: dict[str, Any],
     inspect: dict[str, Any] | None,
+    *,
+    created_grace_s: float = 0.0,
 ) -> dict[str, Any]:
     """Return a per-service drift summary.
 
@@ -715,7 +780,7 @@ def _diff_service(
     # while the running pipeline's image renders failed against a dead
     # image-gen). The on-demand / inactive-profile suppression below applies
     # to stopped exactly as it does to missing.
-    if _inspect_stopped(inspect):
+    if _inspect_stopped(inspect, created_grace_s=created_grace_s):
         out["drifted"] = True
         out["container_stopped"] = True
         return out
@@ -1114,9 +1179,15 @@ def _recreate_services(
             # --force-recreate: running containers with spec drift (new mount,
             #   changed env, etc.) won't restart without this — `docker compose
             #   up` treats a running container as already satisfied without it.
-            #   Safe because we pass only the specific drifted service names, so
-            #   compose never touches the brain-daemon or other healthy services.
-            "up", "-d", "--no-build", "--force-recreate", *svc_list,
+            # --no-deps: touch ONLY the drifted services named here. Without it
+            #   compose also converges their dependencies, and inside this
+            #   container it renders them with the brain's environment, not the
+            #   host's (HOME, USERPROFILE-derived mounts), so their config hash
+            #   differs and compose recreates them — the brain-daemon itself
+            #   included, which SIGKILLs this very process mid-command
+            #   (quickstart-e2e, 2026-09-28). Drifted dependencies are listed
+            #   here in their own right, so nothing that needs recovery is lost.
+            "up", "-d", "--no-build", "--force-recreate", "--no-deps", *svc_list,
         ]
         result = subprocess.run(argv, env=env, **kwargs)
         stderr = (result.stderr or "").strip()
@@ -1244,6 +1315,9 @@ async def run_compose_drift_probe(
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
     project_name = await _read_compose_project_name(pool)
     project_directory = await _read_compose_project_directory(pool)
+    created_grace_s = 60.0 * await _read_int_setting(
+        pool, CREATED_GRACE_SETTING_KEY, DEFAULT_CREATED_GRACE_MINUTES,
+    )
 
     # Bind project_name + project_directory into the default recreate_fn.
     # Injected fns (tests) keep their own signature — they don't call real
@@ -1386,7 +1460,7 @@ async def run_compose_drift_probe(
             not game_mode_active
             and svc_name in game_mode_parked_list
             and svc_name not in on_demand_services
-            and _inspect_stopped(inspect)
+            and _inspect_stopped(inspect, created_grace_s=created_grace_s)
         ):
             ok, msg = await asyncio.to_thread(start_fn, container_name)
             if ok:
@@ -1401,7 +1475,7 @@ async def run_compose_drift_probe(
                 "[COMPOSE_DRIFT] game mode over: could not start parked service %s (%s): %s",
                 svc_name, container_name, msg,
             )
-        diff = _diff_service(svc_block, inspect)
+        diff = _diff_service(svc_block, inspect, created_grace_s=created_grace_s)
         # Suppress `container_missing` (only) for services that are EXPECTED to
         # be down: (1) on-demand services (wan-server, image-gen-server) that spin up
         # only when needed (Glad-Labs/poindexter#425), and (2) services gated
@@ -1727,7 +1801,9 @@ async def run_compose_drift_probe(
     post_drifted: dict[str, dict[str, Any]] = {}
     for svc_name, info in drifted.items():
         post_inspect = await asyncio.to_thread(inspect_fn, info["container"])
-        post_diff = _diff_service(services.get(svc_name) or {}, post_inspect)
+        post_diff = _diff_service(
+            services.get(svc_name) or {}, post_inspect, created_grace_s=created_grace_s,
+        )
         if post_diff["drifted"]:
             post_drifted[svc_name] = {
                 "container": info["container"],

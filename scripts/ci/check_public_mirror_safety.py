@@ -195,13 +195,13 @@ _STRIP_FILES = (
     "docker-compose.local.yml",
     "skills/poindexter/gladlabs-config.json",
     "skills/openclaw/gladlabs-config.json",
-    # .env.example intentionally SHIPS to the public mirror (poindexter#607) — it
-    # documents every ${VAR} the OSS single-container docker-compose.yml consumes,
-    # and the compose quickstart instructs `cp .env.example .env`. It is NOT listed
-    # here so would_ship() returns True and scan() examines it for leak patterns.
-    # Keep in sync with sync-to-github.sh § "poindexter#607" comment: if you ever
-    # need to stop shipping .env.example, add it back here AND add a
-    # `git rm --cached` line in sync-to-github.sh.
+    # .env.example and the bare single-container docker-compose.yml are RETIRED
+    # (deleted from the tree, not stripped): that compose file had no Prefect, so
+    # the public quickstart never dispatched a task, and its `cp .env.example
+    # .env` step contradicted the bootstrap.toml design. The public default stack
+    # is docker-compose.consumer.yml, launched by scripts/start-stack.sh from
+    # ~/.poindexter/bootstrap.toml. Do not re-add either file here: nothing
+    # ships them any more.
     # bootstrap.sh references stripped files (.env.example, docker-compose.local.yml)
     # and the dead Woodpecker CI (WOODPECKER_SECRET=...). poindexter setup --auto
     # covers the fresh-install flow. Stripped 2026-05-27 per security audit.
@@ -285,9 +285,10 @@ _LEAK_GUARD_ALLOW: tuple[str, ...] = ()
 # has been deliberate and documented.
 # ---------------------------------------------------------------------------
 _SHIPS_TO_PUBLIC: tuple[str, ...] = (
-    # Quickstart template: documents every ${VAR} docker-compose.yml consumes.
-    # Deliberately shipped per poindexter#607; must be scanned for leaks.
-    ".env.example",
+    # The public default stack (the bare docker-compose.yml and its
+    # .env.example were retired in its favour). It carries the stack's service
+    # topology and ${VAR} sentinels, so it must keep being scanned.
+    "docker-compose.consumer.yml",
     # Gitleaks false-positive baseline: contains matched strings + commit SHAs
     # already public via git history; ships so the public CI gate works.
     ".gitleaks-baseline.json",

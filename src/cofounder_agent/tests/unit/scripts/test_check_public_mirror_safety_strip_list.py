@@ -200,39 +200,42 @@ def test_leak_guard_allow_is_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# #1288 — .env.example ships to public; must NOT be in _STRIP_FILES.
+# #1288 — a file that ships must be scanned.
 #
-# The divergence: .env.example was in _STRIP_FILES (scanner skipped it) while
-# sync-to-github.sh shipped it (poindexter#607 deliberately restored the file
-# after it was stripped, to fix the quickstart `cp .env.example .env` flow).
-# The scanner was therefore skipping a file that the public mirror actually
-# received — a blind spot closed by this fix.
+# The original divergence: .env.example was in _STRIP_FILES (scanner skipped
+# it) while sync-to-github.sh shipped it. .env.example has since been RETIRED
+# along with the bare docker-compose.yml it documented; the public default
+# stack is docker-compose.consumer.yml, and that is the file this section now
+# pins as shipped-and-scanned.
 # ---------------------------------------------------------------------------
 
 
-def test_env_example_is_not_in_strip_files() -> None:
-    """.env.example must NOT appear in _STRIP_FILES.
+def test_public_default_stack_is_not_in_strip_files() -> None:
+    """docker-compose.consumer.yml must NOT appear in _STRIP_FILES.
 
-    It ships to the public mirror (poindexter#607) and must be scanned for
-    operator-private patterns. Adding it to _STRIP_FILES causes would_ship()
-    to return False and the scanner to skip it — the blind spot fixed in #1288.
+    It is the stack scripts/start-stack.sh launches on the public mirror.
+    Stripping it would leave the quickstart with no compose file at all, and
+    listing it in _STRIP_FILES would make the scanner skip a file the mirror
+    serves as its default stack.
     """
-    assert ".env.example" not in CHECK._STRIP_FILES, (
-        ".env.example is in _STRIP_FILES but it intentionally SHIPS to the public "
-        "mirror (poindexter#607 restored it so `cp .env.example .env` works for "
-        "quickstart users). Remove it from _STRIP_FILES so the leak scanner "
-        "examines it. If you want to stop shipping it, also update the "
-        "'poindexter#607' comment block in scripts/sync-to-github.sh."
-    )
+    assert "docker-compose.consumer.yml" not in CHECK._STRIP_FILES
+    assert CHECK.would_ship("docker-compose.consumer.yml")
 
 
-def test_env_example_would_ship() -> None:
-    """would_ship('.env.example') must return True so the scanner processes it."""
-    assert CHECK.would_ship(".env.example"), (
-        "would_ship() classifies .env.example as NOT shipping to the mirror. "
-        "It is intentionally public (poindexter#607). Remove it from _STRIP_FILES "
-        "and confirm _LEAK_GUARD_ALLOW doesn't skip it either."
-    )
+def test_retired_quickstart_files_stay_retired() -> None:
+    """The bare compose file and its .env template must not come back.
+
+    The bare docker-compose.yml started no Prefect, so a task queued by the
+    public quickstart was never dispatched, and its `cp .env.example .env`
+    step contradicted the bootstrap.toml design. start-stack.sh falls back to
+    docker-compose.consumer.yml when the operator stack is absent.
+    """
+    for retired in ("docker-compose.yml", ".env.example"):
+        assert not (_REPO_ROOT / retired).exists(), (
+            f"{retired} is back in the repo root. It was retired because the "
+            "public quickstart never dispatched a task through it; extend "
+            "docker-compose.consumer.yml instead."
+        )
 
 
 def test_ships_to_public_not_in_strip_files() -> None:

@@ -951,6 +951,76 @@ def test_inspect_stopped_classification():
     assert cd._inspect_stopped({"State": {"Running": False, "Status": "created"}}) is True
 
 
+def _created(*, age_s: float, started_at: str = "0001-01-01T00:00:00Z") -> dict:
+    from datetime import UTC, datetime, timedelta
+
+    created = (datetime.now(UTC) - timedelta(seconds=age_s)).strftime("%Y-%m-%dT%H:%M:%S.123456789Z")
+    return {
+        "State": {"Running": False, "Status": "created", "StartedAt": started_at},
+        "Created": created,
+        "Config": {"Env": [], "Image": ""},
+        "HostConfig": {"Binds": [], "PortBindings": {}},
+        "Mounts": [],
+    }
+
+
+_GRACE_S = 60.0 * cd.DEFAULT_CREATED_GRACE_MINUTES
+
+
+def test_created_but_never_started_is_compose_mid_up_not_drift():
+    """`docker compose up` holds every service behind a service_healthy
+    dependency in `created`. Recovering those on the brain's first cycle
+    recreated the brain itself (exit 137) and failed every fresh install."""
+    young = _created(age_s=30)
+    assert cd._created_in_flight(young, grace_s=_GRACE_S) is True
+    assert cd._inspect_stopped(young, created_grace_s=_GRACE_S) is False
+    diff = cd._diff_service({}, young, created_grace_s=_GRACE_S)
+    assert diff["drifted"] is False and diff["container_stopped"] is False
+
+
+def test_created_past_the_grace_window_is_stuck_and_still_drift():
+    """An `up` killed mid-way leaves containers in `created` for good."""
+    old = _created(age_s=_GRACE_S + 60)
+    assert cd._created_in_flight(old, grace_s=_GRACE_S) is False
+    assert cd._inspect_stopped(old, created_grace_s=_GRACE_S) is True
+
+
+def test_created_after_having_run_is_drift():
+    """A container that started before and now sits `created` was stopped."""
+    ran = _created(age_s=30, started_at="2026-09-28T16:58:12.000000000Z")
+    assert cd._inspect_stopped(ran, created_grace_s=_GRACE_S) is True
+
+
+def test_created_of_unknown_age_is_judged_as_before():
+    no_age = {"State": {"Running": False, "Status": "created", "StartedAt": "0001-01-01T00:00:00Z"}}
+    assert cd._inspect_stopped(no_age, created_grace_s=_GRACE_S) is True
+
+
+def test_parse_docker_time_handles_nanoseconds():
+    parsed = cd._parse_docker_time("2026-09-28T16:58:10.123456789Z")
+    assert parsed is not None and parsed.microsecond == 123456 and parsed.utcoffset().total_seconds() == 0
+    assert cd._parse_docker_time("") is None
+    assert cd._parse_docker_time("not a time") is None
+
+
+@pytest.mark.asyncio
+async def test_a_cold_start_is_not_recreated():
+    """The whole probe, on the state a fresh `up` leaves: nothing to recover."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool()
+    spec = _spec({"worker": {"container_name": "poindexter-worker"}})
+    notify = MagicMock()
+    recreate = MagicMock(return_value=(True, "ok"))
+    summary = await cd.run_compose_drift_probe(
+        pool, notify_fn=notify, recreate_fn=recreate,
+        inspect_fn=lambda _name: _created(age_s=10),
+        yaml_loader=lambda _path: spec, docker_reachable_fn=lambda: (True, ""),
+    )
+    assert summary["status"] == "no_drift"
+    recreate.assert_not_called()
+    notify.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_game_mode_over_restores_a_parked_service_even_with_auto_recover_off():
     """`poindexter game off` promises the parked services come back on the

@@ -1,163 +1,160 @@
 ---
 title: "Quickstart"
-description: "From git clone to first generated post in about thirty minutes."
+description: "From git clone to a first generated post in about an hour."
 ---
 
-This walkthrough takes a clean machine to a running Poindexter pipeline. It
-covers the four checkpoints that matter — bootstrap, Docker stack up, health
-verified, and a first task generated. For the long-form version with every
-verification command, see
+This walkthrough takes a clean machine to a running Poindexter pipeline with a
+first post in the approval queue. It is the README's quick start, step for step.
+A CI job (`quickstart-e2e`) runs that exact sequence on a clean GitHub runner
+every week and on every change to it, and fails unless the queued post reaches
+`awaiting_approval`. (A runner has no GPU, so the job stands one tiny model in
+for the three large ones and zeroes the quality bar; every command is yours,
+verbatim.) For what each step does under the hood, see
 [operations/local-development-setup](/docs/operations/local-development-setup).
 
 <Note>
-Poindexter is built and tested against Windows 11 + WSL2 + Docker Desktop with
-an NVIDIA GPU. macOS and Linux should work — the steps are identical — but the
-image-gen server expects CUDA, so on machines without an NVIDIA card the
-image-generation step degrades to placeholders. Everything else is platform
-neutral.
+Poindexter runs on Linux (Docker Engine), Windows (Git Bash or WSL2 with
+Docker Desktop) and macOS (Docker Desktop). Linux needs one extra Ollama
+setting, covered in step 3.
 </Note>
 
 <Warning>
-The full stack pulls about **21 GB** of LLM weights on first run and the image-gen server expects roughly **16 GB of VRAM** to run alongside Ollama. If
-you're on a smaller card, stop the image-gen container and let Pexels fill the
-image slot.
+The default models (about 31 GB) download once and the stack's images build
+once (about 13 GB). The default writer and critic are 27B and 14B models: on a GPU with less
+VRAM than they need, Ollama runs part of each model on the CPU and a post
+takes much longer. CPU-only works, slowly.
 </Warning>
 
 ## Prerequisites
 
 | Tool | Version | Required |
 | --- | --- | --- |
-| Docker Desktop | 4.26+ | Yes |
-| Ollama | 0.1.40+ | Yes |
-| Python | 3.13+ | Yes |
+| Docker with Compose | v2.24+ (Docker Desktop 4.27+; `docker compose version` shows it) | Yes |
+| Ollama | current release | Yes |
+| Python | 3.13 (3.14 is not supported yet) | Yes |
+| Disk | ~50 GB free (31 GB of models, ~13 GB of images) | Yes |
 | Node.js | 22+ | Frontend only |
-| GPU | 8 GB VRAM+ | Recommended |
+| GPU | NVIDIA, 16 GB+ VRAM | Recommended |
 
 ## Steps
 
 <Steps>
-  <Step title="Clone and bootstrap">
-    Install the Python package, then run the bootstrap CLI. The wizard writes
-    `~/.poindexter/bootstrap.toml` (database URL plus the few machine secrets
-    Docker needs) and provisions the initial OAuth client.
+  <Step title="Clone and install the CLI">
+    Install the `poindexter` CLI into a Python 3.13 virtualenv inside the
+    clone.
 
-    <Tabs>
-      <Tab title="Windows (Git Bash)">
-        ```bash
-        git clone https://github.com/Glad-Labs/poindexter.git
-        cd poindexter
-        pip install -e src/cofounder_agent
-        poindexter setup --auto
-        ```
-      </Tab>
-      <Tab title="macOS / Linux">
-        ```bash
-        git clone https://github.com/Glad-Labs/poindexter.git
-        cd poindexter
-        pip install -e src/cofounder_agent
-        poindexter setup --auto
-        ```
-      </Tab>
-    </Tabs>
+    ```bash
+    git clone https://github.com/Glad-Labs/poindexter.git && cd poindexter
+    python3.13 -m venv .venv && source .venv/bin/activate
+    pip install -e src/cofounder_agent
+    ```
+
+    On Windows Git Bash, create the virtualenv with `py -3.13 -m venv .venv`
+    and activate it with `source .venv/Scripts/activate`.
+  </Step>
+
+  <Step title="Bootstrap">
+    ```bash
+    poindexter setup --auto
+    ```
+
+    `--auto` generates the stack's secrets into `~/.poindexter/bootstrap.toml`
+    (the only config file on disk), starts the stack's own Postgres (the
+    `postgres-local` service of the compose file the next steps launch), runs
+    the migrations, and provisions the CLI's OAuth client. The CLI and every
+    container share that one database. Re-running with `--force` keeps the
+    secrets the file already holds.
 
     <Tip>
-    `--auto` spins up a local Docker Postgres with a generated password. To
-    point at an existing Postgres, run `poindexter setup --db-url
-    postgresql://...` instead.
+    To run the worker outside Docker against a Postgres you manage, use
+    `poindexter setup --db-url postgresql://...` instead. The Docker stack
+    always uses its own `postgres-local`.
     </Tip>
   </Step>
 
-  <Step title="Pull AI models">
-    Ollama serves the writer and reviewer LLMs plus the embedding model. The
-    pulls below total about 21 GB — they only happen once.
+  <Step title="Pull the models">
+    These are the models the default pipeline calls. The pulls happen once.
 
     ```bash
-    ollama pull gemma3:27b        # QA reviews + fallback critic (16 GB)
-    ollama pull qwen3:8b          # fast tasks: SEO, image decisions (5 GB)
-    ollama pull nomic-embed-text  # embeddings (274 MB)
+    ollama pull gemma3:27b && ollama pull phi4:14b && ollama pull llama3:latest && ollama pull nomic-embed-text
     ```
 
-    For better writing quality, pull a larger writer model too:
+    That is about 31 GB: `gemma3:27b` (17 GB) is the writer, `phi4:14b` (9 GB) is
+    the critic that hard-gates every draft, `llama3:latest` (4.7 GB) drafts the
+    podcast and video scripts, and `nomic-embed-text` (274 MB) does the
+    embeddings. Nothing pulls a model on demand: a model Ollama does not have
+    fails the call that names it, so `poindexter setup --auto` prints this same
+    command from your database's own model settings.
+
+    Pull these only when you switch the feature on: `qwen3-vl:30b-a3b-instruct`
+    (image QA and captions, about 20 GB, called only when a post has images),
+    `qwen2.5:32b` (fallback critic), `granite4.2:3b` (the brain's alert triage)
+    and `qwen2.5:7b` (console chat and the voice agent).
+
+    **Linux only:** the containers call Ollama at `host.docker.internal:11434`,
+    which on Linux is the Docker bridge gateway, and a default Ollama install
+    listens on loopback only. Make it listen on every interface once:
 
     ```bash
-    ollama pull qwen3:30b         # 18 GB
+    sudo mkdir -p /etc/systemd/system/ollama.service.d
+    printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+    sudo systemctl daemon-reload && sudo systemctl restart ollama
     ```
+
+    Firewall port 11434 if the machine sits on a network you don't trust.
+    Docker Desktop on Windows and macOS needs none of this.
   </Step>
 
-  <Step title="Bring the stack up">
-    The launcher reads `bootstrap.toml`, exports the values as env vars for
-    the Compose file, and starts the worker, brain daemon, Postgres, Grafana,
-    image-gen server, Prefect, Langfuse, GlitchTip, and the observability stack.
+  <Step title="Start the stack">
+    ```bash
+    bash scripts/start-stack.sh up -d
+    ```
 
-    <Tabs>
-      <Tab title="Windows (Git Bash)">
-        ```bash
-        bash scripts/start-stack.sh up -d
-        ```
-      </Tab>
-      <Tab title="macOS / Linux">
-        ```bash
-        bash scripts/start-stack.sh up -d
-        ```
-      </Tab>
-    </Tabs>
-
-    First boot takes a few minutes — Docker pulls all the images, Postgres
-    runs the baseline migration, and the worker waits for Ollama to warm up.
+    `start-stack.sh` exports `bootstrap.toml` as the environment the compose
+    file needs and launches `docker-compose.consumer.yml`: Postgres, the
+    worker API, the brain daemon, Prefect (server, services and worker),
+    Grafana, Prometheus, AlertManager and the backup jobs. The first run
+    builds the images, so allow several minutes. On its first start the
+    Prefect worker registers the `content-generation` deployment that turns a
+    queued task into a pipeline run.
   </Step>
 
-  <Step title="Verify health">
-    Three quick checks confirm the stack is healthy.
-
+  <Step title="Queue a first post">
     ```bash
-    # Worker — expect "status": "healthy"
-    curl http://localhost:8002/api/health
+    poindexter tasks create "Why Docker changed everything"
     ```
 
-    Open Grafana at [http://localhost:3000](http://localhost:3000) and load
-    the **Mission Control** dashboard. The default credentials are printed
-    during `poindexter setup`. Every panel should report green or "no data
-    yet" — never red.
+    The command waits for the worker to finish booting (about a minute after
+    the stack starts). Prefect then picks the task up within two minutes and
+    runs it `pending → in_progress → awaiting_approval`. Follow along in
+    Prefect at [http://localhost:4200](http://localhost:4200), in Grafana at
+    [http://localhost:3000](http://localhost:3000) (the Pipeline dashboard),
+    or with `docker logs -f poindexter-prefect-worker`.
 
-    Open Prefect at [http://localhost:4200](http://localhost:4200) and
-    confirm the `content_generation` deployment is registered.
-
-    <Warning>
-    If `/api/health` returns a non-healthy component, check `docker logs
-    poindexter-worker` and consult
-    [operations/troubleshooting](/docs/operations/troubleshooting) before
-    moving on.
-    </Warning>
-  </Step>
-
-  <Step title="Trigger a first task">
-    Mint a JWT for the CLI OAuth client provisioned during setup, then POST
-    a topic. The pipeline pulls the task through
-    `pending → in_progress → awaiting_approval` in a few minutes.
+    When the draft lands, it waits for you with its QA scores attached:
 
     ```bash
-    JWT=$(poindexter auth mint-token \
-      --client-id <pdx_xxx> --client-secret <secret>)
-
-    curl -X POST http://localhost:8002/api/tasks \
-      -H "Authorization: Bearer $JWT" \
-      -H "Content-Type: application/json" \
-      -d '{"topic": "Why Docker changed everything", "category": "technology"}'
-    ```
-
-    Follow along live:
-
-    ```bash
-    docker logs -f poindexter-worker
-    ```
-
-    When the task lands in `awaiting_approval`, approve it from the CLI:
-
-    ```bash
+    poindexter tasks list --status awaiting_approval
     poindexter tasks approve <task_id>
     ```
   </Step>
 </Steps>
+
+<Warning>
+If the task never leaves `pending`, check `docker logs poindexter-prefect-worker`
+first: it should log the `content-generation` deployment on startup. Then see
+[operations/troubleshooting](/docs/operations/troubleshooting).
+</Warning>
+
+<Warning>
+If the task ends `rejected` instead of `awaiting_approval`, the auto-curator
+turned the draft away: a finished draft scoring under `min_curation_score`
+(seeded at 75) never reaches the queue, and a writer smaller than the default
+can land there. `poindexter tasks list --status rejected` shows its `Q:` score;
+[operations/troubleshooting](/docs/operations/troubleshooting) shows how to read
+the verdict and lower the bar (`poindexter settings set min_curation_score 50`;
+`0` turns the auto-curator off).
+</Warning>
 
 ## Next
 

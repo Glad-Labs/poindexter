@@ -1067,6 +1067,15 @@ class TestRecreateServicesFlags:
         assert "--no-recreate" not in cmd, (
             "--no-recreate prevents recreating running containers with spec drift"
         )
+        # --no-deps: without it compose also converges the drifted services'
+        # dependencies, rendered with the BRAIN's environment, and recreated
+        # the brain-daemon itself mid-command (SIGKILL, exit 137) on a fresh
+        # install's first cycle (quickstart-e2e, 2026-09-28).
+        assert "--no-deps" in cmd, (
+            "--no-deps missing — compose would recreate the drifted services' "
+            "dependencies too, the brain-daemon included"
+        )
+        assert cmd[cmd.index("up"):][-1] == "worker"
 
     def test_project_directory_flag_present_when_set(self, monkeypatch):
         """When compose_project_directory is set, the compose argv must carry

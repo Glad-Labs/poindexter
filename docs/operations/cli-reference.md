@@ -62,15 +62,21 @@ First-run wizard. Generates secrets, tests DB connectivity, and writes
 
 ```bash
 poindexter setup                # Interactive wizard
-poindexter setup --auto         # Non-interactive (uses sensible defaults)
+poindexter setup --auto         # Quick-start path: the Docker stack's own Postgres
 poindexter setup --check        # Validate an existing bootstrap.toml
-poindexter setup --force        # Overwrite existing config
-poindexter setup --db-url postgresql://...   # Pre-populate the DSN
+poindexter setup --force        # Rewrite bootstrap.toml, keeping the secrets it holds
+poindexter setup --db-url postgresql://...   # Non-interactive, your own Postgres
 ```
 
-The `--auto` mode spins up local Postgres automatically if Docker is
-available and no `--db-url` is provided. Use `--check` in CI to
-validate that an operator's config is well-formed.
+`--auto` must run from a Poindexter checkout: it starts the
+`postgres-local` service of the compose file `scripts/start-stack.sh`
+launches (in the same compose project) and points `bootstrap.toml` at
+it, so the CLI and every container share one database. It also
+generates every secret that compose file requires, including
+`poindexter_secret_key`. `--force` never regenerates a secret the file
+already holds — Postgres keeps the password its volume was initialised
+with, and encrypted settings need the key they were written with. Use
+`--check` in CI to validate that an operator's config is well-formed.
 
 ---
 
@@ -170,12 +176,17 @@ Queue a new content task.
 ```bash
 poindexter tasks create "Self-hosting Qwen 3 on a 5090" \
   --category technology \
-  --target-audience "self-hosting developers" \
-  --primary-keyword "self-hosted AI" \
+  --audience "self-hosting developers" \
+  --keyword "self-hosted AI" \
   --style journalistic \
   --tone analytical \
-  --target-length 2500
+  --length 2500
 ```
+
+It first waits for the worker API to answer — up to
+`--wait-for-worker` seconds (default 180; `0` fails fast) — because the
+worker spends about a minute booting after `start-stack.sh up -d`, and the
+quick start queues a task right after starting the stack.
 
 ### `tasks approve <task_id>` / `tasks reject <task_id>`
 
@@ -951,13 +962,13 @@ suppresses the interactive prompt).
 
 ## Environment variables
 
-The CLI respects a small set of env vars for non-interactive use:
+The CLI respects a small set of env vars for non-interactive use (the
+static `POINDEXTER_TOKEN` bearer was removed with OAuth 2.1, poindexter#249):
 
-| Variable             | Purpose                                                           |
-| -------------------- | ----------------------------------------------------------------- |
-| `DATABASE_URL`       | PostgreSQL DSN. Overrides bootstrap.toml if set.                  |
-| `POINDEXTER_API_URL` | Base URL for the worker API (default `http://localhost:8002`).    |
-| `POINDEXTER_TOKEN`   | Bearer token for the worker API. Overrides bootstrap.toml if set. |
+| Variable             | Purpose                                                                                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | PostgreSQL DSN, used only when bootstrap.toml has no `database_url` (bootstrap.toml wins).                                                                |
+| `POINDEXTER_API_URL` | Worker API base URL. Unset: `app_settings.api_base_url`, with a compose-internal host (`worker`) rewritten to `localhost`. There is no hardcoded default. |
 
 Everything else comes from `~/.poindexter/bootstrap.toml` and the
 `app_settings` DB table.

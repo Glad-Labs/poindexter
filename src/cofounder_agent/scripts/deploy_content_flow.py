@@ -1,13 +1,24 @@
 """Register ``content_generation_flow`` with the local Prefect server.
 
 Deploys the flow to a work pool with a cron schedule so Prefect can
-dispatch one flow run per claim cycle. Run this once after Phase 0
-ships; subsequent runs are no-ops (Prefect upserts by deployment id).
+dispatch one flow run per claim cycle. Without this deployment nothing
+dispatches: a queued ``pipeline_tasks`` row stays ``pending`` forever,
+because Prefect has been the only dispatcher since the in-process
+TaskExecutor was deleted.
 
 Usage::
 
     cd src/cofounder_agent
-    poetry run python -m scripts.deploy_content_flow
+    poetry run python -m scripts.deploy_content_flow              # (re)apply
+    python scripts/deploy_content_flow.py --if-missing            # bootstrap
+
+``--if-missing`` is what the prefect-worker container runs before it starts
+polling (docker-compose.consumer.yml), so a fresh install dispatches with no
+manual step. It registers the work pool + deployment only when the
+deployment does not exist yet and otherwise changes nothing: an operator's
+re-tuned cron, raised concurrency or deliberately paused deployment survives
+every container restart. A plain run (no flag) re-applies the app_settings
+values below, which is how a tuning change is rolled out.
 
 Tunables (all read from ``app_settings`` at deploy time):
 
@@ -32,6 +43,7 @@ in-flight runs — Prefect updates the deployment metadata in place.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import os
@@ -62,6 +74,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CRON = "*/2 * * * *"  # every 2 minutes
 DEFAULT_WORK_POOL = "content-pool"
+# The deployment's own name. Prefect addresses it as "<flow name>/<this>"; the
+# flow half comes from the flow object (``content_generation_flow.name``) rather
+# than a second literal that could drift from the @flow decorator.
+DEPLOYMENT_NAME = "content-generation"
 # Safe default for the single 5090 (Glad-Labs/poindexter#578 stress test):
 # 3 concurrent content flows sit at a stable ~60% VRAM with healthy
 # headroom; 5 pin the GPU at ~98% and risk OOM. The work-pool default
@@ -189,8 +205,40 @@ async def _ensure_work_pool(name: str, concurrency: int) -> None:
         )
 
 
-async def main() -> None:
+def deployment_ref() -> str:
+    """``<flow name>/<deployment name>`` — how Prefect addresses the deployment."""
+    return f"{content_generation_flow.name}/{DEPLOYMENT_NAME}"
+
+
+async def deployment_exists() -> bool:
+    """True when the content deployment is already registered.
+
+    Only "not found" answers False. Any other failure (server unreachable,
+    auth, a Prefect API error) propagates: the ``--if-missing`` caller must
+    not read "could not ask" as "absent" and re-register over a deployment an
+    operator tuned, nor read it as "present" and start a worker that will
+    never receive a run.
+    """
+    from prefect.exceptions import ObjectNotFound
+
+    async with get_client() as client:
+        try:
+            await client.read_deployment_by_name(deployment_ref())
+        except ObjectNotFound:
+            return False
+    return True
+
+
+async def main(*, if_missing: bool = False) -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if if_missing and await deployment_exists():
+        logger.info(
+            "[DEPLOY] %s already registered — leaving it as-is (--if-missing). "
+            "Run without --if-missing to re-apply app_settings.",
+            deployment_ref(),
+        )
+        return
 
     cron = await _resolve_setting("prefect_content_flow_cron", DEFAULT_CRON)
     work_pool = await _resolve_setting(
@@ -238,7 +286,7 @@ async def main() -> None:
     # ``poetry run prefect worker start`` command + the eventual
     # prefect-worker compose service both have wired correctly.
     deployment = await content_generation_flow.to_deployment(  # type: ignore[misc]
-        name="content-generation",
+        name=DEPLOYMENT_NAME,
         description=(
             "Drives one pipeline_tasks row through the canonical_blog "
             "LangGraph template per cron tick. Cutover seam for "
@@ -262,5 +310,21 @@ async def main() -> None:
     )
 
 
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Register the content_generation Prefect deployment.",
+    )
+    parser.add_argument(
+        "--if-missing",
+        action="store_true",
+        help=(
+            "Register the work pool + deployment only when the deployment does "
+            "not exist yet; otherwise change nothing. The prefect-worker "
+            "container runs this before it starts polling."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(if_missing=_parse_args().if_missing))

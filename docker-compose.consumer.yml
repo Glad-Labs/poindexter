@@ -1,7 +1,12 @@
-# Poindexter — Consumer / Starter stack
+# Poindexter — Consumer / Starter stack (the public default)
 #
 # Designed for: 8-16 GB VRAM, 32 GB RAM (RTX 5060 Ti / 5070 class)
 # Idle RAM target: ~4-6 GB (well under the 14 GB headroom on 32 GB)
+#
+# This is the stack `bash scripts/start-stack.sh` launches on any checkout
+# without the operator's docker-compose.local.yml, i.e. every public clone. The
+# README quick start runs it, and .github/workflows/quickstart-e2e.yml proves on
+# a clean runner that a queued task reaches awaiting_approval through it.
 #
 # Includes everything needed to run the blog + podcast pipeline:
 #   Postgres (pgvector), FastAPI worker, Brain daemon, Prefect
@@ -25,17 +30,24 @@
 # rather than the always-resident Speaches sidecar. Add Speaches manually
 # if you need warm TTS on every podcast run.
 #
-# Start:
-#   docker compose -f docker-compose.consumer.yml up -d
+# Start (start-stack.sh exports ~/.poindexter/bootstrap.toml as the env this
+# file interpolates — a bare `docker compose up` stops at the first
+# `${VAR:?...}` sentinel because nothing else sets those values):
+#   bash scripts/start-stack.sh up -d
 #
 # Start with image generation (needs GPU; gpu.lock arbitrates image-gen
 # vs Ollama VRAM so they don't oversubscribe concurrently):
-#   docker compose -f docker-compose.consumer.yml --profile image-gen up -d
+#   bash scripts/start-stack.sh --profile image-gen up -d
 #
 # Prerequisites:
-#   poindexter setup   — writes ~/.poindexter/bootstrap.toml + .env
-#   ollama serve       — LLM inference on the host, auto-detected at
-#                        host.docker.internal:11434
+#   poindexter setup --auto — writes ~/.poindexter/bootstrap.toml (the
+#                        secrets below) and starts THIS file's postgres-local
+#                        as the one database the CLI and the stack share
+#   ollama serve       — LLM inference on the host, reached at
+#                        host.docker.internal:11434. On Linux Ollama must
+#                        listen beyond loopback (OLLAMA_HOST=0.0.0.0): a
+#                        container reaches the host through the docker
+#                        bridge gateway, which a 127.0.0.1 bind refuses.
 #
 # POINDEXTER_DEPLOY_ROOT defaults to '.', the live checkout.
 # Set it to ~/.poindexter/deploy/glad-labs-stack for an immutable
@@ -342,7 +354,7 @@ services:
       # address, from the same bootstrap `shelly_psu_url` key the gpu-exporter
       # reads. Unset = the guard no-ops.
       SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Run 'poindexter setup' — POINDEXTER_SECRET_KEY is generated in bootstrap.toml}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Mount this file as docker-compose.local.yml so compose_drift_probe
@@ -399,8 +411,13 @@ services:
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8002}
-      API_TOKEN: ${API_TOKEN:?Run 'poindexter setup' — API_TOKEN is generated in bootstrap.toml}
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      # Optional. The static-Bearer path this once fed was removed with OAuth 2.1
+      # (poindexter#249), and `poindexter setup` no longer generates it — so a
+      # required sentinel here made the whole file refuse to load on every fresh
+      # install. An older bootstrap.toml that still carries api_token passes it
+      # through for main.py's one-way secret sync.
+      API_TOKEN: ${API_TOKEN:-}
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Run 'poindexter setup' — POINDEXTER_SECRET_KEY is generated in bootstrap.toml}
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONPATH: "/app"
@@ -508,7 +525,7 @@ services:
     environment:
       POINDEXTER_API_URL: "http://worker:8002"
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Run 'poindexter setup' — POINDEXTER_SECRET_KEY is generated in bootstrap.toml}
       LOG_TO_FILE: "false"
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONPATH: "/app"
@@ -568,7 +585,17 @@ services:
       PREFECT_REDIS_MESSAGING_HOST: prefect-redis
       PREFECT_REDIS_MESSAGING_PORT: "6379"
       PREFECT_REDIS_MESSAGING_DB: "0"
-    command: prefect server start --no-services
+    # Create the `prefect` database first if it is missing. Nothing else ever
+    # created it: a fresh postgres-local volume holds only poindexter_brain, so
+    # the server died with InvalidCatalogNameError on every fresh install and no
+    # task was ever dispatched (quickstart-e2e, 2026-09-28). Idempotent; exits
+    # non-zero when Postgres is unreachable so the restart loop is visible.
+    command:
+      - sh
+      - -c
+      - python /opt/scripts/prefect_ensure_database.py && exec prefect server start --no-services
+    volumes:
+      - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
     ports:
       - "4200:4200"
     healthcheck:
@@ -607,10 +634,24 @@ services:
       dockerfile: Dockerfile.worker
     container_name: poindexter-prefect-worker
     restart: unless-stopped
-    command: ["prefect", "worker", "start", "--pool", "content-pool", "--name", "prefect-worker-1", "--type", "process"]
+    # Register the content_generation deployment before polling for it. The
+    # deployment is what turns a `pending` pipeline_tasks row into a flow run:
+    # without it this worker polls an empty queue and every task waits forever
+    # (the fresh-install state until now — only a manual
+    # `python -m scripts.deploy_content_flow` ever created it). --if-missing
+    # makes this a no-op once the deployment exists, so an operator's re-tuned
+    # cron / concurrency / pause survives restarts. A failure exits non-zero on
+    # purpose: the container restarts and retries, and a persistent failure is a
+    # visible restart loop rather than a worker that silently never gets a run.
+    command:
+      - sh
+      - -c
+      - >-
+        python /app/scripts/deploy_content_flow.py --if-missing
+        && exec prefect worker start --pool content-pool --name prefect-worker-1 --type process
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Run 'poindexter setup' — POINDEXTER_SECRET_KEY is generated in bootstrap.toml}
       LOG_TO_FILE: "false"
       LOG_FORMAT: json
       PYTHONDONTWRITEBYTECODE: "1"
@@ -693,7 +734,7 @@ services:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       IN_DOCKER: "true"
       OPENCLAW_MEMORY_DIR: __skip__
-      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env}
+      POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Run 'poindexter setup' — POINDEXTER_SECRET_KEY is generated in bootstrap.toml}
     volumes:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts/auto-embed.py:/app/auto-embed.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
@@ -771,6 +812,14 @@ services:
     image: poindexter-backup:latest
     container_name: poindexter-backup-hourly
     restart: unless-stopped
+    # Host uid, like backup-offsite below: the dump directory is a bind mount
+    # under the operator's home, and the image's own uid (1001) cannot create
+    # hourly/ inside a directory the host user owns — on a fresh Linux host
+    # the service exited on its first `mkdir` and restart-looped forever.
+    # start-stack.sh creates the directory as that user before `up`, so
+    # Docker never makes it root-owned. Dumps land owned by the host user,
+    # which is also who restores them.
+    user: "${POINDEXTER_HOST_UID:-1000}:${POINDEXTER_HOST_GID:-1000}"
     environment:
       BACKUP_TIER: hourly
       PG_HOST: postgres-local
@@ -803,6 +852,14 @@ services:
     image: poindexter-backup:latest
     container_name: poindexter-backup-daily
     restart: unless-stopped
+    # Host uid, like backup-offsite below: the dump directory is a bind mount
+    # under the operator's home, and the image's own uid (1001) cannot create
+    # daily/ inside a directory the host user owns — on a fresh Linux host
+    # the service exited on its first `mkdir` and restart-looped forever.
+    # start-stack.sh creates the directory as that user before `up`, so
+    # Docker never makes it root-owned. Dumps land owned by the host user,
+    # which is also who restores them.
+    user: "${POINDEXTER_HOST_UID:-1000}:${POINDEXTER_HOST_GID:-1000}"
     environment:
       BACKUP_TIER: daily
       PG_HOST: postgres-local
@@ -1022,7 +1079,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postiz
-      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD in your environment or .env}
+      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD:?Run 'poindexter setup' — POSTIZ_DB_PASSWORD is generated in bootstrap.toml}
       POSTGRES_DB: postiz
     volumes:
       - postiz-db-data:/var/lib/postgresql/data
@@ -1044,7 +1101,7 @@ services:
       DB: postgres12
       DB_PORT: "5432"
       POSTGRES_USER: postiz
-      POSTGRES_PWD: "${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}"
+      POSTGRES_PWD: "${POSTIZ_DB_PASSWORD:?Run 'poindexter setup' — POSTIZ_DB_PASSWORD is generated in bootstrap.toml}"
       POSTGRES_SEEDS: postiz-db
       # Otherwise auto-setup registers demo search attributes on a new
       # namespace, two of them Text (CustomStringField, CustomTextField). SQL
@@ -1085,8 +1142,8 @@ services:
       MAIN_URL: "${POSTIZ_URL:-http://localhost:5003}"
       FRONTEND_URL: "${POSTIZ_URL:-http://localhost:5003}"
       NEXT_PUBLIC_BACKEND_URL: "${POSTIZ_URL:-http://localhost:5003}/api"
-      JWT_SECRET: "${POSTIZ_JWT_SECRET:?Set POSTIZ_JWT_SECRET in your environment or .env}"
-      DATABASE_URL: "postgresql://postiz:${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}@postiz-db:5432/postiz"
+      JWT_SECRET: "${POSTIZ_JWT_SECRET:?Run 'poindexter setup' — POSTIZ_JWT_SECRET is generated in bootstrap.toml}"
+      DATABASE_URL: "postgresql://postiz:${POSTIZ_DB_PASSWORD:?Run 'poindexter setup' — POSTIZ_DB_PASSWORD is generated in bootstrap.toml}@postiz-db:5432/postiz"
       REDIS_URL: "redis://postiz-redis:6379"
       TEMPORAL_ADDRESS: "poindexter-postiz-temporal:7233"
       BACKEND_INTERNAL_URL: "http://localhost:3000"
@@ -1094,8 +1151,12 @@ services:
       IS_GENERAL: "false"
       STORAGE_PROVIDER: "local"
       UPLOAD_DIRECTORY: "/uploads"
-      X_API_KEY: "${X_API_KEY}"
-      X_API_SECRET: "${X_API_SECRET}"
+      # Optional X (Twitter) app credentials for the Postiz connector. Unset
+      # means blank either way; the explicit default just stops compose printing
+      # a "variable is not set" warning on every command of a stack that never
+      # starts this profile.
+      X_API_KEY: "${X_API_KEY:-}"
+      X_API_SECRET: "${X_API_SECRET:-}"
     volumes:
       - postiz-uploads:/uploads
     depends_on:

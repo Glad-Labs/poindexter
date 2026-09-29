@@ -1,0 +1,249 @@
+# Run the README quick start on a clean machine and require a post at the end.
+#
+# The public quick start (README.md "## Quick start", mirrored by
+# docs/quickstart.mdx) could not produce a post for months: the stack it
+# launched had no dispatcher, `poindexter setup --auto` put the CLI in a
+# different database than the stack read, and `poindexter tasks create` needed
+# an env var the README never set. Every piece had been reviewed; nobody had run
+# the sequence. A check that never ran the real path has not passed — so this
+# runs it.
+#
+# What "the real path" means here:
+#
+# * The PUBLIC tree. On the private source repo the operator's
+#   docker-compose.local.yml exists and start-stack.sh would pick it, so the job
+#   first builds the mirror's tree with the real sync filter
+#   (scripts/sync-to-github.sh, unmodified) pushing into a local bare repo, and
+#   clones that. On the public mirror, where the sync script is itself
+#   stripped, the checkout already IS that tree.
+# * A clean GitHub-hosted runner. Never the vars.CI_RUNNER seam: this starts a
+#   whole Docker stack, and the self-hosted runners deliberately have no
+#   docker.sock (see scripts/ci/ci_runner_seam_lint.py) — and it must not touch
+#   the operator's host, whose ports 3000/5432/5433 production already holds.
+# * The README's own commands, executed by scripts/ci/quickstart_e2e.py as one
+#   bash session. Three documented substitutions only: the clone line becomes
+#   `cd <tree>`; each `ollama pull <tag>` becomes an alias of one small CPU
+#   model (TINY_MODEL) under that exact tag — no GPU, ~14 GB of disk; and the
+#   `min_curation_score` setting is zeroed with `poindexter settings set` just
+#   before `tasks create` (see below). A model the pipeline calls that the
+#   README does not list is simply absent, so the run fails the way a
+#   stranger's would.
+#
+# Pass = the queued task reaches `awaiting_approval` (the README's promise), the
+# README's localhost links answer, the README's verification command lists the
+# task, `poindexter tasks approve` moves it on, and no pipeline container logged
+# a model Ollama did not have (the README's pull list is complete).
+#
+# The tiny model writes a poor post and also SCORES it: 94 in one run of this
+# quick start, 54 in another. QA flags a weak draft and still queues it
+# (qa_flag_instead_of_reject=true), but the post-pipeline auto-curator rejects
+# anything under min_curation_score (75) a second after the pipeline queued it.
+# Left alone, the job would pass or fail on the stand-in model's score, so the
+# bar is zeroed for this run rather than the assertion loosened: the task must
+# still reach `awaiting_approval`. Model QUALITY is not what this job measures —
+# whether the machine runs end to end is. (A stranger on a weak model can hit
+# that bar for real; docs/operations/troubleshooting.md says how to see and tune it.)
+#
+# Cost: 40 to 75 minutes of a 2-core runner (measured 2026-09-28 over three
+# runs: 71, 37 and 39 min for the draft, 17 QA rails and media scripts through a
+# 0.5B model on the CPU; budget for the slow end). So a pull request
+# only runs it when something that can change its outcome changed: the `gate`
+# job below lets a README-only PR through only when the README's "Quick start"
+# section itself changed (the daily stats-sync PR edits README.md and must not
+# cost 75 minutes), and any change to the code, compose file or scripts the
+# quick start exercises always runs it. Otherwise it runs weekly. NOT a required
+# check (a path-filtered required check hangs the PRs it skips).
+name: quickstart-e2e
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/quickstart.mdx'
+      - 'docker-compose.consumer.yml'
+      - 'scripts/start-stack.sh'
+      - 'scripts/sync-to-github.sh'
+      - 'scripts/prefect_ensure_database.py'
+      - 'scripts/ci/quickstart_e2e.py'
+      - 'src/cofounder_agent/poindexter/cli/setup.py'
+      - 'src/cofounder_agent/poindexter/cli/_api_client.py'
+      - 'src/cofounder_agent/poindexter/cli/tasks.py'
+      - 'src/cofounder_agent/poindexter/services/required_models.py'
+      - 'src/cofounder_agent/scripts/deploy_content_flow.py'
+      - 'src/cofounder_agent/Dockerfile.worker'
+      - '.github/workflows/quickstart-e2e.yml'
+  schedule:
+    # Weekly, Monday 07:23 UTC — catches pipeline regressions the path filter
+    # cannot see (any change under src/ can break the end-to-end run).
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap (seconds) decision: is a 75-minute run warranted for this event?
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide whether the quick start needs re-proving
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Weekly and manual runs always prove it.
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "run: $EVENT event"; exit 0
+          fi
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          # Anything beyond the two prose files (the path filter admitted it
+          # because the code, compose file or scripts the quick start exercises
+          # changed) always runs.
+          other="$(grep -v -x -e README.md -e docs/quickstart.mdx <<<"$changed" || true)"
+          if [ -n "$other" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "run: quick-start machinery changed: $(head -n 3 <<<"$other" | tr '\n' ' ')"
+            exit 0
+          fi
+          # Prose only. docs/quickstart.mdx is not executed (a unit test holds it
+          # to the README). README.md is: run only when its Quick start section
+          # differs from the base, so a stats-sync edit elsewhere in the file is
+          # a no-op.
+          section() { git show "$1:README.md" | awk '/^## Quick start/{f=1;print;next} /^## /{f=0} f'; }
+          if [ "$(section "$BASE_SHA")" != "$(section "$HEAD_SHA")" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "run: README Quick start section changed"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "skip: no change to the executed quick start"
+          fi
+
+  quickstart:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      # Served under every chat-model tag the README pulls. Non-thinking, 32k
+      # context, ~400 MB — small enough for CPU inference through the graph.
+      TINY_MODEL: 'qwen2.5:0.5b'
+      # Pulled for real: embedding width is baked into the pgvector schema.
+      EMBED_MODEL: 'nomic-embed-text'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4.3.1 as of 2026-05-12
+        with:
+          # Full history: the sync filter commits on top of HEAD and pushes.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record the runner envelope
+        run: |
+          nproc; free -m; df -h / /mnt 2>/dev/null || df -h /
+          docker version --format 'docker {{.Server.Version}}'; docker compose version
+
+      - name: Free disk space (the stack's images are ~13 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker image prune -af > /dev/null
+          df -h /
+
+      - name: Build the public mirror's tree
+        id: tree
+        run: |
+          if [ -f scripts/sync-to-github.sh ]; then
+            # Private source repo: run the real sync filter against a local
+            # bare "mirror", then clone what it pushed — the exact tree a
+            # stranger would clone from the public repo.
+            git config user.name "quickstart-e2e"
+            git config user.email "quickstart-e2e@users.noreply.github.com"
+            mirror="$RUNNER_TEMP/mirror.git"
+            git init -q --bare "$mirror"
+            git remote add github "$mirror"
+            git checkout -q -B main
+            bash scripts/sync-to-github.sh
+            # -b main: the bare repo's HEAD names the init default branch, so a
+            # plain clone checks out nothing ("remote HEAD refers to
+            # nonexistent ref") and the job would test an empty directory.
+            git clone -q -b main "$mirror" "$RUNNER_TEMP/poindexter"
+            test -f "$RUNNER_TEMP/poindexter/README.md"
+            echo "tree=$RUNNER_TEMP/poindexter" >> "$GITHUB_OUTPUT"
+          else
+            # Already the public mirror: the checkout is the tree.
+            echo "tree=$GITHUB_WORKSPACE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python 3.13 (the README prerequisite)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+
+      - name: Install Ollama the way the README tells Linux users
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          # README prerequisite on Linux: the containers reach Ollama through
+          # the docker bridge gateway, which a loopback-only bind refuses.
+          sudo mkdir -p /etc/systemd/system/ollama.service.d
+          printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' \
+            | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+          sudo systemctl daemon-reload
+          sudo systemctl restart ollama
+          for _ in $(seq 1 30); do curl -fsS http://localhost:11434/api/tags > /dev/null && break; sleep 2; done
+          ollama pull "$TINY_MODEL"
+
+      - name: Run the README quick start
+        run: |
+          python scripts/ci/quickstart_e2e.py \
+            --tree "${{ steps.tree.outputs.tree }}" \
+            --tiny-model "$TINY_MODEL" \
+            --real-pull "$EMBED_MODEL" \
+            --timeout-min 150
+
+      - name: Resource envelope at the end
+        if: always()
+        run: |
+          free -m; df -h /
+          docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' || true
+
+      - name: Diagnostics
+        if: failure()
+        env:
+          TREE: ${{ steps.tree.outputs.tree }}
+        run: |
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}' || true
+          # The pipeline's own containers, plus anything not running (a
+          # restart loop anywhere in the stack is worth seeing).
+          not_running=$(docker ps -a --filter status=exited --filter status=restarting \
+                        --filter status=created --format '{{.Names}}' || true)
+          for c in poindexter-prefect-worker poindexter-worker poindexter-brain-daemon \
+                   poindexter-prefect-server poindexter-prefect-services poindexter-postgres-local \
+                   $not_running; do
+            echo "::group::docker logs $c"; docker logs --tail 400 "$c" 2>&1 || true; echo "::endgroup::"
+          done
+          echo "::group::pipeline_tasks + recent audit_log + gate verdicts"
+          docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+            "SELECT task_id, status, stage, percentage, left(error_message, 400) AS error FROM pipeline_tasks ORDER BY created_at DESC LIMIT 5" || true
+          # audit_log's clock column is "timestamp", not created_at: the first
+          # version of this query named the wrong column and the step printed
+          # an error where the rejection reason should have been.
+          docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+            "SELECT a.timestamp, a.event_type, a.severity, a.source, left(a.details::text, 300) AS details FROM audit_log a WHERE a.severity IN ('error', 'warning', 'critical') ORDER BY a.timestamp DESC LIMIT 40" || true
+          # Gate verdicts (the auto-curator's reject and its score live here).
+          docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c \
+            "SELECT created_at, task_id, gate_name, event_kind, left(feedback, 300) AS feedback FROM pipeline_gate_history ORDER BY created_at DESC LIMIT 20" || true
+          echo "::endgroup::"
+          echo "::group::ollama"; ollama list || true; sudo journalctl -u ollama --no-pager | tail -150 || true; echo "::endgroup::"
+          echo "::group::bootstrap keys (names only)"; sed -E 's/=.*/= <redacted>/' ~/.poindexter/bootstrap.toml || true; echo "::endgroup::"

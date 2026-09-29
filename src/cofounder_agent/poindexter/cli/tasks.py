@@ -14,10 +14,11 @@ import sys
 from typing import Any
 
 import click
+import httpx
 
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 
-from ._api_client import WorkerClient
+from ._api_client import WorkerClient, wait_for_worker
 from ._status_style import TASK_STATUS, color_for
 
 
@@ -201,6 +202,17 @@ def tasks_get(task_id: str, json_output: bool, content: bool) -> None:
         "(app_settings.topic_discovery_length_distribution)."
     ),
 )
+@click.option(
+    "--wait-for-worker",
+    "wait_for_worker_s",
+    type=click.IntRange(min=0),
+    default=180,
+    show_default=True,
+    help=(
+        "Seconds to wait for the worker API to come up before giving up. The "
+        "worker needs about a minute after `start-stack.sh up -d`; 0 fails fast."
+    ),
+)
 def tasks_create(
     topic: str,
     category: str,
@@ -209,6 +221,7 @@ def tasks_create(
     style: str,
     tone: str,
     target_length: int | None,
+    wait_for_worker_s: int,
 ) -> None:
     """Queue a new content task.
 
@@ -228,13 +241,17 @@ def tasks_create(
     }
 
     async def _create():
-        async with WorkerClient() as c:
+        # The quick start runs this right after `start-stack.sh up -d`, while
+        # the worker is still booting — wait for it (bounded, announced) rather
+        # than failing on the first refused connection.
+        base_url = await wait_for_worker(wait_for_worker_s)
+        async with WorkerClient(base_url) as c:
             resp = await c.post("/api/tasks", json=payload)
             return await c.json_or_raise(resp)
 
     try:
         t = _run(_create())
-    except RuntimeError as e:
+    except (RuntimeError, httpx.HTTPError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 

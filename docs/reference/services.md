@@ -206,6 +206,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `rejection_handlers.py` | Per-gate rejection handlers — turn operator rejections into learning signals (#148). |
 | `remediation_rules_service.py` | CRUD over the firefighter ``remediation_rules`` table. |
 | `render_vram.py` | Live free-VRAM read for the render GPU (``pipeline_gpu_index``) via Prometheus. |
+| `required_models.py` | The Ollama models a fresh install must pull for the default content pipeline. |
 | `research_context.py` | Build RAG (retrieval-augmented generation) context for a new draft. |
 | `research_quality_service.py` | Research Quality Service — filter, dedup and rank a tier of web-search results. |
 | `research_service.py` | Research Service — builds factual context for content generation. |

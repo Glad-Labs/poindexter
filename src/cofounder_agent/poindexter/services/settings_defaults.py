@@ -5573,6 +5573,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # box (incident 2026-06-21: gpu-exporter false-paged on a Windows host that
     # never ran linux-gpu).
     'compose_drift_active_profiles': '',
+    # Minutes a container may sit in `created` without ever having started
+    # before the drift probe counts it as stopped. `docker compose up` holds
+    # every service behind a service_healthy dependency in `created`, so a cold
+    # start looks like mass drift for minutes; recovering it mid-`up` recreated
+    # the brain itself and failed every fresh install. Past the window a
+    # never-started container is stuck and gets revived as before.
+    'compose_drift_created_grace_minutes': '15',
 
     # ----- Docker port-forward adaptive recovery (poindexter/brain/docker_port_forward_probe.py) -----
     # The probe detects a stuck Docker Desktop / WSL2 NAT host-port forward
@@ -6670,6 +6677,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'company_founded_date': {'owner': 'content_validator', 'value_type': 'string'},
     'company_founder_name': {'owner': 'content_validator'},
     'compose_drift_active_profiles': {'owner': 'compose_drift_probe'},
+    'compose_drift_created_grace_minutes': {'owner': 'compose_drift_probe', 'value_type': 'integer'},
     'compose_drift_host_recover_cap_per_window': {'owner': 'compose_drift_probe', 'value_type': 'integer'},
     'compose_drift_host_recover_enabled': {'owner': 'compose_drift_probe', 'value_type': 'boolean'},
     'compose_drift_host_recover_window_minutes': {'owner': 'compose_drift_probe', 'value_type': 'integer'},

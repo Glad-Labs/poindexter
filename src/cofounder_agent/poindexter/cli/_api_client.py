@@ -31,16 +31,23 @@ persist the credentials. The legacy static-Bearer fallback (and the
 
 ## URL resolution (#198: no silent defaults)
 
-Same as before:
     1. POINDEXTER_API_URL env var
     2. WORKER_API_URL env var (legacy)
-    3. raises RuntimeError loudly — no localhost fallback
+    3. ``app_settings.api_base_url`` (DB-first config) — the stack seeds it
+       as ``http://worker:8002``, a compose-network name only containers
+       resolve, so a compose-internal host is rewritten to ``localhost``
+       with the same published port. Without this step the README's
+       ``poindexter tasks create`` died on a fresh install, because nothing
+       in the quick start sets an env var.
+    4. raises RuntimeError loudly — never a hardcoded localhost fallback
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import sys
+import time
 from contextlib import suppress
 from typing import Any
 
@@ -67,20 +74,139 @@ _CRED_READ_ATTEMPTS = 3
 _CRED_READ_BACKOFF_S = 0.5
 
 
-def _resolve_base_url(base_url: str | None) -> str:
+# The app_settings key the stack seeds with the worker's URL (baseline seed +
+# the brain's free-tier seed both write ``http://worker:8002``).
+API_BASE_URL_KEY = "api_base_url"
+
+# Compose-network names the stack's URLs use. A container resolves them; the
+# host CLI cannot, and reaches the same service on the port the stack publishes
+# to the host. Same set ``poindexter setup --check`` rewrites.
+_COMPOSE_INTERNAL_HOSTS = frozenset({"worker", "poindexter-worker", "host.docker.internal"})
+
+
+def _resolve_base_url(base_url: str | None) -> str | None:
+    """Explicit argument or env var. ``None`` means "read app_settings".
+
+    The DB step is async, so ``WorkerClient.__aenter__`` finishes the
+    resolution (``_base_url_from_settings``).
+    """
     resolved = (
         base_url
         or os.getenv("POINDEXTER_API_URL")
         or os.getenv("WORKER_API_URL")
     )
-    if not resolved:
+    return resolved.rstrip("/") if resolved else None
+
+
+def host_reachable_url(url: str) -> str:
+    """``url`` as the host reaches it: a compose-internal host becomes localhost.
+
+    ``http://worker:8002`` -> ``http://localhost:8002``. Any other URL comes
+    back unchanged, so an operator who set ``api_base_url`` to a real host
+    (a tailnet name, a LAN IP) gets exactly that.
+    """
+    from urllib.parse import urlparse, urlunparse
+
+    parts = urlparse(url)
+    if (parts.hostname or "").lower() not in _COMPOSE_INTERNAL_HOSTS:
+        return url
+    netloc = f"localhost:{parts.port}" if parts.port else "localhost"
+    return urlunparse(parts._replace(netloc=netloc))
+
+
+_NO_URL_HELP = (
+    "Set POINDEXTER_API_URL (e.g. http://localhost:8002), or make sure "
+    f"app_settings.{API_BASE_URL_KEY} is set — `poindexter setup` seeds it. "
+    "There is no hardcoded default (#198)."
+)
+
+
+async def _base_url_from_settings() -> str:
+    """``app_settings.api_base_url`` as the host reaches it.
+
+    Raises RuntimeError naming both remedies when the value cannot be had:
+    no DSN, an unreachable database, or an empty row. Read through
+    ``plugins.secrets.get_secret`` (plaintext for a non-secret row) with one
+    bounded connection, like ``_resolve_credentials`` below.
+    """
+    dsn = _dsn_or_none()
+    if not dsn:
         raise RuntimeError(
-            "No worker API URL configured. Set POINDEXTER_API_URL (preferred) "
-            "or WORKER_API_URL in the environment. For local dev this is "
-            "typically http://localhost:8002, but there is no hardcoded "
-            "default — you must configure it explicitly (#198)."
+            "No worker API URL configured: POINDEXTER_API_URL / WORKER_API_URL "
+            "are unset and there is no database to read "
+            f"app_settings.{API_BASE_URL_KEY} from (no bootstrap.toml "
+            f"database_url). {_NO_URL_HELP}"
         )
-    return resolved.rstrip("/")
+
+    import asyncpg
+
+    from poindexter.plugins.secrets import get_secret as _plugin_get_secret
+
+    conn = None
+    try:
+        conn = await asyncpg.connect(dsn, timeout=_CRED_READ_TIMEOUT_S)
+        value = (await _plugin_get_secret(conn, API_BASE_URL_KEY) or "").strip()
+    except (OSError, asyncio.TimeoutError) as exc:
+        raise CredentialStoreUnreachable(
+            f"Could not reach Postgres at {_safe_dsn_hint(dsn)} to read "
+            f"app_settings.{API_BASE_URL_KEY} (the worker API URL): "
+            f"{type(exc).__name__}: {exc}. Check the stack is up "
+            f"(`docker ps`), or {_NO_URL_HELP}"
+        ) from exc
+    finally:
+        if conn is not None:
+            with suppress(Exception):  # silent-ok: best-effort close; a raise here would mask the read result/error
+                await conn.close()
+
+    if not value:
+        raise RuntimeError(
+            f"No worker API URL configured: app_settings.{API_BASE_URL_KEY} is "
+            f"empty in {_safe_dsn_hint(dsn)}. {_NO_URL_HELP}"
+        )
+    return host_reachable_url(value).rstrip("/")
+
+
+async def wait_for_worker(
+    timeout_s: float,
+    *,
+    base_url: str | None = None,
+    poll_s: float = 3.0,
+) -> str:
+    """Block until the worker API answers anything, up to ``timeout_s``.
+
+    ``bash scripts/start-stack.sh up -d`` returns as soon as the containers
+    exist, but the worker spends about a minute in lifespan startup before it
+    serves a request. A quick start pasted as one block reaches
+    ``poindexter tasks create`` inside that window and used to die on an
+    uncaught ``httpx.ConnectError``. This polls ``/api/health`` (a GET, so a
+    retry can never double-submit anything) and returns the resolved base
+    URL. Any HTTP status counts as "answering" — the caller's own request
+    reports a real error properly. Announces the wait once on stderr; raises
+    RuntimeError naming where to look when the deadline passes.
+    """
+    url = _resolve_base_url(base_url) or await _base_url_from_settings()
+    deadline = time.monotonic() + max(0.0, timeout_s)
+    announced = False
+    async with httpx.AsyncClient(timeout=5.0) as http:
+        while True:
+            try:
+                await http.get(f"{url}/api/health")
+                return url
+            except httpx.TransportError as exc:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"The worker at {url} did not answer within "
+                        f"{timeout_s:.0f}s ({type(exc).__name__}). Is the stack "
+                        "up? Check `docker ps` and `docker logs poindexter-worker`."
+                    ) from exc
+                if not announced:
+                    print(
+                        f"Waiting for the worker at {url} to answer (it takes "
+                        "about a minute to start after start-stack.sh)...",
+                        file=sys.stderr,
+                    )
+                    announced = True
+                await asyncio.sleep(poll_s)
 
 
 class CredentialStoreUnreachable(RuntimeError):
@@ -229,7 +355,10 @@ class WorkerClient:
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
-        self.base_url = _resolve_base_url(base_url)
+        # Explicit argument or env var. When neither is set this stays None
+        # and __aenter__ reads app_settings.api_base_url (async, so it can't
+        # happen here). Nothing reads base_url before __aenter__.
+        self.base_url: str | None = _resolve_base_url(base_url)
         # Hold the explicit overrides; finalise during __aenter__ so the
         # async DB lookup happens off the main constructor path.
         self._explicit_client_id = client_id
@@ -248,6 +377,10 @@ class WorkerClient:
         # ``services.logger_config`` + httpx — both safe.)
         from poindexter.services.auth.oauth_client import OAuthClient
 
+        if self.base_url is None:
+            self.base_url = await _base_url_from_settings()
+        base_url: str = self.base_url
+
         if (
             self._explicit_client_id is not None
             or self._explicit_client_secret is not None
@@ -265,7 +398,7 @@ class WorkerClient:
                     "vars, app_settings.api_token) was removed in #249."
                 )
             self._oauth = OAuthClient(
-                base_url=self.base_url,
+                base_url=base_url,
                 client_id=client_id,
                 client_secret=client_secret,
                 scopes=self._scopes,
@@ -284,12 +417,12 @@ class WorkerClient:
             from poindexter.cli._token_cache import CliTokenStore
 
             async def _provider() -> tuple[str, str]:
-                return await _resolve_credentials(self.base_url)
+                return await _resolve_credentials(base_url)
 
             self._oauth = OAuthClient(
-                base_url=self.base_url,
+                base_url=base_url,
                 credential_provider=_provider,
-                token_store=CliTokenStore(self.base_url),
+                token_store=CliTokenStore(base_url),
                 scopes=self._scopes,
                 timeout=self._timeout,
             )
@@ -306,7 +439,7 @@ class WorkerClient:
         # — that was technically a private attribute, but it's relied
         # on by tests today.
         self._http = httpx.AsyncClient(
-            base_url=self.base_url,
+            base_url=base_url,
             timeout=self._timeout,
         )
         return self

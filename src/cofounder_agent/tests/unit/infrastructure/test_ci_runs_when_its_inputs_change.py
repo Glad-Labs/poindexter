@@ -88,7 +88,6 @@ _DIRS = (
     ".github/workflows",
 )
 _FILES = (
-    "docker-compose.yml",
     "docker-compose.local.yml",
     "docker-compose.consumer.yml",
     "README.md",
@@ -99,6 +98,7 @@ _FILES = (
     "packages/brand/src/tokens/colors.css",
     "docs/architecture/anti-hallucination.md",
     "docs/operations/ports.md",
+    "docs/quickstart.mdx",
 )
 SCOPE_ROOTS = _DIRS + _FILES
 # The literal first segment of every root — what must appear verbatim in a

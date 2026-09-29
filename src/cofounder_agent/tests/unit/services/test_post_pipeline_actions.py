@@ -276,6 +276,44 @@ class TestAutoCurator:
         )
 
     @pytest.mark.asyncio
+    async def test_a_zero_bar_turns_the_curator_off(self):
+        """``min_curation_score=0`` never rejects, whatever the score.
+
+        Two callers lean on this: docs/operations/troubleshooting.md tells an
+        operator whose small writer scores under the bar that 0 disables the
+        auto-curator, and the quickstart-e2e job zeroes the bar so a 0.5B
+        stand-in model's noisy self-score (94 in one run, 54 in another) cannot
+        decide whether the machine "works".
+        """
+        from poindexter.services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchval_return=None)
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(values={"min_curation_score": "0"})
+
+        with patch(
+            "poindexter.services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "poindexter.services.integrations.operator_notify.notify_operator",
+            new_callable=AsyncMock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-bar-zero",
+                topic="A weak post",
+                result=_result(score=54),
+                site_config=site,
+                settings_service=settings,
+            )
+        reject_calls = [
+            c for c in db.update_task.call_args_list
+            if len(c.args) >= 2 and c.args[1].get("status") == "rejected"
+        ]
+        assert reject_calls == [], f"a zero bar must not auto-reject: {reject_calls}"
+
+    @pytest.mark.asyncio
     async def test_no_reject_when_score_zero(self):
         """``quality_score=0`` is the fallback when no QA ran; the
         ``0 <`` lower bound prevents auto-rejecting those."""

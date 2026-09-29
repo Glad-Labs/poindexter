@@ -1568,7 +1568,7 @@ You don't need any of this. Your deployment is:
 
 ```bash
 poindexter setup --auto
-bash scripts/start-stack.sh
+bash scripts/start-stack.sh up -d
 ```
 
 CI is useful if you fork and want PR checks, but the stock setup

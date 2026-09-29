@@ -31,10 +31,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from poindexter.cli.setup import (
-    _AUTO_PORT,
     _DEFAULT_LOCAL_DB_PORT,
     _DEFAULT_LOCAL_DB_URL,
     _run_migrations,
+    stack_database_url,
 )
 
 
@@ -341,9 +341,14 @@ class TestLocalDbPortInvariant:
         """The prompt default DSN is built from _DEFAULT_LOCAL_DB_PORT."""
         assert f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/" in _DEFAULT_LOCAL_DB_URL
 
-    def test_auto_port_is_one_above_the_default(self):
-        """--auto spins a separate container one port above the compose default."""
-        assert _AUTO_PORT == _DEFAULT_LOCAL_DB_PORT + 1
+    def test_auto_dsn_uses_the_stack_port(self):
+        """--auto points at the stack's own postgres-local, not a side container.
+
+        It used to start a separate container one port above the compose
+        default (5434), a database no stack container ever read.
+        """
+        dsn = stack_database_url({"local_postgres_password": "pw"})
+        assert f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/" in dsn
 
     def test_default_port_matches_compose_publish(self):
         """setup.py's default port must equal the compose POSTGRES_HOST_PORT default."""

@@ -29,49 +29,77 @@ _The Pipeline dashboard (ships with the repo): drafts arrive scored, weak ones a
 
 ## Quick start
 
-From clean machine to a running pipeline in about 30 minutes — most of it one-time model downloads.
+From a clean machine to your first post in about an hour — most of it one-time downloads: the stack's images build once and the models pull once.
 
-**Prereqs:** [Docker](https://docker.com) · [Ollama](https://ollama.com) · Python 3.13+ · NVIDIA GPU with 8 GB+ VRAM (CPU works, just slowly) · Node.js 22+ only if you want the optional Next.js frontend. **Windows:** run from Git Bash or WSL2.
+**Prereqs:** [Docker](https://docker.com) with Compose v2.24+ · [Ollama](https://ollama.com) · Python **3.13** (3.14 is not supported yet) · about 50 GB of free disk (31 GB of models plus ~13 GB of images) · an NVIDIA GPU is strongly recommended: the default writer and critic are 27B and 14B models, so on a smaller card Ollama spills layers to the CPU and a post takes much longer (CPU-only works, slowly). **Windows:** run from Git Bash or WSL2. **Linux:** Ollama has to listen beyond loopback — see the note under the commands.
 
 ```bash
 # 1. Clone
 git clone https://github.com/Glad-Labs/poindexter.git && cd poindexter
 
-# 2. Bootstrap — generates secrets, spins up Postgres, runs migrations, mints your OAuth client
+# 2. Install the CLI into a Python 3.13 virtualenv (Windows Git Bash: py -3.13 -m venv .venv && source .venv/Scripts/activate)
+python3.13 -m venv .venv && source .venv/bin/activate
 pip install -e src/cofounder_agent
+
+# 3. Bootstrap — generates secrets, starts the stack's Postgres, runs migrations, mints your OAuth client
 poindexter setup --auto
 
-# 3. Pull the core models (one-time, ~30 GB total)
-ollama pull gemma3:27b && ollama pull phi4:14b && ollama pull qwen3:8b && ollama pull nomic-embed-text
+# 4. Pull the models the default pipeline calls (one-time, about 31 GB)
+ollama pull gemma3:27b && ollama pull phi4:14b && ollama pull llama3:latest && ollama pull nomic-embed-text
 
-# 4. Start everything
+# 5. Start everything (the first run builds the images — allow several minutes)
 bash scripts/start-stack.sh up -d
 
-# 5. Queue your first post
+# 6. Queue your first post (waits for the worker to finish booting)
 poindexter tasks create "Why Docker changed everything"
 ```
 
+**Linux: let the containers reach Ollama.** The stack calls Ollama at `host.docker.internal:11434`, which on Linux is the Docker bridge gateway, and a default Ollama install listens on loopback only, so every model call is refused. Once, before step 5:
+
+```bash
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\n' | sudo tee /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+That makes Ollama listen on every interface, so firewall port 11434 if the machine sits on a network you don't trust. Docker Desktop on Windows and macOS needs none of this.
+
 Then watch it work:
 
+- **Prefect** — [localhost:4200](http://localhost:4200), the `content-generation` deployment picks the task up within two minutes
 - **Grafana** — [localhost:3000](http://localhost:3000), the Pipeline dashboard fills in as stages complete
-- **Prefect** — [localhost:4200](http://localhost:4200), the orchestrator's view of the run
-- **Terminal** — `poindexter doctor` for a full health report, `poindexter tasks list` for the queue
+- **Terminal** — `poindexter tasks list` for the queue, `docker logs -f poindexter-prefect-worker` for the run itself
 
-A few minutes later the draft lands in your approval queue with its QA scores attached (`poindexter tasks list --status awaiting_approval`). You approve; it publishes. That's the loop.
+The draft lands in your approval queue with its QA scores attached: `poindexter tasks list --status awaiting_approval`. Approve it with `poindexter tasks approve <id>`. That's the loop.
+
+**If the task ends `rejected` instead:** a finished draft that scores under `min_curation_score` (seeded at 75) is turned away before it reaches the queue, and a writer smaller than the default can land there. `poindexter tasks list --status rejected` shows its `Q:` score, and the [troubleshooting guide](https://gladlabs.mintlify.app/docs/operations/troubleshooting) shows how to read the verdict and lower the bar (`poindexter settings set min_curation_score 50`; `0` turns the auto-curator off).
+
+The whole sequence above runs on a clean GitHub runner as a CI job ([`quickstart-e2e`](.github/workflows/quickstart-e2e.yml)) that has to end with the task in that queue. The runner has no GPU, so the job stands one tiny model in for the three large ones and zeroes that bar; the rest is your commands, verbatim.
 
 <details>
 <summary><b>Which model does what — and what to upgrade first</b></summary>
 
 <br>
 
-| Model              | Size   | Role                                                  |
-| ------------------ | ------ | ----------------------------------------------------- |
-| `gemma3:27b`       | 16 GB  | Writer, fallback, structured + media-script tasks     |
-| `phi4:14b`         | 9 GB   | Adversarial QA critic — the hard quality gate         |
-| `qwen3:8b`         | 5 GB   | Fast tasks — SEO, image decisions, summaries, routing |
-| `nomic-embed-text` | 274 MB | Embeddings for semantic search + memory retrieval     |
+The four models step 4 pulls are the ones the default pipeline calls. Nothing pulls a model on demand: a model Ollama does not have fails the call that names it, so this list is derived from the seeded settings and a CI job fails when it drifts (`poindexter setup --auto` also prints the command for _your_ database's settings).
 
-These four run the core blog pipeline (research → write → QA → publish) on any 8 GB+ GPU. The critic is a different model family from the writer **on purpose** — cross-model QA means their biases don't cancel. Feature roles pull additional public models on demand: image QA + captioning use `qwen3-vl:30b` (~20 GB — needs headroom past the 8 GB minimum), and the optional voice agent loads its own STT/TTS models. The core pipeline runs without them.
+| Model              | Size   | Role                                                                                                                              |
+| ------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `gemma3:27b`       | 17 GB  | Writer, and everything seeded with it: self-review, structured extraction, image prompts, the fallback writer, the video director |
+| `phi4:14b`         | 9 GB   | Adversarial QA critic — the hard quality gate — and the Ragas and DeepEval judges                                                 |
+| `llama3:latest`    | 4.7 GB | Podcast and video script drafting                                                                                                 |
+| `nomic-embed-text` | 274 MB | Embeddings for semantic search, originality checks and memory retrieval                                                           |
+
+The critic is a different model family from the writer **on purpose** — cross-model QA means their biases don't cancel. On a smaller card, Ollama runs part of the 27B writer on the CPU, which is slower but works.
+
+**Optional — pull one when you switch its feature on:**
+
+| Model                       | Size   | Used for                                                                                           |
+| --------------------------- | ------ | -------------------------------------------------------------------------------------------------- |
+| `qwen3-vl:30b-a3b-instruct` | ~20 GB | Image QA and captions. Only called when a post has images (`--profile image-gen` or a Pexels key). |
+| `qwen2.5:32b`               | ~20 GB | Fallback critic when `phi4:14b` is unavailable.                                                    |
+| `granite4.2:3b`             | small  | The brain's alert triage.                                                                          |
+| `qwen2.5:7b`                | 4.7 GB | Console chat and the voice agent.                                                                  |
 
 **The writer is the one model worth upgrading.** Set `pipeline_writer_model` to any Ollama model you have:
 
@@ -191,7 +219,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 - **Observability:** Grafana + Prometheus + Loki + [Pyroscope](https://pyroscope.io) + Sentry-compatible (GlitchTip)
 - **Voice (optional):** LiveKit + Whisper (STT) + Kokoro (TTS)
 - **Storage:** any S3-compatible (Cloudflare R2, AWS S3, Backblaze B2, MinIO)
-- **Infrastructure:** Docker Compose — 4 containers for the bare OSS default, 23 for the consumer variant (8-16 GB VRAM hardware), 45 for the full operator stack
+- **Infrastructure:** Docker Compose — 17 containers in the default stack (`docker-compose.consumer.yml`, sized for 8-16 GB VRAM and 32 GB RAM) plus 6 opt-in (local image generation, TTS, the Postiz social hub); the operator's full stack adds the rest of the observability tier (Langfuse, Loki, Tempo, GlitchTip)
 
 ## Configuration
 
@@ -260,7 +288,7 @@ Built by one person in evening hours, directing AI coding agents (Claude Code) t
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
 - 210+ live posts on [gladlabs.io](https://www.gladlabs.io) (380+ posts total, 2,000+ pipeline runs).
 - 21,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
-- `poindexter setup` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling.
+- `poindexter setup --auto` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling — and the quick start above runs on a clean GitHub runner every week (with a tiny stand-in model, since a runner has no GPU), failing unless the queued post reaches the approval queue.
 - Live in-place upgrades — schema changes applied to a running instance with zero data loss.
 - Multi-model QA with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.
 - Push-only static export to any S3-compatible storage; frontend fully decoupled.

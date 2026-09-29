@@ -228,12 +228,13 @@ git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # 
 # still has the old layout.
 git rm --cached --quiet skills/poindexter/gladlabs-config.json 2>/dev/null || true
 git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
-# .env.example SHIPS to the public mirror (poindexter#607) — it documents
-# every ${VAR} the OSS single-container docker-compose.yml consumes, and
-# that compose file's quickstart instructs `cp .env.example .env`. Stripping
-# it left public users with a compose file that referenced a template that
-# didn't exist. (`poindexter setup` remains the path for the full operator
-# stack, but the bare quickstart needs this template.)
+# The bare single-container docker-compose.yml and its .env.example are
+# RETIRED (deleted, not stripped). That compose file started no Prefect, so the
+# public quickstart never dispatched a task. With docker-compose.local.yml
+# stripped here, scripts/start-stack.sh now falls back to
+# docker-compose.consumer.yml, which ships, and reads its secrets from
+# ~/.poindexter/bootstrap.toml (written by `poindexter setup`), so there is no
+# .env template to ship.
 git rm --cached --quiet scripts/bootstrap.sh 2>/dev/null || true              # References stripped files (docker-compose.local.yml) and dead Woodpecker CI; poindexter setup --auto covers fresh-install flow
 
 # === Operator-only Grafana dashboards (privacy strip — NOT monetization) ===

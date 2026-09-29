@@ -134,6 +134,49 @@ $enc=New-Object System.Text.UTF8Encoding($false)  # UTF-8, no BOM (file is now p
 
 ---
 
+## A new task never leaves "pending"
+
+**Symptom.** `poindexter tasks create` printed `Created: <id> status=pending`, and minutes later `poindexter tasks list` still shows it `pending`. Nothing in `docker logs poindexter-worker` mentions it.
+
+**Root cause.** The worker API only queues the task. Prefect is the only dispatcher: its scheduler (`poindexter-prefect-services`) turns the `content-generation` deployment's cron into flow runs, and `poindexter-prefect-worker` claims the pending row. So a stuck `pending` means one link in that chain is missing. On a fresh install all three used to be: the public quick start launched a stack with no Prefect, the Prefect server could not start because nothing created its `prefect` database, and nothing registered the deployment.
+
+**Check, in order.**
+
+1. `docker ps --filter name=prefect` — `prefect-server`, `prefect-services` and `prefect-worker` all up. If the server restart-loops, `docker logs poindexter-prefect-server` names the reason; its first line on start is `[prefect-db] database 'prefect' exists|created`.
+2. `docker logs poindexter-prefect-worker | head` — the first lines are `deploy_content_flow.py --if-missing`: either "registered" or "already registered". If you see neither, the worker never got past registration and is restarting.
+3. The Prefect UI at [localhost:4200](http://localhost:4200) → Deployments → `content-generation` exists and is not paused, and flow runs appear every two minutes (`app_settings.prefect_content_flow_cron`).
+4. `poindexter tasks create` and the stack share one database: `grep database_url ~/.poindexter/bootstrap.toml` names `localhost:5433` (the stack's `postgres-local`). Older `setup --auto` runs wrote port 5434 — a separate container the stack never reads. Re-run `poindexter setup --auto --force` (it keeps your secrets).
+
+**Fix.** Whatever step 1-4 finds. To re-register the deployment by hand (it also re-applies the cron and concurrency from `app_settings`): `docker exec poindexter-prefect-worker python /app/scripts/deploy_content_flow.py`.
+
+**Related.** `.github/workflows/quickstart-e2e.yml` runs the README quick start on a clean runner and fails unless the task reaches `awaiting_approval`, which covers every link above.
+
+---
+
+## A finished task went to "rejected" instead of the approval queue
+
+**Symptom.** `poindexter tasks create` ran to the end (the Prefect run finished and every stage completed), but `poindexter tasks list --status awaiting_approval` is empty. The task is under `poindexter tasks list --status rejected`, with a `Q:` score below 75.
+
+**Root cause.** Not a failure: the auto-curator. The last thing the pipeline does with a finished draft is compare its quality score to `app_settings.min_curation_score` (seeded at 75 by `poindexter setup`), and a draft under the bar is rejected before you see it. A writer smaller than the default 27B (the 8-16 GB GPU case) scores lower, and a tiny model's score is close to random: the 0.5B stand-in the quick-start CI job uses scored 94 in one run and 54 in another. QA findings alone do not do this. With the default `qa_flag_instead_of_reject=true` a draft QA objects to is flagged and still queued for you.
+
+**See why.** The verdict and the score are in `pipeline_gate_history`:
+
+```sql
+-- docker exec -it poindexter-postgres-local psql -U poindexter -d poindexter_brain
+SELECT created_at, feedback FROM pipeline_gate_history
+WHERE task_id = '<the-uuid>' AND gate_name = 'auto_curator';
+-- e.g. "Quality score 54.0 below threshold 75.0"
+```
+
+**Fix.** Pick one:
+
+- **A stronger writer.** `poindexter settings set pipeline_writer_model ollama/<model-you-pulled>` (the seeded value is `ollama/gemma3:27b`; the README's model section lists upgrades).
+- **A lower bar,** so weaker drafts reach you and you judge them yourself: `poindexter settings set min_curation_score 50`. **`0` turns the auto-curator off**, so every finished draft is queued however it scored. It takes effect on the next task; a rejected one is not brought back, so queue a new one.
+
+**Related.** `.github/workflows/quickstart-e2e.yml` zeroes this bar for its stand-in model (its score is noise), which is why that job asserts the machine runs and says nothing about draft quality.
+
+---
+
 ## Pipeline task stuck "in_progress" for more than 10 minutes
 
 **Symptom.** You queued a content task, it shows `status='in_progress'` in `pipeline_tasks`, but there's no progress in the logs. The Prefect stale-task sweep hasn't reclaimed it, and the per-stage timeouts in the LangGraph template haven't fired either.

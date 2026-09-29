@@ -1903,9 +1903,33 @@ when they **are** up):
   ran six profiles, so crashes in postiz, gpu-exporter, nut-exporter and
   chatterbox were never detected or healed.
 
+**A container compose has created but never started is not drift — for a
+while.** `docker compose up` creates every service first and starts each one
+only once its `depends_on: condition: service_healthy` dependencies are
+healthy, so on a cold start most of the stack sits in `created` for minutes. A
+never-started `created` container younger than
+`compose_drift_created_grace_minutes` (default 15) is treated as compose
+mid-`up` and left alone; past the window it is stuck (an `up` killed mid-way)
+and is recovered like any stopped container. A container that ran before and
+now sits `created` or `exited` is drift immediately. Incident 2026-09-28
+(quickstart-e2e, a fresh install on a clean runner): the brain's first cycle,
+10 seconds after it came up, read six such services as "stopped" and
+recreated them from inside its own container.
+
+**Recovery touches only the drifted services** (`docker compose up
+--no-deps`). Without `--no-deps`, compose also converges their dependencies,
+and from inside the brain container it renders them with the brain's
+environment rather than the host's (`HOME`, the `USERPROFILE`-derived mounts),
+so their config hash differs and compose recreates them. In the same incident
+that recreated `brain-daemon` itself: SIGKILL (exit 137) mid-command, and the
+outer `up` of the fresh install failed with "dependency failed to start".
+A drifted dependency is listed in its own right, so nothing that needs
+recovery is lost.
+
 This is separate from `compose_drift_auto_recover_enabled` — the brain's _own_
-`docker compose up` — which **stays off** on a Windows host because it mangles
-the `C:\` binds (see the detector/actor split above).
+`docker compose up`, seeded `true` by the baseline — which **stays off** on a
+Windows host because it mangles the `C:\` binds (see the detector/actor split
+above).
 
 ## Host scheduled-work liveness (systemd)
 
@@ -2086,7 +2110,8 @@ SELECT value FROM brain_knowledge
 | `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                                                                                                   |
 | `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                                                                                                      |
 | `compose_drift_active_profiles`                               | (empty)                                    | Fallback when the brain has no `COMPOSE_PROFILES` env var. CSV of active compose `profiles:`; services behind an unlisted profile are exempt from the missing-container check.                    |
-| `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                       |
+| `compose_drift_auto_recover_enabled`                          | `true` (baseline seed)                     | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                                                                                                       |
+| `compose_drift_created_grace_minutes`                         | `15`                                       | How long a never-started `created` container counts as compose mid-`up` rather than drift.                                                                                                        |
 | `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.                                                                                      |
 | `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                                                                                                    |
 | `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                                                                                           |

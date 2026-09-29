@@ -14,18 +14,31 @@ set -euo pipefail
 BOOTSTRAP="${USERPROFILE:-$HOME}/.poindexter/bootstrap.toml"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-# Use the operator stack if available, otherwise the customer stack. Anchor the
-# existence check to PROJECT_DIR (derived from $0), NOT the caller's CWD: this
-# script is invoked from arbitrary working directories — the deploy-checkout-sync
-# Scheduled Task's apply step runs it from C:\Windows\System32 — and a CWD-relative
-# check there silently falls back to the customer docker-compose.yml, then
+# Use the operator stack if available, otherwise the public default stack.
+#
+# docker-compose.local.yml is the operator's full stack and is stripped from the
+# public mirror, so on a public checkout this picks docker-compose.consumer.yml:
+# the stack that actually dispatches work (Prefect server + services + worker,
+# the FastAPI worker and the brain), sized for 8-16 GB VRAM / 32 GB RAM. The
+# fallback used to be a bare docker-compose.yml with Postgres, Grafana and an API
+# container and NO Prefect, so a task queued by the public quickstart stayed
+# `pending` forever (Prefect has been the only dispatcher since the in-process
+# TaskExecutor was deleted). That file is retired; poindexter setup --auto
+# provisions this same file's Postgres (cli/setup.py::compose_file_for), so the
+# CLI and the stack share one database. Keep the two selections in step —
+# tests/unit/scripts/test_start_stack_compose_selection.py pins them together.
+#
+# Anchor the existence check to PROJECT_DIR (derived from $0), NOT the caller's
+# CWD: this script is invoked from arbitrary working directories — the
+# deploy-checkout-sync apply step runs it from wherever the timer starts — and a
+# CWD-relative check there silently falls back to the public stack, then
 # reconciles the operator project against the wrong topology (tearing down
 # operator-only services). COMPOSE_FILE stays a basename; the `docker compose -f`
 # call runs after `cd "$PROJECT_DIR"` below, so the basename resolves correctly.
 if [ -f "$PROJECT_DIR/docker-compose.local.yml" ]; then
     COMPOSE_FILE="docker-compose.local.yml"
 else
-    COMPOSE_FILE="docker-compose.yml"
+    COMPOSE_FILE="docker-compose.consumer.yml"
 fi
 
 if [ ! -f "$BOOTSTRAP" ]; then
@@ -83,6 +96,16 @@ export HOST_I2C_GID="${HOST_I2C_GID:-65534}"
 # exactly why it would go unnoticed — so prefer the invoking user's real id.
 export POINDEXTER_HOST_UID="${POINDEXTER_HOST_UID:-${SUDO_UID:-$(id -u)}}"
 export POINDEXTER_HOST_GID="${POINDEXTER_HOST_GID:-${SUDO_GID:-$(id -g)}}"
+
+# Backup dump directory — create it as the invoking user BEFORE compose bind-
+# mounts it. dockerd creates a missing bind-mount source as root:root, and the
+# public stack's dump services (running as the uid above) then cannot write
+# into it: on a fresh Linux host both restart-looped from their first `mkdir`.
+# Same expression as docker-compose*.yml's backup mounts. `mkdir -p` leaves an
+# existing tree (and whoever owns it) alone.
+_BACKUP_DIR="${POINDEXTER_BACKUP_DIR:-${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-$HOME}/.poindexter/backups}/auto}"
+mkdir -p "$_BACKUP_DIR" 2>/dev/null \
+    || echo "WARNING: could not create $_BACKUP_DIR; the backup services may not be able to write dumps" >&2
 
 # CI-runner GitHub App private key — the multiline PEM can't live in
 # bootstrap.toml (the parser above is single-line, and a PEM spans many lines),
