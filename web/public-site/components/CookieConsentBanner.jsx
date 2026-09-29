@@ -398,7 +398,11 @@ export default function CookieConsentBanner() {
 function loadGoogleAnalytics() {
   if (typeof window === 'undefined') return;
 
-  const gaId = process.env.NEXT_PUBLIC_GA_ID || process.env.NEXT_PUBLIC_GA4_ID;
+  // next.config.js's env block always sets this, defaulting to the Glad Labs
+  // property, so the guard below only fires where that config doesn't apply,
+  // such as unit tests. (A NEXT_PUBLIC_GA4_ID fallback used to follow here;
+  // that default meant it could never be reached.)
+  const gaId = process.env.NEXT_PUBLIC_GA_ID;
   if (!gaId) {
     return;
   }

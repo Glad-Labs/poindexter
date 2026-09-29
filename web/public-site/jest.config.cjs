@@ -20,6 +20,9 @@ const customJestConfig = {
     '/node_modules/',
     '/e2e/',
     '/.next/',
+    // Shared code for the tests, not tests: jest would otherwise collect
+    // every file under __tests__/ as a suite.
+    '/__tests__/helpers/',
   ],
   // Enforce minimum coverage thresholds. Fail CI if any threshold is missed.
   coverageThreshold: {

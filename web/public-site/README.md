@@ -82,7 +82,9 @@ Data flow:
 
 ## Environment Variables
 
-All optional for local dev; `.env.example` describes them.
+All optional for local dev. `.env.example` describes every variable the site reads (apart from the few its toolchain or host sets, such as `NODE_ENV`, which the test lists), with what it controls, its default, and whether production needs it. `__tests__/env-example.test.js` keeps that list exact: reading a new variable fails the suite until it has an entry, and so does an entry that nothing reads.
+
+Production must set `REVALIDATE_SECRET` (publish revalidation), `NEXT_PUBLIC_BEACON_URL` (page-view tracking), and `RESEND_API_KEY` with `RESEND_AUDIENCE_ID` (newsletter signups). Every other variable either defaults to Glad Labs' own value or belongs to an optional feature (Sentry, Giscus comments, the AdSense slot) that stays inactive while unset.
 
 ```env
 # web/public-site/.env.local

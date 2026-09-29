@@ -337,3 +337,58 @@ describe('CookieConsentBanner — consent-gated AdSense loader (issue #943)', ()
     expect(document.querySelectorAll('script[data-gl-adsense]').length).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Consent-gated Google Analytics loader
+//
+// gtag.js loads only after the visitor opts in to analytics, and its ID comes
+// from NEXT_PUBLIC_GA_ID alone. A NEXT_PUBLIC_GA4_ID fallback was removed:
+// next.config.js always sets NEXT_PUBLIC_GA_ID, so it could never apply.
+// ---------------------------------------------------------------------------
+
+const GTAG_SRC_PREFIX = 'https://www.googletagmanager.com/gtag/js?id=';
+
+function gtagScripts() {
+  return [...document.querySelectorAll('script')].filter((el) =>
+    el.src.startsWith(GTAG_SRC_PREFIX)
+  );
+}
+
+describe('CookieConsentBanner — consent-gated Google Analytics loader', () => {
+  const savedGaId = process.env.NEXT_PUBLIC_GA_ID;
+
+  beforeEach(() => {
+    localStorageMock.clear();
+    jest.clearAllMocks();
+    gtagScripts().forEach((el) => el.remove());
+    process.env.NEXT_PUBLIC_GA_ID = 'G-TEST000000';
+  });
+
+  afterAll(() => {
+    if (savedGaId === undefined) {
+      delete process.env.NEXT_PUBLIC_GA_ID;
+    } else {
+      process.env.NEXT_PUBLIC_GA_ID = savedGaId;
+    }
+  });
+
+  it('does NOT inject gtag.js before any consent', () => {
+    render(<CookieConsentBanner />);
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it('does NOT inject gtag.js when analytics is rejected', () => {
+    render(<CookieConsentBanner />);
+    fireEvent.click(screen.getByRole('button', { name: /reject all/i }));
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it('injects gtag.js for NEXT_PUBLIC_GA_ID after analytics consent (Accept All)', () => {
+    render(<CookieConsentBanner />);
+    fireEvent.click(screen.getByRole('button', { name: /accept all/i }));
+    const scripts = gtagScripts();
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0].src).toBe(`${GTAG_SRC_PREFIX}G-TEST000000`);
+    expect(scripts[0].async).toBe(true);
+  });
+});
