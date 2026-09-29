@@ -15,13 +15,13 @@
     },
     {
       "key": "site_domain",
-      "value": "localhost:3000",
+      "value": "localhost:8002",
       "category": "identity",
       "description": "Production domain (no protocol)"
     },
     {
       "key": "site_url",
-      "value": "http://localhost:3000",
+      "value": "http://localhost:8002/site",
       "category": "identity",
       "description": "Full production URL with protocol"
     },
@@ -81,7 +81,7 @@
     },
     {
       "key": "public_site_url",
-      "value": "http://localhost:3000",
+      "value": "http://localhost:8002/site",
       "category": "site",
       "description": "Customer-facing site URL"
     },

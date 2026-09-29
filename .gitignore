@@ -181,6 +181,9 @@ scripts/secrets-to-scrub.txt
 # artifact. The blanket *.html above silently swallowed it (which is why the
 # console shipped without an index.html). Keep this negation.
 !src/cofounder_agent/console/index.html
+# Same for the /site/ viewer that storage_provider=local serves. Without it the
+# mount finds no index.html and skips itself (utils/local_site_mount.py).
+!src/cofounder_agent/poindexter/local_site_viewer/index.html
 
 # NOTE: web/public-site/ (the branded frontend) is deliberately NOT ignored.
 # It is tracked source — Vercel deploys it from this repo. Privacy vs the

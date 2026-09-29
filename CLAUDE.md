@@ -423,6 +423,20 @@ also settings with sensible defaults.
 **Storage is provider-agnostic.** `storage_*` keys in `app_settings`
 target any S3-compatible provider (R2, S3, B2, MinIO). The old
 `cloudflare_r2_*` keys still work as a fallback but are deprecated.
+`storage_provider` picks the backend: `s3`, or `local` (the fresh-install
+default). `local` sends every `R2UploadService` call to a folder
+(`storage_local_dir`, the `poindexter-site` volume on the consumer stack) that
+the worker serves with a small reader at `{api_url}/site/`, so a new install
+can read its first post with no bucket. Prod is pinned to `s3` by migration
+`20260928_174425`, and a missing row reads as `s3`, so an install with a bucket
+never flips. Publishing `require()`s `site_url` and `site_name`, which `poindexter
+setup` never asks for. On the Docker stacks the brain's seed refills them. Its
+`site_url` placeholder was `http://localhost:3000`, which is Grafana on the
+consumer stack, and is now the `/site/` preview. Where no brain runs, the worker
+fills them at boot in local mode. Readers that hold a stored URL (vision QA, the captioner)
+read local objects from disk via `local_site.read_local_object`: the browser
+URL doesn't reach the worker from inside the flow container. See
+[`docs/architecture/local-storage-provider.md`](docs/architecture/local-storage-provider.md).
 
 **Time is UTC-stored, operator-local presented.** `app_settings.operator_timezone`
 (IANA; OSS default `UTC`, operator overlay `America/New_York`) drives cron

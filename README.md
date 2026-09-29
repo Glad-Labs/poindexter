@@ -95,7 +95,7 @@ One engine, eight jobs:
 3. **Writes** long-form posts using local LLMs — or cloud models via the optional LiteLLM plugin
 4. **Reviews** every draft with multi-model adversarial QA (more on that below)
 5. **Validates** against hallucinations — catches fake people, stats, quotes, impossible claims
-6. **Publishes** to any frontend via static JSON export (push-only headless CMS)
+6. **Publishes** to any frontend via static JSON export (push-only headless CMS), or with no cloud account at all to a local folder you read at `localhost:8002/site/`
 7. **Generates** podcast episodes, AI images, and short text-to-video clips (alpha, opt-in)
 8. **Monitors** itself with Grafana dashboards, self-heals via a watchdog daemon, alerts on Telegram/Discord
 
@@ -171,7 +171,7 @@ The content pipeline itself is a declarative LangGraph DAG stored in the databas
 | **DB-as-config**             | 2,100+ settings in PostgreSQL. Change with SQL, REST, or CLI. No deploys, no .env sprawl.   |
 | **LangGraph pipelines**      | Declarative DAGs with Postgres checkpointing — resumable mid-run                            |
 | **Multi-modal output**       | Markdown posts, AI images, podcast audio, text-to-video (alpha)                             |
-| **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                              |
+| **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to S3-compatible storage or a local folder (`/site/`)     |
 | **Multi-site**               | One daemon manages N sites. Each site = config row + storage bucket.                        |
 | **Self-healing**             | Watchdog daemon monitors all services, restarts failures, alerts via Telegram/Discord       |
 | **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry-compatible (GlitchTip)         |

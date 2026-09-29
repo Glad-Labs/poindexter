@@ -1,10 +1,17 @@
 """
-Object Store Upload Service — uploads media files to an S3-compatible bucket.
+Object Store Upload Service — uploads media to an S3-compatible bucket or a local folder.
 
 Works with Cloudflare R2, AWS S3, Backblaze B2, MinIO, Wasabi — any
 provider that speaks the S3 API. Reads all config from app_settings
 (DB-first, no env vars) so the operator can swap providers without
 touching code.
+
+``storage_provider=local`` (the fresh-install default) sends every method to a
+:class:`~poindexter.services.local_object_store.LocalObjectStore` instead, so an
+install with no bucket still publishes somewhere a browser can reach. Each
+public method checks the provider first and otherwise runs its S3 code
+unchanged. See ``poindexter.services.local_site`` and
+``docs/architecture/local-storage-provider.md``.
 
 Constructor-DI migration (PR 4, design doc
 ``docs/architecture/2026-05-28-site-config-di-migration.md``): the
@@ -21,8 +28,11 @@ Usage::
 
 import asyncio
 import io
+import json
 from pathlib import Path
 
+from poindexter.services.local_object_store import LocalObjectStore, UnsafeObjectKey
+from poindexter.services.local_site import is_local, local_object_store
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
 from poindexter.utils.exception_format import describe_exception
@@ -113,6 +123,16 @@ _CONTENT_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+
+
+def _webp_key(r2_key: str) -> str:
+    """``r2_key`` with its extension swapped for ``.webp``.
+
+    Both backends store a converted image under this key, so an object has the
+    right suffix for its bytes (WebP is never served under a ``.png`` key).
+    """
+    stem = r2_key.rsplit(".", 1)[0] if "." in r2_key else r2_key
+    return f"{stem}.webp"
 
 
 def _convert_to_webp(
@@ -207,6 +227,16 @@ class R2UploadService:
         val = await sc.get_secret(f"cloudflare_r2_{key}")
         return val or default
 
+    def _local(self) -> LocalObjectStore | None:
+        """The local store when ``storage_provider=local``, else ``None``.
+
+        Every public method asks this first. ``None`` means "run the S3 code",
+        which is also what a missing or blank ``storage_provider`` row gets.
+        """
+        if not is_local(self._site_config):
+            return None
+        return local_object_store(self._site_config)
+
     # ------------------------------------------------------------------
     # Public methods
     # ------------------------------------------------------------------
@@ -235,6 +265,9 @@ class R2UploadService:
         Lets a caller record the URL of an object that is already in the
         bucket without uploading it again.
         """
+        local = self._local()
+        if local is not None:
+            return local.url_for(key)
         base = self._storage("public_url").rstrip("/")
         return f"{base}/{key}" if base else ""
 
@@ -265,6 +298,10 @@ class R2UploadService:
         if not path.exists():
             logger.warning("[R2] File not found: %s", local_path)
             return None
+
+        local = self._local()
+        if local is not None:
+            return await self._upload_local(local, path, r2_key, content_type)
 
         # Get credentials from DB (storage_* preferred, cloudflare_r2_* fallback).
         # access_key is NOT marked is_secret (it's paired with the secret and
@@ -312,8 +349,7 @@ class R2UploadService:
                 upload_content_type = "image/webp"
                 # Rewrite the R2 key extension so the object has the right
                 # suffix in the bucket (avoids serving WebP under a .png key).
-                stem = r2_key.rsplit(".", 1)[0] if "." in r2_key else r2_key
-                upload_r2_key = f"{stem}.webp"
+                upload_r2_key = _webp_key(r2_key)
                 logger.debug(
                     "[STORAGE] Converted %s → WebP (quality %d), key: %s",
                     path.name, _WEBP_QUALITY, upload_r2_key,
@@ -392,6 +428,68 @@ class R2UploadService:
             logger.exception("[STORAGE] Upload failed for %s: %s", r2_key, e)
             return None
 
+    async def _upload_local(
+        self,
+        store: LocalObjectStore,
+        path: Path,
+        r2_key: str,
+        content_type: str | None,
+    ) -> str | None:
+        """``upload_to_r2`` for ``storage_provider=local``.
+
+        Same preparation as the S3 path (content-type detection, WebP
+        conversion, the ``.webp`` key rewrite, the custom image domain), so a
+        post's objects have the same keys and the same kind of URL whichever
+        backend stored them. Returns ``None`` when the write fails or no public
+        URL can be built, the same failure contract as S3.
+        """
+        if not content_type:
+            content_type = _CONTENT_TYPES.get(
+                path.suffix.lower(), "application/octet-stream",
+            )
+        key = r2_key
+        source: str | io.BytesIO = str(path)
+        if content_type in _CONVERT_TO_WEBP_TYPES:
+            webp = _convert_to_webp(
+                path,
+                max_width=self._site_config.get_int("storage_image_max_width", 1920),
+                max_height=self._site_config.get_int("storage_image_max_height", 1920),
+            )
+            if webp is not None:
+                source = webp
+                content_type = "image/webp"
+                key = _webp_key(r2_key)
+
+        try:
+            size = await store.put_file(source, key)
+        except (OSError, UnsafeObjectKey) as exc:
+            logger.error(
+                "[STORAGE] Local write failed for %s under %s: %s. The folder "
+                "must be writable by this process (on the consumer stack it is "
+                "the poindexter-site volume).",
+                key, store.root, describe_exception(exc),
+            )
+            return None
+
+        url = ""
+        if content_type.startswith("image/"):
+            custom = self._site_config.get("storage_image_custom_domain", "")
+            if isinstance(custom, str) and custom.strip():
+                url = f"{custom.strip().rstrip('/')}/{key}"
+        if not url:
+            url = store.url_for(key)
+        if not url:
+            logger.warning(
+                "[STORAGE] Stored %s locally but can't build its URL: set "
+                "api_url (or storage_public_url)",
+                key,
+            )
+            return None
+        logger.info(
+            "[STORAGE] Stored locally: %s (%.1fMB)", url, size / 1024 / 1024,
+        )
+        return url
+
     async def _s3_client_and_bucket(self):
         """Build a boto3 S3 client + bucket name from app_settings.
 
@@ -434,6 +532,15 @@ class R2UploadService:
         already absent, so a double-delete is a no-op. Returns True on
         success, False when creds/config are missing or the call raises.
         """
+        local = self._local()
+        if local is not None:
+            try:
+                await local.delete(key)
+            except (OSError, UnsafeObjectKey) as e:
+                logger.error("[STORAGE] Local delete failed for %s: %s", key, e)
+                return False
+            logger.info("[STORAGE] Deleted locally: %s", key)
+            return True
         s3, bucket = await self._s3_client_and_bucket()
         if not s3:
             return False
@@ -448,6 +555,15 @@ class R2UploadService:
     async def list_keys(self, prefix: str) -> list[str]:
         """List every object key under ``prefix`` (paginated via
         ``ContinuationToken``). Returns [] on error or missing config."""
+        local = self._local()
+        if local is not None:
+            try:
+                return await local.list_keys(prefix)
+            except OSError as e:
+                logger.error(
+                    "[STORAGE] Local list_keys failed for prefix %s: %s", prefix, e,
+                )
+                return []
         s3, bucket = await self._s3_client_and_bucket()
         if not s3:
             return []
@@ -484,6 +600,14 @@ class R2UploadService:
         """
         import json as _json
 
+        local = self._local()
+        if local is not None:
+            try:
+                data = await local.get_bytes(r2_key)
+                return None if data is None else json.loads(data.decode("utf-8"))
+            except (OSError, UnsafeObjectKey, ValueError) as e:
+                logger.warning("[STORAGE] Local get_json failed for %s: %s", r2_key, e)
+                return None
         s3, bucket = await self._s3_client_and_bucket()
         if not s3:
             return None
@@ -502,6 +626,15 @@ class R2UploadService:
         Fail-soft: returns ``[]`` on error or missing config, same contract as
         ``list_keys`` — callers treat ``[]`` as "nothing to do".
         """
+        local = self._local()
+        if local is not None:
+            try:
+                return await local.list_objects(prefix)
+            except OSError as e:
+                logger.error(
+                    "[STORAGE] Local list_objects failed for prefix %s: %s", prefix, e,
+                )
+                return []
         s3, bucket = await self._s3_client_and_bucket()
         if not s3:
             return []
@@ -538,6 +671,16 @@ class R2UploadService:
         Returns ``None`` when creds/config are missing, the key is absent, or any
         error occurs. Used to read feed XML for the media reaper's keep-set.
         """
+        local = self._local()
+        if local is not None:
+            try:
+                data = await local.get_bytes(r2_key)
+            except (OSError, UnsafeObjectKey) as e:
+                logger.warning(
+                    "[STORAGE] Local get_object_text failed for %s: %s", r2_key, e,
+                )
+                return None
+            return None if data is None else data.decode("utf-8", "replace")
         s3, bucket = await self._s3_client_and_bucket()
         if not s3:
             return None
@@ -562,7 +705,19 @@ class R2UploadService:
         :class:`ObjectStoreUnavailable` means it could not answer (config or
         credentials missing, ``boto3`` absent, network, 403, 5xx). Folding the
         second into the first would make every blip look like a lost file.
+
+        Local mode keeps the same split: an absent file is ``None``, while an
+        unreadable folder or an unusable key raises ``ObjectStoreUnavailable``.
         """
+        local = self._local()
+        if local is not None:
+            try:
+                return await local.size(key)
+            except (OSError, UnsafeObjectKey) as exc:
+                raise ObjectStoreUnavailable(
+                    f"local stat {key} under {local.root} failed: "
+                    f"{describe_exception(exc)}",
+                ) from exc
         s3, bucket = await self._s3_client_and_bucket()
         if not s3:
             raise ObjectStoreUnavailable(

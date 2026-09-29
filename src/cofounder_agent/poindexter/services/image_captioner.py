@@ -30,6 +30,7 @@ import httpx
 from poindexter.services.alt_text import sanitize_alt_text
 from poindexter.services.llm_providers.dispatcher import dispatch_complete
 from poindexter.services.llm_providers.thinking_models import strip_think_blocks
+from poindexter.services.local_site import read_local_object
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,17 @@ def _prompt(budget: int) -> str:
         return _CAPTION_PROMPT_FALLBACK.format(budget=budget)
 
 
-async def _fetch_b64(image_url: str) -> str | None:
-    """Download an image and base64-encode it. ``None`` on any failure."""
+async def _fetch_b64(image_url: str, *, site_config=None) -> str | None:
+    """Download an image and base64-encode it. ``None`` on any failure.
+
+    An image stored by ``storage_provider=local`` is read from the local folder
+    instead: its URL is the browser-facing ``{api_url}/site/…``, which doesn't
+    reach the worker from inside the Prefect container.
+    """
+    if site_config is not None:
+        local = await read_local_object(image_url, site_config)
+        if local is not None:
+            return base64.b64encode(local).decode()
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
             resp = await client.get(image_url)
@@ -131,7 +141,7 @@ async def caption_image(
     if image_b64 is None:
         if not image_url:
             return None
-        image_b64 = await _fetch_b64(image_url)
+        image_b64 = await _fetch_b64(image_url, site_config=site_config)
         if image_b64 is None:
             return None
 

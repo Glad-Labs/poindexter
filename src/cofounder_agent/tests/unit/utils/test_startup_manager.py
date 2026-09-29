@@ -359,6 +359,67 @@ class TestRunMigrations:
         call_args = mock_seeder.seed_all_defaults.await_args
         assert call_args.args[0] is pool
 
+    def test_local_site_identity_fill_runs_after_the_seed_and_the_overlay(self):
+        """The fill only fills EMPTY identity, so it must run after the seed and
+        the operator overlay: anything they write has to win."""
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+        pool = mgr.database_service.pool
+        order: list[str] = []
+
+        def _step(name, result=0):
+            async def _run_step(*_a, **_k):
+                order.append(name)
+                return result
+
+            return AsyncMock(side_effect=_run_step)
+
+        mock_migrations = MagicMock()
+        mock_migrations.run_migrations = _step("migrations", True)
+        mock_seeder = MagicMock()
+        mock_seeder.seed_all_defaults = _step("seed")
+        mock_seeder.apply_operator_overrides = _step("overlay")
+        mock_seeder.seed_operator_subreddit_profiles = _step("subreddits")
+        mock_local_site = MagicMock()
+        mock_local_site.fill_local_site_identity = _step("identity_fill", {})
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": MagicMock(),
+                "poindexter.services.settings_defaults": mock_seeder,
+                "poindexter.services.local_site": mock_local_site,
+            },
+        ):
+            _run(mgr._run_migrations())
+
+        assert order.index("seed") < order.index("overlay") < order.index("identity_fill")
+        assert mock_local_site.fill_local_site_identity.await_args.args[0] is pool
+
+    def test_local_site_identity_fill_failure_does_not_abort_startup(self):
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+        mock_migrations = MagicMock()
+        mock_migrations.run_migrations = AsyncMock(return_value=True)
+        mock_seeder = MagicMock()
+        mock_seeder.seed_all_defaults = AsyncMock(return_value=0)
+        mock_local_site = MagicMock()
+        mock_local_site.fill_local_site_identity = AsyncMock(side_effect=Exception("db gone"))
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "poindexter.services.migrations": mock_migrations,
+                "poindexter.services.content_router_service": MagicMock(),
+                "poindexter.services.settings_defaults": mock_seeder,
+                "poindexter.services.local_site": mock_local_site,
+            },
+        ):
+            _run(mgr._run_migrations())
+
+        mock_local_site.fill_local_site_identity.assert_awaited_once()
+
     def test_seed_failure_does_not_abort_startup(self):
         """seed_all_defaults() raising is logged but doesn't propagate (lazy default fallback)."""
         mgr = _make_manager()

@@ -92,3 +92,80 @@ async def test_caption_image_skips_when_no_model_configured():
         )
     assert alt is None
     disp.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# storage_provider=local: the image is read from the folder, not over HTTP.
+# Its URL is the browser-facing {api_url}/site/..., which doesn't reach the
+# worker from inside the Prefect container.
+# ---------------------------------------------------------------------------
+
+
+def _local_site_config(root):
+    from poindexter.services.site_config import SiteConfig
+
+    return SiteConfig(
+        initial_config={
+            "storage_provider": "local",
+            "storage_local_dir": str(root),
+            "api_url": "http://localhost:8002",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_b64_reads_a_local_image_from_disk(tmp_path):
+    from poindexter.services.image_captioner import _fetch_b64
+
+    image = tmp_path / "site" / "images" / "inline" / "a.webp"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"RIFF0000WEBPVP8 ")
+    boom = AsyncMock(side_effect=AssertionError("must not fetch over HTTP"))
+    with patch("poindexter.services.image_captioner.httpx.AsyncClient", boom):
+        got = await _fetch_b64(
+            "http://localhost:8002/site/images/inline/a.webp",
+            site_config=_local_site_config(tmp_path / "site"),
+        )
+    assert got == base64.b64encode(b"RIFF0000WEBPVP8 ").decode()
+    boom.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fetch_b64_still_uses_http_for_other_urls(tmp_path):
+    from poindexter.services.image_captioner import _fetch_b64
+
+    class _Resp:
+        status_code = 200
+        content = b"jpegbytes"
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url):
+            assert url == "https://images.pexels.com/p.jpeg"
+            return _Resp()
+
+    with patch("poindexter.services.image_captioner.httpx.AsyncClient", _Client):
+        got = await _fetch_b64(
+            "https://images.pexels.com/p.jpeg",
+            site_config=_local_site_config(tmp_path / "site"),
+        )
+    assert got == base64.b64encode(b"jpegbytes").decode()
+
+
+@pytest.mark.asyncio
+async def test_caption_image_passes_its_site_config_to_the_fetch():
+    fetch = AsyncMock(return_value=None)
+    cfg = object()
+    with patch("poindexter.services.image_captioner._fetch_b64", fetch):
+        await caption_image(
+            image_url="http://x/a.webp", topic="t", budget=50, site_config=cfg, pool=None,
+        )
+    assert fetch.await_args.kwargs["site_config"] is cfg

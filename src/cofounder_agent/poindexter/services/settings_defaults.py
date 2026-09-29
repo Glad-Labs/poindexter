@@ -3742,9 +3742,22 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'smtp_use_tls': 'true',
 
     # ----- Storage (provider-agnostic S3-compatible: R2 / S3 / B2 / MinIO) -----
+    # Where uploads go: ``local`` writes them to ``storage_local_dir`` and the
+    # worker serves that folder, with a viewer, at ``{api_url}/site/``; ``s3``
+    # sends them to the bucket configured below. ``local`` is the fresh-install
+    # default so the first published post is readable without an account.
+    # Installs that already had an object store configured were pinned to
+    # ``s3`` by migration 20260928_174425, and code reads a missing row as
+    # ``s3``. See docs/architecture/local-storage-provider.md.
+    'storage_provider': 'local',
+    # Folder the ``local`` provider stores objects in. ``~`` expands per
+    # process; inside the worker containers this is the shared
+    # ``poindexter-site`` volume (docker-compose.consumer.yml).
+    'storage_local_dir': '~/.poindexter/site',
     # Public base URL for the object store; consumers append the object
     # key. Replaces the deprecated ``r2_public_url`` (storage_* cutover,
-    # Glad-Labs/poindexter#731).
+    # Glad-Labs/poindexter#731). With storage_provider=local, empty means
+    # "the site URL" (the folder is the site).
     'storage_public_url': '',
     # S3-compatible bucket for media objects. Empty on OSS (operators configure
     # their own bucket); the operator overlay restores Glad Labs' bucket.
@@ -7472,6 +7485,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'storage_image_custom_domain': {'owner': 'r2_upload_service'},
     'storage_image_max_height': {'owner': 'r2_upload_service', 'value_type': 'integer'},
     'storage_image_max_width': {'owner': 'r2_upload_service', 'value_type': 'integer'},
+    'storage_provider': {'owner': 'local_site', 'value_type': 'string'},
+    'storage_local_dir': {'owner': 'local_site', 'value_type': 'string'},
     'tap_chunk_max_chars': {'owner': 'runner', 'value_type': 'integer'},
     'tap_dedup_batch_size': {'owner': 'runner', 'value_type': 'integer'},
     'tap_handler_timeout_seconds': {'owner': 'tap_runner', 'value_type': 'integer'},

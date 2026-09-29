@@ -13,6 +13,12 @@ This means **R2 is the source of truth for the homepage and archive.** A
 publish that creates a `posts` row but never refreshes R2 silently freezes
 the public site until the next successful export.
 
+**No bucket?** With `storage_provider=local` (the fresh-install default) the
+same export, and every other `R2UploadService` call, goes to a folder the worker
+serves at `/site/` with a small reader, instead of a bucket. The keys and file
+layout below are identical. See
+[local-storage-provider.md](local-storage-provider.md).
+
 ## Files on R2 (`static/` prefix)
 
 | Key                        | Contents                                                                                 |

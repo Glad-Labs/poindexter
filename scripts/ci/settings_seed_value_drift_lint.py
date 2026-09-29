@@ -114,15 +114,18 @@ TIER_POLICY: dict[str, str] = {
     # The brain seed's purpose is "minimum viable config to make the pipeline
     # runnable -- docker compose up, visit /api/health, submit a task", so it
     # ships working placeholders. The reference seed leaves identity empty for
-    # the operator to fill via `poindexter setup`. The brain refills an empty
-    # value, so these placeholders land on every install path.
-    # settings_defaults.apply_operator_overrides therefore accepts the brain's
-    # value as untuned, and test_operator_overlay pins that for every
-    # overlaid key.
+    # the operator to fill. `poindexter setup` never asks, but the brain refills
+    # an empty value, so on the Docker stacks these placeholders land on every
+    # install path. settings_defaults.apply_operator_overrides therefore accepts
+    # the brain's value as untuned, and test_operator_overlay pins that for every
+    # overlaid key. The URL ones point at the /site/ preview the worker serves in
+    # local mode (storage_provider=local). Where no brain runs, the worker fills
+    # an empty site_url / site_name at boot with the same values
+    # (services/local_site.fill_local_site_identity).
     "site_name": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
-    "site_url": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
-    "site_domain": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
-    "public_site_url": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
+    "site_url": "brain seeds the local /site/ preview; the reference seed leaves identity empty",
+    "site_domain": "brain seeds the local preview's host; the reference seed leaves identity empty",
+    "public_site_url": "brain seeds the local /site/ preview; the reference seed leaves identity empty",
     "company_name": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
     "privacy_email": "brain seeds a runnable placeholder; the reference seed leaves identity empty",
     "support_email": "brain seeds a runnable placeholder; the reference seed leaves identity empty",

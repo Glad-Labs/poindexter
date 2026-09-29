@@ -30,6 +30,7 @@ from poindexter.modules.content.content_validator import ValidationResult, valid
 from poindexter.services.audit_event_schemas import validate_event_details
 from poindexter.services.integrations.operator_notify import notify_operator
 from poindexter.services.langfuse_shim import observe  # type: ignore[attr-defined]
+from poindexter.services.local_site import read_local_object
 from poindexter.services.logger_config import get_logger
 from poindexter.services.prompt_manager import get_prompt_manager
 from poindexter.services.qa_gates_db import load_qa_gate_chain
@@ -2856,12 +2857,21 @@ class MultiModelQA:
         async def _download_loop(client: "httpx.AsyncClient") -> None:
             for url in urls:
                 try:
-                    resp = await client.get(
-                        url, timeout=httpx.Timeout(15.0, connect=5.0),
+                    # storage_provider=local images are read from the local
+                    # folder: their browser-facing URL doesn't reach the worker
+                    # from inside the flow container.
+                    img_bytes = (
+                        await read_local_object(url, self._site_config)
+                        if self._site_config is not None
+                        else None
                     )
-                    if resp.status_code != 200:
-                        continue
-                    img_bytes = resp.content
+                    if img_bytes is None:
+                        resp = await client.get(
+                            url, timeout=httpx.Timeout(15.0, connect=5.0),
+                        )
+                        if resp.status_code != 200:
+                            continue
+                        img_bytes = resp.content
                     if not img_bytes or len(img_bytes) > 8 * 1024 * 1024:
                         continue  # skip empty or oversized (>8MB)
                     # The vision model can't decode WebP (the image-gen->R2 inline

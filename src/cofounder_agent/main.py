@@ -1079,6 +1079,16 @@ from poindexter.utils.operator_console import mount_operator_console  # noqa: E4
 
 mount_operator_console(app)
 
+# ===== LOCAL SITE (storage_provider=local) =====
+# Serves the local storage folder plus a small viewer at /site/, so a fresh
+# install can read its published posts with no bucket and no account. Mounted
+# unconditionally (after the API routes, like the console); the app checks
+# storage_provider on each request and 404s when it isn't "local". Public by
+# design, like the bucket it stands in for. See utils/local_site_mount.py.
+from poindexter.utils.local_site_mount import mount_local_site  # noqa: E402
+
+mount_local_site(app)
+
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
 

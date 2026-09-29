@@ -610,6 +610,24 @@ class StartupManager:
                 exc_info=True,
             )
 
+        # Local publishing mode — give an install with no site identity a
+        # working one (site_url -> {api_url}/site, site_name -> a placeholder),
+        # so the first publish doesn't raise on require("site_url"). On the
+        # Docker stacks the brain's seed has already refilled these; this is
+        # the backstop where no brain runs (e.g. `npm run dev`). Fills EMPTY
+        # values only, and only when storage_provider=local; runs after the
+        # seed + overlay so anything they set wins.
+        try:
+            from poindexter.services.local_site import fill_local_site_identity
+
+            if self.database_service and self.database_service.pool:
+                await fill_local_site_identity(self.database_service.pool)
+        except Exception as e:
+            logger.warning(
+                f"   [WARNING] local-site identity fill failed: {e!s}",
+                exc_info=True,
+            )
+
         # Operator overlay — bootstrap the community-draft subreddit profiles on
         # a FRESH install (seed-if-empty). No-op on OSS (overlay stripped) and
         # once the table has any row, so runtime `community profiles` CRUD stays

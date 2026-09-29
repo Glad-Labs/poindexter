@@ -437,6 +437,18 @@ services:
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
       - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+      # storage_provider=local (the fresh-install default) publishes the site
+      # here, images + static JSON export + feeds, and the worker serves it at
+      # /site/. A named volume rather than a host bind mount, for two reasons:
+      # it starts out owned by appuser (Docker creates a missing bind-mount
+      # source as root, which the uid-1001 worker can't write into), and it
+      # exposes no part of the host's ~/.poindexter (see the note below).
+      # Keep it named: a bind mount of ~/.poindexter/site would be an undeclared
+      # entry for scripts/ci/compose_poindexter_home_mount_lint.py, which
+      # exempts named volumes. MUST also be on `prefect-worker`: images are
+      # stored during the flow run, the export and the viewer run here. See
+      # docs/architecture/local-storage-provider.md.
+      - poindexter-site:/home/appuser/.poindexter/site
       - ${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/home/appuser/.poindexter/backups
       # Never mount the whole ~/.poindexter, at any container path: it holds
       # bootstrap.toml (the master key) and, on an operator host, the deploy
@@ -643,6 +655,10 @@ services:
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
       - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+      # Local publishing folder (storage_provider=local). The flow stores post
+      # images here; the worker exports and serves the site from the same
+      # volume. See the matching mount on `worker`.
+      - poindexter-site:/home/appuser/.poindexter/site
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -1103,6 +1119,12 @@ services:
 # stack upgrades. Renaming a volume creates a fresh empty one and orphans
 # the old data — keep these names in sync with the operator stack.
 volumes:
+  # Local publishing folder (storage_provider=local), shared by worker and
+  # prefect-worker and served at /site/. The static JSON export rebuilds from
+  # Postgres; the images stored here do not, so back the volume up if you
+  # want to keep them.
+  poindexter-site:
+    name: poindexter-site
   postgres-local-data:
     name: gladlabs-postgres-local-data
   grafana-data:

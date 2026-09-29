@@ -192,9 +192,16 @@ COPY . .
 # legacy /root/.poindexter and /root/Downloads mounts, both removed with
 # glad-labs-stack#4186. Don't reopen it to make a /root mount work; mount at
 # /home/appuser instead.
+#
+# /home/appuser/.poindexter/site is pre-created owned by appuser because the
+# consumer stack mounts the named `poindexter-site` volume there
+# (storage_provider=local). Docker seeds a new named volume from the image's
+# directory, ownership included, so the volume starts out writable by appuser
+# with no host-side chown.
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
-    chown -R appuser:appgroup /app
+    chown -R appuser:appgroup /app && \
+    install -d -o appuser -g appgroup /home/appuser/.poindexter /home/appuser/.poindexter/site
 USER appuser
 
 # Health check endpoint

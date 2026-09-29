@@ -757,6 +757,23 @@ FROM media_assets GROUP BY type;
 - `object store not configured …`: one of `storage_endpoint`, `storage_bucket`, `storage_access_key`, or `storage_secret_key` (secret) is empty, or `boto3` is missing from the worker image.
 - `HEAD … failed: …` with a 403: the access key lost read access to the bucket.
 - Any other `HEAD … failed`: the S3 endpoint itself (network, 5xx). Check it before assuming data loss.
+- `local stat <key> under <folder> failed …`: `storage_provider=local` and the folder can't be read. On the consumer stack it is the `poindexter-site` volume; check it is mounted on both `worker` and `prefect-worker`.
+
+---
+
+## `/site/` says "The local site is off", or a published post never shows up there
+
+**Symptom.** `http://localhost:8002/site/` returns a 404 that reads "The local site is off", or the page loads but a post you published is missing or has broken images.
+
+**Checks, in order.**
+
+1. `poindexter settings get storage_provider` must print `local`. An install that had a bucket configured before local mode existed was pinned to `s3` on upgrade on purpose; switch with `poindexter settings set storage_provider local`.
+2. Worker logs: `[STORAGE] Stored locally: <url>` means the write worked. `[STORAGE] Local write failed for <key> under <folder>` means the folder isn't writable by the worker (uid 1001). On the consumer stack the folder is the `poindexter-site` named volume, which `Dockerfile.worker` creates owned by `appuser`. A host bind mount put there instead starts out root-owned.
+3. Images missing but text present: the volume isn't mounted on `prefect-worker`. Images are stored during the flow run, so they land in that container's own filesystem, which the worker can't see.
+4. Nothing exported at all and a `require("site_url")` error at publish: `site_url` is empty. On the Docker stacks the brain's seed fills it; where no brain runs, the worker fills it at boot in local mode (`{api_url}/site`). In `s3` mode, set it to your real site.
+5. Post links or images pointing at `http://localhost:3000`: an install seeded before local mode existed got the brain's old placeholder, which is Grafana's port on the consumer stack. Run `poindexter settings set site_url http://localhost:8002/site` (and `public_site_url` the same), then publish again or rebuild the export.
+
+Design and limits: [local-storage-provider.md](../architecture/local-storage-provider.md).
 
 ---
 

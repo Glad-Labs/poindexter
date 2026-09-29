@@ -1,9 +1,11 @@
 """
 Static Export Service — push-only headless CMS output layer.
 
-On publish, generates static JSON files and uploads to any S3-compatible
-storage (R2, S3, MinIO, local folder). Any frontend can consume these
-files directly — no API server needed for reads.
+On publish, generates static JSON files and uploads them through
+``R2UploadService``: to any S3-compatible bucket (R2, S3, MinIO), or, with
+``storage_provider=local``, to a local folder the worker serves at ``/site/``.
+Any frontend can consume these files directly — no API server needed for
+reads.
 
 Output structure on storage:
     static/posts/index.json        — all published posts (metadata, no content)
@@ -518,6 +520,8 @@ async def export_post(
             "post_count": len(all_posts),
             "category_count": len(categories),
             "site_url": site_url,
+            # Display name for readers of the export alone (the /site/ viewer).
+            "site_name": site_title,
             "last_published_slug": slug,
         }
         url = await _upload_json("manifest.json", _to_json(manifest), site_config=_sc)
@@ -614,6 +618,7 @@ async def export_full_rebuild(
             "category_count": len(categories),
             "author_count": len(authors),
             "site_url": site_url,
+            "site_name": site_title,
             "full_rebuild": True,
         }
         if not await _upload_json("manifest.json", _to_json(manifest), site_config=_sc):
