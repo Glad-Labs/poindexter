@@ -13,6 +13,14 @@ Reads config from app_settings DB (telegram_bot_token, OAuth client
 credentials, or legacy api_token). No .env or environment variables
 needed.
 
+Telegram is optional. Until both ``telegram_bot_token`` and
+``telegram_chat_id`` are set in app_settings the bot idles, logging what is
+missing, and starts by itself as soon as they are set: no restart, no compose
+profile.
+
+    poindexter settings set telegram_bot_token <token> --secret
+    poindexter settings set telegram_chat_id <chat id>
+
 Authentication (Glad-Labs/poindexter#248):
   Prefers OAuth 2.1 client credentials when ``scripts_oauth_client_id``
   + ``scripts_oauth_client_secret`` are present in app_settings or
@@ -27,6 +35,7 @@ Usage:
 import asyncio
 import os
 import sys
+import time
 from pathlib import Path
 
 import asyncpg
@@ -90,6 +99,85 @@ _DB_URL = _resolve_db_url()
 # Wrap in a coro so asyncio.run accepts it. Same fix in discord-voice-bot.py.
 async def _make_pool() -> asyncpg.Pool:
     return await asyncpg.create_pool(_DB_URL, min_size=1, max_size=2)
+
+
+# The two settings the bot cannot run without. ``poindexter setup`` writes
+# neither, so a fresh install has both empty.
+_REQUIRED_TELEGRAM_KEYS = ("telegram_bot_token", "telegram_chat_id")
+
+# The command that sets each one, printed while the bot waits for them.
+_SET_HINTS = {
+    "telegram_bot_token": "poindexter settings set telegram_bot_token <token> --secret",
+    "telegram_chat_id": "poindexter settings set telegram_chat_id <chat id>",
+}
+
+# Seconds between app_settings checks while waiting for them. It only paces how
+# soon an idle bot notices settings someone has just made.
+_CREDENTIAL_POLL_SECONDS = 30
+
+
+def _missing_telegram_keys(cfg: dict) -> list[str]:
+    """The required Telegram settings that are unset or blank.
+
+    Blank counts as unset, exactly as in ``_setup()``, which strips both
+    values. A whitespace-only row that passed here would trip the
+    ``not BOT_TOKEN`` guard in ``_main()`` instead, and restart-loop the bot on
+    the very misconfiguration this wait exists to absorb.
+    """
+    return [key for key in _REQUIRED_TELEGRAM_KEYS if not (cfg.get(key) or "").strip()]
+
+
+async def _read_telegram_config() -> dict:
+    """One read of the Telegram settings on a short-lived pool.
+
+    The pool is closed before this returns, so an idle bot holds no database
+    connection between checks.
+    """
+    pool = await _make_pool()
+    try:
+        return await _load_telegram_config(pool)
+    finally:
+        await pool.close()
+
+
+def _wait_for_telegram_config() -> None:
+    """Block until both Telegram settings are set in app_settings.
+
+    Telegram is optional and a default install has neither setting, so an
+    unconfigured bot is a normal state, not an error. It used to
+    ``sys.exit(1)`` here, and the container's ``restart: unless-stopped``
+    restarts on ANY exit code, 0 included: a stack with no Telegram restarted
+    this container forever (``Restarting (1)`` in ``docker ps``, the same two
+    log lines every few seconds). ``restart: on-failure`` would end the loop
+    but leave a stopped container. The brain's compose-drift probe reads that
+    as drift: it warns, and where auto-recover is on (the baseline seeds it
+    on) it brings the container back up, to exit again. ``on-failure`` also
+    does not restart a container after a Docker daemon restart. So the
+    process idles instead. The container stays up and healthy, and setting
+    the two rows is the whole enable step.
+
+    Database errors are not caught. A database that is down is a real fault,
+    and raising it here gets the same traceback and restart that
+    ``_make_pool()`` gives.
+    """
+    announced: list[str] | None = None
+    while True:
+        missing = _missing_telegram_keys(asyncio.run(_read_telegram_config()))
+        if not missing:
+            if announced is not None:
+                print("[BOT] Telegram settings found; starting.", flush=True)
+            return
+        # Once per state, not once per poll: the first line says why the bot is
+        # idle, and it prints again only if the set of missing keys changes.
+        if missing != announced:
+            print(
+                f"[BOT] Telegram is not configured (unset: {', '.join(missing)}); "
+                "idling until it is:\n"
+                + "\n".join(f"[BOT]   {_SET_HINTS[key]}" for key in missing),
+                flush=True,
+            )
+            announced = missing
+        time.sleep(_CREDENTIAL_POLL_SECONDS)
 
 
 # Module-level placeholders — populated in main() under a SINGLE event loop
@@ -222,6 +310,14 @@ def _load_passthrough_config(initial: dict[str, str]) -> dict[str, str]:
         print(f"[CLI] Could not preload passthrough settings: {e}")
     return extra
 
+
+# Wait BEFORE the snapshot below, not later in _main(). The snapshot reads the
+# /cli settings once, at import. A bot that started unconfigured and picked the
+# settings up afterwards would keep a snapshot with no telegram_chat_id in it,
+# and the /cli passthrough authorises against that value (an empty one rejects
+# every message). Waiting here means everything after this line runs exactly as
+# it does on a stack that was configured from the start.
+_wait_for_telegram_config()
 
 _passthrough_extra = _load_passthrough_config(_tg_cfg)
 _BOT_SITE_CONFIG = _BotSiteConfig({**_tg_cfg, **_passthrough_extra})

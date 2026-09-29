@@ -478,6 +478,14 @@ services:
   # ===========================================
   # Pipeline Telegram bot — phone control surface
   # ===========================================
+  # Optional. With no telegram_bot_token / telegram_chat_id in app_settings (a
+  # fresh install has neither) the bot idles, healthy, and logs what it is
+  # waiting for; it starts by itself once both are set:
+  #   poindexter settings set telegram_bot_token <token> --secret
+  #   poindexter settings set telegram_chat_id <chat id>
+  # Keep `restart: unless-stopped`, no `profiles:` and the pgrep healthcheck.
+  # The idle behaviour depends on all three; test_pipeline_bot_compose_contract.py
+  # says why.
   pipeline-bot:
     build:
       context: ./src/cofounder_agent

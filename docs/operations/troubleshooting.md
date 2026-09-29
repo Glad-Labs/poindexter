@@ -1234,6 +1234,33 @@ services.integrations.secret_resolver WARNING - resolve_secret: row 'discord_ops
 
 ---
 
+## `poindexter-pipeline-bot` is `Up (healthy)` but never answers on Telegram
+
+**Symptom.** The container is `Up … (healthy)`, but `/health`, `/tasks` and the other commands get no reply in Telegram. `docker logs poindexter-pipeline-bot` shows one message and nothing after it:
+
+```
+[BOT] Telegram is not configured (unset: telegram_bot_token, telegram_chat_id); idling until it is:
+[BOT]   poindexter settings set telegram_bot_token <token> --secret
+[BOT]   poindexter settings set telegram_chat_id <chat id>
+```
+
+**Root cause.** Telegram is optional, and a fresh install has neither setting: `poindexter setup` writes neither. The bot waits for them instead of exiting, so an install without Telegram costs nothing and never restart-loops. Before poindexter#1118 it exited with status 1 here, and the container's `restart: unless-stopped` restarted it every few seconds, so `docker ps` showed `Restarting (1)` and the log repeated `ERROR: telegram_bot_token not in app_settings.` If you still see that, the container is running an older `scripts/telegram-bot.py`: update the checkout and `docker restart poindexter-pipeline-bot`.
+
+**Fix.** Set both settings, using the token from @BotFather and the id of the chat you will message the bot from:
+
+```bash
+poindexter settings set telegram_bot_token <token> --secret
+poindexter settings set telegram_chat_id <chat id>
+```
+
+The bot re-reads `app_settings` every 30 seconds, so there is no restart to do. The log then reads `Telegram settings found; starting.` and `Listening for commands from chat <id>`. A blank or whitespace-only value counts as unset, and when only one of the two is set the message names the other.
+
+The commands call the worker API as the `scripts` OAuth client, which a fresh install does not have. If the bot answers with an error pointing at `poindexter auth migrate-scripts`, run that once.
+
+**Related.** poindexter#1118. The bot's restart policy has to stay `unless-stopped`, with no compose profile and the `pgrep` healthcheck, for the waiting to work; `tests/unit/scripts/test_pipeline_bot_compose_contract.py` pins all three and says why.
+
+---
+
 ## `pg_stat_user_tables.autovacuum_count` reads 0 (or `n_live_tup`/`n_dead_tup` are wildly wrong) on most tables
 
 **Symptom.** `SELECT * FROM pg_stat_user_tables` shows `autovacuum_count = 0`, `last_autovacuum IS NULL`, and stale `n_live_tup`/`n_dead_tup` on most tables — even high-row-count ones like `sensor_samples` (`n_live_tup` reads 0 or a small fraction of the real `SELECT count(*)`). Only a handful of very high-churn tables (`job_run_state`, `capability_registry`) show real autovacuum activity. Any Grafana panel backed by `pg_stat_user_tables` row-count estimates (the Database board) reads far below reality. A manual `VACUUM FULL ANALYZE` on the affected table immediately fixes its stats and can reclaim real disk space (one incident: `sensor_samples` 578MB → 225MB).
