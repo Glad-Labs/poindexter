@@ -28,7 +28,17 @@
 # run via `sudo -n systemctl restart <unit>`; grant the service user exactly
 # those (see docs/operations/self-healing.md → "Linux recovery agent").
 #
-# Operators: set User= and the paths to your login (ships generic).
+# Operators: this file ships generic (User=poindexter, /home/poindexter paths).
+# Install it once by hand (docs/operations/self-healing.md → "Linux recovery
+# agent"). scripts/linux/install-deploy-sync.sh then renders User=,
+# WorkingDirectory= and ExecStart= for your login and keeps the unit on this
+# template (stack#4232). It refreshes a unit that is already installed and
+# never installs or enables one (that needs the bootstrap token and the sudoers
+# grant above), and it try-restarts the agent only when a non-comment line
+# changed, because a restart kills a recovery action the agent has in flight.
+# It replaces every other line of the installed file with this template's, so
+# put a host-specific value in a drop-in, which it never touches:
+# `sudo systemctl edit poindexter-recovery-agent.service`.
 [Unit]
 Description=Poindexter host Recovery Agent (:9841)
 After=network-online.target

@@ -996,9 +996,14 @@ at the working checkout:
   path — systemd's PATH lacks `~/.local/bin`, so the script probes the
   standard install dirs).
 
-Unit-template changes for the connector remain manual, same as the session
-units: copy the rendered template to `/etc/systemd/system`, then
-`sudo systemctl daemon-reload && sudo systemctl restart poindexter-mcp-http`.
+Unit-template changes for the connector stayed manual until 2026-09-28 (copy the
+rendered template to `/etc/systemd/system`, then `sudo systemctl daemon-reload &&
+sudo systemctl restart poindexter-mcp-http`), like the session units'. Since
+Glad-Labs/glad-labs-stack#4232, `install-deploy-sync.sh` re-renders the unit
+onto the clone when the host already has it, and restarts it only when a
+non-comment line changed; see
+[Install and operate](#the-deploy-driver-runs-the-deploy-clone-with-a-last-known-good-fallback)
+below. The session units' template is still the manual one.
 
 ## The host CLI is a fifth surface, and it runs the deploy clone
 
@@ -1269,7 +1274,8 @@ How the step behaves, and why:
   the clone reached HEAD (the installer restarted it, or the host rebooted).
 - **Not run from this clone:** a restart would reload the other tree's code and
   prove nothing, so the unit is noted on every pass until `install-deploy-sync.sh`
-  re-renders it.
+  re-renders it. The installer renders the scraper, and the recovery agent where
+  the host has it.
 - **Mid-action:** a restart kills the unit's whole cgroup, so a unit with more
   than its main process in it waits for the next pass. The recovery agent runs
   its compose reapply as a fire-and-forget child and waits on
@@ -1300,7 +1306,7 @@ same posture as the connector's. A narrow grant:
 **Install and operate.**
 
 ```bash
-# one-time, and again after any change to the launcher or one of its unit templates
+# one-time, and again after any change to the launcher or to a unit template it renders
 bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-deploy-sync.sh
 # which copy runs, what the last-known-good copy is, recent launcher decisions
 bash ~/.poindexter/deploy-sync/deploy-sync-launcher.sh --report
@@ -1322,8 +1328,62 @@ enabling it: `gpu_metrics` is optional, and the scraper needs host
 `python3-asyncpg` and `python3-httpx`. Until the installer has run, the deploy
 pass notes on every pass that the scraper does not run from the deploy clone.
 
-To back out, point the unit's `ExecStart` at a checkout's driver again. The
-driver behaves the same when run directly (its status says `driver: direct`):
+**It also refreshes the connector's and the recovery agent's units, on a host
+that already has them** (Glad-Labs/glad-labs-stack#4232).
+`poindexter-mcp-http.service` and `poindexter-recovery-agent.service` run from
+the clone too, but their templates used to reach a host only by a hand render.
+The installer renders the same three directives (`User=`, `WorkingDirectory=`,
+`ExecStart=`; the connector's on `mcp-server/` and its in-clone `.venv`), keeps
+every other template line, reloads and `try-restart`s. It never installs or
+enables either unit, because each needs host setup it must not guess at: a uv
+venv in the clone for the connector, and a bootstrap token plus the sudoers
+grant for the agent. A host that lacks one gets a one-line note. Install it by
+hand first (the template's header says how, and so does
+[self-healing.md](self-healing.md) for the agent), then let the installer keep
+it on the template.
+
+- **A restart only follows a change to what systemd would run.** A unit whose
+  non-comment lines changed is `try-restart`ed after the reload, so a running
+  one picks up the new file and a stopped one stays stopped. One that differs
+  only in comments, which is what most template edits are (#4188 and #4218 both
+  were), is rewritten without a restart, and an identical one is left alone. A
+  restart drops the connector's open sessions and kills a recovery action the
+  agent has in flight, the thing step 8b waits for, so a re-run must not bounce
+  either for nothing. On the operator host at #4232 both installed units matched
+  their templates apart from comments, so the first refresh restarts neither.
+  When a restart does follow, run the installer at a quiet moment: unlike step
+  8b, it does not wait for the agent to be idle.
+- **Host-specific values go in a drop-in.** The connector's template carries four
+  `Environment=` lines (`POINDEXTER_API_URL`, `OLLAMA_URL`,
+  `POINDEXTER_MCP_HTTP_HOST`, `POINDEXTER_MCP_HTTP_PORT`). The installer replaces
+  every line of the installed file except the three directives with the
+  template's, so a value that differs on one host belongs in
+  `sudo systemctl edit poindexter-mcp-http.service`, which writes
+  `/etc/systemd/system/poindexter-mcp-http.service.d/override.conf`. systemd
+  reads a drop-in after the main file, so a same-named `Environment=` there wins,
+  and the installer never touches a `.service.d/` directory, so the value
+  survives every refresh. Carrying the installed file's `Environment=` lines
+  into the render was rejected: a merge cannot tell a deliberate local value from
+  a stale template default, so a default that changed in the template would never
+  reach a host that still had the old one. Nothing is lost silently, though: when
+  the installed unit differs from the template beyond those directives, the
+  installer prints the lines it replaces. (Leave `POINDEXTER_MCP_HTTP_PORT`
+  alone unless you also set the brain's `mcp_http_probe_base_url`; the probe
+  defaults to `:8004`.)
+- **The connector waits for its venv.** While the clone has no executable
+  `mcp-server/.venv/bin/python`, the connector's unit is left exactly as it was
+  and the installer prints the `uv sync --directory <clone>/mcp-server` that
+  builds it. Moving `ExecStart` onto a missing interpreter and restarting would
+  take a working connector down until the deploy pass's own `uv sync`. Re-run
+  after building it.
+- **A missing file refuses, before anything is written.** A host that has one of
+  these units needs its template in the clone, and for the agent
+  `scripts/recovery-agent.py`. A clone that lacks them does not block a host
+  that never ran the units.
+
+To back the driver launcher out, point the deploy-sync unit's `ExecStart` at a
+checkout's driver again. The driver behaves the same when run directly (its
+status says `driver: direct`):
 
 ```bash
 sudo sed -i "s|^ExecStart=.*|ExecStart=$HOME/glad-labs-website/scripts/linux/deploy-checkout-sync.sh|" \

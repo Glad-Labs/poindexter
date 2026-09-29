@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # install-deploy-sync.sh — make the deploy driver run merged code, behind the
-# launcher's last-known-good fallback, and move the docker watchdog and the GPU
-# scraper onto the deploy clone (Glad-Labs/glad-labs-stack#4172, #4188).
+# launcher's last-known-good fallback, move the docker watchdog and the GPU
+# scraper onto the deploy clone, and refresh the connector's and the recovery
+# agent's units when this host already has them (Glad-Labs/glad-labs-stack#4172,
+# #4188, #4232).
 #
 # Host setup; safe to re-run, and re-run it after any change to the launcher or
 # to one of the unit templates, because the installed copies never update on
@@ -31,7 +33,24 @@
 #      was). On a host that did not, the unit is installed but not enabled:
 #      gpu_metrics is optional, and the scraper needs host python3-asyncpg and
 #      python3-httpx, so enabling it is the operator's call.
-#   5. runs one deploy pass through the launcher now and prints its report.
+#   5. refreshes poindexter-mcp-http.service and poindexter-recovery-agent.service
+#      (User=, WorkingDirectory= and ExecStart= on the deploy clone) if this host
+#      ALREADY has them in the unit dir. It never installs or enables either:
+#      the connector needs a uv venv in the clone, the recovery agent a
+#      bootstrap token and a sudoers grant, and whether a host runs them is its
+#      operator's call. Install one by hand first (its template's header says
+#      how); this then keeps it on the template. Every other line comes from the
+#      template, so a host-specific value (a different port or API URL) belongs
+#      in a drop-in, `sudo systemctl edit <unit>`, which this never touches. When
+#      the installed unit differs from the template beyond those three
+#      directives, the lines it replaces are printed. A unit whose non-comment
+#      lines changed is try-restarted after the daemon-reload (a stopped one
+#      stays stopped; a restart drops the connector's open sessions and kills a
+#      recovery action the agent has in flight, so pick a quiet moment). One that
+#      differs only in comments is rewritten without a restart, and an identical
+#      one is left alone. The connector is left as it was, with the command that
+#      builds its venv, while the clone has no mcp-server/.venv yet.
+#   6. runs one deploy pass through the launcher now and prints its report.
 #      Pass --no-start to skip that; the timer's next fire runs it instead.
 #
 # Usage: bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-deploy-sync.sh [--no-start]
@@ -68,6 +87,9 @@ LKG_META="$STATE_DIR/last-known-good.meta"
 SYNC_UNIT="poindexter-deploy-sync"
 WATCHDOG_UNIT="poindexter-docker-watchdog"
 SCRAPER_UNIT="poindexter-gpu-scraper"
+MCP_UNIT="poindexter-mcp-http"
+AGENT_UNIT="poindexter-recovery-agent"
+MCP_PYTHON="$DEPLOY_ROOT/mcp-server/.venv/bin/python"
 
 log() { printf '[install-deploy-sync] %s\n' "$*"; }
 die() { printf '[install-deploy-sync] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -85,6 +107,20 @@ for f in "$LAUNCHER_SRC" "$DEPLOY_ROOT/scripts/linux/deploy-checkout-sync.sh" \
   [ -f "$f" ] || die "the deploy clone at $DEPLOY_ROOT has no $f. It predates the launcher: bring it to origin/main first (systemctl start $SYNC_UNIT.service), then re-run."
 done
 bash -n "$LAUNCHER_SRC" || die "$LAUNCHER_SRC fails bash -n; not installing it"
+# The connector and the recovery agent are refreshed only where the host already
+# has them, so the clone only has to carry their files there: a clone without
+# them must not block a host that never ran them. Checked here, like the files
+# above, so a refusal happens before anything is written.
+refresh_needs() { # refresh_needs <unit> <file>...
+  local unit="$1" f; shift
+  [ -f "$UNIT_DIR/$unit.service" ] || return 0
+  for f in "$@"; do
+    [ -f "$f" ] || die "$unit.service is installed here, so this run refreshes it, and the deploy clone at $DEPLOY_ROOT has no $f. Bring the clone to origin/main first (systemctl start $SYNC_UNIT.service), then re-run."
+  done
+}
+refresh_needs "$MCP_UNIT" "$DEPLOY_ROOT/infrastructure/systemd/$MCP_UNIT.service"
+refresh_needs "$AGENT_UNIT" "$DEPLOY_ROOT/infrastructure/systemd/$AGENT_UNIT.service" \
+  "$DEPLOY_ROOT/scripts/recovery-agent.py"
 
 # ---- 1. the launcher ---------------------------------------------------------
 mkdir -p "$STATE_DIR"
@@ -122,7 +158,7 @@ if [ "$(id -u)" = "0" ] && [ "$RUN_USER" != "root" ]; then
   chown -R "$RUN_USER:" "$STATE_DIR"
 fi
 
-# ---- 3 + 4. the units ----------------------------------------------------------
+# ---- 3 - 5. the units ----------------------------------------------------------
 # render <unit file> <ExecStart> [WorkingDirectory]; the repo templates ship
 # generic placeholders, and only these directives are host-specific.
 render() {
@@ -131,6 +167,54 @@ render() {
   sed -e "s|^User=.*|User=${RUN_USER}|" -e "s|^ExecStart=.*|ExecStart=$2|" ${wd[@]+"${wd[@]}"} \
     "$DEPLOY_ROOT/infrastructure/systemd/$1"
 }
+
+# What systemd acts on. Comments and blank lines change nothing about what runs,
+# and they are most of what a template edit touches (#4188 and #4218 were
+# comment-only), so they must not decide a restart.
+effective() { grep -Ev '^[[:space:]]*([#;]|$)' <<<"$1" || true; }
+
+# Units whose non-comment lines changed, restarted once the daemon has reloaded.
+RESTART_UNITS=()
+
+# refresh_unit <unit> <ExecStart> <WorkingDirectory> [<needs> <how to get it>]
+# Re-renders a unit this host ALREADY has, onto the deploy clone. It never
+# installs one: the connector needs a uv venv and the recovery agent a bootstrap
+# token and a sudoers grant, so whether a host runs either is its operator's
+# call. <needs> is a file the new ExecStart runs; while it is missing the unit
+# stays as it was, because try-restarting onto an interpreter that is not there
+# would take a working service down. Host-specific values are not preserved from
+# the installed file on purpose: a merge cannot tell a deliberate local value
+# from a stale template default, so a changed default would never arrive. They
+# belong in a drop-in, which this never touches, and what it replaces is printed.
+refresh_unit() {
+  local unit="$1" file="$UNIT_DIR/$1.service" old new eff_old eff_new
+  if [ ! -f "$file" ]; then
+    log "$unit.service is not installed here, so it is left alone (this installer refreshes it, never installs it; its template's header says how)"
+    return 0
+  fi
+  if [ -n "${4:-}" ] && [ ! -x "$4" ]; then
+    log "WARNING: $unit.service is installed here but was NOT refreshed: $4 is missing or not executable. ${5:-}"
+    return 0
+  fi
+  old="$(cat "$file")"
+  new="$(render "$unit.service" "$2" "$3")"
+  if [ "$old" = "$new" ]; then
+    log "$unit.service is already current"
+    return 0
+  fi
+  eff_old="$(effective "$old")"
+  eff_new="$(effective "$new")"
+  printf '%s\n' "$new" | sudo tee "$file" >/dev/null
+  if [ "$eff_old" = "$eff_new" ]; then
+    log "refreshed $unit.service (only comments differed, so it is not restarted): WorkingDirectory=$3, ExecStart=$2, User=$RUN_USER"
+    return 0
+  fi
+  log "refreshed $unit.service (WorkingDirectory=$3, ExecStart=$2, User=$RUN_USER). These lines of the installed unit were replaced by the template's; a host-specific value belongs in a drop-in (sudo systemctl edit $unit.service):"
+  diff --unchanged-line-format= --old-line-format='    - %L' --new-line-format='    + %L' \
+    <(printf '%s\n' "$eff_old") <(printf '%s\n' "$eff_new") || true
+  RESTART_UNITS+=("$unit.service")
+}
+
 render "$SYNC_UNIT.service" "$LAUNCHER" | sudo tee "$UNIT_DIR/$SYNC_UNIT.service" >/dev/null
 render "$WATCHDOG_UNIT.service" "$DEPLOY_ROOT/scripts/linux/docker-watchdog.sh" \
   | sudo tee "$UNIT_DIR/$WATCHDOG_UNIT.service" >/dev/null
@@ -144,6 +228,10 @@ had_scraper=0
 render "$SCRAPER_UNIT.service" "/usr/bin/python3 $DEPLOY_ROOT/scripts/gpu-scraper.py" "$DEPLOY_ROOT" \
   | sudo tee "$UNIT_DIR/$SCRAPER_UNIT.service" >/dev/null
 log "installed $SCRAPER_UNIT.service (WorkingDirectory=$DEPLOY_ROOT, ExecStart=/usr/bin/python3 $DEPLOY_ROOT/scripts/gpu-scraper.py), User=$RUN_USER"
+# The connector's and the agent's units, where the host has them.
+refresh_unit "$MCP_UNIT" "$MCP_PYTHON http_server.py" "$DEPLOY_ROOT/mcp-server" "$MCP_PYTHON" \
+  "Build the venv with: uv sync --directory $DEPLOY_ROOT/mcp-server (the deploy pass does it too when uv is on its PATH), then re-run this installer."
+refresh_unit "$AGENT_UNIT" "/usr/bin/python3 $DEPLOY_ROOT/scripts/recovery-agent.py" "$DEPLOY_ROOT"
 
 sudo systemctl daemon-reload
 sudo systemctl enable "$SYNC_UNIT.timer" "$WATCHDOG_UNIT.timer"
@@ -159,8 +247,14 @@ if [ "$had_scraper" = "1" ]; then
 else
   log "$SCRAPER_UNIT.service was not installed here before, so it is installed but NOT enabled. To write gpu_metrics from this host: sudo apt install python3-asyncpg python3-httpx && sudo systemctl enable --now $SCRAPER_UNIT.service"
 fi
+# A running unit keeps the exec its old unit file named until it restarts.
+# try-restart leaves a stopped one stopped; enablement is untouched.
+for unit in ${RESTART_UNITS[@]+"${RESTART_UNITS[@]}"}; do
+  sudo systemctl try-restart "$unit"
+  log "restarted $unit onto its refreshed unit if it was running"
+done
 
-# ---- 5. prove it -----------------------------------------------------------------
+# ---- 6. prove it -----------------------------------------------------------------
 if [ "$START" = "1" ]; then
   log "running one deploy pass through the launcher now (Ctrl-C only stops the waiting; the pass continues under systemd)…"
   sudo systemctl start "$SYNC_UNIT.service" \

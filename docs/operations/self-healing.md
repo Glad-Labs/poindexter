@@ -1129,8 +1129,11 @@ Install (deploy clone on `origin/main`):
 
 ```bash
 sudo install -m 644 ~/.poindexter/deploy/glad-labs-stack/infrastructure/systemd/poindexter-recovery-agent.service /etc/systemd/system/
-# edit User= / paths for your login, then:
-sudo systemctl daemon-reload && sudo systemctl enable --now poindexter-recovery-agent
+# render User= / WorkingDirectory= / ExecStart= for your login. The installer only
+# refreshes a unit that is already installed, so it comes after the copy above
+# (or edit those three lines by hand and run `sudo systemctl daemon-reload`):
+bash ~/.poindexter/deploy/glad-labs-stack/scripts/linux/install-deploy-sync.sh --no-start
+sudo systemctl enable --now poindexter-recovery-agent
 curl -s http://localhost:9841/healthz   # → 200
 ```
 
@@ -1149,6 +1152,16 @@ when that file changes, and holds the restart while an action is in flight
 timer runs as this same user, add
 `/usr/bin/systemctl restart poindexter-recovery-agent.service` to the grant;
 without it the pass notes the missed restart and retries it every pass.
+
+Once the unit is installed, `install-deploy-sync.sh` keeps it on its template
+(stack#4232): it re-renders `User=`, `WorkingDirectory=` and `ExecStart=` onto the
+deploy clone, and `try-restart`s the agent only when a non-comment line changed.
+It never installs or enables the agent, which needs the token and the grant above.
+Unlike step 8b it does not wait out a recovery action already in flight, and a
+restart kills one, so run it when the brain is quiet. A value that is specific to
+this host belongs in a drop-in (`sudo systemctl edit poindexter-recovery-agent.service`),
+which the installer never touches. Details, and why the installed file's own lines
+are not preserved, are in [ci-deploy-chain.md](ci-deploy-chain.md).
 
 Then point the brain at it: `poindexter settings set mcp_http_probe_recovery_url
 http://host.docker.internal:9841/recover` (the token is already shared via

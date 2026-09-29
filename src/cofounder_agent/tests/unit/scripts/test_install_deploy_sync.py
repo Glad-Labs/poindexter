@@ -4,7 +4,9 @@ Glad-Labs/glad-labs-stack#4172. The installer is the one idempotent way the
 host gets (1) an installed COPY of the launcher, outside every git tree, (2) a
 last-known-good driver that was proven on this host, and (3) the unit renders:
 deploy-sync execs the installed launcher, and the docker watchdog and (since
-#4188) the GPU scraper run the deploy clone's copies.
+#4188) the GPU scraper run the deploy clone's copies. Since #4232 it also
+REFRESHES the connector's and the recovery agent's units, but only on a host
+that already has them: both need host setup the installer must not guess at.
 
 Driven with a fake ``sudo`` (exec-through) and a recording ``systemctl`` on
 PATH, ``POINDEXTER_UNIT_DIR`` at a tmp dir and a throwaway deploy clone holding
@@ -15,6 +17,7 @@ the real launcher, scripts and unit templates (the seam
 from __future__ import annotations
 
 import getpass
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -36,8 +39,15 @@ _FROM_REPO = (
     "infrastructure/systemd/poindexter-docker-watchdog.timer",
     "scripts/gpu-scraper.py",
     "infrastructure/systemd/poindexter-gpu-scraper.service",
+    "infrastructure/systemd/poindexter-mcp-http.service",
+    "infrastructure/systemd/poindexter-recovery-agent.service",
+    "scripts/recovery-agent.py",
 )
 _SCRAPER = "poindexter-gpu-scraper.service"
+_MCP = "poindexter-mcp-http.service"
+_AGENT = "poindexter-recovery-agent.service"
+# The two units the installer refreshes but never installs (#4232).
+_UNITS = pytest.mark.parametrize("unit", [_MCP, _AGENT])
 # The generic deploy-clone path the unit templates ship with.
 _TEMPLATE_CLONE = "/home/poindexter/.poindexter/deploy/glad-labs-stack"
 
@@ -126,6 +136,51 @@ def _systemctl(rig: dict) -> list[str]:
 
 def _directive(unit_text: str, key: str) -> str:
     return next(ln.split("=", 1)[1] for ln in unit_text.splitlines() if ln.startswith(f"{key}="))
+
+
+def _rendered(rig: dict, unit: str) -> str:
+    """*unit* as the installer renders it here: the template, with this login and the
+    deploy clone's paths on the three host-specific directives and nothing else changed.
+    The paths come from the template itself, so the interpreter and arguments cannot
+    drift between the installer and the template."""
+    template = (_repo_root() / "infrastructure/systemd" / unit).read_text(encoding="utf-8")
+    lines = []
+    for ln in template.splitlines():
+        if ln.startswith("User="):
+            ln = f"User={getpass.getuser()}"
+        elif ln.startswith(("WorkingDirectory=", "ExecStart=")):
+            ln = ln.replace(_TEMPLATE_CLONE, str(rig["clone"]))
+        lines.append(ln)
+    return "\n".join(lines) + "\n"
+
+
+def _stale(rig: dict, unit: str) -> str:
+    """The same unit as an older install left it: another login, on another checkout."""
+    return (
+        _rendered(rig, unit)
+        .replace(str(rig["clone"]), "/home/someone/glad-labs-website")
+        .replace(f"User={getpass.getuser()}", "User=someone")
+    )
+
+
+def _with_old_header(unit_text: str) -> str:
+    """*unit_text* with its first line, a comment, reworded: nothing systemd acts on."""
+    return "# an older header\n" + unit_text.split("\n", 1)[1]
+
+
+def _put(rig: dict, unit: str, text: str) -> Path:
+    path = rig["units"] / unit
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _venv(rig: dict, mode: int = 0o755) -> Path:
+    """The connector's interpreter inside the clone (gitignored there, so untracked here)."""
+    python = rig["clone"] / "mcp-server/.venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/sh\n", encoding="utf-8")
+    python.chmod(mode)
+    return python
 
 
 class TestInstall:
@@ -267,6 +322,189 @@ class TestGpuScraper:
         assert f"systemctl enable --now {_SCRAPER}" in proc.stdout
 
 
+class TestConnectorAndAgentRefresh:
+    """#4232: the connector and the recovery agent run from the deploy clone too, and a
+    change to their templates reached a host only by a hand render. The installer now
+    refreshes a unit the host already has. It never installs one: the connector needs a
+    uv venv and the agent a bootstrap token plus a sudoers grant."""
+
+    @_UNITS
+    def test_the_templates_ship_the_generic_paths_the_installer_renders(self, unit):
+        """`_rendered` derives the expected paths from these, so a template that stopped
+        using the generic clone path would make every render test below vacuous."""
+        template = (_repo_root() / "infrastructure/systemd" / unit).read_text(encoding="utf-8")
+        assert _directive(template, "User") == "poindexter"
+        assert _directive(template, "WorkingDirectory").startswith(_TEMPLATE_CLONE)
+        assert _TEMPLATE_CLONE in _directive(template, "ExecStart")
+
+    @_UNITS
+    def test_a_host_without_the_unit_does_not_get_it(self, tmp_path, unit):
+        rig = _rig(tmp_path)
+        _venv(rig)
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert not (rig["units"] / unit).exists()
+        assert not any(unit in c for c in _systemctl(rig)), "never enabled, started or restarted"
+        assert f"{unit} is not installed here" in proc.stdout
+
+    @_UNITS
+    def test_an_installed_unit_is_rendered_onto_the_deploy_clone(self, tmp_path, unit):
+        rig = _rig(tmp_path)
+        _venv(rig)
+        _put(rig, unit, _stale(rig, unit))
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        rendered = (rig["units"] / unit).read_text(encoding="utf-8")
+        # Only User=, WorkingDirectory= and ExecStart= are host-specific. Every other
+        # line, Environment= and Restart= included, is the template's own.
+        assert rendered == _rendered(rig, unit)
+        assert _directive(rendered, "User") == getpass.getuser()
+        assert _directive(rendered, "WorkingDirectory").startswith(str(rig["clone"]))
+        assert str(rig["clone"]) in _directive(rendered, "ExecStart")
+        # Neither the template's generic paths nor the old install's survive in a directive.
+        for key in ("User", "WorkingDirectory", "ExecStart"):
+            assert "/home/someone" not in _directive(rendered, key)
+            assert "/home/poindexter" not in _directive(rendered, key)
+        assert "someone" not in _directive(rendered, "User")
+
+    @_UNITS
+    def test_a_changed_unit_is_try_restarted_after_the_reload(self, tmp_path, unit):
+        rig = _rig(tmp_path)
+        _venv(rig)
+        _put(rig, unit, _stale(rig, unit))
+        assert _install(rig, "--no-start").returncode == 0
+        calls = _systemctl(rig)
+        assert f"try-restart {unit}" in calls
+        assert calls.index("daemon-reload") < calls.index(f"try-restart {unit}"), (
+            "the restart must load the new unit file"
+        )
+        assert not any(
+            c.split()[0] in ("enable", "disable", "start", "restart") and unit in c for c in calls
+        ), "try-restart only: never enabled, and a stopped unit stays stopped"
+
+    @_UNITS
+    def test_a_current_unit_is_left_alone(self, tmp_path, unit):
+        """A re-run is safe: an identical unit is neither rewritten nor restarted."""
+        rig = _rig(tmp_path)
+        _venv(rig)
+        path = _put(rig, unit, _rendered(rig, unit))
+        os.utime(path, (1_000_000_000, 1_000_000_000))
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert path.stat().st_mtime == 1_000_000_000, "rewritten though nothing changed"
+        assert f"{unit} is already current" in proc.stdout
+        assert not any(unit in c for c in _systemctl(rig)), "a live service restarted for nothing"
+
+    @_UNITS
+    def test_a_comment_only_difference_is_written_without_a_restart(self, tmp_path, unit):
+        """Template edits are mostly comments (#4188, #4218). One must reach the host, but
+        it must not bounce the phone connector or kill the agent's in-flight recovery."""
+        rig = _rig(tmp_path)
+        _venv(rig)
+        path = _put(rig, unit, _with_old_header(_rendered(rig, unit)))
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert path.read_text(encoding="utf-8") == _rendered(rig, unit), "the file follows the template"
+        assert "only comments differed" in proc.stdout
+        assert not any(unit in c for c in _systemctl(rig))
+
+    def test_a_hand_edited_value_is_reported_when_it_is_replaced(self, tmp_path):
+        """The template owns the main file, so a local `Environment=` there is replaced.
+        That must be visible, with the place such a value belongs, and the running
+        process still holds the old value, so the unit restarts."""
+        rig = _rig(tmp_path)
+        _venv(rig)
+        edited = _rendered(rig, _MCP).replace("POINDEXTER_MCP_HTTP_PORT=8004", "POINDEXTER_MCP_HTTP_PORT=8123")
+        assert edited != _rendered(rig, _MCP)
+        path = _put(rig, _MCP, edited)
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert path.read_text(encoding="utf-8") == _rendered(rig, _MCP)
+        assert "- Environment=POINDEXTER_MCP_HTTP_PORT=8123" in proc.stdout
+        assert "+ Environment=POINDEXTER_MCP_HTTP_PORT=8004" in proc.stdout
+        assert f"sudo systemctl edit {_MCP}" in proc.stdout
+        assert f"try-restart {_MCP}" in _systemctl(rig)
+
+    @_UNITS
+    def test_a_drop_in_is_never_touched(self, tmp_path, unit):
+        """Host-specific values live in `<unit>.d/`, which is why the main file can be
+        the template's alone."""
+        rig = _rig(tmp_path)
+        _venv(rig)
+        _put(rig, unit, _stale(rig, unit))
+        dropin = rig["units"] / f"{unit}.d"
+        dropin.mkdir()
+        override = dropin / "override.conf"
+        override.write_text("[Service]\nEnvironment=POINDEXTER_API_URL=http://api-host:8002\n", encoding="utf-8")
+        before = override.read_bytes()
+        assert _install(rig, "--no-start").returncode == 0
+        assert override.read_bytes() == before
+        assert [p.name for p in dropin.iterdir()] == ["override.conf"]
+
+    @pytest.mark.parametrize("mode", [None, 0o644], ids=["no-venv", "not-executable"])
+    def test_the_connector_is_left_as_it_was_until_the_clone_has_a_venv(self, tmp_path, mode):
+        """ExecStart runs the venv's python directly, so moving it onto a clone that has
+        none and restarting would take a working connector down until the deploy pass's
+        `uv sync`."""
+        rig = _rig(tmp_path)
+        if mode is not None:
+            _venv(rig, mode)
+        stale = _stale(rig, _MCP)
+        path = _put(rig, _MCP, stale)
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert path.read_text(encoding="utf-8") == stale
+        assert not any(_MCP in c for c in _systemctl(rig)), "no restart onto an interpreter that is not there"
+        assert "NOT refreshed" in proc.stdout
+        assert f"uv sync --directory {rig['clone']}/mcp-server" in proc.stdout
+        # Only that unit is skipped. The rest of the run goes ahead.
+        assert (rig["units"] / "poindexter-docker-watchdog.service").is_file()
+        assert "daemon-reload" in _systemctl(rig)
+
+    def test_the_recovery_agent_needs_no_venv(self, tmp_path):
+        rig = _rig(tmp_path)  # no mcp-server/.venv
+        _put(rig, _AGENT, _stale(rig, _AGENT))
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert (rig["units"] / _AGENT).read_text(encoding="utf-8") == _rendered(rig, _AGENT)
+        assert f"try-restart {_AGENT}" in _systemctl(rig)
+
+    def test_both_units_are_refreshed_in_one_run(self, tmp_path):
+        rig = _rig(tmp_path)
+        _venv(rig)
+        for unit in (_MCP, _AGENT):
+            _put(rig, unit, _stale(rig, unit))
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        calls = _systemctl(rig)
+        for unit in (_MCP, _AGENT):
+            assert (rig["units"] / unit).read_text(encoding="utf-8") == _rendered(rig, unit)
+            assert calls.count(f"try-restart {unit}") == 1
+            assert calls.index("daemon-reload") < calls.index(f"try-restart {unit}")
+
+    @_UNITS
+    def test_the_template_header_says_how_to_install_it_and_where_host_values_go(self, unit):
+        """The installer's "not installed here" note sends an operator to this header."""
+        template = (_repo_root() / "infrastructure/systemd" / unit).read_text(encoding="utf-8")
+        header = " ".join(" ".join(ln.lstrip("#").split()) for ln in template.splitlines() if ln.startswith("#"))
+        for needle in ("install-deploy-sync.sh", "never installs", "drop-in", "systemctl edit"):
+            assert needle in header, f"{unit}: the header never mentions {needle!r}"
+
+
+class TestHelp:
+    def test_help_prints_the_whole_header_including_the_refresh_step(self):
+        proc = subprocess.run(
+            ["bash", str(_repo_root() / "scripts/linux/install-deploy-sync.sh"), "--help"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert all(ln.startswith("#") for ln in proc.stdout.splitlines()), "the header and nothing after it"
+        text = " ".join(proc.stdout.replace("#", " ").split())
+        for needle in (_MCP, _AGENT, "ALREADY has them", "drop-in", "try-restarted"):
+            assert needle in text, needle
+        assert "POINDEXTER_UNIT_DIR" in text, "the last header line, so nothing cut the header short"
+
+
 class TestRefusals:
     def test_no_deploy_clone(self, tmp_path):
         rig = _rig(tmp_path)
@@ -289,3 +527,38 @@ class TestRefusals:
         proc = _install(rig, "--now")
         assert proc.returncode == 2
         assert _systemctl(rig) == []
+
+    @pytest.mark.parametrize(
+        ("unit", "missing"),
+        [
+            (_MCP, "infrastructure/systemd/poindexter-mcp-http.service"),
+            (_AGENT, "infrastructure/systemd/poindexter-recovery-agent.service"),
+            (_AGENT, "scripts/recovery-agent.py"),
+        ],
+    )
+    def test_an_installed_unit_whose_files_the_clone_lacks_is_refused_before_anything_is_written(
+        self, tmp_path, unit, missing,
+    ):
+        rig = _rig(tmp_path)
+        _venv(rig)
+        stale = _stale(rig, unit)
+        path = _put(rig, unit, stale)
+        (rig["clone"] / missing).unlink()
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 1
+        assert f"{unit} is installed here" in proc.stderr and missing in proc.stderr
+        assert _systemctl(rig) == []
+        assert path.read_text(encoding="utf-8") == stale
+        assert not (rig["units"] / "poindexter-docker-watchdog.service").exists()
+
+    def test_a_clone_without_those_files_does_not_block_a_host_that_never_had_the_units(self, tmp_path):
+        rig = _rig(tmp_path)
+        for rel in (
+            "infrastructure/systemd/poindexter-mcp-http.service",
+            "infrastructure/systemd/poindexter-recovery-agent.service",
+            "scripts/recovery-agent.py",
+        ):
+            (rig["clone"] / rel).unlink()
+        proc = _install(rig, "--no-start")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert not (rig["units"] / _MCP).exists() and not (rig["units"] / _AGENT).exists()
