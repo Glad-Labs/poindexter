@@ -29,12 +29,14 @@ class _FakePlatform:
 
 
 class FakePool:
-    """Minimal asyncpg-pool stand-in: canned latest-version row + execute log."""
+    """Minimal asyncpg-pool stand-in: a canned latest-version row, the statuses
+    of the task's ``posts`` rows (none by default: a draft that was never
+    approved), and a log of every write, ``execute`` and ``fetch`` alike."""
 
-    def __init__(self, content: str = "body", version: int = 1, task_status: str = "awaiting_approval"):
+    def __init__(self, content: str = "body", version: int = 1, post_statuses: tuple = ()):
         self._content = content
         self._version = version
-        self._task_status = task_status
+        self._post_statuses = list(post_statuses)
         self.executed: list[tuple] = []
 
     async def fetchrow(self, sql, *args):
@@ -42,10 +44,11 @@ class FakePool:
             return {"content": self._content, "version": self._version}
         return None
 
-    async def fetchval(self, sql, *args):
-        if "pipeline_tasks" in sql:
-            return self._task_status
-        return None
+    async def fetch(self, sql, *args):
+        self.executed.append((sql, args))
+        if sql.startswith("UPDATE posts"):
+            return [{"status": s} for s in self._post_statuses]
+        return []
 
     async def execute(self, sql, *args):
         self.executed.append((sql, args))
@@ -306,70 +309,142 @@ async def test_add_image_shares_the_same_generate_path():
 
 
 # ---------------------------------------------------------------------------
-# _sync_published_post_featured — published-post featured image propagation
+# _sync_post_featured — carrying a featured edit to the task's posts row
 # ---------------------------------------------------------------------------
 
 
-async def test_sync_published_post_featured_updates_posts_row(monkeypatch):
-    """For a published task, posts.featured_image_url must be updated so the
-    static export reads the new URL. Regression test for the bug where only
-    pipeline_versions was updated."""
-    pool = FakePool(content="body", version=4, task_status="published")
+def _posts_updates(pool: FakePool) -> list[tuple]:
+    return [e for e in pool.executed if e[0].startswith("UPDATE posts")]
+
+
+@pytest.fixture
+def rebuilds(monkeypatch):
+    """Record export_full_rebuild calls instead of rebuilding anything."""
+    calls: list = []
 
     async def _fake_rebuild(p, *, site_config):
+        calls.append(site_config)
         return {"success": True}
 
     monkeypatch.setattr(
         "poindexter.services.static_export_service.export_full_rebuild", _fake_rebuild,
     )
+    return calls
+
+
+async def test_sync_post_featured_updates_a_published_row(rebuilds):
+    """posts.featured_image_url is what the static export reads, so a live
+    post's row must change, not just pipeline_versions (the original bug)."""
+    pool = FakePool(post_statuses=("published",))
 
     svc = PostEditService(pool=pool)  # no site_config → warns, no rebuild
-    warnings = await svc._sync_published_post_featured("task-123", "https://cdn/new.png")
+    warnings = await svc._sync_post_featured("task-123", "https://cdn/new.png")
 
-    posts_updates = [e for e in pool.executed if "UPDATE posts" in e[0]]
-    assert posts_updates, "expected UPDATE posts for published task"
-    _, args = posts_updates[0]
-    assert args[0] == "https://cdn/new.png"
-    assert args[1] == "task-123"
+    (update,) = _posts_updates(pool)
+    assert update[1] == ("https://cdn/new.png", "task-123")
     assert any("no site_config" in w for w in warnings)
+    assert rebuilds == []
 
 
-async def test_sync_published_post_featured_skips_non_published():
-    """Non-published tasks must not touch the posts table."""
-    pool = FakePool(content="body", version=4, task_status="awaiting_approval")
-    svc = PostEditService(pool=pool)
+async def test_sync_post_featured_moves_cover_image_url_with_it():
+    """Publish writes the same URL to both columns and readers fall back from
+    one to the other (the static export serves featured or cover), so the
+    cover must move too, or a removed hero comes back (poindexter#1103)."""
+    pool = FakePool(post_statuses=("published",))
 
-    warnings = await svc._sync_published_post_featured("task-123", "https://cdn/new.png")
+    await PostEditService(pool=pool)._sync_post_featured("task-123", "https://cdn/new.png")
 
-    posts_updates = [e for e in pool.executed if "UPDATE posts" in e[0]]
-    assert not posts_updates, "must not UPDATE posts for non-published task"
+    (update,) = _posts_updates(pool)
+    assert "featured_image_url = $1" in update[0]
+    assert "cover_image_url = $1" in update[0]
+
+
+@pytest.mark.parametrize("status", ["approved", "scheduled"])
+async def test_sync_post_featured_updates_a_staged_row(rebuilds, status):
+    """An approved task already has a posts row, and promotion flips its status
+    without re-reading the draft store. Skipping it (the old task-status gate)
+    let the post go live with the image it was staged with (poindexter#1103).
+    Not live yet, so no static-export rebuild."""
+    from poindexter.services.site_config import SiteConfig
+
+    pool = FakePool(post_statuses=(status,))
+    svc = PostEditService(pool=pool, site_config=SiteConfig(initial_config={}))
+
+    warnings = await svc._sync_post_featured("task-123", "https://cdn/new.png")
+
+    (update,) = _posts_updates(pool)
+    assert update[1] == ("https://cdn/new.png", "task-123")
+    # The fake returns rows whatever the SQL says, so pin the SQL itself: the
+    # UPDATE matches the task's row by task id alone, never by post status.
+    where = update[0].split("WHERE", 1)[1].split("RETURNING", 1)[0]
+    assert "status" not in where
+    assert rebuilds == [], "a staged post isn't live: nothing to rebuild"
+    assert warnings == [f"staged post updated ({status}) — it goes live with this image"]
+
+
+async def test_sync_post_featured_without_a_posts_row_is_a_no_op(rebuilds):
+    """A draft that was never approved has no posts row: the UPDATE matches
+    nothing, nothing is rebuilt, and there is nothing to report."""
+    from poindexter.services.site_config import SiteConfig
+
+    pool = FakePool()
+    svc = PostEditService(pool=pool, site_config=SiteConfig(initial_config={}))
+
+    warnings = await svc._sync_post_featured("task-123", "https://cdn/new.png")
+
+    assert len(_posts_updates(pool)) == 1
+    assert rebuilds == []
     assert warnings == []
 
 
-async def test_sync_published_post_featured_triggers_rebuild(monkeypatch):
-    """When the task is published and site_config is wired, export_full_rebuild is called."""
-    pool = FakePool(content="body", version=4, task_status="published")
-    rebuild_calls: list = []
-
-    async def _fake_rebuild(p, *, site_config):
-        rebuild_calls.append(site_config)
-        return {"success": True}
-
-    monkeypatch.setattr("poindexter.services.static_export_service.export_full_rebuild", _fake_rebuild)
-
+async def test_sync_post_featured_triggers_rebuild_for_a_live_row(rebuilds):
+    """A published row with site_config wired rebuilds the static export once."""
     from poindexter.services.site_config import SiteConfig
 
     sc = SiteConfig(initial_config={})
-    svc = PostEditService(pool=pool, site_config=sc)
-    warnings = await svc._sync_published_post_featured("task-abc", "https://cdn/img.png")
+    svc = PostEditService(pool=FakePool(post_statuses=("published",)), site_config=sc)
 
-    assert len(rebuild_calls) == 1, "export_full_rebuild should be called exactly once"
+    warnings = await svc._sync_post_featured("task-abc", "https://cdn/img.png")
+
+    assert rebuilds == [sc], "export_full_rebuild should be called exactly once"
     assert any("rebuild triggered" in w for w in warnings)
+
+
+async def test_sync_post_featured_reports_a_failed_update(rebuilds):
+    """A failed posts write is reported: the draft store has the edit, the
+    post doesn't, and a rebuild would only republish the old image."""
+
+    class _FailingPool(FakePool):
+        async def fetch(self, sql, *args):
+            raise RuntimeError("connection reset")
+
+    svc = PostEditService(pool=_FailingPool(post_statuses=("published",)))
+
+    warnings = await svc._sync_post_featured("task-123", "https://cdn/new.png")
+
+    assert rebuilds == []
+    assert len(warnings) == 1
+    assert "update failed (connection reset)" in warnings[0]
+    assert "keeps its previous image" in warnings[0]
+
+
+async def test_replace_featured_reaches_a_staged_post():
+    """Through the public method: approve staged the post, then the operator
+    swapped the hero. The staged row must carry the new image."""
+    pool = FakePool(content="body", version=2, post_statuses=("approved",))
+
+    result = await PostEditService(pool=pool).replace_image(
+        "t1", which="featured", url="https://cdn/new.png",
+    )
+
+    (update,) = _posts_updates(pool)
+    assert update[1] == ("https://cdn/new.png", "t1")
+    assert result.warnings == ["staged post updated (approved) — it goes live with this image"]
 
 
 async def test_regen_image_propagates_warnings_from_published_post(monkeypatch):
     """Warnings from replace_image (e.g. rebuild triggered) surface in the regen result."""
-    pool = FakePool(content="body", version=1, task_status="published")
+    pool = FakePool(content="body", version=1, post_statuses=("published",))
 
     async def fake_upload(self, path, task_id):
         return "https://cdn/generated/new.webp"
@@ -431,17 +506,22 @@ async def test_remove_featured_clears_to_null():
     assert featured and featured[0][1][0] is None
 
 
-async def test_remove_featured_on_published_task_clears_posts_row():
+async def test_remove_featured_on_published_task_clears_posts_row(rebuilds):
     """No promote-an-inline-image magic: a published post's featured image
-    goes to NULL too, and the static export rebuild still fires."""
-    pool = FakePool(content="body", version=1, task_status="published")
-    svc = PostEditService(pool=pool)
+    goes to NULL, cover_image_url with it (the static export falls back to the
+    cover, so leaving it republished the removed image), and the static
+    export rebuild still fires."""
+    from poindexter.services.site_config import SiteConfig
+
+    pool = FakePool(content="body", version=1, post_statuses=("published",))
+    svc = PostEditService(pool=pool, site_config=SiteConfig(initial_config={}))
 
     await svc.remove_image("t1", which="featured")
 
-    posts_updates = [e for e in pool.executed if "UPDATE posts" in e[0]]
-    assert posts_updates, "expected UPDATE posts for published task"
-    assert posts_updates[0][1][0] is None
+    (update,) = _posts_updates(pool)
+    assert update[1] == (None, "t1")
+    assert "cover_image_url = $1" in update[0]
+    assert len(rebuilds) == 1
 
 
 async def test_remove_image_bad_which_raises():

@@ -6,26 +6,51 @@ with no hand-written SQL. Three surfaces share one service
 the REST API are parity wrappers over the same routes.
 
 > **Scope depends on what the edit writes, not on task status.** Apart from
-> `rebuild-images`, none of these commands check `pipeline_tasks.status` — so
-> "drafts only" is a property of the write target, not a guard that will stop
-> you.
+> `rebuild-images` and `retitle`, none of these commands check
+> `pipeline_tasks.status` — so "drafts only" is a property of the write target,
+> not a guard that will stop you.
 >
-> | Edit                                          | Writes                                                                                              | On a **published** post                                                     |
-> | --------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-> | `edit-body`, `add-image`, `--which inline:N`  | `pipeline_versions.content`                                                                         | Reports success, changes **nothing live** — the site serves `posts.content` |
-> | `--which featured` (replace / regen / remove) | `pipeline_versions.featured_image_url` **+** `posts.featured_image_url` **+** static-export rebuild | **Works** — see the caveats below                                           |
-> | `rebuild-images`                              | enqueues an `image_rebuild` task                                                                    | **Refused** — hard-fails unless the task is `awaiting_approval`             |
+> Approving a task copies the draft into a `posts` row (staged at `approved`, or
+> `scheduled` with a slot), and nothing reads the draft store again after that:
+> promotion to `published` only flips the row's status, and the site serves
+> `posts`. So what matters is whether an edit reaches that row.
+>
+> | Edit                                          | Writes                                                                                                                                                                                     | Once the task is **approved or published**                                                                                    |
+> | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+> | `edit-body`, `add-image`, `--which inline:N`  | `pipeline_versions.content`                                                                                                                                                                | Reports success, changes **nothing the post shows** — unapprove first (`poindexter tasks unapprove`) to edit an approved post |
+> | `--which featured` (replace / regen / remove) | `pipeline_versions.featured_image_url`, then the task's `posts` row whenever one exists (`featured_image_url` **and** `cover_image_url`), then a static-export rebuild if that row is live | **Works** — see [Featured-image edits after approval](#featured-image-edits-after-approval)                                   |
+> | `retitle`                                     | `pipeline_versions.title` + live social-draft URLs                                                                                                                                         | **Refused** — `awaiting_approval` only                                                                                        |
+> | `rebuild-images`                              | enqueues an `image_rebuild` task                                                                                                                                                           | **Refused** — hard-fails unless the task is `awaiting_approval`                                                               |
 >
 > Editing an already-published post's **body** is still out of scope — that needs
 > an H1-title re-derivation, a static-export rebuild, and tag revalidation
 > (tracked as the deferred follow-up on poindexter#523).
 
-## Featured-image edits on published posts
+## Featured-image edits after approval
 
-`--which featured` is the one edit that reaches a live post. `PostEditService`
-notices `pipeline_tasks.status = 'published'`, updates `posts.featured_image_url`
-(keyed on `metadata->>'pipeline_task_id'`), and triggers `export_full_rebuild`.
-The command reports the rebuild back as a `⚠` warning line. Two caveats:
+`--which featured` is the one edit that reaches a post after approval.
+`PostEditService` rewrites the task's `posts` row (keyed on
+`metadata->>'pipeline_task_id'`) whenever one exists, whatever its status, and
+moves `cover_image_url` with `featured_image_url`:
+
+- **Staged or scheduled post** (the task is `approved`): the row takes the new
+  image, and the command reports
+  `⚠ staged post updated (approved) — it goes live with this image`. Nothing is
+  rebuilt, because nothing is live yet. Until 2026-09-28 this state was
+  skipped: the edit reported success and the post went live with the image it
+  was staged with (poindexter#1103).
+- **Published post**: the row takes the new image and `export_full_rebuild`
+  runs; the command reports the rebuild as a `⚠` line.
+- **Draft** (no `posts` row yet): only the draft store changes. Approval copies
+  it across.
+
+`cover_image_url` has to move too. Publish writes the same URL to both columns,
+and readers fall back from one to the other: the static export serves
+`featured_image_url or cover_image_url`, and so do the site's
+`postFeaturedImage` (`lib/posts.ts`) and the post page's OG image. Clearing only
+`featured_image_url` used to put a removed hero straight back on the live site.
+
+Two caveats on a published post:
 
 - **It does not bust the ISR cache.** The rebuild refreshes the R2 JSON, but
   nothing calls `trigger_isr_revalidate(<slug>)`. The Next.js post page caches on
@@ -51,6 +76,42 @@ The command reports the rebuild back as a `⚠` warning line. Two caveats:
   running — not that the edit failed. Verify with `poindexter tasks get`
   rather than re-running.
 
+## Choosing the image when you approve
+
+`POST /api/tasks/{task_id}/approve` takes an optional `featured_image_url` in its
+JSON body, to approve a post with a different hero in one call:
+
+```bash
+curl -X POST http://localhost:8002/api/tasks/<task_id>/approve \
+  -H "Authorization: Bearer <jwt>" -H "Content-Type: application/json" \
+  -d '{"approved": true, "featured_image_url": "https://…/hero.webp", "image_source": "pexels"}'
+```
+
+- It is applied **before** the approval commits, through the same
+  `PostEditService.replace_image` as `replace-image --which featured`: the
+  draft store, the task's `result` / `task_metadata`, and a
+  `post_image_replace` audit row. The `posts` row the approval creates
+  (staged, or published with `auto_publish`) is built with it.
+- If the writer refuses the value (for example, the task has no draft row), the
+  request 400s and the task stays `awaiting_approval`. Nothing is approved.
+- It only applies when approving. With `"approved": false` it is ignored, and
+  the server logs a WARNING.
+- The chosen URL and the optional `image_source` are recorded on the approval's
+  `pipeline_gate_history` row (`metadata.featured_image_url`,
+  `metadata.image_source`).
+- A blank value means "no override".
+
+Until 2026-09-28 the override never reached the post (poindexter#1102). The
+route handed publish the task as it had read it before storing the override,
+so the posts row got the pipeline's image, and publish then wrote that stale
+copy back over the task's `result`, erasing the override there too.
+
+The CLI and MCP approve surfaces don't carry the field. Do the same in two steps:
+`poindexter tasks replace-image <task_id> --which featured --url …`, then
+`poindexter tasks approve <task_id>`. To change the image **after** approving,
+use `replace-image` on its own. It reaches the staged post (see
+[above](#featured-image-edits-after-approval)).
+
 ## CLI (`poindexter tasks …`)
 
 The edit commands sit alongside the approval workflow (`tasks approve` / `reject`),
@@ -62,7 +123,7 @@ poindexter tasks get <task_id>                # review it
 poindexter tasks edit-body <task_id> ...      # fix the text
 poindexter tasks retitle <task_id> --title …  # fix the title (re-slugs + rewrites promo URLs)
 poindexter tasks replace-image <task_id> ...  # swap an image
-poindexter tasks approve <task_id>            # ship it
+poindexter tasks approve <task_id>            # approve it (stages the post; publishing is a separate step)
 ```
 
 `<task_id>` accepts the full UUID or the 8-char prefix shown by `tasks list`.
@@ -120,11 +181,12 @@ poindexter tasks replace-image <task_id> --which featured  --url https://…/cov
 poindexter tasks replace-image <task_id> --which inline:2  --url https://…/fig2.webp
 ```
 
-- `--which featured` swaps the featured image — on a draft **or a published
-  post** (see the caveats above).
+- `--which featured` swaps the featured image — on a draft, a **staged or
+  scheduled** post, or a **published** post (see
+  [Featured-image edits after approval](#featured-image-edits-after-approval)).
 - `--which inline:N` rewrites the `src` of the N-th inline `<img>` in the body
-  (1-based). Draft store only: on a published post this reports success but
-  changes nothing publicly visible.
+  (1-based). Draft store only: on an approved or published post this reports
+  success but changes nothing the post shows.
 
 ### `tasks regen-image`
 
@@ -173,10 +235,12 @@ poindexter tasks remove-image <task_id> --which inline:2
 ```
 
 - `--which featured` clears the featured image to none — no auto-promote of an
-  inline image into its place. On a published post this also clears
-  `posts.featured_image_url` and rebuilds the static export (same caveats
-  above — including that the live page keeps rendering the removed image until
-  the cache tag is revalidated).
+  inline image into its place. On an approved or published post this also
+  clears `posts.featured_image_url` and `cover_image_url` (the cover is what the
+  site falls back to, so leaving it would bring the image back), and on a
+  published post it rebuilds the static export (same caveats above —
+  including that the live page keeps rendering the removed image until the
+  cache tag is revalidated).
 - `--which inline:N` strips that `<img>` tag from the body entirely.
   Indices aren't stored — `inline:N` is always counted live off the current
   body, so a later image renumbers down automatically after a removal. Draft
@@ -272,18 +336,23 @@ These five each return `{ok, field, detail, warnings, new_url}`.
   rebuild task** (watch it with `poindexter tasks get`) and `target_task_id`
   the draft being rebuilt. Wrapped by the `rebuild_images` MCP tool.
 
+`POST /api/tasks/{task_id}/approve` also takes `featured_image_url` (and
+`image_source`) and applies it through `replace-image` before approving. See
+[Choosing the image when you approve](#choosing-the-image-when-you-approve).
+
 ## Auditability
 
 Every edit writes an `audit_log` row so the change is traceable:
 
-| Action             | `event_type`          |
-| ------------------ | --------------------- |
-| body edit          | `post_edit_body`      |
-| image URL swap     | `post_image_replace`  |
-| image regenerate   | `post_image_regen`    |
-| image remove       | `post_image_remove`   |
-| image add          | `post_image_add`      |
-| bulk image rebuild | `post_images_rebuild` |
+| Action                                          | `event_type`          |
+| ----------------------------------------------- | --------------------- |
+| body edit                                       | `post_edit_body`      |
+| image URL swap                                  | `post_image_replace`  |
+| image chosen at approval (`featured_image_url`) | `post_image_replace`  |
+| image regenerate                                | `post_image_regen`    |
+| image remove                                    | `post_image_remove`   |
+| image add                                       | `post_image_add`      |
+| bulk image rebuild                              | `post_images_rebuild` |
 
 Each row records the `task_id`, the field touched, and (for body edits) the
 before/after length plus any validator warnings.

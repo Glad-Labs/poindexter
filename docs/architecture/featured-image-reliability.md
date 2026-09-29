@@ -123,8 +123,11 @@ fallback trades a visible failure for an invisible one.
 ## Backfilling a published post
 
 `poindexter tasks regen-image <task_id> --which featured --prompt "..."` reaches
-published posts: it writes `posts.featured_image_url` and rebuilds the static
-export. Two caveats, both long-standing:
+published posts: it writes `posts.featured_image_url` and `cover_image_url`, and
+rebuilds the static export. It reaches a staged or scheduled post too, which
+then goes live with the new image (see
+[post-editing.md](../operations/post-editing.md#featured-image-edits-after-approval)).
+Two caveats, both long-standing:
 
 - it does **not** bust the Vercel ISR cache — call `trigger_isr_revalidate(<slug>)`
   separately or the page serves the old render indefinitely;
@@ -140,8 +143,8 @@ WHERE status = 'published'
   AND COALESCE(NULLIF(featured_image_url, ''), cover_image_url) IS NULL;
 ```
 
-`cover_image_url` belongs in the check: `lib/posts.ts::getPostImage` falls back
-to it, so a post with only a cover is not missing its hero.
+`cover_image_url` belongs in the check: `lib/posts.ts::postFeaturedImage` falls
+back to it, so a post with only a cover is not missing its hero.
 
 ## Settings
 

@@ -9,11 +9,11 @@ Scope is decided by WHAT each edit writes — there is no status guard here or o
 the routes. Body edits and ``inline:N`` image edits write
 ``pipeline_versions.content``; the live site serves ``posts.content``, so on a
 published task they succeed against the draft store and change nothing publicly
-visible. ``which="featured"`` is the deliberate exception: it mirrors into
-``posts.featured_image_url`` and rebuilds the static export for published tasks
-(see ``_sync_published_post_featured``), making it the one edit that reaches a
-live post. Editing published ``posts.content`` remains out of scope
-(poindexter#523).
+visible. ``which="featured"`` is the deliberate exception: it also rewrites the
+task's ``posts`` row whenever one exists (staged, scheduled or published), and
+rebuilds the static export when that row is live (see ``_sync_post_featured``).
+That makes it the one edit that reaches a post after approval. Editing
+published ``posts.content`` remains out of scope (poindexter#523).
 """
 from __future__ import annotations
 
@@ -39,9 +39,6 @@ _UPDATE_FEATURED_SQL = (
     "UPDATE pipeline_versions SET featured_image_url = $1 "
     "WHERE task_id = $2 AND version = $3"
 )
-_CHECK_TASK_STATUS_SQL = (
-    "SELECT status FROM pipeline_tasks WHERE task_id = $1"
-)
 _LATEST_TITLE_SQL = (
     "SELECT title, content, version FROM pipeline_versions "
     "WHERE task_id = $1 ORDER BY version DESC LIMIT 1"
@@ -64,10 +61,20 @@ _UPDATE_DRAFT_CONTENT_SQL = (
 #: carrying the old title + slug, so a title change there would fork the two
 #: records — unapprove first (``poindexter tasks unapprove``), retitle, approve.
 _RETITLE_STATUSES: frozenset[str] = frozenset({"awaiting_approval"})
+#: Moves ``cover_image_url`` with ``featured_image_url``: publish writes the
+#: same URL to both, and readers fall back from one to the other (the static
+#: export serves ``featured_image_url or cover_image_url``), so clearing only
+#: the featured column republished a removed image. RETURNING says which rows
+#: changed and whether any of them is live.
 _UPDATE_POST_FEATURED_SQL = (
-    "UPDATE posts SET featured_image_url = $1, updated_at = NOW() "
-    "WHERE metadata->>'pipeline_task_id' = $2"
+    "UPDATE posts SET featured_image_url = $1, cover_image_url = $1, "
+    "updated_at = NOW() "
+    "WHERE metadata->>'pipeline_task_id' = $2 "
+    "RETURNING status"
 )
+#: posts statuses that a later promotion makes public without re-reading the
+#: draft store (``scheduled_publisher``, ``publish_service._promote_or_skip_existing``).
+_STAGED_POST_STATUSES: frozenset[str] = frozenset({"approved", "scheduled"})
 _IMG_TAG_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]*)(")', re.IGNORECASE)
 _IMG_TAG_FULL_RE = re.compile(r"<img\b[^>]*?/?>", re.IGNORECASE)
 # Mirrors modules/content/atoms/_image_helpers.py's heading matchers. Kept as
@@ -273,9 +280,10 @@ class PostEditService:
         """Swap an image URL. ``which`` = ``featured`` or ``inline:N`` (1-based).
 
         ``featured`` updates ``pipeline_versions.featured_image_url`` (canonical)
-        and best-effort mirrors it into ``pipeline_tasks.result``/``task_metadata``;
-        for a published task it additionally syncs ``posts.featured_image_url``
-        and rebuilds the static export, so this path reaches the live site.
+        and best-effort mirrors it into ``pipeline_tasks.result``/``task_metadata``.
+        When the task already has a ``posts`` row (staged, scheduled or
+        published) it rewrites that row too, and rebuilds the static export if
+        the row is live, so this path reaches the post in every state.
         ``inline:N`` rewrites the ``src`` of the N-th ``<img>`` in the body —
         draft store only, invisible to a published post.
         """
@@ -284,7 +292,7 @@ class PostEditService:
             _, version = await self._latest(task_id)
             await self._pool.execute(_UPDATE_FEATURED_SQL, url, task_id, version)
             await self._sync_task_featured(task_id, url)
-            warnings = await self._sync_published_post_featured(task_id, url)
+            warnings = await self._sync_post_featured(task_id, url)
             await self._audit("post_image_replace", task_id, {"which": "featured", "url": url})
             return EditResult(task_id, "featured", True, f"featured image → {url}", new_url=url, warnings=warnings)
 
@@ -310,8 +318,9 @@ class PostEditService:
 
         ``featured`` clears ``pipeline_versions.featured_image_url`` to NULL
         (nullable column — no promote-an-inline-image magic; the draft simply
-        has no featured image until an operator sets one), and for a published
-        task clears ``posts.featured_image_url`` + rebuilds the static export.
+        has no featured image until an operator sets one). When the task has a
+        ``posts`` row it clears ``featured_image_url`` and ``cover_image_url``
+        there, rebuilding the static export if the row is live.
         ``inline:N`` strips the whole ``<img>`` tag from the body — draft store
         only, invisible to a published post. Removal doesn't renumber
         anything on disk — ``inline:N`` is always counted live off the
@@ -322,7 +331,7 @@ class PostEditService:
             _, version = await self._latest(task_id)
             await self._pool.execute(_UPDATE_FEATURED_SQL, None, task_id, version)
             await self._sync_task_featured(task_id, None)
-            warnings = await self._sync_published_post_featured(task_id, None)
+            warnings = await self._sync_post_featured(task_id, None)
             await self._audit("post_image_remove", task_id, {"which": "featured"})
             return EditResult(task_id, "featured", True, "featured image removed", warnings=warnings)
 
@@ -670,12 +679,24 @@ class PostEditService:
                 "already saved): %s", task_id, e,
             )
 
-    async def _sync_published_post_featured(self, task_id: str, url: str | None) -> list[str]:
-        """Update posts.featured_image_url and trigger a static rebuild for published tasks.
+    async def _sync_post_featured(self, task_id: str, url: str | None) -> list[str]:
+        """Carry a featured-image edit to the task's ``posts`` row, and rebuild
+        the static export when that row is live.
 
-        posts.featured_image_url is what the static-export JSON reads; pipeline_versions
-        is the canonical draft store but not what the live site serves. Skips silently
-        for non-published tasks (drafts, approved-but-not-live, etc.).
+        ``publish_post_from_task`` copies the featured image onto the posts row
+        when it creates it, and nothing reads the draft store for it again:
+        promotion (``scheduled_publisher``, ``_promote_or_skip_existing``) only
+        flips the row's status. So once a row exists, an edit that stops at
+        ``pipeline_versions`` never reaches readers. This used to return early
+        unless the TASK was ``published``, so an edit made between approve
+        (which stages the post at ``approved``, or ``scheduled`` with a slot)
+        and publish reported success while the post went live with the image
+        it was staged with (poindexter#1103). It now rewrites whatever row
+        exists, whatever its status. A draft with no row yet is a no-op here:
+        publish copies the draft store across when it creates one.
+
+        The static export reads ``posts``, so only a live (``published``) row
+        needs a rebuild. A staged row reaches readers when it is promoted.
 
         Deliberately stops at the rebuild: it does NOT call
         ``trigger_isr_revalidate``. The Next.js post page caches on the
@@ -689,21 +710,31 @@ class PostEditService:
         """
         warnings: list[str] = []
         try:
-            status = await self._pool.fetchval(_CHECK_TASK_STATUS_SQL, task_id)
-            if status != "published":
-                return warnings
-            await self._pool.execute(_UPDATE_POST_FEATURED_SQL, url, task_id)
-            logger.info("posts.featured_image_url updated for published task %s", task_id)
-        except Exception as e:  # noqa: BLE001
+            rows = await self._pool.fetch(_UPDATE_POST_FEATURED_SQL, url, task_id)
+        except Exception as e:  # noqa: BLE001 — the draft store already has the edit; report the miss
             logger.warning(
-                "posts.featured_image_url sync failed for %s: %s — "
-                "run rebuild_static_export manually",
+                "posts featured-image sync failed for %s: %s — the post keeps "
+                "its previous image until the edit is re-run",
                 task_id, e,
             )
             warnings.append(
                 f"posts.featured_image_url update failed ({e!s})"
-                " — run rebuild_static_export manually"
+                " — the post keeps its previous image; re-run the edit"
             )
+            return warnings
+        statuses = sorted({str(row["status"]) for row in rows or []})
+        if not statuses:
+            return warnings  # no posts row yet: publish copies the draft store across
+        logger.info(
+            "posts featured image updated for task %s (post status: %s)",
+            task_id, ", ".join(statuses),
+        )
+        if "published" not in statuses:
+            staged = [s for s in statuses if s in _STAGED_POST_STATUSES]
+            if staged:
+                warnings.append(
+                    f"staged post updated ({', '.join(staged)}) — it goes live with this image"
+                )
             return warnings
         if self._site_config is None:
             warnings.append(

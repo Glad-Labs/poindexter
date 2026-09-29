@@ -165,6 +165,12 @@ class ApproveTaskRequest(BaseModel):
     state-changing POST and breaking the documented JSON-body cURL. The JSON
     body is now canonical; query-param binding is retained as a deprecated
     back-compat fallback for existing CLI / MCP callers (see ``approve_task``).
+
+    ``featured_image_url`` goes through ``PostEditService.replace_image``, the
+    writer behind ``POST /{task_id}/replace-image`` (poindexter#1102). Don't
+    retire it by deleting the field: pydantic ignores unknown keys, so a
+    caller still sending it would get a 200 and the old image, which is the
+    silent drop #1102 fixed. Retire it by rejecting it by name.
     """
 
     approved: bool = True
@@ -181,6 +187,7 @@ class ApproveTaskRequest(BaseModel):
 )
 async def approve_task(
     task_id: str,
+    request: Request,
     body: ApproveTaskRequest | None = None,
     # Deprecated query-param fallback (#615) — hidden from the OpenAPI schema so
     # the JSON body is the documented contract. Consulted only when no body is
@@ -215,8 +222,16 @@ async def approve_task(
     - approved: Boolean — true to approve, false to reject
     - human_feedback: Optional feedback from reviewer
     - reviewer_id: Optional ID of reviewer
-    - featured_image_url: Optional featured image URL for the task
-    - image_source: Optional source of image (pexels, image_gen)
+    - featured_image_url: Optional featured image to approve the post with.
+      Applied before the approval commits, through the same writer as
+      ``POST /{task_id}/replace-image`` (``which=featured``): the draft
+      store, the task's ``result``, an audit row, and then the posts row
+      this approval creates. If the writer refuses it (the task has no draft
+      row), the request 400s and the task stays pending. Ignored, with a
+      WARNING, when ``approved=false``.
+    - image_source: Optional note on where that image came from (e.g.
+      ``pexels``, ``image_gen``). Recorded on the approval's
+      ``pipeline_gate_history`` row.
     - auto_publish: Stage-and-ship in one call (default: ``false``).
       The Telegram/Discord/MCP approval surfaces should leave this off
       and call ``/publish`` separately.
@@ -250,6 +265,9 @@ async def approve_task(
         image_source = body.image_source
         auto_publish = body.auto_publish
         publish_at = body.publish_at
+
+    # A blank override is no override, not a request to set the image to "".
+    featured_image_url = (featured_image_url or "").strip() or None
 
     # Resolve the requested slot BEFORE any state change. An unparseable
     # timestamp is an operator error, so it 400s while the task is still
@@ -368,6 +386,34 @@ async def approve_task(
                 ),
             )
 
+        # Featured-image override (poindexter#1102), applied through the same
+        # writer as POST /{task_id}/replace-image and BEFORE the approval
+        # commits, so an edit the writer refuses 400s with the task still
+        # pending. It writes pipeline_versions.featured_image_url (what the
+        # console inbox, `tasks get` and the pre-approval preview read),
+        # mirrors it into the task's result/task_metadata, and audits the
+        # edit. The posts row gets it from publish_task below. If the approval
+        # itself then fails, the draft keeps the new image, exactly as if
+        # replace-image had been called first.
+        if featured_image_url and not approved:
+            logger.warning(
+                "[approve_task] featured_image_url ignored for task %s: an image "
+                "override only applies when approving, and this request rejects",
+                task_id,
+            )
+            featured_image_url = None
+        if featured_image_url:
+            edit_service = _build_edit_service(
+                db_service, site_config_dep,
+                platform=getattr(request.app.state, "kernel_platform", None),
+            )
+            try:
+                await edit_service.replace_image(
+                    task_id, which="featured", url=featured_image_url,
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+
         # Prepare metadata
         approval_metadata = {
             "approved_at" if approved else "rejected_at": datetime.now(timezone.utc).isoformat(),
@@ -444,7 +490,19 @@ async def approve_task(
         # view's approval_status / approved_by / human_feedback columns
         # resolve non-NULL. event_kind matches the public column semantic
         # (`approved` / `rejected`) so the view can read it directly.
+        #
+        # The image the approver chose, and where they say it came from, ride
+        # on the same row. It is the only durable home image_source has: the
+        # approval block in `result` never survives an approve (poindexter#1104).
         event_kind = "approved" if approved else "rejected"
+        gate_metadata: dict[str, Any] = {
+            "reviewer": reviewer_id or "operator",
+            "decision": event_kind,
+        }
+        if featured_image_url:
+            gate_metadata["featured_image_url"] = featured_image_url
+        if image_source:
+            gate_metadata["image_source"] = image_source
         try:
             await db_service.pool.execute(
                 """
@@ -457,13 +515,7 @@ async def approve_task(
                 event_kind,
                 human_feedback,
                 reviewer_id or "human",
-                json.dumps(
-                    {
-                        "reviewer": reviewer_id or "operator",
-                        "decision": event_kind,
-                    },
-                    default=str,
-                ),
+                json.dumps(gate_metadata, default=str),
             )
         except Exception as review_err:
             logger.warning(
@@ -531,6 +583,16 @@ async def approve_task(
         # (status='scheduled', published_at <= NOW()). So a scheduled approve
         # produced no posts row, no queue entry, and no publish, while
         # reporting success. The column is dropped in the same change.
+        #
+        # Both publish calls below get publish_task, not `task`
+        # (poindexter#1102). `task` is the row as read BEFORE this approval's
+        # writes; handing it over built the posts row from the pipeline's
+        # image, and publish's backstamp then wrote that snapshot back over
+        # `result`, erasing the override this route had just stored.
+        # merged_result is the view the status write above was built from
+        # (task_metadata, then result, then the override), so the route and
+        # publish can't disagree about what was approved.
+        publish_task = {**task, "result": dict(merged_result)}
         scheduled_for: str | None = None
         schedule_error: str | None = None
         if approved and not auto_publish:
@@ -542,7 +604,7 @@ async def approve_task(
                 from poindexter.services.publish_service import publish_post_from_task
 
                 stage_result = await publish_post_from_task(
-                    db_service, task, task_id,  # type: ignore[arg-type]
+                    db_service, publish_task, task_id,  # type: ignore[arg-type]
                     publisher="operator",
                     trigger_revalidation=False,
                     queue_social=False,
@@ -615,7 +677,7 @@ async def approve_task(
                 from poindexter.services.publish_service import publish_post_from_task
 
                 pub_result = await publish_post_from_task(
-                    db_service, task, task_id,  # type: ignore[arg-type]
+                    db_service, publish_task, task_id,  # type: ignore[arg-type]
                     publisher="operator",
                     trigger_revalidation=True,
                     queue_social=True,
@@ -1425,12 +1487,14 @@ async def generate_task_image(
 #
 # None of these routes gate on pipeline_tasks.status; scope is decided by WHAT
 # each edit writes. Body edits and inline:N image edits write
-# pipeline_versions.content, and the live site serves posts.content — so they
-# are draft-only in effect, silently no-opping on a published post rather than
-# being rejected. `which=featured` is the exception: PostEditService mirrors it
-# into posts.featured_image_url for published tasks and rebuilds the static
-# export, so it reaches live posts end-to-end. Editing published posts.content
-# remains out of scope.
+# pipeline_versions.content, and the site serves posts.content, which approve
+# copied when it staged the post — so they are draft-only in effect, silently
+# no-opping on an approved or published post rather than being rejected.
+# `which=featured` is the exception: PostEditService rewrites the task's posts
+# row whenever one exists (staged, scheduled or published; featured_image_url
+# and cover_image_url) and rebuilds the static export when that row is live,
+# so it reaches the post end-to-end (poindexter#1103). Editing published
+# posts.content remains out of scope.
 
 
 class EditBodyRequest(BaseModel):
@@ -1582,10 +1646,11 @@ async def replace_task_image(
 ):
     """Swap an image URL. ``which`` = ``featured`` or ``inline:N``.
 
-    ``featured`` also reaches PUBLISHED posts — it mirrors into
-    posts.featured_image_url and triggers a static-export rebuild (reported via
-    ``warnings``). ``inline:N`` writes pipeline_versions.content only, which the
-    live site never serves, so it is draft-only in effect. Neither busts the ISR
+    ``featured`` also reaches the post once one exists, staged, scheduled or
+    published: it rewrites posts.featured_image_url and cover_image_url, and a
+    live post gets a static-export rebuild (reported via ``warnings``).
+    ``inline:N`` writes pipeline_versions.content only, which the site never
+    serves after approval, so it is draft-only in effect. Neither busts the ISR
     cache; callers revalidate the post's cache tag separately.
     """
     full_id = await _resolve_full_task_id(db_service, task_id)
@@ -1612,10 +1677,10 @@ async def regen_task_image(
     """Regenerate an image via the image capability.
     ``which`` = ``featured`` or ``inline:N``. Honors the no-humans/on-topic guardrails.
 
-    Delegates the swap to ``replace_image``, so ``featured`` reaches PUBLISHED
-    posts (posts.featured_image_url + static-export rebuild) while ``inline:N``
-    is draft-only in effect. Slow by nature — generation plus rebuild — and it
-    does not bust the ISR cache.
+    Delegates the swap to ``replace_image``, so ``featured`` reaches the post
+    once one exists (the posts row, plus a static-export rebuild when it is
+    live) while ``inline:N`` is draft-only in effect. Slow by nature —
+    generation plus rebuild — and it does not bust the ISR cache.
     """
     full_id = await _resolve_full_task_id(db_service, task_id)
     svc = _build_edit_service(
@@ -1673,8 +1738,9 @@ async def remove_task_image(
     ``featured`` clears to no-image (no promote-an-inline magic); ``inline:N``
     strips that ``<img>`` tag — later images renumber naturally.
 
-    ``featured`` also reaches PUBLISHED posts (clears posts.featured_image_url
-    + rebuilds the static export, without busting the ISR cache); ``inline:N``
+    ``featured`` also reaches the post once one exists (clears
+    posts.featured_image_url and cover_image_url, and rebuilds the static
+    export for a live post, without busting the ISR cache); ``inline:N``
     writes pipeline_versions.content only and is draft-only in effect.
     """
     full_id = await _resolve_full_task_id(db_service, task_id)

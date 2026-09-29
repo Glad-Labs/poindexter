@@ -709,6 +709,319 @@ class TestApproveTask:
         assert resp.status_code == 200
 
 
+@pytest.mark.unit
+class TestApproveFeaturedImageOverride:
+    """``featured_image_url`` on approve must be the image the post ships with.
+
+    It never was, from 2026-04-03 on (poindexter#1102): the route merged the
+    override into the task's ``result`` and wrote it, then handed
+    ``publish_post_from_task`` the task dict it had read BEFORE that write.
+    Publish built the posts row from that snapshot, so the row got the
+    pipeline's image, and its stage-only / publish backstamp then wrote the
+    snapshot back over ``result``, erasing the override from the task too.
+
+    These run the REAL ``publish_post_from_task`` down to ``create_post``, so
+    they assert what the posts row actually receives. ``PostEditService`` is
+    replaced by a recorder (its own tests live in
+    tests/unit/modules/content), except in the one test that drives the real
+    writer through the route.
+    """
+
+    OLD = "https://cdn.example/pipeline-hero.webp"
+    NEW = "https://cdn.example/operator-pick.webp"
+
+    def _task(self):
+        return _make_task(
+            status="awaiting_approval",
+            content="# My Title\nGreat article body.",
+            result={
+                "content": "# My Title\nGreat article body.",
+                "featured_image_url": self.OLD,
+            },
+            task_metadata={"featured_image_url": self.OLD},
+        )
+
+    def _db(self):
+        """A mock DB the real publish path can run against, up to create_post."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=self._task())
+        mock_db.create_post = AsyncMock(return_value=MagicMock(id="post-abc"))
+        # publish_service's idempotency guard reads cloud_pool first: no
+        # existing post, so it goes on to create one.
+        mock_db.cloud_pool = AsyncMock()
+        mock_db.cloud_pool.fetchrow = AsyncMock(return_value=None)
+        return mock_db
+
+    @pytest.fixture
+    def edits(self, monkeypatch):
+        """Swap PostEditService for a recorder. Returns the shared call log."""
+        from poindexter.modules.content.post_edit_service import EditResult
+
+        log: list = []
+
+        class FakeEditService:
+            def __init__(self, **kw):
+                log.append(("ctor", kw))
+
+            async def replace_image(self, task_id, **kw):
+                log.append(("replace_image", task_id, kw))
+                return EditResult(task_id, "featured", True, "swapped", new_url=kw["url"])
+
+        monkeypatch.setattr(_pub_mod, "PostEditService", FakeEditService)
+        return log
+
+    def _approve(self, mock_db, *, json_body=None, params=None, platform=None):
+        app = _build_app(mock_db)
+        if platform is not None:
+            app.state.kernel_platform = platform
+        with (
+            patch(
+                "poindexter.services.default_author.get_or_create_default_author",
+                new_callable=AsyncMock,
+                return_value="author-1",
+            ),
+            patch(
+                "poindexter.services.category_resolver.select_category_for_topic",
+                new_callable=AsyncMock,
+                return_value="cat-1",
+            ),
+            patch(
+                "poindexter.services.integrations.operator_notify.notify_operator",
+                new_callable=AsyncMock,
+            ),
+        ):
+            return TestClient(app).post(
+                f"/{VALID_TASK_ID}/approve", json=json_body, params=params,
+            )
+
+    def _created_post(self, mock_db) -> dict:
+        mock_db.create_post.assert_awaited_once()
+        return mock_db.create_post.await_args.args[0]
+
+    def _result_writes(self, mock_db) -> list[dict]:
+        return [
+            json.loads(c.kwargs["result"])
+            for c in mock_db.update_task_status.await_args_list
+            if c.kwargs.get("result")
+        ]
+
+    # -- the post gets the override ------------------------------------------
+
+    def test_override_reaches_the_staged_post(self, edits):
+        """The default approve (stage only) creates the posts row with it."""
+        mock_db = self._db()
+
+        resp = self._approve(
+            mock_db, json_body={"approved": True, "featured_image_url": self.NEW},
+        )
+
+        assert resp.status_code == 200, resp.text
+        post = self._created_post(mock_db)
+        assert post["status"] == "approved"
+        assert post["featured_image_url"] == self.NEW
+        assert post["cover_image_url"] == self.NEW
+
+    def test_override_reaches_the_published_post(self, edits):
+        """auto_publish=true ships the post with it."""
+        mock_db = self._db()
+
+        resp = self._approve(
+            mock_db,
+            json_body={
+                "approved": True,
+                "auto_publish": True,
+                "featured_image_url": self.NEW,
+            },
+        )
+
+        assert resp.status_code == 200, resp.text
+        post = self._created_post(mock_db)
+        assert post["status"] == "published"
+        assert post["featured_image_url"] == self.NEW
+
+    def test_query_param_override_reaches_the_post(self, edits):
+        """The deprecated query-param spelling (#615) behaves the same."""
+        mock_db = self._db()
+
+        resp = self._approve(
+            mock_db, params={"approved": "true", "featured_image_url": self.NEW},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert self._created_post(mock_db)["featured_image_url"] == self.NEW
+
+    def test_publish_backstamp_keeps_the_override_on_the_task(self, edits):
+        """Publish's stage-only backstamp rewrites the whole ``result`` column
+        from the dict it was handed. Handed the stale snapshot, it wrote the
+        pipeline image back over the override the approve write had stored."""
+        mock_db = self._db()
+
+        self._approve(
+            mock_db, json_body={"approved": True, "featured_image_url": self.NEW},
+        )
+
+        writes = self._result_writes(mock_db)
+        assert len(writes) == 2, "expected the approve write and the backstamp"
+        assert [w["featured_image_url"] for w in writes] == [self.NEW, self.NEW]
+        assert writes[1]["post_id"] == "post-abc", "second write is the backstamp"
+
+    def test_no_override_keeps_the_pipeline_image(self, edits):
+        """Without an override nothing is edited and the post gets the
+        pipeline's image, as before."""
+        mock_db = self._db()
+
+        resp = self._approve(mock_db, json_body={"approved": True})
+
+        assert resp.status_code == 200, resp.text
+        assert self._created_post(mock_db)["featured_image_url"] == self.OLD
+        assert not [e for e in edits if e[0] == "replace_image"]
+
+    def test_blank_override_is_no_override(self, edits):
+        """Whitespace is not an image. It must not blank the hero."""
+        mock_db = self._db()
+
+        resp = self._approve(
+            mock_db, json_body={"approved": True, "featured_image_url": "   "},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert self._created_post(mock_db)["featured_image_url"] == self.OLD
+        assert not [e for e in edits if e[0] == "replace_image"]
+
+    # -- through the canonical writer ----------------------------------------
+
+    def test_override_goes_through_the_canonical_writer_first(self, edits):
+        """The same writer as POST /replace-image, called with the canonical
+        task id, BEFORE the approval commits, and wired to the kernel's audit
+        handle so the edit is audited like any other image swap."""
+        mock_db = self._db()
+        mock_db.update_task_status = AsyncMock(
+            side_effect=lambda *a, **kw: edits.append(("status", a[1])) or True,
+        )
+        platform = object()
+
+        resp = self._approve(
+            mock_db,
+            json_body={"approved": True, "featured_image_url": self.NEW},
+            platform=platform,
+        )
+
+        assert resp.status_code == 200, resp.text
+        replace = [e for e in edits if e[0] == "replace_image"]
+        assert replace == [
+            ("replace_image", VALID_TASK_ID, {"which": "featured", "url": self.NEW}),
+        ]
+        order = [e[0] for e in edits if e[0] in ("replace_image", "status")]
+        assert order[0] == "replace_image", f"edit must precede the approval: {order}"
+        ctor = next(e[1] for e in edits if e[0] == "ctor")
+        assert ctor["platform"] is platform
+
+    def test_writer_refusal_400s_with_the_task_untouched(self, monkeypatch):
+        """A value the writer refuses stops the approval: 400, status unchanged,
+        no post, no approval recorded."""
+
+        class RefusingEditService:
+            def __init__(self, **kw):
+                pass
+
+            async def replace_image(self, task_id, **kw):
+                raise ValueError(f"no pipeline_versions row for task {task_id}")
+
+        monkeypatch.setattr(_pub_mod, "PostEditService", RefusingEditService)
+        mock_db = self._db()
+
+        resp = self._approve(
+            mock_db, json_body={"approved": True, "featured_image_url": self.NEW},
+        )
+
+        assert resp.status_code == 400
+        assert "no pipeline_versions row" in resp.json()["detail"]
+        mock_db.update_task_status.assert_not_awaited()
+        mock_db.create_post.assert_not_awaited()
+        gate_writes = [
+            c for c in mock_db.pool.execute.await_args_list
+            if "pipeline_gate_history" in c.args[0]
+        ]
+        assert gate_writes == []
+
+    def test_override_is_ignored_on_a_rejection(self, edits, caplog):
+        """Rejecting with an image is contradictory: nothing to put it on.
+        It is dropped out loud, not written onto the rejected task."""
+        mock_db = self._db()
+
+        with caplog.at_level("WARNING"):
+            resp = self._approve(
+                mock_db, json_body={"approved": False, "featured_image_url": self.NEW},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert not [e for e in edits if e[0] == "replace_image"]
+        (write,) = self._result_writes(mock_db)
+        assert write["featured_image_url"] == self.OLD
+        assert "featured_image_url ignored" in caplog.text
+
+    def test_the_approval_record_names_the_image_and_its_source(self, edits):
+        """The chosen image and image_source ride on the pipeline_gate_history
+        row. image_source had no durable home: the approval block in
+        ``result`` never survives an approve (poindexter#1104)."""
+        mock_db = self._db()
+
+        self._approve(
+            mock_db,
+            json_body={
+                "approved": True,
+                "featured_image_url": self.NEW,
+                "image_source": "pexels",
+            },
+        )
+
+        (gate,) = [
+            c for c in mock_db.pool.execute.await_args_list
+            if "pipeline_gate_history" in c.args[0]
+        ]
+        recorded = json.loads(gate.args[-1])
+        assert recorded["decision"] == "approved"
+        assert recorded["featured_image_url"] == self.NEW
+        assert recorded["image_source"] == "pexels"
+
+    def test_override_runs_the_real_writer(self):
+        """End to end through the real PostEditService: the draft store's
+        featured column, the result/task_metadata mirror and the audit row,
+        which is what POST /replace-image does, and then the post."""
+        mock_db = self._db()
+
+        async def fetchrow(sql, *args):
+            if "FROM pipeline_versions" in sql:
+                return {"content": "body", "version": 3}
+            return None
+
+        mock_db.pool = AsyncMock()
+        mock_db.pool.fetchrow = AsyncMock(side_effect=fetchrow)
+        mock_db.pool.fetch = AsyncMock(return_value=[])  # no posts row before approval
+        platform = MagicMock()
+        platform.audit.write = AsyncMock()
+
+        resp = self._approve(
+            mock_db,
+            json_body={"approved": True, "featured_image_url": self.NEW},
+            platform=platform,
+        )
+
+        assert resp.status_code == 200, resp.text
+        draft_store = [
+            c.args for c in mock_db.pool.execute.await_args_list
+            if c.args[0].startswith("UPDATE pipeline_versions SET featured_image_url")
+        ]
+        assert draft_store == [(draft_store[0][0], self.NEW, VALID_TASK_ID, 3)]
+        mirror = mock_db.update_task.await_args.args[1]
+        assert json.loads(mirror["result"])["featured_image_url"] == self.NEW
+        assert json.loads(mirror["task_metadata"])["featured_image_url"] == self.NEW
+        audit = platform.audit.write.await_args
+        assert audit.args[0] == "post_image_replace"
+        assert audit.kwargs["details"]["url"] == self.NEW
+        assert self._created_post(mock_db)["featured_image_url"] == self.NEW
+
+
 # ===========================================================================
 # POST /{task_id}/publish
 # ===========================================================================
