@@ -41,7 +41,11 @@ and finishes the README's loop with ``poindexter tasks approve <prefix>``, after
 which a ``posts`` row must exist for the task: an approve that reports success
 but staged nothing (the niche allowlist refuses a task with no niche) is the
 first-hour failure this job exists to catch, and the task's own status cannot
-show it. It also fails when a pipeline container logged Ollama refusing a model as not
+show it. The README's next command, ``poindexter tasks publish <prefix>``, is
+run too, and the post is then read back the way a reader would get it, over HTTP
+from the worker's ``/site/`` (the post's JSON, the index that lists it, the
+viewer page and its assets, the viewer's security headers); a storage failure
+in a pipeline container's log fails the run even when the reads pass. It also fails when a pipeline container logged Ollama refusing a model as not
 pulled — a model the README's pull list is missing. ``--timeout-min`` bounds the wait; the pipeline on a 2-4 core CPU with
 a sub-1B model takes a while, which is the point of running it weekly rather
 than per commit.
@@ -94,6 +98,11 @@ STAND_IN_SETTINGS = {"min_curation_score": "0"}
 # Where `poindexter tasks approve` may leave a task: approved, or already
 # picked up by the publisher.
 APPROVED_STATES = frozenset({"approved", "published"})
+# The worker's local site (`storage_provider=local`, the fresh-install default),
+# where the README says to read the published post.
+SITE_URL = "http://localhost:8002/site"
+# What the storage layer logs when it cannot keep or find a published object.
+STORAGE_FAILURES = ("[STORAGE] No object-store credentials", "[STORAGE] Local write failed")
 # `rejected_retry` is deliberately absent: it is a regeneration in flight (the
 # task is re-claimed and re-run), and a genuinely stuck one is the stall rule's.
 TERMINAL_FAILURES = frozenset(
@@ -354,6 +363,143 @@ def judge_approve(
     return f"`poindexter tasks approve {prefix}` reported success but staged no post ({said})"
 
 
+def published_post(task_id: str, *, query=None) -> tuple[str, str, str] | None:
+    """``(slug, status, published_at)`` of the task's post, or None when it has none.
+
+    ``published_at`` is empty when the column is NULL. An unreadable database
+    raises, so "could not look" cannot pass as "no post".
+    """
+    query = query or _psql
+    row = query(
+        "SELECT slug || '|' || status || '|' || COALESCE(published_at::text, '') FROM posts "
+        "WHERE metadata->>'pipeline_task_id' = :'task_id' ORDER BY created_at DESC LIMIT 1",
+        task_id=task_id,
+    )
+    if not row:
+        return None
+    slug, status, published_at = row.split("|", 2)
+    return slug, status, published_at
+
+
+def judge_publish(
+    task_id: str, *, exit_code: int, stderr: str, query=None,
+) -> tuple[str | None, str | None]:
+    """``(problem, slug)`` for ``poindexter tasks publish``.
+
+    Sound means exit 0, the post ``published`` with a ``published_at``, and the
+    task ``published`` to match. The slug comes back for the read-back, and is
+    None whenever there is nothing to read.
+    """
+    prefix = task_id[:8]
+    if exit_code != 0:
+        tail = stderr.strip().splitlines()[-1:] or ["no error printed"]
+        return f"`poindexter tasks publish {prefix}` exited {exit_code} ({tail[0]})", None
+    query = query or _psql
+    try:
+        post = published_post(task_id, query=query)
+        task_status = query(
+            "SELECT status FROM pipeline_tasks WHERE task_id = :'task_id'", task_id=task_id,
+        )
+    except RuntimeError as exc:
+        return f"could not read back the published post's rows: {exc}", None
+    if post is None:
+        return f"`poindexter tasks publish {prefix}` succeeded but the task has no post", None
+    slug, status, published_at = post
+    if status != "published" or not published_at:
+        return (
+            f"post {slug!r} is {status!r} with published_at={published_at or 'NULL'!r} "
+            f"after `poindexter tasks publish {prefix}`",
+            slug,
+        )
+    if task_status != "published":
+        return f"post {slug!r} is published but its task reads {task_status!r}", slug
+    return None, slug
+
+
+def _fetch(url: str) -> tuple[int, dict[str, str], str]:
+    """GET ``url`` -> ``(status, lower-cased headers, body)``; raises RuntimeError if unreachable."""
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:  # nosec B310 - a http://localhost URL this script builds
+            return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return exc.code, {k.lower(): v for k, v in exc.headers.items()}, exc.read().decode("utf-8", "replace")
+    except OSError as exc:
+        raise RuntimeError(f"{url}: {type(exc).__name__}: {exc}") from exc
+
+
+def judge_site(slug: str, *, fetch=None, base: str = SITE_URL) -> list[str]:
+    """Problems reading a published post back from the worker's local ``/site/``.
+
+    What a reader's browser gets, over HTTP: the post's own JSON with a body, the
+    index that lists it, the viewer page (with the security headers that make it
+    safe to serve a pipeline-written post) at ``/site/`` and at the post's own
+    route, and the viewer's script and stylesheet. It does not run the viewer in a
+    browser.
+    """
+    fetch = fetch or _fetch
+    problems: list[str] = []
+
+    def get(path: str, *, want_type: str | None = None):
+        url = f"{base}/{path}"
+        try:
+            status, headers, body = fetch(url)
+        except RuntimeError as exc:
+            problems.append(str(exc))
+            return None
+        if status != 200:
+            problems.append(f"{url}: HTTP {status}")
+            return None
+        ctype = headers.get("content-type", "")
+        if want_type and want_type not in ctype:
+            problems.append(f"{url}: content-type {ctype!r}, wanted {want_type!r}")
+            return None
+        return headers, body
+
+    def json_body(path: str):
+        got = get(path, want_type="json")
+        if got is None:
+            return None
+        try:
+            return json.loads(got[1])
+        except ValueError as exc:
+            problems.append(f"{base}/{path}: not JSON ({exc})")
+            return None
+
+    post = json_body(f"static/posts/{slug}.json")
+    if post is not None:
+        if post.get("slug") != slug:
+            problems.append(f"static/posts/{slug}.json carries slug {post.get('slug')!r}")
+        if not str(post.get("title") or "").strip():
+            problems.append(f"static/posts/{slug}.json has no title")
+        if not str(post.get("content") or "").strip():
+            problems.append(f"static/posts/{slug}.json has no content")
+
+    index = json_body("static/posts/index.json")
+    if index is not None:
+        listed = [p.get("slug") for p in index.get("posts", []) if isinstance(p, dict)]
+        if slug not in listed:
+            problems.append(f"static/posts/index.json does not list {slug!r} (lists {listed})")
+
+    for path in ("", f"posts/{slug}"):
+        page = get(path, want_type="text/html")
+        if page is None:
+            continue
+        headers, body = page
+        if "script-src 'self'" not in headers.get("content-security-policy", ""):
+            problems.append(f"{base}/{path}: no Content-Security-Policy restricting scripts to 'self'")
+        if "_viewer/viewer.js" not in body:
+            problems.append(f"{base}/{path}: the page does not load the viewer script")
+
+    for asset in ("_viewer/viewer.js", "_viewer/viewer.css"):
+        get(asset)
+    return problems
+
+
+def storage_failures(log_text: str) -> list[str]:
+    """Log lines where the storage layer said it could not keep or find an object."""
+    return [ln.strip() for ln in log_text.splitlines() if any(f in ln for f in STORAGE_FAILURES)]
+
+
 def optional_models(readme: str) -> list[str]:
     """Tags in the README's "Optional" model table (the ones NOT in the pull line).
 
@@ -479,8 +625,27 @@ def main(argv: list[str] | None = None) -> int:
             problems.append(verdict)
         else:
             print(f"[quickstart-e2e] approve left the task {after!r} and staged a post")
+            # The README's next command, then the post read back as a reader gets it.
+            published = subprocess.run(
+                [pdx, "tasks", "publish", task_id[:8]], cwd=tree,
+                capture_output=True, text=True, check=False,
+            )
+            print(published.stdout + published.stderr)
+            problem, slug = judge_publish(
+                task_id, exit_code=published.returncode, stderr=published.stderr,
+            )
+            if problem:
+                problems.append(problem)
+            if slug:
+                site_problems = judge_site(slug)
+                problems.extend(site_problems)
+                if not site_problems:
+                    print(f"[quickstart-e2e] read {slug!r} back from {SITE_URL}/")
 
-    refused = missing_models("\n".join(_container_logs(c) for c in PIPELINE_CONTAINERS))
+    pipeline_logs = "\n".join(_container_logs(c) for c in PIPELINE_CONTAINERS)
+    for line in storage_failures(pipeline_logs)[:5]:
+        problems.append(f"a pipeline container logged a storage failure: {line}")
+    refused = missing_models(pipeline_logs)
     optional = set(optional_models(readme))
     unpulled = [t for t in refused if t not in optional]
     if unpulled:

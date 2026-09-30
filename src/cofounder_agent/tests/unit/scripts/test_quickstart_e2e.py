@@ -11,6 +11,7 @@ the CI job keeps running the README rather than a paraphrase.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
@@ -97,6 +98,25 @@ class TestReadmeQuickStart:
                 ln for ln in text.splitlines() if ln.strip().startswith("poindexter tasks create ")
             )
             assert "--niche starter-blog" in line, f"{path.name}: {line}"
+
+    def test_the_loop_ends_at_the_local_site(self):
+        """The README says to publish and where to read it, and the job reads it there.
+
+        The port and path the driver fetches are the ones the README links and the
+        consumer stack publishes, so a change to any one fails here rather than in
+        a 40-minute CI run.
+        """
+        readme = README.read_text(encoding="utf-8")
+        assert "poindexter tasks publish <id>" in readme
+        assert "(http://localhost:8002/site/)" in readme
+        assert DRIVER.SITE_URL == "http://localhost:8002/site"
+        compose = (_REPO_ROOT / "docker-compose.consumer.yml").read_text(encoding="utf-8")
+        assert '"8002:8002"' in compose
+
+    def test_the_walkthrough_says_the_same(self):
+        text = QUICKSTART_MDX.read_text(encoding="utf-8")
+        assert "poindexter tasks publish <task_id>" in text
+        assert "(http://localhost:8002/site/)" in text
 
     def test_pulls_the_embedding_model(self, quick_start):
         assert "nomic-embed-text" in quick_start.pulled_models
@@ -402,6 +422,304 @@ class TestJudgeApprove:
         assert "judge_approve(" in source.split("def main(")[1]
 
 
+class TestPublishedPost:
+    def test_reads_slug_status_and_published_at(self):
+        row = "why-docker-0123abcd|published|2026-09-29 12:00:00+00"
+        assert DRIVER.published_post("t-1", query=lambda sql, **kw: row) == (
+            "why-docker-0123abcd", "published", "2026-09-29 12:00:00+00",
+        )
+
+    def test_a_null_published_at_is_an_empty_string(self):
+        assert DRIVER.published_post("t-1", query=lambda sql, **kw: "a|approved|") == ("a", "approved", "")
+
+    def test_no_row_is_none(self):
+        assert DRIVER.published_post("t-1", query=lambda sql, **kw: "") is None
+
+    def test_its_query_names_real_columns(self):
+        seen: list[str] = []
+
+        def record(sql, **kw):
+            seen.append(sql)
+            return ""
+
+        DRIVER.published_post("t-1", query=record)
+        for sql in nonempty(seen, "published_post query"):
+            assert _column_problems(sql) == [], sql
+
+
+class TestJudgePublish:
+    TASK = "0123456789abcdef"
+
+    def _judge(self, *, exit_code=0, stderr="", post="a-slug|published|2026-09-29 12:00:00+00", task="published"):
+        def query(sql, **kw):
+            return post if "FROM posts" in sql else task
+
+        return DRIVER.judge_publish(self.TASK, exit_code=exit_code, stderr=stderr, query=query)
+
+    def test_a_published_post_and_task_is_sound_and_returns_the_slug(self):
+        assert self._judge() == (None, "a-slug")
+
+    def test_a_failed_publish_names_the_clis_last_line_and_has_no_slug(self):
+        problem, slug = self._judge(exit_code=1, stderr="noise\nError: Publish failed: niche")
+        assert slug is None
+        assert "exited 1" in problem and "Error: Publish failed: niche" in problem
+
+    def test_a_post_still_approved_is_a_problem_but_keeps_the_slug(self):
+        problem, slug = self._judge(post="a-slug|approved|")
+        assert slug == "a-slug"
+        assert "'approved'" in problem and "published_at='NULL'" in problem
+
+    def test_a_published_post_with_no_published_at_is_a_problem(self):
+        problem, _ = self._judge(post="a-slug|published|")
+        assert problem is not None and "published_at='NULL'" in problem
+
+    def test_a_task_that_did_not_follow_the_post_is_a_problem(self):
+        problem, slug = self._judge(task="approved")
+        assert slug == "a-slug"
+        assert "its task reads 'approved'" in problem
+
+    def test_no_post_at_all_is_a_problem(self):
+        problem, slug = self._judge(post="")
+        assert slug is None and "no post" in problem
+
+    def test_an_unreadable_database_is_a_problem_not_a_pass(self):
+        def boom(sql, **kw):
+            raise RuntimeError("psql failed")
+
+        problem, slug = DRIVER.judge_publish(self.TASK, exit_code=0, stderr="", query=boom)
+        assert slug is None and "could not read back" in problem
+
+
+_CSP = "default-src 'self'; script-src 'self'; object-src 'none'"
+_VIEWER_HTML = '<html><script src="/site/_viewer/viewer.js" defer></script></html>'
+
+
+def _site(slug="a-slug", **overrides):
+    """A healthy `/site/`, as `fetch(url) -> (status, headers, body)`; overrides are path -> response."""
+    html = {"content-type": "text/html; charset=utf-8", "content-security-policy": _CSP}
+    js = {"content-type": "application/json"}
+    responses = {
+        f"static/posts/{slug}.json": (200, js, json.dumps({"slug": slug, "title": "T", "content": "<p>x</p>"})),
+        "static/posts/index.json": (200, js, json.dumps({"posts": [{"slug": slug}], "total": 1})),
+        "": (200, html, _VIEWER_HTML),
+        f"posts/{slug}": (200, html, _VIEWER_HTML),
+        "_viewer/viewer.js": (200, {"content-type": "text/javascript"}, "//js"),
+        "_viewer/viewer.css": (200, {"content-type": "text/css"}, "/*css*/"),
+    }
+    responses.update(overrides)
+
+    def fetch(url):
+        path = url.removeprefix(DRIVER.SITE_URL + "/")
+        if path not in responses:
+            return 404, {}, "not found"
+        got = responses[path]
+        if isinstance(got, Exception):
+            raise got
+        return got
+
+    return fetch
+
+
+class TestJudgeSite:
+    """What a reader's browser would get from the published post, over HTTP."""
+
+    def test_a_healthy_site_has_no_problems(self):
+        assert DRIVER.judge_site("a-slug", fetch=_site()) == []
+
+    def test_it_fetches_every_surface_a_reader_touches(self):
+        seen = []
+        healthy = _site()
+
+        def spy(url):
+            seen.append(url.removeprefix(DRIVER.SITE_URL + "/"))
+            return healthy(url)
+
+        DRIVER.judge_site("a-slug", fetch=spy)
+        assert sorted(seen) == sorted([
+            "static/posts/a-slug.json", "static/posts/index.json", "", "posts/a-slug",
+            "_viewer/viewer.js", "_viewer/viewer.css",
+        ])
+
+    def test_a_missing_post_file_is_a_problem(self):
+        problems = DRIVER.judge_site("a-slug", fetch=_site(**{"static/posts/a-slug.json": (404, {}, "")}))
+        assert problems == [f"{DRIVER.SITE_URL}/static/posts/a-slug.json: HTTP 404"]
+
+    def test_a_post_with_no_body_is_a_problem(self):
+        body = json.dumps({"slug": "a-slug", "title": "T", "content": "  "})
+        problems = DRIVER.judge_site(
+            "a-slug", fetch=_site(**{"static/posts/a-slug.json": (200, {"content-type": "application/json"}, body)}),
+        )
+        assert problems == ["static/posts/a-slug.json has no content"]
+
+    def test_a_post_file_carrying_another_slug_is_a_problem(self):
+        body = json.dumps({"slug": "other", "title": "T", "content": "x"})
+        problems = DRIVER.judge_site(
+            "a-slug", fetch=_site(**{"static/posts/a-slug.json": (200, {"content-type": "application/json"}, body)}),
+        )
+        assert any("carries slug 'other'" in p for p in problems)
+
+    def test_an_index_that_does_not_list_the_post_is_a_problem(self):
+        body = json.dumps({"posts": [{"slug": "someone-else"}], "total": 1})
+        problems = DRIVER.judge_site(
+            "a-slug", fetch=_site(**{"static/posts/index.json": (200, {"content-type": "application/json"}, body)}),
+        )
+        assert len(problems) == 1 and "does not list 'a-slug'" in problems[0]
+
+    def test_html_where_json_was_expected_is_a_problem(self):
+        html = {"content-type": "text/html"}
+        problems = DRIVER.judge_site("a-slug", fetch=_site(**{"static/posts/index.json": (200, html, "<html>")}))
+        assert len(problems) == 1 and "content-type" in problems[0]
+
+    def test_a_viewer_page_without_the_csp_is_a_problem(self):
+        bare = (200, {"content-type": "text/html"}, _VIEWER_HTML)
+        problems = DRIVER.judge_site("a-slug", fetch=_site(**{"": bare}))
+        assert len(problems) == 1 and "Content-Security-Policy" in problems[0]
+
+    def test_a_viewer_page_that_loads_no_script_is_a_problem(self):
+        page = (200, {"content-type": "text/html", "content-security-policy": _CSP}, "<html></html>")
+        problems = DRIVER.judge_site("a-slug", fetch=_site(**{"posts/a-slug": page}))
+        assert len(problems) == 1 and "does not load the viewer script" in problems[0]
+
+    def test_a_missing_viewer_asset_is_a_problem(self):
+        problems = DRIVER.judge_site("a-slug", fetch=_site(**{"_viewer/viewer.js": (404, {}, "")}))
+        assert problems == [f"{DRIVER.SITE_URL}/_viewer/viewer.js: HTTP 404"]
+
+    def test_an_unreachable_site_reports_each_surface_rather_than_raising(self):
+        down = RuntimeError("connection refused")
+
+        def fetch(url):
+            raise down
+
+        problems = DRIVER.judge_site("a-slug", fetch=fetch)
+        assert len(problems) == 6 and set(problems) == {"connection refused"}
+
+
+class TestStorageFailures:
+    def test_finds_both_failure_lines(self):
+        log = (
+            "ok [STORAGE] Stored locally: http://x/a.json (0.0MB)\n"
+            "warn [STORAGE] No object-store credentials in app_settings (storage_access_key)\n"
+            "err  [STORAGE] Local write failed for static/posts/a.json under /data: denied\n"
+        )
+        found = DRIVER.storage_failures(log)
+        assert len(found) == 2 and found[0].startswith("warn") and found[1].startswith("err")
+
+    def test_a_healthy_log_finds_none(self):
+        assert DRIVER.storage_failures("[STORAGE] Stored locally: http://x/a.json\n") == []
+
+    def test_the_strings_match_what_the_storage_layer_logs(self):
+        """A reworded log line would silently blind the check."""
+        source = (_BACKEND / "services" / "r2_upload_service.py").read_text(encoding="utf-8")
+        for needle in nonempty(DRIVER.STORAGE_FAILURES, "STORAGE_FAILURES"):
+            tail = needle.removeprefix("[STORAGE] ")
+            assert f'"[STORAGE] {tail}' in source, needle
+
+
+class TestMainOrchestration:
+    """main() end to end, with the stack, docker and HTTP replaced by fakes.
+
+    It is the one place that decides the ORDER (approve, then publish, then the
+    read-back) and what fails the run, and the pure judges above are worth
+    nothing if main() forgets to call them.
+    """
+
+    TASK = "0123456789abcdef"
+    SLUG = "why-docker-01234567"
+
+    def _run(
+        self, monkeypatch, tmp_path, capsys, *,
+        approve_stderr="", staged="why-docker-01234567 (approved)", publish_rc=0,
+        site=None, logs="",
+    ):
+        import subprocess as sp
+
+        (tmp_path / "README.md").write_text(README.read_text(encoding="utf-8"), encoding="utf-8")
+        handoff_dir = tmp_path / "handoff"
+        handoff_dir.mkdir()
+        calls: list[list[str]] = []
+        state = {"published": False}
+        fetched: list[str] = []
+
+        def run(argv, **kw):
+            calls.append(list(argv))
+            if argv[0] == "bash":
+                (handoff_dir / "handoff.log").write_text(f"Created: {self.TASK}\n")
+                (handoff_dir / "handoff.env").write_text("PDX_BIN=pdx\n")
+                return sp.CompletedProcess(argv, 0, "", "")
+            if argv[1:3] == ["tasks", "list"]:
+                return sp.CompletedProcess(argv, 0, f"{self.TASK[:8]} awaiting_approval\n", "")
+            if argv[1:3] == ["tasks", "approve"]:
+                return sp.CompletedProcess(argv, 0, "Approved\n", approve_stderr)
+            if argv[1:3] == ["tasks", "publish"]:
+                state["published"] = publish_rc == 0
+                return sp.CompletedProcess(argv, publish_rc, "", "Error: nope" if publish_rc else "")
+            raise AssertionError(f"unexpected command {argv}")
+
+        def psql(sql, **kw):
+            if "FROM pipeline_tasks" in sql:
+                return "published" if state["published"] else "approved"
+            if "FROM posts" in sql and "published_at" in sql:
+                return f"{self.SLUG}|published|2026-09-29 12:00:00+00" if staged else ""
+            if "FROM posts" in sql:
+                return staged
+            return "null"
+
+        healthy = site or _site(self.SLUG)
+
+        def fetch(url):
+            fetched.append(url)
+            return healthy(url)
+
+        monkeypatch.setattr(DRIVER.tempfile, "mkdtemp", lambda prefix="": str(handoff_dir))
+        monkeypatch.setattr(DRIVER.subprocess, "run", run)
+        monkeypatch.setattr(DRIVER, "_psql", psql)
+        monkeypatch.setattr(DRIVER, "_fetch", fetch)
+        monkeypatch.setattr(DRIVER, "wait_for_task", lambda *a, **kw: DRIVER.SUCCESS)
+        monkeypatch.setattr(DRIVER, "check_links", lambda readme: [])
+        monkeypatch.setattr(DRIVER, "_container_logs", lambda name: logs)
+
+        rc = DRIVER.main(["--tree", str(tmp_path), "--tiny-model", "t:1"])
+        out = capsys.readouterr().out
+        verbs = [c[2] for c in calls if c[0] == "pdx" and c[1] == "tasks"]
+        return rc, out, verbs, fetched
+
+    def test_the_happy_path_approves_publishes_then_reads_the_post_back(self, monkeypatch, tmp_path, capsys):
+        rc, out, verbs, fetched = self._run(monkeypatch, tmp_path, capsys)
+        assert rc == 0, out
+        assert verbs == ["list", "approve", "publish"]
+        assert f"{DRIVER.SITE_URL}/static/posts/{self.SLUG}.json" in fetched
+        assert f"read '{self.SLUG}' back from" in out
+
+    def test_a_site_that_cannot_serve_the_post_fails_the_run(self, monkeypatch, tmp_path, capsys):
+        broken = _site(self.SLUG, **{"_viewer/viewer.js": (404, {}, "")})
+        rc, out, _, _ = self._run(monkeypatch, tmp_path, capsys, site=broken)
+        assert rc == 1
+        assert "::error::" in out and "_viewer/viewer.js: HTTP 404" in out
+
+    def test_a_storage_failure_in_the_logs_fails_a_run_whose_reads_pass(self, monkeypatch, tmp_path, capsys):
+        rc, out, _, _ = self._run(
+            monkeypatch, tmp_path, capsys,
+            logs="[STORAGE] Local write failed for static/posts/x.json under /data: denied",
+        )
+        assert rc == 1
+        assert "a pipeline container logged a storage failure" in out
+
+    def test_a_failed_publish_fails_the_run_and_reads_nothing(self, monkeypatch, tmp_path, capsys):
+        rc, out, verbs, fetched = self._run(monkeypatch, tmp_path, capsys, publish_rc=1)
+        assert rc == 1
+        assert verbs[-1] == "publish" and fetched == []
+        assert "`poindexter tasks publish 01234567` exited 1" in out
+
+    def test_an_approve_that_staged_nothing_stops_before_publishing(self, monkeypatch, tmp_path, capsys):
+        rc, out, verbs, fetched = self._run(
+            monkeypatch, tmp_path, capsys, staged="",
+            approve_stderr="Warning: Approved, but no post was staged - niche_slug is not set",
+        )
+        assert rc == 1
+        assert verbs == ["list", "approve"] and fetched == []
+        assert "staged no post (Warning: Approved, but no post was staged" in out
+
+
 class TestWorkflow:
     def test_diagnostics_queries_name_real_columns(self):
         """The failure diagnostics only run when the job has already failed, so a
@@ -594,6 +912,36 @@ class TestGate:
         assert self._decide(
             tmp_path, head={"README.md": readme, "docker-compose.consumer.yml": "x\n"},
         ) == "run=true"
+
+    @staticmethod
+    def _trigger_paths() -> list[str]:
+        wf = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        trigger = wf.get("on") or wf.get(True)  # PyYAML reads a bare `on:` as True
+        return trigger["pull_request"]["paths"]
+
+    def test_every_trigger_path_still_exists(self):
+        """A renamed file would drop out of the filter without a word: the PR that
+        broke the quick start would then skip the one job that runs it."""
+        for path in nonempty(self._trigger_paths(), "quickstart-e2e trigger paths"):
+            target = _REPO_ROOT / path.removesuffix("/**")
+            assert target.exists(), f"{path} no longer exists; the filter would silently skip it"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "src/cofounder_agent/poindexter/routes/task_publishing_routes.py",
+            "src/cofounder_agent/poindexter/services/blog_task_creation.py",
+            "src/cofounder_agent/poindexter/services/publish_service.py",
+            "src/cofounder_agent/poindexter/services/static_export_service.py",
+            "src/cofounder_agent/poindexter/services/r2_upload_service.py",
+            "src/cofounder_agent/poindexter/services/local_object_store.py",
+            "src/cofounder_agent/poindexter/services/local_site.py",
+            "src/cofounder_agent/poindexter/utils/local_site_mount.py",
+            "src/cofounder_agent/poindexter/local_site_viewer/**",
+        ],
+    )
+    def test_the_approve_publish_readback_path_triggers_the_job(self, path):
+        assert path in self._trigger_paths()
 
     def test_the_run_job_waits_on_the_gate(self):
         wf = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))

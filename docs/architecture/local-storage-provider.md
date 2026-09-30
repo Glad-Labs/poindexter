@@ -227,3 +227,10 @@ Tests: `tests/unit/services/test_local_object_store.py`, `test_local_site.py`,
 `tests/unit/utils/test_local_site_mount.py`, the migration's unit test, and
 `tests/integration_db/test_local_storage_provider.py`. The last one exports a
 real published post to a folder and serves it back through `/site`.
+
+The whole path runs on a clean install in CI: the `quickstart-e2e` job follows
+the README (`tasks create --niche starter-blog`, `approve`, `publish`), then reads
+the post back over HTTP from `/site/` (its JSON, the index that lists it, the
+viewer page with its Content-Security-Policy, and the viewer's assets) and fails
+on a `[STORAGE] Local write failed` or `No object-store credentials` line in the
+pipeline containers' logs. It fetches; it does not run the viewer in a browser.

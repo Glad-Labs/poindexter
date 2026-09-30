@@ -31,8 +31,12 @@
 #
 # Pass = the queued task reaches `awaiting_approval` (the README's promise), the
 # README's localhost links answer, the README's verification command lists the
-# task, `poindexter tasks approve` moves it on, and no pipeline container logged
-# a model Ollama did not have (the README's pull list is complete).
+# task, `poindexter tasks approve` moves it on AND stages a `posts` row (the
+# niche allowlist can leave a task `approved` with no post), `poindexter tasks
+# publish` publishes it, the post reads back over HTTP from the worker's local
+# `/site/` (its JSON, the index that lists it, the viewer page and its assets),
+# and no pipeline container logged a model Ollama did not have (the README's pull
+# list is complete) or a storage failure.
 #
 # The tiny model writes a poor post and also SCORES it: 94 in one run of this
 # quick start, 54 in another. QA flags a weak draft and still queues it
@@ -69,6 +73,17 @@ on:
       - 'src/cofounder_agent/poindexter/cli/setup.py'
       - 'src/cofounder_agent/poindexter/cli/_api_client.py'
       - 'src/cofounder_agent/poindexter/cli/tasks.py'
+      # The approve -> publish -> read-back path: the routes and services a task
+      # passes through, and the local site that serves the result.
+      - 'src/cofounder_agent/poindexter/routes/task_publishing_routes.py'
+      - 'src/cofounder_agent/poindexter/services/blog_task_creation.py'
+      - 'src/cofounder_agent/poindexter/services/publish_service.py'
+      - 'src/cofounder_agent/poindexter/services/static_export_service.py'
+      - 'src/cofounder_agent/poindexter/services/r2_upload_service.py'
+      - 'src/cofounder_agent/poindexter/services/local_object_store.py'
+      - 'src/cofounder_agent/poindexter/services/local_site.py'
+      - 'src/cofounder_agent/poindexter/utils/local_site_mount.py'
+      - 'src/cofounder_agent/poindexter/local_site_viewer/**'
       - 'src/cofounder_agent/poindexter/services/required_models.py'
       - 'src/cofounder_agent/scripts/deploy_content_flow.py'
       - 'src/cofounder_agent/Dockerfile.worker'

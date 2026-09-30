@@ -7,8 +7,9 @@ This walkthrough takes a clean machine to a running Poindexter pipeline with a
 first post in the approval queue. It is the README's quick start, step for step.
 A CI job (`quickstart-e2e`) runs that exact sequence on a clean GitHub runner
 every week and on every change to it, and fails unless the queued post reaches
-`awaiting_approval`. (A runner has no GPU, so the job stands one tiny model in
-for the three large ones and zeroes the quality bar; every command is yours,
+`awaiting_approval`, and, once approved and published, can be read at
+`/site/`. (A runner has no GPU, so the job stands one tiny model in for the
+three large ones and zeroes the quality bar; every command is yours,
 verbatim.) For what each step does under the hood, see
 [operations/local-development-setup](/docs/operations/local-development-setup).
 
@@ -140,7 +141,12 @@ takes much longer. CPU-only works, slowly.
     ```bash
     poindexter tasks list --status awaiting_approval
     poindexter tasks approve <task_id>
+    poindexter tasks publish <task_id>
     ```
+
+    Then read it at [http://localhost:8002/site/](http://localhost:8002/site/).
+    A fresh install publishes to a local folder that the worker serves there,
+    so no bucket, account or frontend is needed.
   </Step>
 </Steps>
 
