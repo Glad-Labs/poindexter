@@ -137,6 +137,80 @@ class TestCreateBlogPostTask:
         assert out["queue_position"] == 7 and out["queue_limit"] == 5
 
 
+@pytest.fixture
+def known_niches(monkeypatch):
+    """Make ``get_known_niche_slugs`` answer with a fixed set."""
+    import poindexter.services.niche_service as niche_service
+
+    def _set(slugs):
+        async def fake(pool):
+            return set(slugs)
+
+        monkeypatch.setattr(niche_service, "get_known_niche_slugs", fake)
+
+    return _set
+
+
+@pytest.mark.unit
+class TestExplicitNicheMustExist:
+    """An explicit-topic task naming a niche must name a real one.
+
+    Without this a typo only surfaced when the #729 publish gate refused the
+    post, after the whole pipeline had run.
+    """
+
+    def test_unknown_niche_is_404_naming_the_known_ones(self, known_niches):
+        known_niches({"starter-blog", "dev_diary"})
+        with pytest.raises(BlogTaskCreationError) as exc_info:
+            asyncio.run(btc.require_known_niche(object(), "starter_blog"))
+        assert exc_info.value.status_code == 404
+        assert "'starter_blog'" in exc_info.value.detail
+        # Sorted, so the message is stable and the right spelling is easy to find.
+        assert "known niches: dev_diary, starter-blog" in exc_info.value.detail
+
+    def test_known_niche_passes(self, known_niches):
+        known_niches({"starter-blog"})
+        asyncio.run(btc.require_known_niche(object(), "starter-blog"))
+
+    def test_an_unreadable_niche_list_does_not_block_creation(self, known_niches):
+        # get_known_niche_slugs returns an empty set on a DB error or no pool;
+        # refusing every task then would turn a blip into an outage. The
+        # publish gate still backstops.
+        known_niches(set())
+        asyncio.run(btc.require_known_niche(object(), "anything"))
+
+    def test_create_refuses_an_unknown_niche_before_enqueueing(
+        self, quiet_guards, known_niches,
+    ):
+        known_niches({"starter-blog"})
+        db = FakeDb()
+        with pytest.raises(BlogTaskCreationError) as exc_info:
+            asyncio.run(create_blog_post_task(
+                _request(niche_slug="nope"), db_service=db, site_config=None,
+            ))
+        assert exc_info.value.status_code == 404
+        assert db.added is None, "nothing may be queued for an unknown niche"
+
+    def test_create_stores_a_known_niche_on_the_task(self, quiet_guards, known_niches):
+        known_niches({"starter-blog"})
+        db = FakeDb()
+        asyncio.run(create_blog_post_task(
+            _request(niche_slug="starter-blog"), db_service=db, site_config=None,
+        ))
+        assert db.added["niche_slug"] == "starter-blog"
+
+    def test_no_niche_still_creates_the_task(self, quiet_guards, known_niches):
+        # The niche check must not turn "omit --niche" into an error: such a
+        # task generates and can be approved, it just cannot be published.
+        known_niches({"starter-blog"})
+        db = FakeDb()
+        asyncio.run(create_blog_post_task(
+            _request(), db_service=db, site_config=None,
+        ))
+        assert db.added is not None
+        assert db.added["niche_slug"] is None
+
+
 @pytest.mark.unit
 class TestResolveNicheForTopics:
     def test_unknown_slug_is_404(self, monkeypatch):

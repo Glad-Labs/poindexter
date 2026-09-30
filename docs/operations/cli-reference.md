@@ -180,8 +180,15 @@ poindexter tasks create "Self-hosting Qwen 3 on a 5090" \
   --keyword "self-hosted AI" \
   --style journalistic \
   --tone analytical \
-  --length 2500
+  --length 2500 \
+  --niche starter-blog
 ```
+
+`--niche` names the niche the post belongs to (`poindexter topics niche list`;
+a fresh install seeds `starter-blog`). A post can only be published once its
+task has one: without it the task still generates and `tasks approve` still
+succeeds, but nothing is staged for publishing, and `approve` prints a warning
+saying so. An unknown slug fails the request with the list of known niches.
 
 It first waits for the worker API to answer — up to
 `--wait-for-worker` seconds (default 180; `0` fails fast) — because the

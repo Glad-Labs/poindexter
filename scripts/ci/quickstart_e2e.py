@@ -37,8 +37,11 @@ Then it waits for the queued task and requires ``awaiting_approval`` — the
 state the README promises — checks every ``http://localhost:<port>`` link the
 README tells the reader to open, runs the README's own verification command
 (``poindexter tasks list --status awaiting_approval``) to see the task there,
-and finishes the README's loop with ``poindexter tasks approve <prefix>``. It
-also fails when a pipeline container logged Ollama refusing a model as not
+and finishes the README's loop with ``poindexter tasks approve <prefix>``, after
+which a ``posts`` row must exist for the task: an approve that reports success
+but staged nothing (the niche allowlist refuses a task with no niche) is the
+first-hour failure this job exists to catch, and the task's own status cannot
+show it. It also fails when a pipeline container logged Ollama refusing a model as not
 pulled — a model the README's pull list is missing. ``--timeout-min`` bounds the wait; the pipeline on a 2-4 core CPU with
 a sub-1B model takes a while, which is the point of running it weekly rather
 than per commit.
@@ -306,6 +309,51 @@ def explain_task(task_id: str, *, query=None) -> str:
     return "; ".join(parts)
 
 
+def staged_posts(task_id: str, *, query=None) -> list[str]:
+    """``slug (status)`` of each ``posts`` row staged from the task.
+
+    ``posts.metadata->>'pipeline_task_id'`` is the seam from a post back to its
+    source task. The row is what publishing, the site and the scheduler read, so
+    its existence is the only proof that approving a task produced something
+    publishable: the task itself reads ``approved`` whether or not staging
+    worked. An unreadable database raises, since "could not look" must not pass
+    as "found one".
+    """
+    query = query or _psql
+    rows = query(
+        "SELECT slug || ' (' || status || ')' FROM posts "
+        "WHERE metadata->>'pipeline_task_id' = :'task_id' ORDER BY created_at",
+        task_id=task_id,
+    )
+    return [ln for ln in rows.splitlines() if ln.strip()]
+
+
+def judge_approve(
+    task_id: str, *, exit_code: int, stderr: str, status_after: str, query=None,
+) -> str | None:
+    """The problem with ``poindexter tasks approve``'s outcome, or None if it is sound.
+
+    Sound means: exit 0, the task left ``approved``/``published``, and a post was
+    staged for it. The third is what an "approved" status alone cannot show, so
+    an approve the niche allowlist neutered (no niche on the task) fails here
+    with the warning the CLI printed rather than passing on the status.
+    """
+    prefix = task_id[:8]
+    if exit_code != 0 or status_after not in APPROVED_STATES:
+        return f"`poindexter tasks approve {prefix}` left the task {status_after!r} (exit {exit_code})"
+    try:
+        staged = staged_posts(task_id, query=query)
+    except RuntimeError as exc:
+        return f"could not look for the approved task's post: {exc}"
+    if staged:
+        return None
+    said = next(
+        (ln for ln in stderr.splitlines() if ln.startswith("Warning:")),
+        "the CLI printed no warning",
+    )
+    return f"`poindexter tasks approve {prefix}` reported success but staged no post ({said})"
+
+
 def optional_models(readme: str) -> list[str]:
     """Tags in the README's "Optional" model table (the ones NOT in the pull line).
 
@@ -424,11 +472,13 @@ def main(argv: list[str] | None = None) -> int:
         after = _psql(
             "SELECT status FROM pipeline_tasks WHERE task_id = :'task_id'", task_id=task_id,
         )
-        if approved.returncode != 0 or after not in APPROVED_STATES:
-            problems.append(
-                f"`poindexter tasks approve {task_id[:8]}` left the task {after!r} "
-                f"(exit {approved.returncode})"
-            )
+        verdict = judge_approve(
+            task_id, exit_code=approved.returncode, stderr=approved.stderr, status_after=after,
+        )
+        if verdict:
+            problems.append(verdict)
+        else:
+            print(f"[quickstart-e2e] approve left the task {after!r} and staged a post")
 
     refused = missing_models("\n".join(_container_logs(c) for c in PIPELINE_CONTAINERS))
     optional = set(optional_models(readme))

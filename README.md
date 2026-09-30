@@ -51,7 +51,7 @@ ollama pull gemma3:27b && ollama pull phi4:14b && ollama pull llama3:latest && o
 bash scripts/start-stack.sh up -d
 
 # 6. Queue your first post (waits for the worker to finish booting)
-poindexter tasks create "Why Docker changed everything"
+poindexter tasks create "Why Docker changed everything" --niche starter-blog
 ```
 
 **Linux: let the containers reach Ollama.** The stack calls Ollama at `host.docker.internal:11434`, which on Linux is the Docker bridge gateway, and a default Ollama install listens on loopback only, so every model call is refused. Once, before step 5:

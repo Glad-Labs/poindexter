@@ -121,8 +121,12 @@ takes much longer. CPU-only works, slowly.
 
   <Step title="Queue a first post">
     ```bash
-    poindexter tasks create "Why Docker changed everything"
+    poindexter tasks create "Why Docker changed everything" --niche starter-blog
     ```
+
+    `--niche` names the niche the post belongs to; a fresh install seeds
+    `starter-blog`, and `poindexter topics niche list` shows yours. A post can
+    only be published once its task has one.
 
     The command waits for the worker to finish booting (about a minute after
     the stack starts). Prefect then picks the task up within two minutes and

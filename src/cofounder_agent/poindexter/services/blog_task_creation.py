@@ -68,6 +68,33 @@ async def resolve_niche_for_topics(pool: Any, niche_slug: str | None) -> Any:
     )
 
 
+async def require_known_niche(pool: Any, niche_slug: str) -> None:
+    """Fail loud when an explicit ``niche_slug`` names no niche.
+
+    The ``auto`` topic path already 404s on an unknown slug (it resolves the
+    niche). An explicit topic did not: the slug was stored on the task as
+    given, so a typo only surfaced when the #729 publish gate refused the post,
+    after the whole pipeline had run. Checking here fails the request
+    immediately and names the niches that do exist.
+
+    Same rule as the gate itself: existence, not ``active`` (a known niche
+    that is merely discovery-inactive is a legitimate target), and it stays
+    silent when the niche list can't be read (a transient DB error must not
+    block creating tasks; the publish gate still backstops).
+    """
+    from poindexter.services.niche_service import get_known_niche_slugs
+
+    known = await get_known_niche_slugs(pool)
+    if known and niche_slug not in known:
+        raise BlogTaskCreationError(
+            status_code=404,
+            detail=(
+                f"unknown niche_slug: {niche_slug!r} "
+                f"(known niches: {', '.join(sorted(known))})"
+            ),
+        )
+
+
 async def create_blog_post_task(
     request: UnifiedTaskRequest,
     *,
@@ -168,6 +195,13 @@ async def create_blog_post_task(
                 "[create_blog_post_task] Attached %d chars of pool summary as "
                 "research_context (source %s)", len(summary), claimed["source"],
             )
+
+    # An explicit topic that names a niche must name a real one (the auto path
+    # above already resolved and validated its niche).
+    if not is_auto_topic and request.niche_slug:
+        await require_known_niche(
+            db_service.pool if db_service else None, request.niche_slug,
+        )
 
     # Pre-enqueue semantic dedup guard — closes the create_post / POST
     # /api/tasks near-duplicate gap. AUTO topics were already deduped by

@@ -197,3 +197,64 @@ class TestTasksCreateWaitsForTheWorker:
         assert result.exit_code == 1
         assert "Error:" in result.output
         assert "Traceback" not in result.output
+
+
+class _RecordingWorkerClient(_FakeWorkerClient):
+    posted: dict | None = None
+
+    async def post(self, path, json=None):
+        type(self).posted = json
+        return await super().post(path, json=json)
+
+
+class TestTasksCreateNiche:
+    def _create(self, monkeypatch, args):
+        monkeypatch.setattr(tasks_cli, "wait_for_worker", AsyncMock(return_value="http://localhost:8002"))
+        monkeypatch.setattr(tasks_cli, "WorkerClient", _RecordingWorkerClient)
+        _RecordingWorkerClient.posted = None
+        result = CliRunner().invoke(tasks_cli.tasks_group, ["create", "A topic", *args])
+        assert result.exit_code == 0, result.output
+        return _RecordingWorkerClient.posted
+
+    def test_niche_is_sent_as_niche_slug(self, monkeypatch):
+        body = self._create(monkeypatch, ["--niche", "starter-blog"])
+        assert body["niche_slug"] == "starter-blog"
+
+    def test_no_niche_keeps_the_body_free_of_the_key(self, monkeypatch):
+        # A task created without --niche posts what it always did; the worker
+        # must not see a null it could mistake for "explicitly no niche".
+        body = self._create(monkeypatch, [])
+        assert "niche_slug" not in body
+
+
+class _ApproveClient(_FakeWorkerClient):
+    reply: dict = {}
+
+    async def post(self, path, json=None):
+        return httpx.Response(200, json=type(self).reply)
+
+
+class TestTasksApproveCaveat:
+    def _approve(self, monkeypatch, reply):
+        _ApproveClient.reply = reply
+        monkeypatch.setattr(tasks_cli, "WorkerClient", _ApproveClient)
+        return CliRunner().invoke(tasks_cli.tasks_group, ["approve", "0123456789abcdef"])
+
+    def test_a_clean_approve_prints_no_warning(self, monkeypatch):
+        result = self._approve(monkeypatch, {"status": "approved"})
+        assert result.exit_code == 0, result.output
+        assert "Approved: 0123456789abcdef" in result.output
+        assert "Warning" not in result.output
+
+    def test_an_approve_that_staged_nothing_warns_and_still_succeeds(self, monkeypatch):
+        """The approve committed, so the exit code stays 0, but the operator
+        is told the post was not staged (the worker's own words, verbatim)."""
+        reason = "Approved, but no post was staged — niche_slug is not set"
+        result = self._approve(monkeypatch, {"status": "approved", "message": reason})
+        assert result.exit_code == 0, result.output
+        assert "Approved: 0123456789abcdef" in result.output
+        assert f"Warning: {reason}" in result.output
+
+    def test_other_messages_are_not_mistaken_for_a_caveat(self, monkeypatch):
+        result = self._approve(monkeypatch, {"status": "approved", "message": "queued"})
+        assert "Warning" not in result.output

@@ -76,6 +76,28 @@ class TestReadmeQuickStart:
         ]
         assert order == sorted(order)
 
+    def test_the_first_post_names_a_niche(self, quick_start):
+        """The first post must be publishable, so its task must name a niche.
+
+        A task with no niche generates and approves, but the #729 allowlist
+        then refuses to stage it, so no post ever reaches the site. The
+        seeded niche is the one a fresh install has.
+        """
+        (create,) = [
+            c for c in _commands(quick_start) if c.startswith("poindexter tasks create ")
+        ]
+        assert "--niche starter-blog" in create, create
+        seeds = BASELINE_SEEDS.read_text(encoding="utf-8")
+        assert re.search(r"INSERT INTO niches \([^)]*\) VALUES \('[0-9a-f-]+', 'starter-blog'", seeds)
+
+    def test_the_walkthrough_and_the_setup_guide_name_it_too(self):
+        for path in (QUICKSTART_MDX, _REPO_ROOT / "docs" / "operations" / "local-development-setup.md"):
+            text = path.read_text(encoding="utf-8")
+            line = next(
+                ln for ln in text.splitlines() if ln.strip().startswith("poindexter tasks create ")
+            )
+            assert "--niche starter-blog" in line, f"{path.name}: {line}"
+
     def test_pulls_the_embedding_model(self, quick_start):
         assert "nomic-embed-text" in quick_start.pulled_models
 
@@ -290,6 +312,94 @@ class TestExplainTask:
         assert len(seen) == 2
         for sql in nonempty(seen, "explain_task queries"):
             assert _column_problems(sql) == [], sql
+
+
+class TestStagedPosts:
+    """The approve step must leave a `posts` row, not just an `approved` task."""
+
+    def test_lists_each_staged_post(self):
+        seen = {}
+
+        def query(sql, **kw):
+            seen.update(kw)
+            return "why-docker-changed-everything (approved)\n"
+
+        assert DRIVER.staged_posts("t-1", query=query) == ["why-docker-changed-everything (approved)"]
+        assert seen == {"task_id": "t-1"}
+
+    def test_no_row_is_an_empty_list(self):
+        assert DRIVER.staged_posts("t-1", query=lambda sql, **kw: "") == []
+
+    def test_an_unreadable_database_raises_rather_than_reading_as_no_post(self):
+        def boom(sql, **kw):
+            raise RuntimeError("psql failed")
+
+        with pytest.raises(RuntimeError):
+            DRIVER.staged_posts("t-1", query=boom)
+
+    def test_its_query_names_real_columns(self):
+        seen: list[str] = []
+
+        def record(sql, **kw):
+            seen.append(sql)
+            return ""
+
+        DRIVER.staged_posts("t-1", query=record)
+        for sql in nonempty(seen, "staged_posts query"):
+            assert _column_problems(sql) == [], sql
+
+    def test_the_seam_key_is_the_one_publishing_writes(self):
+        """`pipeline_task_id` in posts.metadata is what publish_service stamps."""
+        source = (_BACKEND / "services" / "publish_service.py").read_text(encoding="utf-8")
+        assert "'pipeline_task_id'" in source or '"pipeline_task_id"' in source
+
+
+class TestJudgeApprove:
+    """What makes the README's last instruction count as having worked."""
+
+    TASK = "0123456789abcdef"
+
+    def _judge(self, *, exit_code=0, stderr="", status="approved", rows="a-post (approved)"):
+        return DRIVER.judge_approve(
+            self.TASK, exit_code=exit_code, stderr=stderr, status_after=status,
+            query=lambda sql, **kw: rows,
+        )
+
+    def test_approved_with_a_staged_post_is_sound(self):
+        assert self._judge() is None
+        assert self._judge(status="published") is None
+
+    def test_approved_but_nothing_staged_fails_with_the_clis_own_warning(self):
+        """The first-hour bug: status reads `approved`, no post exists."""
+        said = "Warning: Approved, but no post was staged - niche_slug is not set"
+        problem = self._judge(rows="", stderr=f"noise\n{said}\n")
+        assert problem is not None
+        assert "reported success but staged no post" in problem
+        assert said in problem
+
+    def test_nothing_staged_and_no_warning_still_fails_and_says_so(self):
+        problem = self._judge(rows="")
+        assert problem is not None and "the CLI printed no warning" in problem
+
+    def test_a_failed_approve_is_reported_before_the_post_check(self):
+        problem = self._judge(exit_code=1, status="awaiting_approval", rows="")
+        assert problem is not None
+        assert "left the task 'awaiting_approval' (exit 1)" in problem
+        assert "staged no post" not in problem
+
+    def test_an_unreadable_database_is_a_problem_not_a_pass(self):
+        def boom(sql, **kw):
+            raise RuntimeError("psql failed")
+
+        problem = DRIVER.judge_approve(
+            self.TASK, exit_code=0, stderr="", status_after="approved", query=boom,
+        )
+        assert problem is not None and "could not look" in problem
+
+    def test_main_uses_it(self):
+        """main() drives docker and cannot run here; pin that it defers to the judge."""
+        source = (_REPO_ROOT / "scripts" / "ci" / "quickstart_e2e.py").read_text(encoding="utf-8")
+        assert "judge_approve(" in source.split("def main(")[1]
 
 
 class TestWorkflow:

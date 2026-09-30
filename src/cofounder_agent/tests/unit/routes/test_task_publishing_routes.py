@@ -2036,3 +2036,72 @@ class TestApproveTaskScheduled:
         assert stage.await_count == 1
         assert assign.await_count == 0
         assert resp.json()["scheduled_for"] is None
+        # A clean approve carries no caveat for the CLI to print.
+        assert not (resp.json().get("message") or "").startswith("Approved, but")
+
+    def test_plain_approve_that_stages_nothing_says_so(self):
+        """A refused staging must not read as a clean approve.
+
+        The #729 niche gate refuses to stage a task with no niche. The approve
+        itself commits (200), and with no ``publish_at`` the old code said
+        nothing, so the operator was told "approved" about a task that would
+        never get a post. The reason now rides ``message``, and the CLI prints
+        anything starting "Approved, but".
+        """
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        refused = MagicMock()
+        refused.success = False
+        refused.post_id = None
+        refused.post_slug = None
+        refused.error = "niche_slug is not set (#729 niche allowlist)"
+
+        assign = AsyncMock()
+        app = _build_app(mock_db)
+        with (
+            patch(
+                "poindexter.services.publish_service.publish_post_from_task",
+                AsyncMock(return_value=refused),
+            ),
+            patch("poindexter.services.scheduling_service.assign_slot", assign),
+        ):
+            resp = self._approve(TestClient(app), approved=True, auto_publish=False)
+
+        assert resp.status_code == 200
+        assert assign.await_count == 0
+        data = resp.json()
+        assert data["scheduled_for"] is None
+        assert data["message"].startswith("Approved, but no post was staged")
+        assert "niche_slug is not set" in data["message"]
+        # The wording the CLI matches on is pinned from both sides.
+        from poindexter.cli.tasks import APPROVED_BUT
+
+        assert data["message"].startswith(APPROVED_BUT)
+
+    def test_a_slot_request_keeps_its_own_wording(self):
+        """With ``publish_at`` the caveat still says NOT scheduled."""
+        mock_db = make_mock_db()
+        task = _make_task(status="awaiting_approval")
+        mock_db.get_task = AsyncMock(side_effect=[task, task])
+        _set_pool(mock_db, [])
+
+        refused = MagicMock()
+        refused.success = False
+        refused.post_id = None
+        refused.post_slug = None
+        refused.error = "niche_slug is not set (#729 niche allowlist)"
+
+        app = _build_app(mock_db)
+        with patch(
+            "poindexter.services.publish_service.publish_post_from_task",
+            AsyncMock(return_value=refused),
+        ):
+            resp = self._approve(
+                TestClient(app), approved=True, publish_at="2026-09-01T09:00:00+00:00",
+            )
+
+        message = resp.json()["message"]
+        assert message.startswith("Approved, but NOT scheduled")

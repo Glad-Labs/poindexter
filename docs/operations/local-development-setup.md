@@ -193,8 +193,9 @@ curl http://localhost:8002/api/health
 
 # Queue a task end-to-end. The CLI finds the worker through
 # app_settings.api_base_url (set POINDEXTER_API_URL to override) and waits
-# for it to finish booting.
-poindexter tasks create "Why Docker changed everything"
+# for it to finish booting. --niche starter-blog is the niche a fresh install
+# seeds; a post can only be published once its task names one.
+poindexter tasks create "Why Docker changed everything" --niche starter-blog
 ```
 
 The task should move through `pending → in_progress → awaiting_approval`.

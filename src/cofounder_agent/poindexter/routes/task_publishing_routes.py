@@ -773,9 +773,17 @@ async def approve_task(
         # and ``message`` carries the reason.
         if scheduled_for:
             response_data["scheduled_for"] = scheduled_for
-        elif publish_at and schedule_error:
+        elif schedule_error:
+            # Staging the post failed, or a requested slot was refused. The
+            # approve itself committed, so this stays 200, but it must not read
+            # as a clean success: with no `publish_at` the old code stayed
+            # silent, so a task the #729 niche gate refused to stage was
+            # "approved" and produced no post at all, with nothing to say why.
+            # The CLI prints any `message` starting "Approved, but" (cli/tasks.py).
             response_data["message"] = (
                 f"Approved, but NOT scheduled — {schedule_error}"
+                if publish_at
+                else f"Approved, but no post was staged — {schedule_error}"
             )
 
         return UnifiedTaskResponse(**response_data)

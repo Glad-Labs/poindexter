@@ -203,6 +203,17 @@ def tasks_get(task_id: str, json_output: bool, content: bool) -> None:
     ),
 )
 @click.option(
+    "--niche",
+    "niche_slug",
+    default=None,
+    help=(
+        "Niche the post belongs to (`poindexter topics niche list`). A post can "
+        "only be published once its task has one, and a fresh install seeds "
+        "`starter-blog`. Omit it and the task still generates and can be "
+        "approved, but nothing is staged for publishing."
+    ),
+)
+@click.option(
     "--wait-for-worker",
     "wait_for_worker_s",
     type=click.IntRange(min=0),
@@ -221,13 +232,14 @@ def tasks_create(
     style: str,
     tone: str,
     target_length: int | None,
+    niche_slug: str | None,
     wait_for_worker_s: int,
 ) -> None:
     """Queue a new content task.
 
     Example:
 
-        poindexter tasks create "Why VRAM bandwidth matters for LLM inference"
+        poindexter tasks create "Why VRAM bandwidth matters for LLM inference" --niche starter-blog
     """
     payload = {
         "task_name": f"Blog post: {topic}",
@@ -239,6 +251,10 @@ def tasks_create(
         "tone": tone,
         "target_length": target_length,
     }
+    if niche_slug:
+        # Only sent when given, so a task created without --niche posts the
+        # same body as before.
+        payload["niche_slug"] = niche_slug
 
     async def _create():
         # The quick start runs this right after `start-stack.sh up -d`, while
@@ -266,6 +282,12 @@ def tasks_create(
 # ---------------------------------------------------------------------------
 
 
+# Prefix of the `message` the worker's approve route sets when the approve
+# committed but did not produce what the caller asked for. The route owns the
+# wording (routes/task_publishing_routes.py); both sides pin it in tests.
+APPROVED_BUT = "Approved, but"
+
+
 def _post_action(task_id: str, action: str, payload: dict | None = None) -> dict:
     async def _call():
         async with WorkerClient() as c:
@@ -285,6 +307,12 @@ def tasks_approve(task_id: str) -> None:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     click.secho(f"Approved: {task_id}  status={t.get('status', '?')}", fg="green")
+    # The worker answers 200 even when approving produced no post (the niche
+    # gate refused to stage it, a slot was refused). It says so in `message`,
+    # always starting "Approved, but"; a bare success line would hide that.
+    caveat = str(t.get("message") or "")
+    if caveat.startswith(APPROVED_BUT):
+        click.secho(f"Warning: {caveat}", fg="yellow", err=True)
 
 
 @tasks_group.command("reject")
