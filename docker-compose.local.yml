@@ -2694,6 +2694,19 @@ services:
     image: poindexter-backup:latest
     container_name: poindexter-backup-volumes
     restart: unless-stopped
+    # Root, with only the two file-access capabilities. The image's default
+    # `backup` user cannot read volumes owned by other services' uids (tempo is
+    # 0700 uid 10001, pgadmin uid 5050, clickhouse uid 101), so tar exited 2 on
+    # three of the six volumes on every run and the tier alerted daily. The
+    # sources stay read-only mounts; DAC_OVERRIDE is for writing the archive
+    # into the `backup`-owned output directory. Archives are therefore
+    # root-owned, mode 0644 — readable by the offsite tier and the operator.
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_READ_SEARCH
+      - DAC_OVERRIDE
     environment:
       BACKUP_TIER: volumes
       PG_HOST: postgres-local

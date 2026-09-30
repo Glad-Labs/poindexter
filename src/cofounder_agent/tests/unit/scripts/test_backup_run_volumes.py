@@ -324,3 +324,46 @@ def test_tick_on_failure_fires_the_generic_backup_alert(tmp_path):
     assert "TICK_RC=0" not in result.stdout
     assert "ALERT severity=critical" in result.stdout
     assert "tier=volumes" in result.stdout
+
+
+def test_volumes_failure_alert_describes_volumes_not_pg_dump(tmp_path):
+    """The volumes tier runs tar. Its alert used to say "pg_dump of <db>
+    returned 1", which sent the reader to the database for a failure that was
+    file permissions on three named volumes (2026-09-30)."""
+    (tmp_path / "volumes").mkdir(parents=True)  # no mounts -> hard failure
+    result = _run_tick(tmp_path)
+    assert "ALERT severity=critical" in result.stdout, result.stdout
+    description = result.stdout.split("description=", 1)[1]
+    assert "pg_dump" not in description
+    assert "named volumes" in description
+    assert "not affected" in description
+
+
+# --- compose contract: the service can read every volume it is handed --------
+
+_COMPOSE = Path(__file__).resolve().parents[5] / "docker-compose.local.yml"
+
+
+def _backup_volumes_service() -> dict:
+    yaml = pytest.importorskip("yaml")
+    return yaml.safe_load(_COMPOSE.read_text())["services"]["backup-volumes"]
+
+
+def test_backup_volumes_service_can_read_foreign_owned_volumes():
+    """The image's default `backup` user could not read volumes owned by other
+    services' uids (tempo 0700 uid 10001, pgadmin, clickhouse), so tar exited
+    2 on three of six volumes every run and the tier alerted daily from
+    2026-09-26. Root with only the two file-access capabilities reads them."""
+    svc = _backup_volumes_service()
+    assert str(svc.get("user")) == "0:0"
+    assert svc.get("cap_drop") == ["ALL"]
+    assert sorted(svc.get("cap_add", [])) == ["DAC_OVERRIDE", "DAC_READ_SEARCH"]
+
+
+def test_backup_volumes_sources_are_read_only():
+    """Running as root is only acceptable while every source volume is a
+    read-only mount. A new volume added without `:ro` fails here."""
+    svc = _backup_volumes_service()
+    sources = [v for v in svc["volumes"] if isinstance(v, str) and ":/volumes/" in v]
+    assert len(sources) >= 6
+    assert all(v.endswith(":ro") for v in sources), sources

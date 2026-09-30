@@ -148,6 +148,15 @@ container healthcheck exactly like the pg tiers', which means it's also
 covered for free by the brain's existing `container_health_watch` probe (no
 new probe code either).
 
+The service runs as **root with every capability dropped except
+`DAC_READ_SEARCH` and `DAC_OVERRIDE`**. The image's default `backup` user
+cannot read volumes owned by other services' uids (Tempo is `0700` uid 10001,
+pgAdmin uid 5050, ClickHouse uid 101), so until 2026-09-30 tar exited 2 on
+three of the six volumes on every run and the tier alerted daily. The sources
+stay read-only mounts, and a test fails if one is added without `:ro`.
+Archives are root-owned, mode `0644`. The failure alert now says which tier's
+tool failed: for `volumes` it names tar and the volumes, not `pg_dump`.
+
 ### Settings (`app_settings`)
 
 | Setting                    | Default | Notes                                    |

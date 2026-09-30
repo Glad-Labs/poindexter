@@ -267,9 +267,17 @@ tick() {
     else
         local rc=$?
         log "${BACKUP_TIER} dump FAILED rc=${rc}"
+        # The volumes tier runs tar, not pg_dump; saying pg_dump there sent
+        # the reader to the database for a failure that was file permissions.
+        local detail
+        if [[ "${BACKUP_TIER}" == "volumes" ]]; then
+            detail="Archiving one or more named volumes into ${BACKUP_DIR}/volumes failed (rc=${rc}). The container log names each volume as OK or FAIL with tar's own error (permission denied, disk full). The Postgres dumps are separate tiers and are not affected."
+        else
+            detail="pg_dump of ${PG_DATABASE} into ${BACKUP_DIR}/${BACKUP_TIER} returned ${rc}. Check container logs and disk space."
+        fi
         emit_alert "critical" \
             "Backup tier=${BACKUP_TIER} failed (rc=${rc})" \
-            "pg_dump of ${PG_DATABASE} into ${BACKUP_DIR}/${BACKUP_TIER} returned ${rc}. Check container logs and disk space."
+            "${detail}"
         return ${rc}
     fi
 }
