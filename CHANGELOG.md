@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.151.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.151.0...v0.151.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **deps:** bump pyjwt to 2.15.1 and brace-expansion to 5.0.12 for the 2026-09-30 advisories ([#4258](https://github.com/Glad-Labs/glad-labs-stack/issues/4258)) ([799cb93](https://github.com/Glad-Labs/glad-labs-stack/commit/799cb936ccd4912e6bcef33c487d7dda47e0d6a7)), closes [#4257](https://github.com/Glad-Labs/glad-labs-stack/issues/4257)
+* **quickstart:** make the public quick start produce a post, and prove it in CI ([#4178](https://github.com/Glad-Labs/glad-labs-stack/issues/4178)) ([2f8761e](https://github.com/Glad-Labs/glad-labs-stack/commit/2f8761e69d660518e6e031400a0c91ed790abd1a))
+* **quickstart:** the first post names a niche, and approve says when it staged nothing ([#4250](https://github.com/Glad-Labs/glad-labs-stack/issues/4250)) ([15669a1](https://github.com/Glad-Labs/glad-labs-stack/commit/15669a10432a41019b3d56e6f8f7f87cd92845c6))
+
+
+### Code Refactoring
+
+* **db:** retire DatabaseService's dual-pool mode ([#4236](https://github.com/Glad-Labs/glad-labs-stack/issues/4236)) ([11716e5](https://github.com/Glad-Labs/glad-labs-stack/commit/11716e5c65e28aee7b2651430a9a85f3a0230677))
+
 ## [0.151.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.150.0...v0.151.0) (2026-09-29)
 
 
