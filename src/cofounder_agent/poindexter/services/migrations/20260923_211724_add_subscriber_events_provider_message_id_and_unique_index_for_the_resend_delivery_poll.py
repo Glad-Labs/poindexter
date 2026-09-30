@@ -1,6 +1,6 @@
 """Migration: subscriber_events.provider_message_id + unique index
 
-ISSUE: Glad-Labs/glad-labs-stack#3216 (follow-on)
+ISSUE: Glad-Labs/poindexter#3216 (follow-on)
 
 ``subscriber_events`` was fed only by ``POST /api/webhooks/resend``, which
 is unreachable from the internet — the route answers 401 locally and 404
