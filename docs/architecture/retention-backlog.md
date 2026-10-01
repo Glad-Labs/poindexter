@@ -1,6 +1,6 @@
 # Retention backlog — the correctness signal
 
-_poindexter#933. Origin: [Glad-Labs/glad-labs-stack#2871](https://github.com/Glad-Labs/glad-labs-stack/pull/2871)._
+_poindexter#933. Origin: [Glad-Labs/poindexter#2871](https://github.com/Glad-Labs/poindexter/pull/2871)._
 
 `retention.checkpoint_prune` failed to prune ~20,000 rows **for months** while
 reporting success on every single run. Nothing was broken in a way anything
