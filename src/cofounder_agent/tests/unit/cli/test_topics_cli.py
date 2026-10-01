@@ -102,6 +102,10 @@ def _niche(slug: str = "glad-labs", name: str = "Glad Labs",
         batch_size=10,
         discovery_cadence_minute_floor=floor,
         target_audience_tags=["devs"],
+        writer_prompt_override=None,
+        topic_subject=None,
+        topic_exclusions=(),
+        topic_scope_filter=True,
     )
 
 
@@ -514,6 +518,10 @@ class TestNicheShow:
         assert parsed["goals"] == [{"type": "traffic", "weight": 70}]
         assert parsed["sources"][0]["name"] == "rss"
         assert parsed["sources"][0]["enabled"] is True
+        assert parsed["topic_scope"] == {
+            "subject": None, "exclusions": [], "filter": True,
+        }
+
 
     def test_unknown_slug_errors(self, runner, fake_asyncpg):
         ns_cls = MagicMock()
@@ -526,6 +534,37 @@ class TestNicheShow:
 
         assert result.exit_code != 0
         assert "unknown niche" in result.output.lower()
+
+
+class TestNicheSetScope:
+    """poindexter#1127: ``set-scope`` edits only what its flags name."""
+
+    def test_adds_an_exclusion_and_keeps_the_subject(self, runner, fake_asyncpg):
+        n = _niche(slug="hw")
+        n.topic_subject = "AI and hardware"
+        n.topic_exclusions = ("games",)
+        updated = SimpleNamespace(
+            slug="hw", topic_subject="AI and hardware",
+            topic_exclusions=("games", "careers"), topic_scope_filter=True,
+            has_topic_scope=True,
+        )
+        ns_cls = MagicMock()
+        ns_cls.return_value.get_by_slug = AsyncMock(return_value=n)
+        ns_cls.return_value.set_topic_scope = AsyncMock(return_value=updated)
+
+        with patch("poindexter.services.niche_service.NicheService", ns_cls):
+            result = runner.invoke(
+                topics_group, ["niche", "set-scope", "hw", "--exclude", "careers"],
+            )
+
+        assert result.exit_code == 0, result.output
+        kwargs = ns_cls.return_value.set_topic_scope.await_args.kwargs
+        assert kwargs == {
+            "subject": "AI and hardware",
+            "exclusions": ["games", "careers"],
+            "scope_filter": True,
+        }
+        assert "exclude: careers" in result.output
 
 
 class TestNicheSetCadence:

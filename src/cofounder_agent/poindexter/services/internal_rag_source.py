@@ -189,7 +189,8 @@ class InternalRagSource:
         """
         try:
             from poindexter.services.niche_service import NicheService
-            from poindexter.services.topic_ranking import goal_vector_for
+            from poindexter.services.topic_ranking import goal_vectors_for_niche
+            from poindexter.services.topic_scope import scope_block
 
             svc = NicheService(self._pool)
             niche = await svc.get_by_id(
@@ -199,17 +200,23 @@ class InternalRagSource:
                 return None, None
             audience = ", ".join(niche.target_audience_tags or []) or "general"
             niche_context = f"{niche.name} (audience: {audience})"
+            # The niche's stated scope (poindexter#1127) tells the distiller
+            # which stories are worth proposing at all.
+            scope = scope_block(niche)
+            if scope:
+                niche_context = f"{niche_context}\n{scope}"
 
             goals = await svc.get_goals(niche.id)
+            goal_vecs = await goal_vectors_for_niche(
+                goals, niche, site_config=self._site_config,
+            )
             combined: list[float] | None = None
             total_weight = 0.0
             for g in goals:
                 weight = float(g.weight_pct or 0)
                 if weight <= 0:
                     continue
-                gv = await goal_vector_for(
-                    g.goal_type, site_config=self._site_config,
-                )
+                gv = goal_vecs[g.goal_type]
                 if combined is None:
                     combined = [weight * x for x in gv]
                 else:

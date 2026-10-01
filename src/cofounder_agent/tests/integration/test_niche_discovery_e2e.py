@@ -291,7 +291,7 @@ async def test_seeded_niche_sweep_produces_a_batch(db_pool, monkeypatch):
         "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 80 - idx * 5

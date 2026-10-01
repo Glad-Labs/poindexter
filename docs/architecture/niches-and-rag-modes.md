@@ -325,3 +325,10 @@ weights drive your accept rate.
   ready; the worker is serial.
 - Pipeline gateway caps (max-N tasks awaiting approval) are tracked as
   a separate concern and out of scope for the niche flow.
+
+## Telling a niche what it covers
+
+Goals say why to write something, not what about. To keep a niche on its
+subject, give it a topic scope: `poindexter topics niche set-scope <slug>
+--subject "..." --exclude "..."`. Out-of-scope candidates are then dropped
+before ranking. See [niche-topic-scope.md](niche-topic-scope.md).

@@ -205,3 +205,36 @@ async def test_set_cadence_target_raises_for_unknown_niche(db_pool):
     svc = NicheService(db_pool)
     with pytest.raises(ValueError, match="unknown niche_id"):
         await svc.set_cadence_target(uuid4(), 1.0)
+
+
+async def test_set_topic_scope_roundtrips_and_clears(db_pool):
+    """poindexter#1127: a niche states what it covers."""
+    svc = NicheService(db_pool)
+    n = await svc.create(slug=f"scope-{uuid4().hex[:8]}", name="Scope")
+    assert not n.has_topic_scope and n.topic_scope_filter
+
+    updated = await svc.set_topic_scope(
+        n.id, subject="  AI and hardware  ",
+        exclusions=["games", " games ", "", "careers"], scope_filter=False,
+    )
+    assert updated.topic_subject == "AI and hardware"
+    assert updated.topic_exclusions == ("games", "careers")
+    assert updated.topic_scope_filter is False
+    assert (await svc.get_by_id(n.id)).topic_exclusions == ("games", "careers")
+
+    cleared = await svc.set_topic_scope(n.id, subject="", exclusions=[], scope_filter=True)
+    assert not cleared.has_topic_scope and cleared.topic_exclusions == ()
+
+
+async def test_set_topic_scope_refuses_exclusions_without_a_subject(db_pool):
+    svc = NicheService(db_pool)
+    n = await svc.create(slug=f"scope-{uuid4().hex[:8]}", name="Scope")
+    with pytest.raises(ValueError, match="exclusions need a subject"):
+        await svc.set_topic_scope(n.id, subject=None, exclusions=["games"], scope_filter=True)
+
+
+async def test_set_writer_prompt_sets_and_clears(db_pool):
+    svc = NicheService(db_pool)
+    n = await svc.create(slug=f"wp-{uuid4().hex[:8]}", name="WP")
+    assert (await svc.set_writer_prompt(n.id, "Write about GPUs.")).writer_prompt_override == "Write about GPUs."
+    assert (await svc.set_writer_prompt(n.id, "   ")).writer_prompt_override is None

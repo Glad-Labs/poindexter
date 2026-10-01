@@ -2513,6 +2513,10 @@ DEFAULTS: dict[str, str] = {
     'niche_goal_descriptions': '{"TRAFFIC": "Topic likely to attract organic search traffic; trending keyword, broad appeal, evergreen demand.", "EDUCATION": "Topic that teaches the reader something concrete and useful they didn\'t know before.", "BRAND": "Topic that reinforces the operator\'s positioning and unique perspective.", "AUTHORITY": "Topic that demonstrates the operator\'s depth and expertise on something specific.", "REVENUE": "Topic that drives a commercial outcome: signups, sales, conversions, paid feature awareness.", "COMMUNITY": "Topic that resonates with the operator\'s existing audience; sparks discussion, shares, replies.", "NICHE_DEPTH": "Topic that goes deep on the operator\'s niche specialty rather than broad-audience content."}',
     'niche_ollama_chat_timeout_seconds': '300.0',
     'niche_top_n_per_pool': '5',
+    # Topic scope check (poindexter#1127): candidates per LLM call when a
+    # niche with a topic_subject has its scope filter on. One 40-title call
+    # took 5.4 s on qwen2.5:7b; larger chunks risk the model skipping ids.
+    'niche_topic_scope_check_chunk_size': '40',
     # b2 pool-reader (poindexter#812): per-source row cap when run_sweep
     # reads topic_pool. The pool accumulates at wildly different rates per
     # source (internal_rag deposits ~40x devto), so the read is balanced
@@ -4647,6 +4651,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # batch still forms and looks normal, so this needs a channel or it stays
     # invisible (it ran at ~50% undetected for weeks). 6h cooldown matches the
     # other topic findings: a persistently-degrading model is a few notes a day.
+    # Topic scope (poindexter#1127). A failed scope check keeps every
+    # candidate it could not judge, so off-subject topics can reach a batch:
+    # worth a routine ops note, same routing as the other topic findings.
+    # The per-sweep "dropped N" summary is expected output of a working
+    # filter, so it is logged (and on the Findings board), never sent.
+    'findings.topic_scope_check_failed.delivery': 'discord',
+    'findings.topic_scope_check_failed.fallback': 'log_only',
+    'findings.topic_scope_check_failed.cooldown_minutes': '360',
+    'findings.topic_scope_check_failed.min_severity': 'warn',
+    'findings.topic_scope_filtered.delivery': 'log_only',
+    'findings.topic_scope_filtered.fallback': 'log_only',
     'findings.topic_rank_degraded.delivery': 'discord',
     'findings.topic_rank_degraded.fallback': 'log_only',
     'findings.topic_rank_degraded.cooldown_minutes': '360',
@@ -6908,6 +6923,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'findings.topic_gap.delivery': {'value_type': 'string'},
     'findings.topic_gap.fallback': {'value_type': 'string'},
     'findings.topic_rank_degraded.cooldown_minutes': {'value_type': 'integer'},
+    'findings.topic_scope_check_failed.cooldown_minutes': {'value_type': 'integer'},
+    'findings.topic_scope_check_failed.delivery': {'value_type': 'string'},
+    'findings.topic_scope_check_failed.fallback': {'value_type': 'string'},
+    'findings.topic_scope_check_failed.min_severity': {'value_type': 'string'},
+    'findings.topic_scope_filtered.delivery': {'value_type': 'string'},
+    'findings.topic_scope_filtered.fallback': {'value_type': 'string'},
     'findings.topic_rank_degraded.delivery': {'value_type': 'string'},
     'findings.topic_rank_degraded.fallback': {'value_type': 'string'},
     'findings.topic_rank_degraded.min_severity': {'value_type': 'string'},
@@ -7199,6 +7220,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'niche_ollama_chat_timeout_seconds': {'value_type': 'float'},
     'niche_pool_read_per_source_limit': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'niche_top_n_per_pool': {'owner': 'topic_batch_service', 'value_type': 'integer'},
+    'niche_topic_scope_check_chunk_size': {'owner': 'topic_scope', 'value_type': 'integer'},
     'oauth_issuer_url': {'owner': 'oauth_routes'},
     'wan_ip_last_seen': {'owner': 'probe_wan_ip_change', 'value_type': 'string'},
     'wan_ip_probe_enabled': {'owner': 'probe_wan_ip_change', 'value_type': 'boolean'},

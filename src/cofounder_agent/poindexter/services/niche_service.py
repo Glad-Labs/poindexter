@@ -49,6 +49,20 @@ class Niche:
     # Set via ``poindexter topics niche set-cadence``; read by
     # ``poindexter/brain/health_probes.py::probe_cadence_slo`` (poindexter#538).
     cadence_target_posts_per_day: float | None = None
+    # Topic scope (poindexter#1127). ``topic_subject`` is what the niche
+    # covers, in plain prose; None means no scope and sweeps behave as they
+    # did before the columns existed. ``topic_exclusions`` are subjects that
+    # are out of scope even when they sit next to the subject. With
+    # ``topic_scope_filter`` on, an LLM scope check drops out-of-scope
+    # candidates before ranking; off, the subject only steers ranking.
+    # Set via ``poindexter topics niche set-scope``.
+    topic_subject: str | None = None
+    topic_exclusions: tuple[str, ...] = ()
+    topic_scope_filter: bool = True
+
+    @property
+    def has_topic_scope(self) -> bool:
+        return bool((self.topic_subject or "").strip())
 
 
 @dataclass(frozen=True)
@@ -167,6 +181,64 @@ class NicheService:
             raise ValueError(f"unknown niche_id: {niche_id}")
         return _row_to_niche(row)
 
+    async def set_topic_scope(
+        self,
+        niche_id: UUID,
+        *,
+        subject: str | None,
+        exclusions: list[str],
+        scope_filter: bool,
+    ) -> Niche:
+        """Set what this niche covers (poindexter#1127).
+
+        ``subject`` of None or blank clears the scope. Exclusions are
+        trimmed and de-duplicated, order kept. Exclusions without a subject
+        are refused: the scope check needs something to be in scope *of*.
+        """
+        clean_subject = (subject or "").strip() or None
+        clean_exclusions = list(
+            dict.fromkeys(e.strip() for e in exclusions if e and e.strip())
+        )
+        if clean_subject is None and clean_exclusions:
+            raise ValueError(
+                "exclusions need a subject: set --subject as well, or clear "
+                "the exclusions"
+            )
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "UPDATE niches SET topic_subject = $1, topic_exclusions = $2, "
+                "topic_scope_filter = $3, updated_at = now() "
+                "WHERE id = $4 RETURNING *",
+                clean_subject, clean_exclusions, bool(scope_filter), niche_id,
+            )
+        if row is None:
+            raise ValueError(f"unknown niche_id: {niche_id}")
+        return _row_to_niche(row)
+
+    async def set_writer_prompt(self, niche_id: UUID, prompt: str | None) -> Niche:
+        """Set or clear (None / blank) the niche's writer prompt override."""
+        clean = (prompt or "").strip() or None
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "UPDATE niches SET writer_prompt_override = $1, updated_at = now() "
+                "WHERE id = $2 RETURNING *",
+                clean, niche_id,
+            )
+        if row is None:
+            raise ValueError(f"unknown niche_id: {niche_id}")
+        return _row_to_niche(row)
+
+
+def _optional_column(row: Any, name: str, default: Any) -> Any:
+    """Read a column a pre-migration row or a test fixture may lack.
+
+    asyncpg.Record raises KeyError on a missing key (it has no ``.get``).
+    """
+    try:
+        return row[name]
+    except (KeyError, IndexError):
+        return default
+
 
 def _row_to_niche(row: Any) -> Niche:
     # default_template_slug is keyed defensively — tests + older
@@ -196,6 +268,9 @@ def _row_to_niche(row: Any) -> Niche:
         cadence_target_posts_per_day=(
             float(cadence_target) if cadence_target is not None else None
         ),
+        topic_subject=_optional_column(row, "topic_subject", None),
+        topic_exclusions=tuple(_optional_column(row, "topic_exclusions", None) or ()),
+        topic_scope_filter=bool(_optional_column(row, "topic_scope_filter", True)),
     )
 
 

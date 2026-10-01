@@ -11,10 +11,17 @@ Wraps ``services.topic_batch_service.TopicBatchService`` and
 - ``poindexter topics resolve-batch <id>``         — advance rank-1 to pipeline
 - ``poindexter topics reject-batch <id> [--reason ...]`` — discard the batch
 
-Plus a ``niche`` subgroup for read-only inspection of niche configuration:
+Plus a ``niche`` subgroup for niche configuration:
 
 - ``poindexter topics niche list``   — every active niche
 - ``poindexter topics niche show <slug>`` — full config as JSON
+- ``poindexter topics niche set-scope <slug> --subject ... --exclude ...``
+                                      — what the niche covers (poindexter#1127)
+- ``poindexter topics niche check-scope <slug>`` — judge the current pool
+                                      against the scope, changing nothing
+- ``poindexter topics niche set-goals <slug> NICHE_DEPTH=35 AUTHORITY=25 ...``
+- ``poindexter topics niche set-sources <slug> internal_rag=25 devto=15:off ...``
+- ``poindexter topics niche set-writer-prompt <slug> --file prompt.md``
 
 The CLI is the canonical operator surface; MCP tools and any future
 REST endpoints call into the same service modules.
@@ -470,6 +477,14 @@ def niche_show(slug: str) -> None:
                             }
                             for s in await svc.get_sources(n.id)
                         ],
+                        "topic_scope": {
+                            "subject": n.topic_subject,
+                            "exclusions": list(n.topic_exclusions),
+                            "filter": n.topic_scope_filter,
+                        },
+                        "writer_prompt_override_chars": len(
+                            n.writer_prompt_override or ""
+                        ),
                     },
                     indent=2,
                 )
@@ -507,6 +522,270 @@ def niche_set_cadence(niche: str, target: float) -> None:
             click.echo(
                 f"Set cadence target for {updated.slug}: "
                 f"{updated.cadence_target_posts_per_day}/day"
+            )
+        finally:
+            await close_cli_pool(pool)
+
+    asyncio.run(_impl())
+
+
+def _parse_weight_pairs(pairs: tuple[str, ...]) -> list[tuple[str, int, bool]]:
+    """Parse ``NAME=WEIGHT`` or ``NAME=WEIGHT:off`` into
+    ``(name, weight, enabled)``. Raises ``click.BadParameter`` on bad input."""
+    parsed: list[tuple[str, int, bool]] = []
+    seen: set[str] = set()
+    for pair in pairs:
+        name, sep, rest = pair.partition("=")
+        name = name.strip()
+        if not sep or not name:
+            raise click.BadParameter(f"expected NAME=WEIGHT, got {pair!r}")
+        weight_text, _, flag = rest.partition(":")
+        try:
+            weight = int(weight_text.strip())
+        except ValueError as exc:
+            raise click.BadParameter(f"weight must be an integer in {pair!r}") from exc
+        if weight < 0:
+            raise click.BadParameter(f"weight must be >= 0 in {pair!r}")
+        flag = flag.strip().lower()
+        if flag not in ("", "on", "off"):
+            raise click.BadParameter(f"expected ':on' or ':off' in {pair!r}")
+        if name in seen:
+            raise click.BadParameter(f"{name!r} is listed twice")
+        seen.add(name)
+        parsed.append((name, weight, flag != "off"))
+    if not parsed:
+        raise click.BadParameter("give at least one NAME=WEIGHT")
+    return parsed
+
+
+def _merge_scope(
+    *,
+    current_subject: str | None,
+    current_exclusions: tuple[str, ...],
+    current_filter: bool,
+    subject: str | None,
+    exclude: tuple[str, ...],
+    remove_exclude: tuple[str, ...],
+    clear_exclusions: bool,
+    scope_filter: bool | None,
+    clear: bool,
+) -> tuple[str | None, list[str], bool]:
+    """Apply ``set-scope`` flags to the niche's current scope. Unchanged
+    parts are kept, so each flag edits only what it names."""
+    if clear:
+        return None, [], current_filter if scope_filter is None else scope_filter
+    new_subject = current_subject if subject is None else subject
+    base = [] if clear_exclusions else list(current_exclusions)
+    removed = {r.strip().lower() for r in remove_exclude}
+    exclusions = [e for e in base if e.strip().lower() not in removed] + list(exclude)
+    new_filter = current_filter if scope_filter is None else scope_filter
+    return new_subject, exclusions, new_filter
+
+
+@niche_group.command("set-scope")
+@click.argument("slug")
+@click.option("--subject", default=None,
+              help="What the niche covers, in plain prose. Replaces the current subject.")
+@click.option("--exclude", "exclude", multiple=True,
+              help="An out-of-scope subject to add. Repeatable.")
+@click.option("--remove-exclude", "remove_exclude", multiple=True,
+              help="Remove an exclusion (exact text, case-insensitive). Repeatable.")
+@click.option("--clear-exclusions", is_flag=True, help="Remove every exclusion first.")
+@click.option("--filter/--no-filter", "scope_filter", default=None,
+              help="Drop out-of-scope candidates before ranking (--filter), or only "
+                   "use the subject to steer ranking (--no-filter).")
+@click.option("--clear", is_flag=True, help="Remove the subject and exclusions.")
+def niche_set_scope(
+    slug: str, subject: str | None, exclude: tuple[str, ...],
+    remove_exclude: tuple[str, ...], clear_exclusions: bool,
+    scope_filter: bool | None, clear: bool,
+) -> None:
+    """Set what a niche's topics are about (poindexter#1127).
+
+    With a subject set and the filter on, each sweep asks the structured
+    model which candidates are in scope and drops the rest before ranking.
+    The subject also steers the ranking prompt, the NICHE_DEPTH goal and
+    internal story selection. Preview with ``check-scope`` first.
+    """
+    async def _impl():
+        from poindexter.services.niche_service import NicheService
+
+        pool = await open_cli_pool()
+        try:
+            svc = NicheService(pool)
+            n = await svc.get_by_slug(slug)
+            if not n:
+                raise click.ClickException(f"unknown niche: {slug}")
+            new_subject, exclusions, new_filter = _merge_scope(
+                current_subject=n.topic_subject,
+                current_exclusions=n.topic_exclusions,
+                current_filter=n.topic_scope_filter,
+                subject=subject, exclude=exclude, remove_exclude=remove_exclude,
+                clear_exclusions=clear_exclusions, scope_filter=scope_filter,
+                clear=clear,
+            )
+            try:
+                updated = await svc.set_topic_scope(
+                    n.id, subject=new_subject, exclusions=exclusions,
+                    scope_filter=new_filter,
+                )
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            if not updated.has_topic_scope:
+                click.echo(f"{updated.slug}: no topic scope (sweeps unfiltered)")
+                return
+            click.echo(f"{updated.slug} subject: {updated.topic_subject}")
+            for exclusion in updated.topic_exclusions:
+                click.echo(f"  exclude: {exclusion}")
+            click.echo(
+                "  filter: " + (
+                    "on (out-of-scope candidates are dropped before ranking)"
+                    if updated.topic_scope_filter
+                    else "off (the subject only steers ranking)"
+                )
+            )
+        finally:
+            await close_cli_pool(pool)
+
+    asyncio.run(_impl())
+
+
+@niche_group.command("check-scope")
+@click.argument("slug")
+@click.option("--show", type=click.Choice(["all", "out", "in"]), default="all",
+              help="Which verdicts to list.")
+def niche_check_scope(slug: str, show: str) -> None:
+    """Judge the niche's current topic pool against its scope.
+
+    Read-only: nothing is dropped or written. Runs even when the filter is
+    off, so you can see what turning it on would do.
+    """
+    async def _impl():
+        from poindexter.services.niche_service import NicheService
+        from poindexter.services.topic_batch_service import TopicBatchService
+
+        pool = await open_cli_pool()
+        try:
+            async with container_for_cli(pool) as container:
+                n = await NicheService(pool).get_by_slug(slug)
+                if not n:
+                    raise click.ClickException(f"unknown niche: {slug}")
+                svc = TopicBatchService(pool, site_config=container.site_config)
+                try:
+                    rows = await svc.preview_scope(niche_id=n.id)
+                except ValueError as e:
+                    raise click.ClickException(str(e)) from e
+            counts = {"in": 0, "out": 0, "unjudged": 0}
+            for row in rows:
+                counts[row["verdict"]] += 1
+                if show != "all" and row["verdict"] != show:
+                    continue
+                click.echo(f"{row['verdict']:8s} [{row['pool']}] {row['title']}")
+            click.echo(
+                f"{len(rows)} candidate(s): {counts['in']} in, {counts['out']} out, "
+                f"{counts['unjudged']} unjudged"
+                + ("" if n.topic_scope_filter else "  (filter is off: nothing is dropped)")
+            )
+        finally:
+            await close_cli_pool(pool)
+
+    asyncio.run(_impl())
+
+
+@niche_group.command("set-goals")
+@click.argument("slug")
+@click.argument("pairs", nargs=-1, required=True)
+def niche_set_goals(slug: str, pairs: tuple[str, ...]) -> None:
+    """Replace a niche's ranking goals: ``GOAL=WEIGHT`` pairs summing to 100.
+
+    Goals: TRAFFIC, EDUCATION, BRAND, AUTHORITY, REVENUE, COMMUNITY,
+    NICHE_DEPTH. With a topic subject set, NICHE_DEPTH means "deep on the
+    niche's subject".
+    """
+    async def _impl():
+        from poindexter.services.niche_service import NicheGoal, NicheService
+
+        goals = [
+            NicheGoal(goal_type=name.upper(), weight_pct=weight)
+            for name, weight, _ in _parse_weight_pairs(pairs)
+        ]
+        pool = await open_cli_pool()
+        try:
+            svc = NicheService(pool)
+            n = await svc.get_by_slug(slug)
+            if not n:
+                raise click.ClickException(f"unknown niche: {slug}")
+            try:
+                await svc.set_goals(n.id, goals)
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            for g in await svc.get_goals(n.id):
+                click.echo(f"  {g.goal_type:12s} {g.weight_pct}")
+        finally:
+            await close_cli_pool(pool)
+
+    asyncio.run(_impl())
+
+
+@niche_group.command("set-sources")
+@click.argument("slug")
+@click.argument("pairs", nargs=-1, required=True)
+def niche_set_sources(slug: str, pairs: tuple[str, ...]) -> None:
+    """Replace a niche's source weights: ``NAME=WEIGHT`` or ``NAME=WEIGHT:off``.
+
+    Sources not listed are removed from the niche.
+    """
+    async def _impl():
+        from poindexter.services.niche_service import NicheService, NicheSource
+
+        sources = [
+            NicheSource(source_name=name, enabled=enabled, weight_pct=weight)
+            for name, weight, enabled in _parse_weight_pairs(pairs)
+        ]
+        pool = await open_cli_pool()
+        try:
+            svc = NicheService(pool)
+            n = await svc.get_by_slug(slug)
+            if not n:
+                raise click.ClickException(f"unknown niche: {slug}")
+            await svc.set_sources(n.id, sources)
+            for src in await svc.get_sources(n.id):
+                state = "" if src.enabled else "  (off)"
+                click.echo(f"  {src.source_name:16s} {src.weight_pct}{state}")
+        finally:
+            await close_cli_pool(pool)
+
+    asyncio.run(_impl())
+
+
+@niche_group.command("set-writer-prompt")
+@click.argument("slug")
+@click.option("--file", "path", type=click.Path(exists=True, dir_okay=False),
+              default=None, help="Read the prompt from this file.")
+@click.option("--clear", is_flag=True, help="Remove the override.")
+def niche_set_writer_prompt(slug: str, path: str | None, clear: bool) -> None:
+    """Set or clear a niche's writer prompt override."""
+    if bool(path) == clear:
+        raise click.UsageError("give exactly one of --file or --clear")
+
+    async def _impl():
+        from pathlib import Path
+
+        from poindexter.services.niche_service import NicheService
+
+        # Exactly one of --file / --clear was given, so no path means --clear.
+        prompt = None if path is None else Path(path).read_text(encoding="utf-8")
+        pool = await open_cli_pool()
+        try:
+            svc = NicheService(pool)
+            n = await svc.get_by_slug(slug)
+            if not n:
+                raise click.ClickException(f"unknown niche: {slug}")
+            updated = await svc.set_writer_prompt(n.id, prompt)
+            size = len(updated.writer_prompt_override or "")
+            click.echo(
+                f"{updated.slug}: writer prompt "
+                + (f"set ({size} chars)" if size else "cleared")
             )
         finally:
             await close_cli_pool(pool)

@@ -101,7 +101,7 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
         "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         # Return the same candidates with a descending llm_score so order
         # is deterministic. Use enumerate to mimic the spec: first → 80,
         # then 75, 70, …
@@ -210,7 +210,7 @@ async def test_run_sweep_mixes_external_and_internal_pool_rows(db_pool, monkeypa
         "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 80 - idx * 5
@@ -293,7 +293,7 @@ async def test_run_sweep_dedupes_duplicate_candidates(db_pool, monkeypatch):
         "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 80 - idx * 5
@@ -364,7 +364,7 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
         "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 50 - idx
@@ -445,7 +445,7 @@ async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
     )
 
     # … but the LLM final-scorer returns nothing usable → ranked == [].
-    async def empty_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def empty_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         return {}
 
     monkeypatch.setattr("poindexter.services.topic_ranking.llm_final_score", empty_llm_score)
@@ -1486,7 +1486,7 @@ async def test_run_sweep_drops_contentless_candidates_at_intake(db_pool, monkeyp
         "poindexter.services.topic_ranking._embed_text_cached", fake_embed_text,
     )
 
-    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None, niche=None):
         result = {}
         for idx, c in enumerate(candidates):
             c.llm_score = 80 - idx * 5

@@ -124,6 +124,35 @@ async def goal_vector_for(goal_type: str, *, site_config: SiteConfig) -> list[fl
     return vec
 
 
+_SUBJECT_VEC_CACHE: dict[str, list[float]] = {}
+
+
+async def goal_vectors_for_niche(
+    goals: list[NicheGoal], niche: Any, *, site_config: SiteConfig,
+) -> dict[str, list[float]]:
+    """Goal vectors for one niche (poindexter#1127).
+
+    Same as :func:`goal_vector_for` per goal, except ``NICHE_DEPTH``: when
+    the niche states a ``topic_subject``, that goal means "deep on this
+    niche's subject" and is anchored on the subject text instead of the
+    install-wide description. A niche without a subject gets exactly the
+    vectors it got before. Subject vectors are cached by their text, so
+    editing a subject takes effect on the next sweep.
+    """
+    subject = (getattr(niche, "topic_subject", None) or "").strip()
+    vecs: dict[str, list[float]] = {}
+    for g in goals:
+        if g.goal_type == "NICHE_DEPTH" and subject:
+            if subject not in _SUBJECT_VEC_CACHE:
+                _SUBJECT_VEC_CACHE[subject] = await _embed_text_cached(
+                    subject, site_config=site_config,
+                )
+            vecs[g.goal_type] = _SUBJECT_VEC_CACHE[subject]
+        else:
+            vecs[g.goal_type] = await goal_vector_for(g.goal_type, site_config=site_config)
+    return vecs
+
+
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     if len(a) != len(b):
         return 0.0
@@ -323,8 +352,13 @@ async def llm_final_score(
     *,
     model: str | None = None,
     site_config: SiteConfig,
+    niche: Any = None,
 ) -> dict[str, ScoredCandidate]:
     """Single LLM call ranks the (already-shortlisted) candidates against weighted goals.
+
+    ``niche``, when given and it states a ``topic_subject``, adds its scope
+    to the prompt so the ranker scores off-subject candidates low
+    (poindexter#1127). Omitted or subject-less, the prompt is unchanged.
 
     Returns the same candidates with `llm_score` and `score_breakdown` filled in,
     keyed by candidate id.
@@ -361,6 +395,17 @@ async def llm_final_score(
     # import to the only code path that actually needs it, so the MCP server's
     # operator topic tools can import this module without PyYAML installed.
     from poindexter.services.prompt_manager import get_prompt_manager
+    from poindexter.services.topic_scope import scope_block
+
+    # The niche's scope rides on ``weights_descr`` rather than a new prompt
+    # variable, so an operator's customised ``topic.ranking`` prompt keeps
+    # rendering and still receives it (poindexter#1127).
+    block = scope_block(niche)
+    if block:
+        weights_descr += (
+            "\n\nNiche scope (score candidates whose main subject is outside "
+            "it low):\n" + block
+        )
     prompt = get_prompt_manager().get_prompt(
         "topic.ranking",
         weights_descr=weights_descr,

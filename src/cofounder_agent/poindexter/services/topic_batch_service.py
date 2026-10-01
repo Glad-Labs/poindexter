@@ -41,7 +41,7 @@ from poindexter.services.topic_length import pick_target_length
 from poindexter.services.topic_ranking import (
     ScoredCandidate,
     apply_decay,
-    goal_vector_for,
+    goal_vectors_for_niche,
     weighted_cosine_score,
 )
 from poindexter.services.topic_sanity import (
@@ -278,6 +278,15 @@ class TopicBatchService:
                 )
             )
 
+            # Topic scope (poindexter#1127): when the niche states what it
+            # covers and has the filter on, drop candidates whose main
+            # subject is outside it — before embedding, so they never take a
+            # pre-rank slot. Carried-forward incumbents are re-judged too, so
+            # a scope edit applies to them on the next sweep.
+            combined_external, combined_internal = await self._apply_topic_scope(
+                niche, combined_external, combined_internal,
+            )
+
             pool_external, pool_internal = await self._embed_and_pre_rank(
                 niche,
                 combined_external,
@@ -298,7 +307,9 @@ class TopicBatchService:
             goals = await self._niche_svc.get_goals(niche.id)
             # #272 Phase-2d: topic_ranking has no module global — pass the
             # DI-injected ``self._site_config``.
-            scored = await llm_final_score(top10, goals, site_config=self._site_config)
+            scored = await llm_final_score(
+                top10, goals, site_config=self._site_config, niche=niche,
+            )
 
             # Cap internal_rag's share of the batch so the system-introspection
             # corpus (claude_sessions / brain / audit / memory) can't crowd out
@@ -922,6 +933,146 @@ class TopicBatchService:
             )
         return kept_external, kept_internal
 
+    async def _judge_scope(
+        self, niche: Niche, external: list, internal: list,
+    ) -> tuple[Any, list[tuple[str, str, Any]]]:
+        """Run the scope check over both pools. Returns the result and the
+        judged items as ``(scope_id, pool, item)``."""
+        from poindexter.services.topic_scope import ScopeItem, check_scope
+
+        judged: list[tuple[str, str, Any]] = []
+        scope_items: list[ScopeItem] = []
+        for i, item in enumerate(external):
+            sid = f"e{i}"
+            text = self._external_title(item)
+            summary = self._external_summary(item)
+            judged.append((sid, "external", item))
+            scope_items.append(ScopeItem(sid, f"{text} — {summary}" if summary else text))
+        for i, item in enumerate(internal):
+            sid = f"i{i}"
+            text = self._internal_title(item)
+            angle = self._internal_angle(item)
+            judged.append((sid, "internal", item))
+            scope_items.append(ScopeItem(sid, f"{text} — {angle}" if angle else text))
+        result = await check_scope(scope_items, niche, site_config=self._site_config)
+        return result, judged
+
+    async def _apply_topic_scope(
+        self, niche: Niche, external: list, internal: list,
+    ) -> tuple[list, list]:
+        """Drop out-of-scope candidates when the niche's scope filter is on.
+
+        A no-op for a niche with no ``topic_subject`` or with
+        ``topic_scope_filter`` off. Fails open: a candidate the check could
+        not judge is kept, and a failed check emits
+        ``topic_scope_check_failed`` so an off filter never looks like an
+        empty one. Drops are reported as one ``topic_scope_filtered``
+        finding per sweep.
+        """
+        if not niche.has_topic_scope or not niche.topic_scope_filter:
+            return external, internal
+        if not external and not internal:
+            return external, internal
+
+        result, judged = await self._judge_scope(niche, external, internal)
+        kept_external: list = []
+        kept_internal: list = []
+        dropped: list[tuple[str, str]] = []  # (pool, title)
+        for sid, pool, item in judged:
+            title = (
+                self._external_title(item) if pool == "external"
+                else self._internal_title(item)
+            )
+            if sid in result.out_of_scope:
+                dropped.append((pool, title))
+            elif pool == "external":
+                kept_external.append(item)
+            else:
+                kept_internal.append(item)
+
+        if result.errors or result.unjudged:
+            emit_finding(
+                source="topic_batch_service",
+                kind="topic_scope_check_failed",
+                title=(
+                    f"Topic scope check could not judge {len(result.unjudged)} "
+                    f"candidate(s) for niche {niche.slug}; they were kept"
+                ),
+                body=(
+                    "The scope filter keeps anything it cannot judge, so "
+                    "off-subject topics may reach this batch.\n"
+                    + "\n".join(f"- {e}" for e in result.errors[:5])
+                ),
+                severity="warn",
+                dedup_key=f"topic-scope-check:{niche.slug}",
+                extra={
+                    "stage": "sweep_intake",
+                    "niche_slug": niche.slug,
+                    "unjudged": len(result.unjudged),
+                    "errors": result.errors[:5],
+                },
+            )
+        if dropped:
+            logger.info(
+                "Niche %s: topic scope dropped %d of %d candidate(s): %s",
+                niche.slug, len(dropped), len(judged),
+                "; ".join(f"[{p}] {t!r:.60}" for p, t in dropped),
+            )
+            emit_finding(
+                source="topic_batch_service",
+                kind="topic_scope_filtered",
+                title=(
+                    f"Topic scope dropped {len(dropped)} of {len(judged)} "
+                    f"candidate(s) for niche {niche.slug}"
+                ),
+                body="\n".join(f"- [{pool}] {title!r}" for pool, title in dropped),
+                severity="info",
+                dedup_key=f"topic-scope-filter:{niche.slug}",
+                extra={
+                    "stage": "sweep_intake",
+                    "niche_slug": niche.slug,
+                    "judged": len(judged),
+                    "dropped": [
+                        {"pool": pool, "title": title[:200]}
+                        for pool, title in dropped
+                    ],
+                },
+            )
+        return kept_external, kept_internal
+
+    async def preview_scope(self, *, niche_id: UUID) -> list[dict[str, Any]]:
+        """Judge the niche's current pool against its scope without
+        changing anything (``poindexter topics niche check-scope``).
+
+        Runs the check even when the filter is off, so an operator can see
+        what turning it on would do. Returns one row per candidate:
+        ``{"pool", "title", "verdict"}`` with verdict ``in`` / ``out`` /
+        ``unjudged``.
+        """
+        niche = await self._niche_svc.get_by_id(niche_id)
+        if niche is None:
+            raise ValueError(f"unknown niche_id: {niche_id}")
+        if not niche.has_topic_scope:
+            raise ValueError(
+                f"niche {niche.slug} has no topic subject; set one with "
+                f"'poindexter topics niche set-scope {niche.slug} --subject ...'"
+            )
+        external, internal, _ = await self._read_pool(niche)
+        result, judged = await self._judge_scope(niche, external, internal)
+        rows: list[dict[str, Any]] = []
+        for sid, pool, item in judged:
+            title = (
+                self._external_title(item) if pool == "external"
+                else self._internal_title(item)
+            )
+            verdict = (
+                "out" if sid in result.out_of_scope
+                else "in" if sid in result.in_scope
+                else "unjudged"
+            )
+            rows.append({"pool": pool, "title": title, "verdict": verdict})
+        return rows
+
     async def _embed_and_pre_rank(
         self,
         niche: Niche,
@@ -942,10 +1093,12 @@ class TopicBatchService:
         goals = await self._niche_svc.get_goals(niche.id)
         # #272 Phase-2d: thread the DI-injected site_config into the
         # topic_ranking helpers (no module global there anymore).
-        goal_vecs = {
-            g.goal_type: await goal_vector_for(g.goal_type, site_config=self._site_config)
-            for g in goals
-        }
+        # NICHE_DEPTH is anchored on the niche's own subject when it states
+        # one (poindexter#1127); every other goal uses the install-wide
+        # description, as before.
+        goal_vecs = await goal_vectors_for_niche(
+            goals, niche, site_config=self._site_config,
+        )
 
         # External-candidate internal grounding (poindexter#822). Read once
         # per sweep; applied only in the external branch below (internal
