@@ -40,9 +40,9 @@ subject and the other exclusions. `--remove-exclude`, `--clear-exclusions`,
 ## What reads it
 
 - **The scope check (hard filter).** After the sanity filter and before
-  embedding, the sweep sends each candidate's title and summary to the
-  structured model in batches of `niche_topic_scope_check_chunk_size` (40)
-  and drops the ones whose main subject is out of scope. Carried-forward
+  embedding, the sweep sends each candidate's title and summary to
+  `niche_topic_scope_check_model` (empty means the structured-extraction
+  model) in batches of `niche_topic_scope_check_chunk_size` (15) and drops the ones whose main subject is out of scope. Carried-forward
   candidates are re-judged, so a scope edit applies to them on the next sweep.
   The prompt is `topic.scope_check` in `skills/content/research/SKILL.md`.
 - **The ranking prompt.** The scope is appended to the goal list the
@@ -69,6 +69,22 @@ qwen2.5:7b came back about 33 correct in 5.4 s.
 The embedding anchor is still used for `NICHE_DEPTH`, where it is one weighted
 signal among several rather than a gate.
 
+## Which model, and how many per call
+
+Measured on 107 live candidates with 16 hand-labelled on-topic and 14
+off-topic titles:
+
+| Model                     | Per call | On-topic wrongly dropped | Off-topic wrongly kept |
+| ------------------------- | -------- | ------------------------ | ---------------------- |
+| qwen2.5:7b                | 40       | 8 of 16                  | 1 of 14                |
+| qwen2.5:7b                | 15       | 4 of 16                  | 1 of 14                |
+| qwen3-vl:30b-a3b-instruct | 15       | 0 and 1 of 16 (two runs) | 0 of 14                |
+
+Smaller models drop real on-topic candidates, often terse search-query titles
+such as "Gguf Quantization Types". Point `niche_topic_scope_check_model` at
+the strongest model you can afford to run on every sweep, and check the result
+with `check-scope` before relying on the filter.
+
 ## Failure behaviour
 
 The check **fails open and loud**. A model error, an unparseable reply or an id
@@ -78,6 +94,12 @@ never looks like a working one. Each sweep that drops candidates emits one
 `topic_scope_filtered` finding listing them (logged and on the Findings board,
 not sent). If the filter drops everything, the existing empty-batch guard
 records the run and does not open an empty batch.
+
+`check-scope` prints the check's first error when anything is unjudged. A
+common one is running it from a host shell on an install whose model URL only
+resolves inside the containers (`host.docker.internal`). Run it in the worker
+instead: `docker exec poindexter-worker python -m poindexter topics niche
+check-scope <slug>`.
 
 ## Other niche controls
 

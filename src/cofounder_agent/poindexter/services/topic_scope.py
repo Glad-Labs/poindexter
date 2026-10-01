@@ -34,7 +34,10 @@ from poindexter.services.site_config import SiteConfig
 logger = get_logger(__name__)
 
 PROMPT_KEY = "topic.scope_check"
-DEFAULT_CHUNK_SIZE = 40
+# Measured 2026-10-01 on 107 live candidates with qwen2.5:7b: 40 per call
+# wrongly dropped 8 of 16 hand-labelled on-topic titles, 15 per call dropped 4.
+# Smaller chunks also shrink what one bad reply costs.
+DEFAULT_CHUNK_SIZE = 15
 
 
 @dataclass(frozen=True)
@@ -106,7 +109,13 @@ async def check_scope(
 
     Returns an empty result when the niche has no subject or there is
     nothing to judge. Items are sent in chunks of
-    ``niche_topic_scope_check_chunk_size`` (default 40).
+    ``niche_topic_scope_check_chunk_size`` (default 15).
+
+    The model is ``niche_topic_scope_check_model`` when set, else the
+    structured-extraction model. Measured 2026-10-01 on 107 live candidates
+    at 15 per call: qwen2.5:7b dropped 4 of 16 on-topic titles, while
+    qwen3-vl:30b-a3b-instruct dropped 0 and 1 across two runs and kept all
+    14 off-topic titles out.
     """
     result = ScopeResult()
     block = scope_block(niche)
@@ -120,6 +129,8 @@ async def check_scope(
     from poindexter.services.topic_ranking import _ollama_chat_json
 
     if model is None:
+        model = str(site_config.get("niche_topic_scope_check_model", "") or "").strip()
+    if not model:
         from poindexter.services.llm_text import resolve_structured_model
 
         model = resolve_structured_model(site_config=site_config)

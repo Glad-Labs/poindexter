@@ -1040,14 +1040,17 @@ class TopicBatchService:
             )
         return kept_external, kept_internal
 
-    async def preview_scope(self, *, niche_id: UUID) -> list[dict[str, Any]]:
+    async def preview_scope(
+        self, *, niche_id: UUID,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
         """Judge the niche's current pool against its scope without
         changing anything (``poindexter topics niche check-scope``).
 
         Runs the check even when the filter is off, so an operator can see
-        what turning it on would do. Returns one row per candidate:
-        ``{"pool", "title", "verdict"}`` with verdict ``in`` / ``out`` /
-        ``unjudged``.
+        what turning it on would do. Returns ``(rows, errors)``: one row per
+        candidate, ``{"pool", "title", "verdict"}`` with verdict ``in`` /
+        ``out`` / ``unjudged``, and the check's error messages, which say why
+        anything is unjudged.
         """
         niche = await self._niche_svc.get_by_id(niche_id)
         if niche is None:
@@ -1071,7 +1074,7 @@ class TopicBatchService:
                 else "unjudged"
             )
             rows.append({"pool": pool, "title": title, "verdict": verdict})
-        return rows
+        return rows, list(result.errors)
 
     async def _embed_and_pre_rank(
         self,

@@ -672,7 +672,7 @@ def niche_check_scope(slug: str, show: str) -> None:
                     raise click.ClickException(f"unknown niche: {slug}")
                 svc = TopicBatchService(pool, site_config=container.site_config)
                 try:
-                    rows = await svc.preview_scope(niche_id=n.id)
+                    rows, errors = await svc.preview_scope(niche_id=n.id)
                 except ValueError as e:
                     raise click.ClickException(str(e)) from e
             counts = {"in": 0, "out": 0, "unjudged": 0}
@@ -686,6 +686,15 @@ def niche_check_scope(slug: str, show: str) -> None:
                 f"{counts['unjudged']} unjudged"
                 + ("" if n.topic_scope_filter else "  (filter is off: nothing is dropped)")
             )
+            if errors:
+                # Unjudged candidates are kept by the real sweep, so a check
+                # that cannot reach its model filters nothing. Say why.
+                click.echo(
+                    f"The scope check failed {len(errors)} time(s), so "
+                    f"{counts['unjudged']} candidate(s) are unjudged. First error: "
+                    f"{errors[0]}",
+                    err=True,
+                )
         finally:
             await close_cli_pool(pool)
 

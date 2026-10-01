@@ -277,3 +277,43 @@ def test_merge_scope_edits_only_what_it_names():
     assert _merge(scope_filter=False)[2] is False
     assert _merge(subject="New")[0] == "New"
     assert _merge(clear=True) == (None, [], True)
+
+
+# --- model choice + preview errors (2026-10-01 follow-up) ---------------------
+
+
+@_async
+async def test_check_scope_uses_the_configured_model(monkeypatch):
+    seen: list[str] = []
+
+    async def fake(prompt, *, model, site_config):
+        seen.append(model)
+        return json.dumps({"a": True})
+
+    monkeypatch.setattr(topic_ranking, "_ollama_chat_json", fake)
+    sc = SiteConfig(initial_config={"niche_topic_scope_check_model": "ollama/judge:30b"})
+    await check_scope([ScopeItem("a", "x")], _niche(), site_config=sc)
+    assert seen == ["ollama/judge:30b"]
+
+
+@_async
+async def test_preview_returns_why_candidates_are_unjudged(monkeypatch):
+    async def fake_check(items, niche, *, site_config, model=None):
+        return ScopeResult(unjudged={"e0"}, errors=["ConnectError: no route"])
+
+    async def fake_read_pool(self, niche):
+        return [_ext("a")], [], set()
+
+    niche = _niche()
+
+    class FakeNiches:
+        async def get_by_id(self, niche_id):
+            return niche
+
+    monkeypatch.setattr(topic_scope, "check_scope", fake_check)
+    monkeypatch.setattr(TopicBatchService, "_read_pool", fake_read_pool)
+    svc = TopicBatchService(None, site_config=SiteConfig())
+    svc._niche_svc = FakeNiches()
+    rows, errors = await svc.preview_scope(niche_id=niche.id)
+    assert rows == [{"pool": "external", "title": "a", "verdict": "unjudged"}]
+    assert errors == ["ConnectError: no route"]

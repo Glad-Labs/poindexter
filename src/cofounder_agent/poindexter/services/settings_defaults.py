@@ -2514,9 +2514,14 @@ DEFAULTS: dict[str, str] = {
     'niche_ollama_chat_timeout_seconds': '300.0',
     'niche_top_n_per_pool': '5',
     # Topic scope check (poindexter#1127): candidates per LLM call when a
-    # niche with a topic_subject has its scope filter on. One 40-title call
-    # took 5.4 s on qwen2.5:7b; larger chunks risk the model skipping ids.
-    'niche_topic_scope_check_chunk_size': '40',
+    # niche with a topic_subject has its scope filter on. Measured on 107 live
+    # candidates: 40 per call wrongly dropped 8 of 16 on-topic titles on
+    # qwen2.5:7b, 15 per call dropped 4.
+    'niche_topic_scope_check_chunk_size': '15',
+    # Model for the scope check. Empty = the structured-extraction model. A
+    # larger model is markedly better at it: qwen3-vl:30b-a3b-instruct dropped
+    # 0-1 of the same 16 on-topic titles where qwen2.5:7b dropped 4.
+    'niche_topic_scope_check_model': '',
     # b2 pool-reader (poindexter#812): per-source row cap when run_sweep
     # reads topic_pool. The pool accumulates at wildly different rates per
     # source (internal_rag deposits ~40x devto), so the read is balanced
@@ -7221,6 +7226,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'niche_pool_read_per_source_limit': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'niche_top_n_per_pool': {'owner': 'topic_batch_service', 'value_type': 'integer'},
     'niche_topic_scope_check_chunk_size': {'owner': 'topic_scope', 'value_type': 'integer'},
+    'niche_topic_scope_check_model': {'owner': 'topic_scope', 'value_type': 'string'},
     'oauth_issuer_url': {'owner': 'oauth_routes'},
     'wan_ip_last_seen': {'owner': 'probe_wan_ip_change', 'value_type': 'string'},
     'wan_ip_probe_enabled': {'owner': 'probe_wan_ip_change', 'value_type': 'boolean'},
