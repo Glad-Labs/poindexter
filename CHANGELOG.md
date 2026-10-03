@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## [0.152.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.151.1...v0.152.0) (2026-10-03)
+
+
+### Features
+
+* **topics:** per-niche topic scope — say what a niche covers, and drop what it doesn't ([#4262](https://github.com/Glad-Labs/glad-labs-stack/issues/4262)) ([e590a00](https://github.com/Glad-Labs/glad-labs-stack/commit/e590a009b51871404d6958c50d21d33a495082cf))
+
+
+### Bug Fixes
+
+* **backup:** let the volumes tier read volumes other services own, and say tar failed, not pg_dump ([#4259](https://github.com/Glad-Labs/glad-labs-stack/issues/4259)) ([70820b2](https://github.com/Glad-Labs/glad-labs-stack/commit/70820b2df45849613511a83ba5c692c3209317e9))
+* **deps:** bump urllib3 2.7.0 -&gt; 2.8.0 (CVE-2026-97687, CVE-2026-97689) ([#4272](https://github.com/Glad-Labs/glad-labs-stack/issues/4272)) ([fcb8b1c](https://github.com/Glad-Labs/glad-labs-stack/commit/fcb8b1c758817e8dc96418cbe5ae20c538876054))
+* **legal:** describe the newsletter in the privacy policy, and link it from the signup form ([#4230](https://github.com/Glad-Labs/glad-labs-stack/issues/4230)) ([eed34c7](https://github.com/Glad-Labs/glad-labs-stack/commit/eed34c7c5206960cfbd161d170c76ff438afb08d))
+* **newsletter:** send List-Unsubscribe headers on Resend sends ([#4274](https://github.com/Glad-Labs/glad-labs-stack/issues/4274)) ([f9273c0](https://github.com/Glad-Labs/glad-labs-stack/commit/f9273c04acb9bba5c0821b112fc36e7274dca800))
+* **security:** drop the hardcoded fallback DSN password; lint for literal DB credentials ([#4277](https://github.com/Glad-Labs/glad-labs-stack/issues/4277)) ([b00dbd0](https://github.com/Glad-Labs/glad-labs-stack/commit/b00dbd09216913b653da6e1e1de754ae03f269ae))
+* **topics:** scope check gets its own model setting, batches of 15, and says why it judged nothing ([#4263](https://github.com/Glad-Labs/glad-labs-stack/issues/4263)) ([e6a4077](https://github.com/Glad-Labs/glad-labs-stack/commit/e6a4077c99903950e82a867d9cbc1d71e6fcf158))
+* **vercel:** skip a build only when nothing changed since the last good deploy ([#4275](https://github.com/Glad-Labs/glad-labs-stack/issues/4275)) ([1af18a9](https://github.com/Glad-Labs/glad-labs-stack/commit/1af18a96bd47abea125da3fcf4a9a079f4256d05))
+
 ## [0.151.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.151.0...v0.151.1) (2026-09-30)
 
 
