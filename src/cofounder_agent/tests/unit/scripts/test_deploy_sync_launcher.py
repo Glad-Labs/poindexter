@@ -1,6 +1,6 @@
 """``deploy-sync-launcher.sh`` runs MERGED driver code and can't be bricked by it.
 
-Glad-Labs/glad-labs-stack#4172. ``poindexter-deploy-sync.service`` ran
+Glad-Labs/poindexter#4172. ``poindexter-deploy-sync.service`` ran
 ``deploy-checkout-sync.sh`` out of the operator's working checkout "so a broken
 merge can't brick the syncer that would fix it". Nothing kept that checkout
 current: ``run-session.sh``'s ff-only pre-flight skipped a dirty tree 34 runs in
