@@ -55,17 +55,40 @@ logger = logging.getLogger("voice-bridge-mcp")
 #
 # Accept DATABASE_URL (canonical, per feedback_db_first_config / CLAUDE.md
 # "Only DATABASE_URL as env var") OR LOCAL_DATABASE_URL (legacy alias the
-# rest of the brain still uses). Default host port is 5433 — the published
-# poindexter-postgres-local host port (override via POSTGRES_HOST_PORT). It
-# moved off 15432 on 2026-06-21: 15432 landed inside a Windows Hyper-V
-# reserved TCP range (WSAEACCES), so the publish silently dropped and every
-# voice_join_room call hit a ConnectionRefusedError. Keep in sync with
-# docker-compose.local.yml's POSTGRES_HOST_PORT default.
-LOCAL_DB_DSN = (
-    os.getenv("DATABASE_URL")
-    or os.getenv("LOCAL_DATABASE_URL")
-    or "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-)
+# rest of the brain still uses), then bootstrap.toml. A hardcoded fallback
+# DSN used to sit here and went stale twice: once on the host port (15432 ->
+# 5433, 2026-06-21, every voice_join_room hit ConnectionRefusedError) and
+# once on the password, which `poindexter setup` generates per install.
+def _resolve_local_db_dsn() -> str:
+    """Return the brain DB DSN, or notify the operator and exit.
+
+    DATABASE_URL / LOCAL_DATABASE_URL first, then ``~/.poindexter/bootstrap.toml``
+    through ``poindexter.brain.bootstrap.require_database_url`` (the resolver
+    ``mcp-server/server.py`` uses), which fails loud with ``notify_operator``.
+    There is deliberately no literal fallback DSN: a guessed credential either
+    fails late with a confusing auth error or, worse, matches a database that
+    was set up with it.
+    """
+    dsn = os.getenv("DATABASE_URL") or os.getenv("LOCAL_DATABASE_URL")
+    if dsn:
+        return dsn
+    src = Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    try:
+        from poindexter.brain.bootstrap import require_database_url
+    except ImportError as exc:
+        sys.exit(
+            f"FATAL: no database URL (DATABASE_URL / LOCAL_DATABASE_URL unset) and "
+            f"poindexter.brain.bootstrap is not importable ({exc}). "
+            "Set DATABASE_URL or run `poindexter setup`."
+        )
+    return require_database_url(source="mcp_server_voice")
+
+
+# Resolved on first pool use, not at import, so importing this module (tests,
+# tooling) never exits for want of a database.
+LOCAL_DB_DSN: str | None = None
 
 # Lazy-initialized connection pool.
 _pool: asyncpg.Pool | None = None
@@ -73,8 +96,10 @@ _pool: asyncpg.Pool | None = None
 
 async def _get_pool() -> asyncpg.Pool:
     """Return the shared local-DB pool, creating it on first call."""
-    global _pool
+    global _pool, LOCAL_DB_DSN
     if _pool is None:
+        if LOCAL_DB_DSN is None:
+            LOCAL_DB_DSN = _resolve_local_db_dsn()
         _pool = await asyncpg.create_pool(LOCAL_DB_DSN, min_size=1, max_size=3)
     return _pool
 

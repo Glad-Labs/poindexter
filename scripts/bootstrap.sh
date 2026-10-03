@@ -158,7 +158,12 @@ ok "Dependencies installed"
 # carries, and a table it creates narrower than the baseline's crashed the
 # worker's migration (poindexter#1097).
 info "Verifying database connectivity..."
-if PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p "${POSTGRES_HOST_PORT:-5433}" -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "SELECT 1" >/dev/null 2>&1; then
+# No default password: LOCAL_POSTGRES_PASSWORD is generated per install
+# (above, or by `poindexter setup`), so a literal fallback could only fail.
+if [ -z "${LOCAL_POSTGRES_PASSWORD:-}" ]; then
+    warn "LOCAL_POSTGRES_PASSWORD is not set — skipping the database check"
+    info "Run 'poindexter setup' or set it in .env.local, then re-run this script"
+elif PGPASSWORD="${LOCAL_POSTGRES_PASSWORD}" psql -h localhost -p "${POSTGRES_HOST_PORT:-5433}" -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "SELECT 1" >/dev/null 2>&1; then
     ok "Database reachable (migrations will run automatically when the worker starts)"
 else
     warn "Database not reachable via psql — this is OK if psql is not installed"

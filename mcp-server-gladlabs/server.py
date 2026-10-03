@@ -49,10 +49,39 @@ from oauth_client import (  # noqa: E402 — local module
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gladlabs-mcp")
 
-LOCAL_DB_DSN = os.getenv(
-    "LOCAL_DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
-)
+def _resolve_local_db_dsn() -> str:
+    """Return the brain DB DSN, or notify the operator and exit.
+
+    LOCAL_DATABASE_URL / DATABASE_URL first, then ``~/.poindexter/bootstrap.toml``
+    through ``poindexter.brain.bootstrap.require_database_url`` (the resolver
+    ``mcp-server/server.py`` uses), which fails loud with ``notify_operator``.
+    There is deliberately no literal fallback DSN: a guessed credential either
+    fails late with a confusing auth error or, worse, matches a database that
+    was set up with it.
+    """
+    dsn = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if dsn:
+        return dsn
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _src = _Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"
+    if str(_src) not in _sys.path:
+        _sys.path.insert(0, str(_src))
+    try:
+        from poindexter.brain.bootstrap import require_database_url
+    except ImportError as exc:
+        _sys.exit(
+            f"FATAL: no database URL (LOCAL_DATABASE_URL / DATABASE_URL unset) and "
+            f"poindexter.brain.bootstrap is not importable ({exc}). "
+            "Set DATABASE_URL or run `poindexter setup`."
+        )
+    return require_database_url(source="mcp_server_gladlabs")
+
+
+# Resolved on first pool use, not at import, so importing this module (tests,
+# tooling) never exits for want of a database.
+LOCAL_DB_DSN: str | None = None
 POINDEXTER_API_URL = (
     os.getenv("POINDEXTER_API_URL")
     or os.getenv("GLADLABS_API_URL", "http://localhost:8002")
@@ -84,8 +113,10 @@ _oauth: GladlabsMcpOAuthClient | None = None
 
 
 async def _get_pool() -> asyncpg.Pool:
-    global _pool
+    global _pool, LOCAL_DB_DSN
     if _pool is None:
+        if LOCAL_DB_DSN is None:
+            LOCAL_DB_DSN = _resolve_local_db_dsn()
         _pool = await asyncpg.create_pool(LOCAL_DB_DSN, min_size=1, max_size=3)
     return _pool
 
@@ -289,7 +320,8 @@ async def operator_status() -> str:
     Useful as a one-shot check that the operator MCP layer is wired correctly.
     """
     lines = ["Glad Labs operator MCP status:"]
-    lines.append(f"  Local DB DSN:          {'set' if LOCAL_DB_DSN else 'unset'}")
+    dsn_state = "resolved" if LOCAL_DB_DSN else "resolved on first DB use (env, then bootstrap.toml)"
+    lines.append(f"  Local DB DSN:          {dsn_state}")
     lines.append(f"  Poindexter API URL:    {POINDEXTER_API_URL}")
 
     # OAuth credential state (Glad-Labs/poindexter#244, finalised in

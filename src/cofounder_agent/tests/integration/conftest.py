@@ -87,16 +87,24 @@ requires_real_services = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-_DEFAULT_ADMIN_DSN = "postgresql://poindexter:poindexter-brain-local@localhost:5433/postgres"
 _TEST_DB_NAME = "poindexter_test"
 
 
 def _admin_dsn() -> str:
     """DSN for the `postgres` admin DB — used to CREATE the test DB.
 
-    Precedence: TEST_ADMIN_DSN env > POSTGRES_ADMIN_DSN env > default.
+    Precedence: TEST_ADMIN_DSN env > POSTGRES_ADMIN_DSN env. There is no
+    default: every install generates its own Postgres password, so a
+    hardcoded DSN could only fail to authenticate (or match a database that
+    was set up with it). With neither set, the harness skips.
     """
-    return os.getenv("TEST_ADMIN_DSN") or os.getenv("POSTGRES_ADMIN_DSN") or _DEFAULT_ADMIN_DSN
+    dsn = os.getenv("TEST_ADMIN_DSN") or os.getenv("POSTGRES_ADMIN_DSN")
+    if not dsn:
+        pytest.skip(
+            "Real-services harness needs TEST_ADMIN_DSN (or POSTGRES_ADMIN_DSN), "
+            "e.g. postgresql://poindexter:<password>@localhost:5433/postgres"
+        )
+    return dsn
 
 
 def _test_dsn() -> str:

@@ -65,21 +65,17 @@ except ImportError as _imp_err:
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Resolve DB URL via bootstrap.toml first, env vars as fallback.
-_dsn = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL", "")
-if not _dsn:
-    try:
-        from pathlib import Path as _Path
-        for _p in _Path(__file__).resolve().parents:
-            if (_p / "brain" / "bootstrap.py").is_file():
-                if str(_p) not in sys.path:
-                    sys.path.insert(0, str(_p))
-                break
-        from poindexter.brain.bootstrap import resolve_database_url
-        _dsn = resolve_database_url() or ""
-    except Exception:
-        pass
-LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+# Resolve the DB URL: LOCAL_DATABASE_URL / DATABASE_URL (the compose service
+# passes DATABASE_URL), else bootstrap.toml via require_database_url(), which
+# notifies the operator and exits 2 when nothing resolves. There is
+# deliberately no literal fallback DSN. The import is unguarded: the sys.path
+# block above puts the poindexter package within reach both on the host and in
+# the image (Dockerfile.auto-embed COPYs it to /app/poindexter).
+LOCAL_DSN = os.getenv("LOCAL_DATABASE_URL") or os.getenv("DATABASE_URL", "")
+if not LOCAL_DSN:
+    from poindexter.brain.bootstrap import require_database_url
+
+    LOCAL_DSN = require_database_url(source="auto_embed")
 
 # URL localization — same pattern used by brain.docker_utils and the
 # plugins ecosystem. When IN_DOCKER=true, rewrites localhost URLs to

@@ -440,7 +440,7 @@ def _resolve_db_url() -> str:
             print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
             dsn = None
     if not dsn:
-        dsn = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+        dsn = "postgresql://poindexter:<password>@localhost:5433/poindexter_brain"
     return dsn.replace("@localhost:", "@127.0.0.1:")
 
 

@@ -32,7 +32,6 @@ import pytest
 
 from poindexter.cli.setup import (
     _DEFAULT_LOCAL_DB_PORT,
-    _DEFAULT_LOCAL_DB_URL,
     _run_migrations,
     stack_database_url,
 )
@@ -337,9 +336,28 @@ class TestLocalDbPortInvariant:
     stack no longer listens on. These tests pin the single-source-of-truth.
     """
 
-    def test_default_dsn_uses_the_canonical_local_port(self):
-        """The prompt default DSN is built from _DEFAULT_LOCAL_DB_PORT."""
-        assert f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/" in _DEFAULT_LOCAL_DB_URL
+    def test_default_dsn_uses_the_canonical_local_port(self, monkeypatch):
+        """The interactive prompt's default DSN is the stack's own Postgres.
+
+        It is built from _DEFAULT_LOCAL_DB_PORT and the password generated
+        for this install, never a literal credential.
+        """
+        import poindexter.cli.setup as setup_mod
+
+        seen: dict = {}
+
+        def fake_prompt(text, default=None, show_default=True, **_kw):
+            seen.update(default=default, show_default=show_default)
+            return default
+
+        monkeypatch.delenv("POSTGRES_HOST_PORT", raising=False)
+        monkeypatch.setattr(setup_mod.click, "prompt", fake_prompt)
+        values = setup_mod._prompt_defaults({"local_postgres_password": "FAKEPW"})
+        assert seen["default"] == stack_database_url({"local_postgres_password": "FAKEPW"})
+        assert f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/" in seen["default"]
+        # The default carries the generated password, so it must not be echoed.
+        assert seen["show_default"] is False
+        assert values["database_url"] == seen["default"]
 
     def test_auto_dsn_uses_the_stack_port(self):
         """--auto points at the stack's own postgres-local, not a side container.

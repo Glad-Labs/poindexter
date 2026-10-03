@@ -457,10 +457,6 @@ async def _check_telegram(token: str, chat_id: str) -> tuple[bool, str]:
 # inside a Windows Hyper-V reserved TCP range and became unbindable
 # (WSAEACCES); see the compose-file comment.
 _DEFAULT_LOCAL_DB_PORT = 5433
-_DEFAULT_LOCAL_DB_URL = (
-    f"postgresql://poindexter:poindexter-brain-local"
-    f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/poindexter_brain"
-)
 
 # The compose files scripts/start-stack.sh picks between, in its order: the
 # operator's full stack when the checkout has it, else the public default
@@ -795,13 +791,17 @@ def _prompt_defaults(existing: dict[str, str] | None = None) -> dict[str, str]:
     )
     click.echo()
 
-    db_url = click.prompt(
-        "Database URL (postgresql://user:pass@host:port/db)",
-        default=_DEFAULT_LOCAL_DB_URL,
-        show_default=True,
-    ).strip()
-
     secrets = _stack_secrets(existing)
+    # The default is the stack's own postgres-local with the password generated
+    # just above, never a literal: every install gets its own credential, so a
+    # hardcoded default DSN could only be wrong (or, worse, right because some
+    # database was set up with it). Not echoed, since it carries that password.
+    db_url = click.prompt(
+        "Database URL (postgresql://user:pass@host:port/db) "
+        "[Enter = this stack's own Postgres]",
+        default=stack_database_url(secrets),
+        show_default=False,
+    ).strip()
     click.echo()
     click.secho("Generated secrets (stored in bootstrap.toml):", fg="cyan")
     click.echo(f"  Postgres:   {secrets['local_postgres_password'][:12]}...")

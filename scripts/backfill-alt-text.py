@@ -24,8 +24,8 @@ DB connection is resolved from (in order):
 2. ``POINDEXTER_BRAIN_URL`` env var,
 3. ``GLADLABS_BRAIN_URL`` env var,
 4. ``DATABASE_URL`` env var,
-5. local default (``postgresql://.../poindexter_brain``) — matches the
-   convention used by ``scripts/regen-featured-images.py``.
+5. ``~/.poindexter/bootstrap.toml`` via ``require_database_url()``, which
+   exits loud when nothing resolves (no literal fallback DSN).
 """
 from __future__ import annotations
 
@@ -49,10 +49,6 @@ from poindexter.services.alt_text import (  # noqa: E402  (sys.path munge above)
     strip_tokens_from_img_tags,
 )
 
-DEFAULT_DB_URL = (
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-)
-
 
 def _resolve_db_url(cli_value: str | None) -> str:
     if cli_value:
@@ -64,14 +60,12 @@ def _resolve_db_url(cli_value: str | None) -> str:
     # bootstrap.toml is canonical (#198) — resolve from it so the port tracks the
     # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
     # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
-    try:
-        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
+    from poindexter.brain.bootstrap import require_database_url  # type: ignore
 
-        dsn = resolve_database_url()
-    except Exception as exc:  # bootstrap is best-effort on the host
-        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
-        dsn = None
-    return (dsn or DEFAULT_DB_URL).replace("@localhost:", "@127.0.0.1:")
+    # No literal fallback DSN: this notifies the operator and exits 2 when
+    # neither the flag, the environment nor bootstrap.toml names a database.
+    dsn = require_database_url(source="backfill_alt_text")
+    return dsn.replace("@localhost:", "@127.0.0.1:")
 
 
 async def _table_has_column(conn, table: str, column: str) -> bool:
@@ -231,7 +225,7 @@ def main() -> int:
     parser.add_argument(
         "--database-url",
         help="Override DB URL (otherwise read from POINDEXTER_BRAIN_URL / "
-        "GLADLABS_BRAIN_URL / DATABASE_URL / local default).",
+        "GLADLABS_BRAIN_URL / DATABASE_URL / bootstrap.toml).",
     )
     args = parser.parse_args()
 

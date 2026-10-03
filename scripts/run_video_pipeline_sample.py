@@ -34,12 +34,6 @@ _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO, "src", "cofounder_agent"))
 
 
-_DATABASE_URL = (
-    "postgresql://poindexter:poindexter-brain-local"
-    "@127.0.0.1:5433/poindexter_brain"
-)
-
-
 class _OverrideConfig:
     """SiteConfig-shaped wrapper that overrides specific keys.
 
@@ -214,7 +208,14 @@ class _FakeDatabaseService:
 async def main(
     slug: str, strategy: str = "pexels", skip_long_form: bool = False,
 ) -> None:
-    pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=4)
+    from poindexter.brain.bootstrap import require_database_url
+
+    # No literal fallback DSN: this notifies the operator and exits 2 when
+    # neither the environment nor bootstrap.toml names a database.
+    dsn = require_database_url(source="run_video_pipeline_sample")
+    pool = await asyncpg.create_pool(
+        dsn.replace("@localhost:", "@127.0.0.1:"), min_size=1, max_size=4,
+    )
     real_config = None
     try:
         # Populate the module-level service container so providers that

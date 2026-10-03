@@ -524,6 +524,14 @@ def _start_time_files(script: Path, home: Path) -> list[str]:
         "print(json.dumps(sorted(os.path.relpath(f, root) for f in files if f.startswith(root + os.sep))))\n"
     )
     root = str(_repo_root().resolve())
+    # The host has a bootstrap.toml; without one the scraper now exits loud
+    # rather than falling back to a literal DSN, so give the fake HOME one.
+    bootstrap = home / ".poindexter" / "bootstrap.toml"
+    bootstrap.parent.mkdir(parents=True, exist_ok=True)
+    bootstrap.write_text(
+        'database_url = "postgresql://poindexter:FAKEPW@localhost:5433/poindexter_brain"\n',
+        encoding="utf-8",
+    )
     proc = subprocess.run(
         [sys.executable, "-c", probe, str(script), root],
         env={"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8"},

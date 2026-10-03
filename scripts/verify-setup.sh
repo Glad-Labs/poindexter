@@ -83,7 +83,12 @@ info "2. PostgreSQL"
 # ============================================================
 
 PG_USER="${LOCAL_POSTGRES_USER:-poindexter}"
-PG_PASS="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}"
+# No default password: it is generated per install (bootstrap.toml /
+# .env.local), so a literal fallback could only fail to authenticate.
+PG_PASS="${LOCAL_POSTGRES_PASSWORD:-}"
+if [ -z "$PG_PASS" ]; then
+    fail "LOCAL_POSTGRES_PASSWORD is not set — run 'poindexter setup' or set it in .env.local"
+fi
 PG_DB="${LOCAL_POSTGRES_DB:-poindexter_brain}"
 PG_HOST="localhost"
 PG_PORT="5433"

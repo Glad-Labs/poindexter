@@ -43,9 +43,9 @@ logger = logging.getLogger("gpu-scraper")
 def _resolve_db_url() -> str:
     """Resolve the brain DB DSN — bootstrap.toml is canonical (#198).
 
-    Order: ``DATABASE_URL`` env → ``brain.bootstrap.resolve_database_url()``
-    (CLI arg → bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL → …) → a
-    local default. The previous hardcoded ``localhost:15432`` froze
+    Order: ``DATABASE_URL`` env → ``brain.bootstrap.require_database_url()``
+    (CLI arg → bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL → …), which
+    notifies the operator and exits when nothing resolves. The previous hardcoded ``localhost:15432`` froze
     ``gpu_metrics`` silently when the 2026-06-21 deploy cutover moved the
     Postgres host port to 5433 (15432 was Windows-reserved); resolving from
     bootstrap tracks the port so the writer can't drift off it again.
@@ -58,14 +58,11 @@ def _resolve_db_url() -> str:
     dsn = os.getenv("DATABASE_URL")
     if not dsn:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
-        try:
-            from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
+        from poindexter.brain.bootstrap import require_database_url  # type: ignore
 
-            dsn = resolve_database_url()
-        except Exception as exc:  # pragma: no cover - host bootstrap best-effort
-            logger.warning("bootstrap DSN resolution failed (%s); using default", exc)
-    if not dsn:
-        dsn = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+        # No literal fallback DSN: this notifies the operator and exits 2 when
+        # neither the environment nor bootstrap.toml names a database.
+        dsn = require_database_url(source="gpu_scraper")
     return dsn.replace("@localhost:", "@127.0.0.1:")
 
 

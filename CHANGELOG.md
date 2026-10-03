@@ -4087,7 +4087,7 @@ Discord — not knowledge gates. SUPPORT.md updated to drop the
   - Customer-facing env vars: `GLADLABS_KEY` → `POINDEXTER_KEY`, `GLADLABS_API_URL` → `POINDEXTER_API_URL`, etc. Old names still accepted as a fallback.
   - Prometheus metric prefix: `gladlabs_*` → `poindexter_*` on the worker `/metrics` endpoint.
   - Public GitHub repo: `glad-labs-engine` → `poindexter`.
-  - Local Postgres password rebranded from `gladlabs-brain-local` to `poindexter-brain-local` via `ALTER USER poindexter WITH PASSWORD 'poindexter-brain-local'` on the live DB. All `.env`, MCP configs, and prompts repo scripts updated to match.
+  - Local Postgres password rebranded to a new `<password>` via `ALTER USER poindexter WITH PASSWORD '<password>'` on the live DB. All `.env`, MCP configs, and prompts repo scripts updated to match.
   - `.env.example`: `glad_labs_dev` → `poindexter_dev` (CREATE DATABASE, DATABASE_URL, DATABASE_NAME), `gladlabs_auth` → `poindexter_auth` in the commented AUTH_COOKIE_NAME example.
   - Hardcoded defaults scrubbed across `brain/health_probes.py`, `brain/brain_daemon.py`, `scripts/daemon.py`, `scripts/regen-featured-images.py`, and `mcp-server/server.py` so a fresh customer install doesn't carry gladlabs-branded defaults (GITEA_USER, GITEA_REPO, GRAFANA_PASSWORD, SITE_URL, LOG_FILE path, R2 bucket, check_health site URL).
 

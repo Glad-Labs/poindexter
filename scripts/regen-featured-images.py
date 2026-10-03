@@ -37,7 +37,7 @@ def _resolve_db_url() -> str:
     """Resolve the brain DSN and force IPv4 (mirrors scripts/gpu-scraper.py, #1796).
 
     Order: ``POINDEXTER_BRAIN_URL`` → ``GLADLABS_BRAIN_URL`` → bootstrap.toml
-    (canonical, #198) → local default. IPv4 because on Windows ``localhost``
+    (canonical, #198), else exit loud. IPv4 because on Windows ``localhost``
     resolves to ``::1`` first and Docker Desktop's IPv6 port-proxy silently
     drops connections.
     """
@@ -46,15 +46,12 @@ def _resolve_db_url() -> str:
         if val:
             return val.replace("@localhost:", "@127.0.0.1:")
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
-    try:
-        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
+    from poindexter.brain.bootstrap import require_database_url  # type: ignore
 
-        dsn = resolve_database_url()
-    except Exception as exc:  # bootstrap is best-effort on the host
-        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
-        dsn = None
-    default = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-    return (dsn or default).replace("@localhost:", "@127.0.0.1:")
+    # No literal fallback DSN: this notifies the operator and exits 2 when
+    # neither the environment nor bootstrap.toml names a database.
+    dsn = require_database_url(source="regen_featured_images")
+    return dsn.replace("@localhost:", "@127.0.0.1:")
 
 
 DB_URL = _resolve_db_url()

@@ -56,15 +56,12 @@ def _resolve_db_url() -> str:
         if val:
             return val.replace("@localhost:", "@127.0.0.1:")
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
-    try:
-        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
+    from poindexter.brain.bootstrap import require_database_url  # type: ignore
 
-        dsn = resolve_database_url()
-    except Exception as exc:  # bootstrap is best-effort on the host
-        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
-        dsn = None
-    default = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-    return (dsn or default).replace("@localhost:", "@127.0.0.1:")
+    # No literal fallback DSN: this notifies the operator and exits 2 when
+    # neither the environment nor bootstrap.toml names a database.
+    dsn = require_database_url(source="idle_wsl_gpu_reset_check")
+    return dsn.replace("@localhost:", "@127.0.0.1:")
 
 
 async def _get_settings(conn: asyncpg.Connection, keys: list[str]) -> dict[str, str]:

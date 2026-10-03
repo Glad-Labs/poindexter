@@ -29,7 +29,8 @@ Usage (from repo root)::
 
 DB connection resolves in the same order as the other backfill
 scripts: ``--database-url`` flag → ``POINDEXTER_BRAIN_URL`` /
-``GLADLABS_BRAIN_URL`` / ``DATABASE_URL`` env vars → local default.
+``GLADLABS_BRAIN_URL`` / ``DATABASE_URL`` env vars → bootstrap.toml,
+else it exits loud.
 """
 from __future__ import annotations
 
@@ -41,10 +42,6 @@ import sys
 from pathlib import Path
 
 import asyncpg
-
-DEFAULT_DB_URL = (
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-)
 
 
 # Filesystem layout — matches services.podcast_service.PODCAST_DIR /
@@ -84,14 +81,12 @@ def _resolve_db_url(cli_value: str | None) -> str:
     # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
     # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
-    try:
-        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
+    from poindexter.brain.bootstrap import require_database_url  # type: ignore
 
-        dsn = resolve_database_url()
-    except Exception as exc:  # bootstrap is best-effort on the host
-        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
-        dsn = None
-    return (dsn or DEFAULT_DB_URL).replace("@localhost:", "@127.0.0.1:")
+    # No literal fallback DSN: this notifies the operator and exits 2 when
+    # neither the flag, the environment nor bootstrap.toml names a database.
+    dsn = require_database_url(source="backfill_media_assets")
+    return dsn.replace("@localhost:", "@127.0.0.1:")
 
 
 # ---------------------------------------------------------------------------

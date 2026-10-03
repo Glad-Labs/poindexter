@@ -54,10 +54,6 @@ from poindexter.services.publish_service import sanitize_published_title  # noqa
 _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"', re.IGNORECASE)
 
-DEFAULT_DB_URL = (
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-)
-
 
 def _resolve_db_url(cli_value: str | None) -> str:
     if cli_value:
@@ -69,14 +65,12 @@ def _resolve_db_url(cli_value: str | None) -> str:
     # bootstrap.toml is canonical (#198) — resolve from it so the port tracks the
     # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
     # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
-    try:
-        from poindexter.brain.bootstrap import resolve_database_url  # type: ignore
+    from poindexter.brain.bootstrap import require_database_url  # type: ignore
 
-        dsn = resolve_database_url()
-    except Exception as exc:  # bootstrap is best-effort on the host
-        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
-        dsn = None
-    return (dsn or DEFAULT_DB_URL).replace("@localhost:", "@127.0.0.1:")
+    # No literal fallback DSN: this notifies the operator and exits 2 when
+    # neither the flag, the environment nor bootstrap.toml names a database.
+    dsn = require_database_url(source="backfill_image_alt_vision")
+    return dsn.replace("@localhost:", "@127.0.0.1:")
 
 
 async def _build_site_config(pool):

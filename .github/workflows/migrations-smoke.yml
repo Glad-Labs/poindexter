@@ -145,6 +145,16 @@ jobs:
       - name: Lint compose mounts of ~/.poindexter
         run: python scripts/ci/compose_poindexter_home_mount_lint.py
 
+      # Thirty tracked files (26 in the public mirror) fell back to one
+      # hardcoded local DSN whose password was still live on the operator's
+      # database when it was found. Fails on any postgres URL or
+      # ${*PASS*:-default} carrying a literal password; placeholders, the CI
+      # service container's `postgres` and obvious test fakes pass. The report
+      # masks what it finds, since mirror logs are public. Static, no DB.
+      # (2026-10-03)
+      - name: Lint literal database credentials
+        run: python scripts/ci/dsn_credential_literal_lint.py
+
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py
 
