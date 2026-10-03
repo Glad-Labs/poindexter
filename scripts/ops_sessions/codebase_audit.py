@@ -23,7 +23,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 RUFF_TARGETS = ["src/", "scripts/"]  # brain is under src/ since #1046 step 2
 
 
