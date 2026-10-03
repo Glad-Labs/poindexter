@@ -91,12 +91,25 @@ If you see a notification that Vercel deploy failed:
    the `glad-labs-stack` repo via Vercel's GitHub integration, not
    via a GitHub Actions workflow.
 2. **A `CANCELED` deploy is a skip, not a failure.** The
-   `ignoreCommand` in `web/public-site/vercel.json` runs
-   `git diff --quiet HEAD^ HEAD -- :/web/public-site …` and skips the
-   build when a commit touches nothing the site is built from; Vercel
-   lists that as `CANCELED`. The command needs `.git`, so
+   `ignoreCommand` in `web/public-site/vercel.json` (and its twin in
+   `web/storefront/vercel.json`) diffs HEAD against
+   `VERCEL_GIT_PREVIOUS_SHA`, the commit of the **last successful
+   deployment**, over `:/web/public-site …`, and skips the build when
+   nothing the site is built from changed since then; Vercel lists that
+   as `CANCELED`. It used to diff `HEAD^ HEAD`, which lost a site change
+   for good whenever its own build didn't run and a docs-only commit
+   landed on top. It builds, never errors, when there is no previous
+   deploy or the shallow clone can't reach it, and it always builds a
+   redeploy of the live commit. The command needs `.git`, so
    `web/public-site/.vercelignore` must never list it: while it did,
-   every production deploy ERRORed (glad-labs-stack#2338).
+   every production deploy ERRORed (glad-labs-stack#2338). Tests:
+   `web/public-site/__tests__/vercel-ignore-command.test.js`.
+
+   **To ship an environment-variable change, redeploy the deployment
+   marked _Current_**, not the newest one in the list. Vercel gives the
+   command no way to tell a dashboard redeploy from a push, so a
+   redeploy of a newer docs-only commit is skipped like the push was.
+
 3. **The build needs no backend URL.** The site reads the R2 static
    export and never calls the worker, which has no public ingress.
    `next.config.js` used to require `NEXT_PUBLIC_API_BASE_URL` for

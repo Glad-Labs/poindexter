@@ -4,7 +4,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- :/web/public-site :/packages/brand :/package.json :/package-lock.json",
+  "ignoreCommand": "P=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$P\" ] && git cat-file -e \"$P^{commit}\" 2>/dev/null && [ \"$P\" != \"$(git rev-parse HEAD)\" ] && git diff --quiet \"$P\" HEAD -- :/web/public-site :/packages/brand :/package.json :/package-lock.json || exit 1",
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
