@@ -43,6 +43,11 @@ interface FormData {
 
 const EMPTY_FORM: FormData = { email: '', firstName: '', lastName: '' };
 
+// Where the small print sends a visitor who wants the details. The fragment is
+// the id of the newsletter section in app/legal/privacy/page.tsx; the legal
+// page tests render both and fail if they stop matching.
+const PRIVACY_POLICY_HREF = '/legal/privacy#newsletter';
+
 interface Message {
   type: '' | 'success' | 'error';
   text: string;
@@ -404,9 +409,23 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
               {/* Say what is kept, and only that. This line used to claim the
                   visitor's IP and user-agent were stored with the
                   subscription; nothing has stored them since the form began
-                  posting through the site's own route (2026-04). */}
+                  posting through the site's own route (2026-04). The link
+                  goes to the policy's newsletter section, which spells out
+                  the rest. It opens in a new tab so a visitor who stops to
+                  read it does not lose the form. It is the last focusable
+                  element in the dialog, so the focus trap wraps to and from
+                  it. */}
               <p className="gl-mono gl-mono--label text-center mt-1">
-                We use your email and name for these updates and nothing else.
+                We use your email and name for these updates and nothing else.{' '}
+                <a
+                  href={PRIVACY_POLICY_HREF}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="gl-focus-ring gl-mono--accent underline underline-offset-2 hover:opacity-80 transition-opacity"
+                >
+                  Privacy policy
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
               </p>
             </form>
           </div>

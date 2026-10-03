@@ -58,6 +58,10 @@ const DATA_CATEGORIES = [
   { value: 'cookies', label: 'Cookie preferences' },
   { value: 'logs', label: 'Server logs (IP addresses)' },
   { value: 'comments', label: 'Comments (Giscus/GitHub)' },
+  {
+    value: 'newsletter',
+    label: 'Newsletter subscription (email, name, delivery records)',
+  },
   { value: 'all', label: 'All my data' },
 ];
 

@@ -6,7 +6,8 @@
  * - Renders modal when isOpen=true
  * - Asks for, and sends, only email + first/last name (no company,
  *   interests or marketing-consent tick: nothing downstream read them)
- * - The privacy line says what is kept and claims nothing more
+ * - The privacy line says what is kept and claims nothing more, and links to
+ *   the privacy policy's newsletter section
  * - Close button calls onClose
  * - Overlay click calls onClose
  * - Email required validation
@@ -23,6 +24,7 @@ import {
   fireEvent,
   waitFor,
   act,
+  within,
 } from '@testing-library/react';
 import NewsletterModal from '../NewsletterModal';
 
@@ -121,6 +123,23 @@ describe('NewsletterModal privacy line', () => {
     render(<NewsletterModal {...DEFAULT_PROPS} />);
     expect(screen.queryByText(/IP address/i)).toBeNull();
     expect(screen.queryByText(/user-agent/i)).toBeNull();
+  });
+
+  test('links to the newsletter section of the privacy policy', () => {
+    render(<NewsletterModal {...DEFAULT_PROPS} />);
+    const link = within(screen.getByRole('dialog')).getByRole('link', {
+      name: /privacy policy/i,
+    });
+    expect(link).toHaveAttribute('href', '/legal/privacy#newsletter');
+  });
+
+  test('opens the policy in a new tab, so the form is not lost', () => {
+    render(<NewsletterModal {...DEFAULT_PROPS} />);
+    const link = screen.getByRole('link', { name: /privacy policy/i });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    // The new tab is announced, not just implied.
+    expect(link).toHaveAccessibleName(/opens in a new tab/i);
   });
 });
 
@@ -560,6 +579,10 @@ describe('NewsletterModal — a11y: focus trap and background (issues #762, #978
   const closeButton = () => screen.getByLabelText('Close modal');
   const submitButton = () =>
     screen.getByRole('button', { name: /Get updates/i });
+  // The last control in the dialog: the small print's link to the privacy
+  // policy follows the submit button.
+  const policyLink = () =>
+    screen.getByRole('link', { name: /privacy policy/i });
 
   // Page content outside the modal; removed even when an assertion fails, so
   // a stray inert node can't leak into later tests.
@@ -579,17 +602,39 @@ describe('NewsletterModal — a11y: focus trap and background (issues #762, #978
     expect(closeButton()).toHaveFocus();
   });
 
-  it('Tab on the last control wraps to the first', () => {
+  it('Tab on the last control, the privacy policy link, wraps to the first', () => {
     render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
-    submitButton().focus();
-    fireEvent.keyDown(submitButton(), { key: 'Tab' });
+    policyLink().focus();
+    fireEvent.keyDown(policyLink(), { key: 'Tab' });
     expect(closeButton()).toHaveFocus();
   });
 
-  it('Shift+Tab on the first control wraps to the last', () => {
+  it('Shift+Tab on the first control wraps to the last, the privacy policy link', () => {
     render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
     fireEvent.keyDown(closeButton(), { key: 'Tab', shiftKey: true });
+    expect(policyLink()).toHaveFocus();
+  });
+
+  it('Tab on the submit button is left to the browser: the link follows it', () => {
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    submitButton().focus();
+    fireEvent.keyDown(submitButton(), { key: 'Tab' });
+    // Not wrapped to Close. (jsdom does not move focus on Tab; the e2e spec
+    // checks that a real Tab reaches the link.)
     expect(submitButton()).toHaveFocus();
+  });
+
+  it('the privacy policy link is the last focusable control in the dialog', () => {
+    // The trap wraps on whichever control is last in the DOM, so a control
+    // added after the link moves the wrap point. This fails then, which is the
+    // cue to update the wrap tests above and the e2e spec.
+    render(<NewsletterModal isOpen={true} onClose={jest.fn()} />);
+    const focusable = screen
+      .getByRole('dialog')
+      .querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+    expect(focusable[focusable.length - 1]).toBe(policyLink());
   });
 
   it('makes the page behind it inert while open, and restores it on close', () => {

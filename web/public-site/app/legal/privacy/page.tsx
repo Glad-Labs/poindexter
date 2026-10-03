@@ -27,12 +27,12 @@ export default function PrivacyPolicy() {
     {
       question: 'How long do you keep my data?',
       answer:
-        'Error reports: 90 days. Server logs: 90 days. If you consent to Google Analytics: 14 months. If you consent to AdSense: up to 30 months.',
+        'Error reports: 90 days. Server logs: 90 days. If you consent to Google Analytics: 14 months. If you consent to AdSense: up to 30 months. Newsletter: your email address and name are kept while you are subscribed, and after you unsubscribe we keep the address, marked as unsubscribed, so we do not email you again. We do not currently delete newsletter records on a schedule; you can ask us to delete them at any time.',
     },
     {
       question: 'What third parties have access to my data?',
       answer:
-        'Always active: Vercel (Hosting), Cloudflare (Error Report Relay), GitHub (Giscus Comments). Error reports themselves go to a tracker we host ourselves. Consent-gated: Google (Analytics & AdSense, only if you opt in). Each has their own privacy policies.',
+        'Always active: Vercel (Hosting), Cloudflare (Error Report Relay), GitHub (Giscus Comments). Error reports themselves go to a tracker we host ourselves. Consent-gated: Google (Analytics & AdSense, only if you opt in). Only if you subscribe to the newsletter: Resend (email delivery), and Cloudflare also runs our unsubscribe page. Each has their own privacy policies.',
     },
     {
       question: 'How do I download my data?',
@@ -84,7 +84,8 @@ export default function PrivacyPolicy() {
           <li>
             <strong>Consent (Article 6(1)(a)):</strong> Google Analytics and
             AdSense are only loaded after you explicitly opt in via our cookie
-            banner
+            banner. You consent to our newsletter by submitting the signup form
+            (see <a href="#newsletter">3.4</a>)
           </li>
           <li>
             <strong>Contract Performance (Article 6(1)(b)):</strong> Essential
@@ -151,6 +152,69 @@ export default function PrivacyPolicy() {
           </li>
         </ul>
 
+        <h3 id="newsletter" className="scroll-mt-24">
+          3.4 Newsletter (Only If You Subscribe)
+        </h3>
+        <p>
+          If you sign up for updates, the form asks for your email address and,
+          if you choose, your first and last name. That is all it asks for, and
+          we use it only to send you the newsletter. The form does not store
+          your IP address or browser details with your subscription (the server
+          logs described in 3.1 still record the request itself). Legal basis:
+          Consent (Article 6(1)(a)), which you give by submitting the form and
+          can withdraw at any time by unsubscribing.
+        </p>
+        <ul>
+          <li>
+            <strong>Where it goes:</strong> Our website (hosted on Vercel) sends
+            your details to Resend, the email service we use, which stores them
+            as a contact. Our own system then copies each new contact into our
+            subscriber list, which is what we send the newsletter from.
+          </li>
+          <li>
+            <strong>What we store:</strong> Your email address; your first and
+            last name, if you gave them; when you signed up; a private random
+            code used only for your unsubscribe link; and, if you unsubscribe,
+            when you did.
+          </li>
+          <li>
+            <strong>Welcome email:</strong> When you sign up, we also send you a
+            welcome email through Resend.
+          </li>
+          <li>
+            <strong>Newsletter emails:</strong> Each time we publish a new post,
+            we email a link to it, through Resend, to everyone who is
+            subscribed. If you gave a first name, we use it to greet you. Every
+            newsletter email has an unsubscribe link at the bottom.
+          </li>
+          <li>
+            <strong>Send and delivery records:</strong> We keep a log of which
+            emails we sent you and whether Resend accepted them. Resend also
+            reports whether each email was delivered, delayed, bounced, failed,
+            or reported as spam, and we record that against your address.
+          </li>
+          <li>
+            <strong>Unsubscribing:</strong> The unsubscribe link opens a page
+            where you confirm; nothing changes until you do. That page runs on
+            Cloudflare, which keeps a note of your request (your private
+            unsubscribe code and the time, not your email address) until our
+            system applies it, normally within minutes; it uses your IP address
+            only to rate-limit requests. An email already being sent when you
+            unsubscribe may still reach you.
+          </li>
+          <li>
+            <strong>After you unsubscribe:</strong> Unsubscribing does not
+            delete anything. We keep your address on our list, marked as
+            unsubscribed, so we do not email you again and the address is not
+            added back automatically. The contact in Resend is not removed
+            either. To have your newsletter data deleted, use our{' '}
+            <a href="/legal/data-requests">Data Request page</a>. Section 9
+            covers how long we keep it. Legal basis for keeping this record:
+            Legitimate Interest (Article 6(1)(f)), in making sure we honor your
+            request not to be emailed.
+          </li>
+        </ul>
+
         <h2>4. How We Use Your Information</h2>
         <p>We use collected data to:</p>
         <ul>
@@ -159,6 +223,7 @@ export default function PrivacyPolicy() {
           </li>
           <li>Fix errors and improve site reliability (error monitoring)</li>
           <li>Ensure security and prevent abuse (server logs)</li>
+          <li>Send you our welcome email and newsletter, if you subscribe</li>
           <li>Comply with legal obligations</li>
         </ul>
         <p>
@@ -174,8 +239,9 @@ export default function PrivacyPolicy() {
         <ul>
           <li>
             <strong>Service Providers:</strong> Vercel (hosting), Cloudflare
-            (error report relay), GitHub (comments) — only the data necessary
-            for them to provide their services.
+            (error report relay, and the newsletter unsubscribe page), GitHub
+            (comments), Resend (newsletter email) — only the data necessary for
+            them to provide their services.
           </li>
           <li>
             <strong>Google (consent-gated):</strong> If you opt in to analytics
@@ -264,6 +330,21 @@ export default function PrivacyPolicy() {
             you clear them.
           </li>
           <li>
+            <strong>Newsletter Subscription:</strong> Kept for as long as you
+            stay subscribed. After you unsubscribe we keep your address, marked
+            as unsubscribed, so we do not email you again. We do not currently
+            delete these records on a schedule, so they stay until we delete
+            them, for example when you ask us to. The matching contact in Resend
+            stays until we delete it too.
+          </li>
+          <li>
+            <strong>Newsletter Send &amp; Delivery Records:</strong> The log of
+            which emails we sent you, and the delivery results Resend reports
+            back, are not deleted on a schedule today either. Resend keeps its
+            own logs of the emails it sends for us, under its own retention
+            rules.
+          </li>
+          <li>
             <strong>Purchase Data:</strong> Transaction records, billing
             details, and purchase history are retained by Lemon Squeezy as
             merchant of record in accordance with their retention policy and
@@ -301,10 +382,14 @@ export default function PrivacyPolicy() {
             </tr>
             <tr>
               <td>Cloudflare Inc</td>
-              <td>Error report relay</td>
               <td>
-                Browser info, page address, error data (IP used for rate
-                limiting only, not stored)
+                Error report relay; newsletter unsubscribe page (if you
+                subscribe)
+              </td>
+              <td>
+                Error reports: browser info, page address, error data.
+                Unsubscribe page: unsubscribe code, time of request. The IP
+                address is used only to rate-limit requests, not stored
               </td>
               <td>
                 <a href="https://www.cloudflare.com/privacypolicy/">
@@ -333,14 +418,26 @@ export default function PrivacyPolicy() {
                 <a href="https://www.lemonsqueezy.com/privacy">View Policy</a>
               </td>
             </tr>
+            <tr>
+              <td>Resend (Plus Five Five, Inc.)</td>
+              <td>Email delivery (newsletter, if you subscribe)</td>
+              <td>
+                Email address, name, the emails we send you, delivery results
+              </td>
+              <td>
+                <a href="https://resend.com/legal/privacy-policy">
+                  View Policy
+                </a>
+              </td>
+            </tr>
           </tbody>
         </table>
 
         <h2>11. International Data Transfers</h2>
         <p>
           Your data may be processed in the United States by our service
-          providers (Vercel, Cloudflare, Lemon Squeezy, and Google if you
-          consent). These transfers are protected by Standard Contractual
+          providers (Vercel, Cloudflare, Lemon Squeezy, Resend, and Google if
+          you consent). These transfers are protected by Standard Contractual
           Clauses (SCCs) where applicable.
         </p>
 

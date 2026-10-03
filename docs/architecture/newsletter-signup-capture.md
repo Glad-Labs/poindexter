@@ -2,7 +2,8 @@
 
 **Code:** `services/newsletter_audience.py`, `services/newsletter_signup_canary.py`,
 `services/jobs/sync_newsletter_audience.py`, `services/jobs/probe_newsletter_signup.py`,
-`web/public-site/app/api/newsletter/subscribe/route.ts`
+`web/public-site/app/api/newsletter/subscribe/route.ts`,
+`web/public-site/app/legal/privacy/page.tsx` (section 3.4)
 **CLI:** `poindexter newsletter sync [--dry-run]`, `poindexter newsletter canary [--url]`
 **Last reviewed:** 2026-09-28
 
@@ -202,3 +203,50 @@ Re-wiring it would mean publishing unpublished drafts to the internet behind a
 bearer token, which cuts against the approval gates deciding what leaves the
 machine. The worker's `/preview/{token}` over the tailnet remains the preview
 surface.
+
+## What the privacy policy says about this path
+
+The public privacy policy (`web/public-site/app/legal/privacy/page.tsx`: section
+3.4, plus entries in sections 2, 4, 5, 9, 10 and 11 and in the FAQ) describes
+this path to visitors. It said nothing about the newsletter or Resend until
+2026-09-28 (stack#4216). Each sentence in it is a claim about what the code
+does, so **a change to what this path stores, sends or keeps is also a change
+to the policy.** The claims, and what each one rests on:
+
+| The policy says                                                                                                           | It holds because                                                                                                                                                | Re-check                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| The form asks for an email and an optional first and last name. No IP address or browser details are stored with it       | The modal has three fields. The route sends Resend only those. `newsletter_subscribers` has no IP or user-agent column (dropped by migration `20260928_184647`) | `e2e/newsletter-modal.spec.ts`, `NewsletterModal.test.js`, `__tests__/api/newsletter-subscribe.test.ts`          |
+| The site sends the details to Resend. Our own system copies them into our list, and the newsletter is sent from that list | The route's `POST /contacts`. `SyncNewsletterAudienceJob`. `_get_active_subscribers` reads `newsletter_subscribers`                                             | `tests/unit/services/test_newsletter_audience.py`                                                                |
+| Each new post is emailed to every subscriber, with an unsubscribe link at the bottom. A first name is used to greet       | `send_post_newsletter`, fired from every go-live seam. `_build_html`                                                                                            | `tests/unit/services/test_newsletter_service.py`                                                                 |
+| A send log is kept, and Resend's delivery results are recorded against the address                                        | `campaign_email_logs` (written per send). `subscriber_events` (`RECORDED_EVENTS` in `resend_delivery.py`)                                                       | `tests/unit/services/test_resend_delivery.py`                                                                    |
+| **We do not track opens or clicks**                                                                                       | Resend's `open_tracking` and `click_tracking` are **off for the sending domain** (a Resend dashboard setting, not code), and nothing here writes either         | `GET /domains` on the Resend API. Both read `false` on 2026-09-28. **Turn either on and this sentence is false** |
+| The unsubscribe page is a Cloudflare Worker. It holds the token and the time, not the email, until the worker applies it  | `infrastructure/cloudflare/unsubscribe-relay` stores `{requested_at, via}` under the token. `ApplyUnsubscribeRequestsJob` drains it every 5 minutes             | `tests/unit/services/test_unsubscribe_relay.py`, the relay's own `npm test`                                      |
+| Unsubscribing deletes nothing: the row is kept, marked unsubscribed, and the Resend contact is left alone                 | The drain only sets `unsubscribed_at`. Owned opt-outs are not mirrored to Resend (see [Opt-out precedence](#opt-out-precedence))                                | `tests/unit/services/test_unsubscribe_relay.py`                                                                  |
+| Nothing deletes subscriber rows, send logs or delivery events on a schedule                                               | No `retention_policies` row covers `newsletter_subscribers`, `campaign_email_logs` or `subscriber_events` (checked 2026-09-28), and no code deletes from them   | `poindexter retention list`                                                                                      |
+
+`web/public-site/app/legal/__tests__/pages.test.js` pins that the policy still
+has the newsletter section, that the signup modal's link lands on it, and that
+every provider host the signup route calls appears in the processors table. It
+reads the route's source, so a provider added to the route fails that test
+until the policy names it.
+
+### Erasing a subscriber
+
+There is no command for this yet, and the order matters, because the pull
+treats the Resend contact as the source of new subscribers:
+
+1. **Delete the Resend contact first** (`DELETE /contacts/{email}` accepts the
+   address in the path). Delete only the row here and the next pull finds an
+   active contact with no owned row and **imports it again as a new
+   subscriber**. That is also why an unsubscribed row is kept rather than
+   deleted.
+2. Delete the `newsletter_subscribers` row. `campaign_email_logs` rows go with
+   it (`ON DELETE CASCADE`).
+3. Delete the `subscriber_events` rows for the address. That table is keyed by
+   email and has no foreign key, so nothing removes them for you.
+
+Two places this does not reach. Resend keeps its own logs of the emails it
+sent. And the database sits inside the backups, so the row survives in every
+snapshot taken before the deletion: hourly (24 kept), daily (7), and the
+offsite restic repository (7 daily, 4 weekly, 6 monthly on this install, so up
+to about six months). The privacy policy does not mention backups yet.

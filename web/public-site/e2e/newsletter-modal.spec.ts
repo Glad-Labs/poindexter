@@ -76,12 +76,82 @@ test.describe('Newsletter modal', () => {
     const dialog = await openModal(page);
     const close = dialog.getByRole('button', { name: 'Close modal' });
     const submit = dialog.getByRole('button', { name: 'Get updates →' });
+    // The small print's link to the privacy policy is the last control, so it
+    // is where the trap wraps.
+    const policy = dialog.getByRole('link', { name: /privacy policy/i });
 
     await expect(close).toBeFocused();
     await page.keyboard.press('Shift+Tab');
-    await expect(submit).toBeFocused();
+    await expect(policy).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(close).toBeFocused();
+
+    // A real Tab from the submit button moves on to the link. The trap leaves
+    // that step to the browser, and jsdom cannot show it.
+    await submit.focus();
+    await page.keyboard.press('Tab');
+    await expect(policy).toBeFocused();
+  });
+
+  test('links to the newsletter section of the privacy policy, in a new tab', async ({
+    page,
+    context,
+  }) => {
+    await withCookieChoiceMade(page);
+    const dialog = await openModal(page);
+    const policy = dialog.getByRole('link', { name: /privacy policy/i });
+
+    const tabOpened = context.waitForEvent('page');
+    await policy.click();
+    const tab = await tabOpened;
+    await tab.waitForLoadState('domcontentloaded');
+
+    // Reading the policy does not cost the visitor the form.
+    await expect(dialog).toBeVisible();
+
+    const url = new URL(tab.url());
+    expect(url.pathname).toBe('/legal/privacy');
+    expect(url.hash).toBe('#newsletter');
+
+    // The fragment names a real section...
+    const heading = tab.locator('#newsletter');
+    await expect(heading).toBeVisible();
+
+    // ...and the fixed header does not cover it once the page has come to
+    // rest. Smooth scrolling (globals.css) animates the jump, and on the way
+    // down the heading passes below the header, so a reading taken in flight
+    // would say "clear" even if the page came to rest with the heading under
+    // the header. Read it only once the heading is in view and has stopped
+    // moving. (Waiting for scrollY to stop is not enough: it also holds still
+    // for a moment before the animation starts.)
+    const viewportHeight = await tab.evaluate(() => window.innerHeight);
+    const rest: { top: number | null } = { top: null };
+    await expect
+      .poll(
+        async () => {
+          const before = await heading.boundingBox();
+          await tab.waitForTimeout(250);
+          const after = await heading.boundingBox();
+          const stopped =
+            before && after && before.y === after.y && after.y < viewportHeight;
+          rest.top = stopped ? after.y : null;
+          return rest.top;
+        },
+        {
+          message:
+            'the heading never stopped moving, or never scrolled into view',
+        }
+      )
+      .not.toBeNull();
+
+    const header = await tab.getByRole('banner').first().boundingBox();
+    const restingTop = rest.top;
+    if (!header || restingTop === null) throw new Error('not laid out');
+    const headerBottom = header.y + header.height;
+    expect(
+      restingTop,
+      `the heading rests at ${restingTop}px, under the fixed header that ends at ${headerBottom}px`
+    ).toBeGreaterThanOrEqual(headerBottom);
   });
 
   test('leaves nothing outside the dialog reachable, the footer included', async ({
