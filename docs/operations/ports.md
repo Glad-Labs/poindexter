@@ -47,14 +47,14 @@ table first.**
 | Speaches (STT/TTS)  | poindexter-speaches         | **8001**  | 8000           | Warm STT + TTS sidecar (OpenAI-compatible)                                                 |
 | Chatterbox (TTS-HQ) | poindexter-chatterbox       | **8011**  | 8000           | Live podcast narration — ResembleAI Chatterbox, voice-cloning (opt-in: `--profile tts-hq`) |
 | Worker (FastAPI)    | poindexter-worker           | **8002**  | 8002           | <http://localhost:8002>                                                                    |
-| GlitchTip web       | poindexter-glitchtip-web    | **8080**  | 8000           | <http://localhost:8080>                                                                    |
+| GlitchTip web       | poindexter-glitchtip-web    | **8080**  | 8000           | <http://localhost:8080>, localhost-bound (`GLITCHTIP_BIND_ADDRESS` opens it)               |
 | Prometheus          | poindexter-prometheus       | **9091**  | 9090           | <http://localhost:9091>                                                                    |
 | Alertmanager        | poindexter-alertmanager     | **9093**  | 9093           | <http://localhost:9093>                                                                    |
 | GPU exporter        | poindexter-gpu-exporter     | **9835**  | 9835           | Prometheus scrape target                                                                   |
 | image-gen server    | poindexter-image-gen-server | **9836**  | 9836           | On-demand image generation                                                                 |
 | Postiz              | poindexter-postiz           | **5003**  | 5000           | Social distribution hub (opt-in: `--profile postiz`)                                       |
 | Wan server          | poindexter-wan-server       | **9840**  | 9840           | On-demand video generation                                                                 |
-| RIFE server         | poindexter-rife             | **9842**  | 9842           | Frame interpolation for generative clips (RIFE v4; 5-min idle self-unload)                  |
+| RIFE server         | poindexter-rife             | **9842**  | 9842           | Frame interpolation for generative clips (RIFE v4; 5-min idle self-unload)                 |
 | ComfyUI             | poindexter-comfyui          | **8188**  | 8188           | Wan 2.2 14B hero renderer, localhost-bound (opt-in: `--profile comfyui`)                   |
 | Stable Audio server | poindexter-stable-audio     | **9839**  | 9839           | Ambient music bed + intro/outro stings (Stable Audio Open 1.0; 5-min idle self-unload)     |
 | Postgres            | poindexter-postgres-local   | **5433**  | 5432           | `postgresql://...@localhost:5433/poindexter_brain`                                         |

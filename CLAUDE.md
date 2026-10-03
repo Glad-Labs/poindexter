@@ -65,7 +65,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | QA Rails dashboard | http://localhost:3000/d/qa-rails | Per-reviewer pass-rate, score distribution, latest QA passes (#329 Lane D) — created 2026-05-10 |
 | Findings dashboard | http://localhost:3000/d/findings | Probe-findings routing — emitted/pending-delivery counts, by-kind/severity, kind→delivery-policy, latest findings (#461 Phase 4) — created 2026-06-02 |
 | Langfuse | http://localhost:3010 | LLM trace explorer + prompt-catalog review UI (read-only mirror of the SKILL.md packs since poindexter#825 — prompt edits go in the repo; every reviewer LLM call is traced) |
-| GlitchTip | http://localhost:8080 | Self-hosted Sentry — runtime errors from worker / brain / voice agent (org `glad-labs`, project `poindexter`) and from the public site (project `public-site`, via the sentry-relay pull relay) |
+| GlitchTip | http://localhost:8080 (**this machine only** since 2026-10-03: bound to `127.0.0.1`, not reachable over the tailnet; `GLITCHTIP_BIND_ADDRESS` opens it) | Self-hosted Sentry — runtime errors from worker / brain / voice agent (org `glad-labs`, project `poindexter`) and from the public site (project `public-site`, via the sentry-relay pull relay) |
 | pgAdmin | http://localhost:18443 | Postgres admin — direct DB access (login: see bootstrap.toml) |
 | Prefect | http://localhost:4200 | Orchestration UI for the Prefect server (flow runs, schedules) |
 | Pyroscope | http://localhost:4040 | Continuous profiler — flame graphs from worker / brain / voice (`service_name` tag) |

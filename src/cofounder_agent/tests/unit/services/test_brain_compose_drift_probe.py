@@ -825,6 +825,11 @@ class TestYamlHelpers:
         ports = cdp._yaml_port_host_publishings(["127.0.0.1:8080:80"])
         assert ports == {"8080"}
 
+    def test_port_publishings_with_interpolated_bind_addr(self):
+        # glitchtip-web's form: an env-overridable bind address with a default.
+        ports = cdp._yaml_port_host_publishings(["${GLITCHTIP_BIND_ADDRESS:-127.0.0.1}:8080:8000"])
+        assert ports == {"8080"}
+
     def test_port_publishings_dict_form(self):
         ports = cdp._yaml_port_host_publishings([
             {"published": 8080, "target": 80}

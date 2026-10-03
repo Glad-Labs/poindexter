@@ -7,6 +7,15 @@ for worker / brain / voice (project `poindexter`) and for the public site
 hundreds of "issues" that are mostly not bugs, which is worse than having no
 error tracker: a 364-issue list trains you to ignore the list.
 
+**Access.** Since 2026-10-03 the web UI is published on `127.0.0.1:8080` only,
+so only a browser on the stack's own machine reaches it. Its accounts are
+superusers and the login page used to be open to the whole LAN. Nothing in the
+stack uses the host port: senders and the triage job talk to
+`glitchtip-web:8000` on the compose network. To reach it from another device,
+tunnel to the host (`ssh -L 8080:127.0.0.1:8080 <host>`) or set
+`GLITCHTIP_BIND_ADDRESS` in the compose environment. Turn on two-factor sign-in
+for every account in its profile settings.
+
 Noise is suppressed at **two** layers. Reach for the earlier one first — it is
 strictly better to never capture a non-error than to capture and then close it.
 

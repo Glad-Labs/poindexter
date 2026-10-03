@@ -2130,7 +2130,11 @@ services:
     container_name: poindexter-glitchtip-web
     restart: unless-stopped
     ports:
-      - "8080:8000"
+      # Loopback only. Its login page was open to the whole LAN, and its
+      # accounts are superusers. Nothing in the stack needs the host port:
+      # senders and the triage job use glitchtip-web:8000 on the compose
+      # network. Set GLITCHTIP_BIND_ADDRESS=0.0.0.0 to open it up again.
+      - "${GLITCHTIP_BIND_ADDRESS:-127.0.0.1}:8080:8000"
     environment:
       DATABASE_URL: "postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?Run 'poindexter setup' — GLITCHTIP_DB_PASSWORD is generated in bootstrap.toml}@glitchtip-db:5432/glitchtip"
       REDIS_URL: "redis://glitchtip-redis:6379/0"

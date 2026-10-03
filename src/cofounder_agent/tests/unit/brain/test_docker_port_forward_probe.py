@@ -1000,7 +1000,8 @@ _RETIRED_WATCH_CONTAINERS = {
 # The host-port-publishing services this probe can actually recover.
 _EXPECTED_WATCH_CONTAINERS = {
     "poindexter-pyroscope",
-    "poindexter-glitchtip-web",
+    # poindexter-glitchtip-web left 2026-10-03: its port is loopback-only, which
+    # host.docker.internal never reaches (migration 20261003_031940).
     "poindexter-alertmanager",
     "poindexter-pgadmin",
     "poindexter-grafana",
