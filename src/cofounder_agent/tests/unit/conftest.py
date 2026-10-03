@@ -216,7 +216,7 @@ _SHARED_TEST_MODULES = (
     # ``services.newsletter_service`` migrated to required-keyword DI
     # 2026-05-29 (#272 Phase-2b); no module-level site_config attr to
     # share. Tests pass ``site_config=`` to ``send_post_newsletter`` /
-    # ``_build_html`` / ``_send_via_smtp`` directly.
+    # ``_build_html`` / ``_send_via_resend`` / ``_send_via_smtp`` directly.
     # ``modules.content.content_validator`` removed from _SHARED_TEST_MODULES
     # 2026-05-29 (#272 Phase-2g); the module global + ``set_site_config`` are
     # deleted. Tests pass ``site_config=`` to ``validate_content`` /

@@ -89,7 +89,8 @@ def _unsubscribe_url(token: str, *, site_config: SiteConfig) -> str:
     """Per-subscriber unsubscribe URL.
 
     Centralised so the email template and the ``List-Unsubscribe``
-    header stay in sync — both consume the token, and they have to
+    header (:func:`_unsubscribe_headers`, set on both the Resend and SMTP
+    sends) stay in sync — both consume the token, and they have to
     agree on shape or one-click clients (Gmail/Apple Mail) silently
     fall back to the inline link.
 
@@ -118,6 +119,27 @@ def _unsubscribe_url(token: str, *, site_config: SiteConfig) -> str:
     if base is None:
         base = f"{_site_url(site_config=site_config)}/newsletter/unsubscribe"
     return f"{base}?token={token}"
+
+
+def _unsubscribe_headers(token: str, *, site_config: SiteConfig) -> dict[str, str]:
+    """RFC 8058 one-click unsubscribe headers for one subscriber's email.
+
+    The single source for both providers: ``_send_via_smtp`` sets these on the
+    MIME message and ``_send_via_resend`` passes them as the API's ``headers``
+    parameter. They must be set explicitly on both: Resend attaches
+    ``List-Unsubscribe`` automatically only to Broadcasts, so on an API send it
+    is present only if the sender supplies it. Before this helper the Resend
+    path (production's provider) shipped the in-body link and no header, so
+    inbox-native unsubscribe was available only on SMTP.
+
+    The URL is the same tokenized relay URL the body link uses
+    (:func:`_unsubscribe_url`), so a one-click POST from Gmail / Apple Mail
+    lands on the relay, which records it as ``via='one-click'``.
+    """
+    return {
+        "List-Unsubscribe": f"<{_unsubscribe_url(token, site_config=site_config)}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
 
 
 #: Shared by the raising and non-raising accessors so the operator sees the
@@ -222,7 +244,14 @@ def _from_header(cfg: dict) -> str:
 
 
 async def _send_via_resend(
-    cfg: dict, from_header: str, to_email: str, subject: str, html: str
+    cfg: dict,
+    from_header: str,
+    to_email: str,
+    subject: str,
+    html: str,
+    *,
+    unsubscribe_token: str,
+    site_config: SiteConfig,
 ) -> tuple[bool, str | None]:
     """Send a single email via Resend API.
 
@@ -230,11 +259,19 @@ async def _send_via_resend(
     ``campaign_email_logs.delivery_error`` — the pre-2026-07 constant
     ``"send_error"`` hid Resend's actual rejection from the DB and made
     the outage invisible to everything but Loki.
+
+    ``unsubscribe_token`` is required so the payload carries the RFC 8058
+    ``List-Unsubscribe`` / ``List-Unsubscribe-Post`` headers. Resend adds
+    them by itself only for Broadcasts; on an API send they exist only if
+    passed in ``headers``. ``site_config`` is threaded to
+    :func:`_unsubscribe_headers` so the header URL resolves against the same
+    config as the body link.
     """
     try:
         import resend
 
         resend.api_key = cfg["resend_api_key"]
+        headers = _unsubscribe_headers(unsubscribe_token, site_config=site_config)
         # Run in executor since resend SDK is sync
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
@@ -244,6 +281,7 @@ async def _send_via_resend(
                 "to": [to_email],
                 "subject": subject,
                 "html": html,
+                "headers": headers,
             }),
         )
         if result and result.get("id"):
@@ -288,8 +326,10 @@ async def _send_via_smtp(
         msg["From"] = from_header
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg["List-Unsubscribe"] = f"<{_unsubscribe_url(unsubscribe_token, site_config=site_config)}>"
-        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+        for name, value in _unsubscribe_headers(
+            unsubscribe_token, site_config=site_config
+        ).items():
+            msg[name] = value
         msg.attach(MIMEText(html, "html"))
 
         await aiosmtplib.send(
@@ -392,8 +432,9 @@ async def send_post_newsletter(
         slug: post URL slug
         site_config: the lifespan-bound SiteConfig (keyword-required as of
             #272 Phase-2b). Flows through the full send chain (_cfg /
-            _build_html / _send_via_smtp). The ``publish_service`` caller
-            passes its own lifespan-bound module ``site_config``.
+            _build_html / _send_via_resend / _send_via_smtp). The
+            ``publish_service`` caller passes its own lifespan-bound module
+            ``site_config``.
 
     Returns:
         dict with sent, failed, skipped counts
@@ -498,13 +539,15 @@ async def send_post_newsletter(
                 unsubscribe_token=token,
                 site_config=site_config,
             )
-            # Per-provider dispatch — SMTP also needs the token for the
-            # ``List-Unsubscribe`` header (RFC 8058 one-click). Resend
-            # only consumes the inline link inside ``html`` so the
-            # token's already baked in there.
+            # Per-provider dispatch — both providers need the token beyond the
+            # inline link baked into ``html``: it builds the ``List-Unsubscribe``
+            # header (RFC 8058 one-click). Resend does not add that header on
+            # an API send, so ``_send_via_resend`` passes it in ``headers``.
             if provider == "resend":
                 success, error = await _send_via_resend(
-                    cfg, from_header, sub["email"], subject, html
+                    cfg, from_header, sub["email"], subject, html,
+                    unsubscribe_token=token,
+                    site_config=site_config,
                 )
             else:
                 success, error = await _send_via_smtp(

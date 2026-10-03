@@ -86,8 +86,21 @@ are private.
 - **Every email carries a per-subscriber unsubscribe link** pointing at
   the unsubscribe relay (`newsletter_unsubscribe_relay_url`, a Cloudflare
   Worker; see `infrastructure/cloudflare/unsubscribe-relay/README.md`).
-  `ApplyUnsubscribeRequestsJob` drains its queue into this table. The SMTP
-  path also sends it as `List-Unsubscribe` with one-click POST.
+  `ApplyUnsubscribeRequestsJob` drains its queue into this table.
+- **Both providers also send the RFC 8058 headers.** `List-Unsubscribe`
+  carries that same URL in angle brackets, and `List-Unsubscribe-Post`
+  carries `List-Unsubscribe=One-Click`. One helper builds the pair
+  (`_unsubscribe_headers`) so the header and body link cannot drift apart.
+  They are set explicitly because nothing adds them for us: SMTP sets them
+  on the MIME message, and Resend attaches `List-Unsubscribe` automatically
+  only to Broadcasts, so `_send_via_resend` passes them in the API's
+  `headers` parameter. Before
+  glad-labs-stack#4273 the Resend path (the default provider, and
+  production's) sent only the in-body link, so inbox-native one-click
+  unsubscribe worked on SMTP alone. One exception: the welcome email the
+  public site's signup route sends goes out before the worker mints a token,
+  so it carries neither a per-subscriber link nor the header (its body says
+  to reply to unsubscribe).
 - **Per-recipient send is sequential.** Inside each batch, sends are
   awaited one at a time. There's no concurrency within a batch — if
   you have 5,000 subscribers and a 2s SMTP latency, the whole job
@@ -135,7 +148,8 @@ All from `app_settings` via `services.site_config`:
     `delivery_status` (`delivered` / `failed`) and optional
     `delivery_error`.
 - **External APIs:**
-  - **Resend**: `resend.Emails.send` (sync SDK, run in executor).
+  - **Resend**: `resend.Emails.send` (sync SDK, run in executor), with the
+    `List-Unsubscribe` pair in its `headers` parameter.
   - **SMTP**: `aiosmtplib.send` against the configured host.
 - **Callers:**
   - `services.publish_service` (post-publish hook section "11f.

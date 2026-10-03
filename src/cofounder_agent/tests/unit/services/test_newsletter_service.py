@@ -13,6 +13,7 @@ import pytest
 from poindexter.services.newsletter_service import (  # noqa: E402
     _build_html,
     _get_active_subscribers,
+    _unsubscribe_headers,
     _unsubscribe_url,
     send_post_newsletter,
 )
@@ -300,7 +301,9 @@ class TestSendViaResend:
 
         with patch.dict("sys.modules", {"resend": fake_resend}):
             ok, err = await _send_via_resend(
-                cfg, "Test <from@example.com>", "to@example.com", "Subject", "<html/>"
+                cfg, "Test <from@example.com>", "to@example.com", "Subject", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
             )
 
         assert ok is True
@@ -323,7 +326,9 @@ class TestSendViaResend:
 
         with patch.dict("sys.modules", {"resend": fake_resend}):
             ok, err = await _send_via_resend(
-                cfg, "from@example.com", "to@example.com", "S", "<html/>"
+                cfg, "from@example.com", "to@example.com", "S", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
             )
 
         assert ok is False
@@ -341,7 +346,9 @@ class TestSendViaResend:
 
         with patch.dict("sys.modules", {"resend": fake_resend}):
             ok, err = await _send_via_resend(
-                cfg, "from@example.com", "to@example.com", "S", "<html/>"
+                cfg, "from@example.com", "to@example.com", "S", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
             )
 
         assert ok is False
@@ -433,6 +440,176 @@ class TestSendViaSmtp:
         kwargs = fake_aiosmtplib.send.await_args.kwargs
         assert kwargs["username"] is None
         assert kwargs["password"] is None
+
+
+# ---------------------------------------------------------------------------
+# RFC 8058 List-Unsubscribe headers — Resend (production) and SMTP
+#
+# Resend adds List-Unsubscribe by itself only to Broadcasts; on an API send it
+# is present only if the sender passes it in ``headers``. The SMTP path set it
+# from the start, the Resend path did not, and production runs Resend — so
+# inbox-native unsubscribe was missing on the path that actually sent.
+# ---------------------------------------------------------------------------
+
+_EXPECTED_HEADER_URL = f"https://relay.test.example.com?token={_FAKE_TOKEN}"
+_ONE_CLICK = "List-Unsubscribe=One-Click"
+
+
+def _fake_resend_module(send_return=None) -> MagicMock:
+    fake = MagicMock()
+    fake.api_key = ""
+    fake.Emails = MagicMock()
+    fake.Emails.send = MagicMock(return_value=send_return or {"id": "msg-123"})
+    return fake
+
+
+async def _smtp_message(token: str):
+    """The MIME message ``_send_via_smtp`` hands to aiosmtplib."""
+    from poindexter.services.newsletter_service import _send_via_smtp
+
+    fake_aiosmtplib = MagicMock()
+    fake_aiosmtplib.send = AsyncMock()
+    cfg = {
+        "smtp_host": "smtp.example.com", "smtp_port": 587,
+        "smtp_user": "", "smtp_password": "", "smtp_use_tls": True,
+    }
+    with patch.dict("sys.modules", {"aiosmtplib": fake_aiosmtplib}):
+        await _send_via_smtp(
+            cfg, "from@example.com", "to@example.com", "S", "<html/>",
+            unsubscribe_token=token, site_config=_SC,
+        )
+    return fake_aiosmtplib.send.await_args.args[0]
+
+
+class TestUnsubscribeHeaders:
+    def test_helper_returns_both_rfc8058_headers(self):
+        headers = _unsubscribe_headers(_FAKE_TOKEN, site_config=_SC)
+
+        # Angle brackets are part of the RFC 2369 URL syntax, not decoration.
+        assert headers == {
+            "List-Unsubscribe": f"<{_EXPECTED_HEADER_URL}>",
+            "List-Unsubscribe-Post": _ONE_CLICK,
+        }
+
+    def test_helper_uses_the_same_url_as_the_body_link(self):
+        headers = _unsubscribe_headers(_FAKE_TOKEN, site_config=_SC)
+
+        assert headers["List-Unsubscribe"] == (
+            f"<{_unsubscribe_url(_FAKE_TOKEN, site_config=_SC)}>"
+        )
+        html = _build_html("T", "E", "s", unsubscribe_token=_FAKE_TOKEN, site_config=_SC)
+        assert f'href="{_EXPECTED_HEADER_URL}"' in html
+
+    @pytest.mark.asyncio
+    async def test_resend_payload_carries_both_headers_with_the_token_url(self):
+        from poindexter.services.newsletter_service import _send_via_resend
+
+        fake_resend = _fake_resend_module()
+
+        with patch.dict("sys.modules", {"resend": fake_resend}):
+            ok, err = await _send_via_resend(
+                {"resend_api_key": "test-key"},
+                "Test <from@example.com>", "to@example.com", "Subject", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
+            )
+
+        assert (ok, err) == (True, None)
+        payload = fake_resend.Emails.send.call_args.args[0]
+        assert payload["headers"]["List-Unsubscribe"] == f"<{_EXPECTED_HEADER_URL}>"
+        assert payload["headers"]["List-Unsubscribe-Post"] == _ONE_CLICK
+        # The existing fields are untouched by the new one.
+        assert payload["from"] == "Test <from@example.com>"
+        assert payload["to"] == ["to@example.com"]
+        assert payload["subject"] == "Subject"
+        assert payload["html"] == "<html/>"
+
+    @pytest.mark.asyncio
+    async def test_resend_header_matches_the_smtp_header(self):
+        from poindexter.services.newsletter_service import _send_via_resend
+
+        fake_resend = _fake_resend_module()
+        with patch.dict("sys.modules", {"resend": fake_resend}):
+            await _send_via_resend(
+                {"resend_api_key": "test-key"},
+                "from@example.com", "to@example.com", "S", "<html/>",
+                unsubscribe_token=_FAKE_TOKEN,
+                site_config=_SC,
+            )
+        resend_headers = fake_resend.Emails.send.call_args.args[0]["headers"]
+
+        msg = await _smtp_message(_FAKE_TOKEN)
+
+        assert resend_headers["List-Unsubscribe"] == msg["List-Unsubscribe"]
+        assert resend_headers["List-Unsubscribe-Post"] == msg["List-Unsubscribe-Post"]
+
+    @pytest.mark.asyncio
+    async def test_smtp_still_sets_both_headers(self):
+        """The SMTP path now builds them through the shared helper — pin that
+        the refactor kept its behavior."""
+        msg = await _smtp_message(_FAKE_TOKEN)
+
+        assert msg["List-Unsubscribe"] == f"<{_EXPECTED_HEADER_URL}>"
+        assert msg["List-Unsubscribe-Post"] == _ONE_CLICK
+
+class TestResendDispatchCarriesUnsubscribeHeaders:
+    """``send_post_newsletter`` must thread each subscriber's own token into
+    the Resend send — the helper tests above would stay green if the dispatch
+    forgot to pass it."""
+
+    @staticmethod
+    def _pool(subscribers):
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(side_effect=[subscribers, []])
+        pool.execute = AsyncMock()
+        return pool
+
+    @pytest.mark.asyncio
+    async def test_each_subscriber_gets_their_own_token_in_the_header(self):
+        pool = self._pool([
+            {"id": 1, "email": "a@b.com", "first_name": "Alice", "unsubscribe_token": "tok_a"},
+            {"id": 2, "email": "c@d.com", "first_name": "Bob", "unsubscribe_token": "tok_b"},
+        ])
+        fake_resend = _fake_resend_module()
+
+        with patch.dict("sys.modules", {"resend": fake_resend}):
+            result = await send_post_newsletter(
+                pool, "New Post", "Great stuff", "new-post",
+                site_config=_resend_cfg_mock(),
+            )
+
+        assert result["sent"] == 2
+        payloads = [c.args[0] for c in fake_resend.Emails.send.call_args_list]
+        assert [p["to"] for p in payloads] == [["a@b.com"], ["c@d.com"]]
+        for payload, token in zip(payloads, ["tok_a", "tok_b"], strict=True):
+            url = f"https://relay.test.example.com?token={token}"
+            assert payload["headers"] == {
+                "List-Unsubscribe": f"<{url}>",
+                "List-Unsubscribe-Post": _ONE_CLICK,
+            }
+            # Header and in-body link agree for the same recipient, and
+            # neither carries the other subscriber's token.
+            assert url in payload["html"]
+        assert "tok_b" not in payloads[0]["html"]
+        assert "tok_a" not in payloads[1]["html"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_passes_token_and_site_config_to_the_sender(self):
+        pool = self._pool([
+            {"id": 1, "email": "a@b.com", "first_name": "Alice", "unsubscribe_token": "tok_a"},
+        ])
+        site_config = _resend_cfg_mock()
+
+        with patch(
+            "poindexter.services.newsletter_service._send_via_resend",
+            new_callable=AsyncMock,
+        ) as mock_send:
+            mock_send.return_value = (True, None)
+            await send_post_newsletter(pool, "T", "E", "s", site_config=site_config)
+
+        mock_send.assert_awaited_once()
+        assert mock_send.await_args.kwargs["unsubscribe_token"] == "tok_a"
+        assert mock_send.await_args.kwargs["site_config"] is site_config
 
 
 # ---------------------------------------------------------------------------

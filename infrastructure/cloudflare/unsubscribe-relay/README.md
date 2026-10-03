@@ -14,9 +14,13 @@ https://<site>/newsletter/unsubscribe?token=…   → 404   (the link in every e
 https://<site>/api/newsletter/unsubscribe       → 404   (where a page would POST)
 ```
 
-`List-Unsubscribe` pointed at the same dead URL with
+On SMTP sends, `List-Unsubscribe` pointed at the same dead URL with
 `List-Unsubscribe-Post: One-Click`, so Gmail and Apple Mail's inbox
-unsubscribe button POSTed to a 404 too.
+unsubscribe button POSTed to a 404 too. Resend sends — the default provider —
+carried no `List-Unsubscribe` header at all until glad-labs-stack#4273:
+Resend adds it by itself only to Broadcasts, and `_send_via_resend` never
+passed one. Both providers now send the same tokenized relay URL in the header
+and in the body link, built by one helper (`_unsubscribe_headers`).
 
 **This is the one piece the poll pattern cannot replace.** Elsewhere (Lemon
 Squeezy invoices, Resend delivery state) the provider's API answers and the
@@ -108,6 +112,13 @@ Then send yourself a post and click the unsubscribe link end to end. Within
 that, not the page, because the page confirms optimistically while the DB
 write happens on the next poll tick.
 
+Also check the header, not just the link: open the received message's raw
+source (Gmail → "Show original") and confirm `List-Unsubscribe: <…?token=…>`
+and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` are both present. The
+unit tests pin what we hand the provider; only the received message shows
+what the provider delivered, and the one-click inbox button (which POSTs to
+this Worker) needs both headers to arrive.
+
 ### Don't trust an immediate `/pending` read
 
 `/pending` is a Workers KV `list()`, and **`list()` is eventually consistent
@@ -134,7 +145,9 @@ is simply picked up at the next, with `RETENTION_DAYS` behind it.
 Emails sent **before** the relay was configured carry the old
 `{site_url}/newsletter/unsubscribe` URL and stay broken — the relay cannot
 retroactively fix a link already in someone's inbox. Only new sends get the
-working URL.
+working URL. Likewise, Resend-sent mail from before glad-labs-stack#4273 has
+no `List-Unsubscribe` header, so those messages have no inbox-native
+unsubscribe button either.
 
 ## Testing
 
