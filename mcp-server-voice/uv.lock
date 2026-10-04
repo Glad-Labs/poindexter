@@ -1962,7 +1962,7 @@ wheels = [
 
 [[package]]
 name = "poindexter-voice-bridge"
-version = "0.152.0"
+version = "0.152.1"
 source = { editable = "." }
 dependencies = [
     { name = "asyncpg" },

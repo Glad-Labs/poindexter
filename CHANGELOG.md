@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.152.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.152.0...v0.152.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **glitchtip:** publish the web UI on loopback only ([#4276](https://github.com/Glad-Labs/glad-labs-stack/issues/4276)) ([af6a63a](https://github.com/Glad-Labs/glad-labs-stack/commit/af6a63a70af3d83d84cbf7ecaac77e0f5eeb0d0f))
+
 ## [0.152.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.151.1...v0.152.0) (2026-10-03)
 
 
