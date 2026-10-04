@@ -1,6 +1,6 @@
 """Prefect harness for the ``services.flows`` test tree.
 
-Closes the CI hang introduced by Glad-Labs/glad-labs-stack#410 (Prefect
+Closes the CI hang introduced by Glad-Labs/poindexter#410 (Prefect
 Phase 1+2). When ``services.flows.content_generation`` is imported,
 Prefect's ``@task`` / ``@flow`` decorators register with the global
 runtime. With no ``PREFECT_API_URL`` set, Prefect spins up an
