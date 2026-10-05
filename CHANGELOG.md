@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [0.153.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.152.1...v0.153.0) (2026-10-05)
+
+
+### Features
+
+* **charts:** let the writer chart figures its sources state, verified number by number ([#4307](https://github.com/Glad-Labs/glad-labs-stack/issues/4307)) ([dce4994](https://github.com/Glad-Labs/glad-labs-stack/commit/dce499406d402bf2dcd54f34c819d4a1165c57ac))
+
+
+### Bug Fixes
+
+* **social:** count draft length the way Postiz does, and gate edits on it ([#4285](https://github.com/Glad-Labs/glad-labs-stack/issues/4285)) ([7f07391](https://github.com/Glad-Labs/glad-labs-stack/commit/7f07391a40287e56c1ad36fb53c5742096516ee8))
+* **video:** keep each presenter shot to one seamless S2V chunk ([#4286](https://github.com/Glad-Labs/glad-labs-stack/issues/4286)) ([49ea2df](https://github.com/Glad-Labs/glad-labs-stack/commit/49ea2df7332a5c64d29d257bbc286ac0f027ed67))
+
 ## [0.152.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.152.0...v0.152.1) (2026-10-04)
 
 
