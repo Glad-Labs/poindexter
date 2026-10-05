@@ -3047,6 +3047,152 @@ def _cap_presenter_shots(
     return out
 
 
+# The interpolated presenter clip comes out a frame or two short of
+# ``length / fps`` (77 frames @ 16 fps → 143 frames @ 30 fps = 4.767 s, not
+# 4.8125), so the window a single chunk can cover keeps a margin.
+_PRESENTER_WINDOW_MARGIN_S = 0.15
+
+
+def _presenter_window_budget_s(site_config: Any) -> float | None:
+    """Longest fitted window one presenter shot may speak; None = uncapped.
+
+    ``video_presenter_max_chunks_per_shot`` S2V chunks of
+    ``video_comfyui_s2v_length_frames / video_comfyui_fps`` seconds, less a
+    margin. Every chunk seam jumps — the next chunk does not continue the
+    previous chunk's pose, so the face lurches and the lips miss for about a
+    second (12 of 12 seams measured on raw clips, 2026-10-05) — so the default
+    of 1 keeps every presenter clip a single seamless chunk.
+    """
+    def _num(key: str, default: float) -> float:
+        if site_config is None:
+            return default
+        try:
+            return float(site_config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    chunks = int(_num("video_presenter_max_chunks_per_shot", 1))
+    if chunks <= 0:
+        return None
+    length = _num("video_comfyui_s2v_length_frames", 77)
+    fps = _num("video_comfyui_fps", 16)
+    if length <= 0 or fps <= 0:
+        return None
+    return max(1.0, chunks * length / fps - _PRESENTER_WINDOW_MARGIN_S)
+
+
+def _presenter_overflow_donor(position: int, sources: list[str]) -> int | None:
+    """The neighbour that plays a presenter shot's overflow, or None.
+
+    The opening and middle beats keep the START of their passage and the
+    following shot plays the rest — the face introduces the thought, the
+    b-roll carries it. The closing beat keeps the END, so the preceding shot
+    takes the start and the sign-off stays on the face. Never another
+    presenter shot: that would only move the seam.
+    """
+    last = len(sources) - 1
+    order = [position - 1] if position == last else [position + 1, position - 1]
+    for i in order:
+        if 0 <= i <= last and sources[i] != _PRESENTER_SOURCE:
+            return i
+    return None
+
+
+def _rebalance_presenter_slot(
+    position: int,
+    donor: int,
+    shot_durations: list[float],
+    budget_s: float,
+    window_for: Any,
+    *,
+    max_rounds: int = 6,
+) -> tuple[list[float], tuple[float, float], float]:
+    """Move planned seconds from the presenter at ``position`` to ``donor``
+    until its fitted window fits ``budget_s``.
+
+    ``window_for(durations)`` returns the fitted ``(offset_s, duration_s)`` of
+    ``position`` — the same narration fit the assembly runs, which is not
+    strictly proportional (shots are clamped), hence the few rounds. The
+    planned total never changes, so every other shot keeps its place on the
+    timeline. Returns ``(durations, window, moved_s)``; pure, so testable.
+    """
+    durs = [float(d) for d in shot_durations]
+    window = window_for(durs)
+    moved = 0.0
+    for _ in range(max_rounds):
+        if window[1] <= budget_s + 1e-6 or durs[position] <= 0.5:
+            break
+        planned = durs[position]
+        target = max(0.5, planned * budget_s / window[1] * 0.98)
+        step = planned - target
+        durs[position] = target
+        durs[donor] += step
+        moved += step
+        window = window_for(durs)
+    return durs, window, moved
+
+
+def _fit_presenter_to_chunk_budget(
+    position: int,
+    states: list[Any],
+    window_for: Any,
+    site_config: Any,
+) -> tuple[float, float]:
+    """The fitted window the presenter at ``position`` will speak, kept within
+    one seamless S2V chunk (:func:`_presenter_window_budget_s`).
+
+    When the fit gives the shot more than the budget, the overflow moves to a
+    b-roll neighbour (:func:`_presenter_overflow_donor`). Both the
+    neighbour's plan and its rendered result carry the moved seconds, so the
+    assembly — and any repair re-render, which reports the plan — lays out
+    the same timeline this window was cut from. ``states`` is the render
+    pass's ``_ShotState`` list, mutated in place; ``window_for(durations)`` is
+    the narration fit for ``position``.
+    """
+    shot_durs = [
+        float(st.result.duration_s)
+        if st.result.success and st.result.clip_path and st.result.duration_s
+        else float(st.shot.duration_s)
+        for st in states
+    ]
+    window = window_for(shot_durs)
+    budget = _presenter_window_budget_s(site_config)
+    if budget is None or window[1] <= budget + 1e-6:
+        return window
+    shot = states[position].shot
+    donor = _presenter_overflow_donor(position, [st.shot.source for st in states])
+    if donor is None:
+        logger.warning(
+            "[SHOT_LIST] presenter shot %d speaks %.1fs (> %.1fs, one S2V chunk) "
+            "with no b-roll neighbour to take the overflow — it renders "
+            "multi-chunk, with a seam",
+            shot.idx, window[1], budget,
+        )
+        return window
+    new_durs, new_window, moved = _rebalance_presenter_slot(
+        position, donor, shot_durs, budget, window_for,
+    )
+    if moved <= 0:
+        return window
+    pstate, dstate = states[position], states[donor]
+    pstate.shot = pstate.shot.model_copy(
+        update={"duration_s": round(new_durs[position], 3)},
+    )
+    dstate.shot = dstate.shot.model_copy(
+        update={"duration_s": round(float(dstate.shot.duration_s) + moved, 3)},
+    )
+    if dstate.result.success and dstate.result.duration_s:
+        dstate.result.duration_s = round(float(dstate.result.duration_s) + moved, 3)
+    logger.info(
+        "[SHOT_LIST] presenter shot %d: fitted window %.1fs > %.1fs (one S2V chunk) "
+        "— %.1fs of plan moved to shot %d, so the face speaks %.1f+%.1fs in one "
+        "seamless chunk",
+        shot.idx, window[1], budget, moved, dstate.shot.idx,
+        new_window[0], new_window[1],
+    )
+    return new_window
+
+
 def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str:
     """S2V render prompt: the DB template with the persona's name, then the
     persona's own suffix, then the shot's delivery note."""
@@ -5084,15 +5230,6 @@ async def render_shot_list(
             narration_dur = _probed["dur"]
             if not narration_dur:
                 return None
-            # Every shot's best-known duration, in order: rendered clips as
-            # rendered (cli_demo clamps, etc.), everything else as planned —
-            # the substitute ladder keeps the director's duration.
-            shot_durs = [
-                float(st.result.duration_s)
-                if st.result.success and st.result.clip_path and st.result.duration_s
-                else float(st.shot.duration_s)
-                for st in states_so_far
-            ]
             position = next(
                 (i for i, st in enumerate(states_so_far) if st.shot.idx == shot.idx), None,
             )
@@ -5105,11 +5242,20 @@ async def render_shot_list(
                 endcard_cta_text=endcard_cta_text,
                 narration_fit_hold_s=narration_fit_hold_s,
             )
-            return _fitted_shot_window(
-                position, shot_durs, fit_target,
-                max_shot_s=narration_fit_max_shot_s,
-                min_shot_s=narration_fit_min_shot_s,
-                shortfall_hold_s=fit_hold,
+
+            # Every shot's best-known duration feeds the fit: rendered clips
+            # as rendered (cli_demo clamps, etc.), everything else as planned
+            # — _fit_presenter_to_chunk_budget builds that list.
+            def _window_for(durs: list[float]) -> tuple[float, float]:
+                return _fitted_shot_window(
+                    position, durs, fit_target,
+                    max_shot_s=narration_fit_max_shot_s,
+                    min_shot_s=narration_fit_min_shot_s,
+                    shortfall_hold_s=fit_hold,
+                )
+
+            return _fit_presenter_to_chunk_budget(
+                position, states_so_far, _window_for, site_config,
             )
 
     states = await _render_pass(

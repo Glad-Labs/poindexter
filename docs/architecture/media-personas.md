@@ -20,15 +20,15 @@ existing settings CLI / API / MCP edit it from a phone today.
 `poindexter/services/persona_service.py` adds validation, listing by prefix,
 niche resolution, voice inheritance and the portrait render.
 
-| Field (`persona.<slug>.`) | Meaning                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------- |
-| `display_name`, `description` | Who the presenter is; the description seeds the portrait prompt                      |
-| `voice_provider`, `voice_id`  | `kokoro` or `chatterbox`; the voice id. **Empty `voice_id` inherits `podcast_tts_voice`** |
-| `voice_ref_audio_url`     | Chatterbox clone reference (optional)                                                    |
-| `portrait_url`, `portrait_prompt`, `portrait_seed` | The canonical reference still (R2) and how to regenerate it             |
-| `style_policy`            | `photoreal` or `stylized`; must agree with the niche media policy                        |
-| `enabled`                 | A disabled persona resolves to none, never to a different one                            |
-| `render_prompt_suffix`    | Per-persona shaping for the S2V prompt (framing, mood)                                   |
+| Field (`persona.<slug>.`)                          | Meaning                                                                                   |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `display_name`, `description`                      | Who the presenter is; the description seeds the portrait prompt                           |
+| `voice_provider`, `voice_id`                       | `kokoro` or `chatterbox`; the voice id. **Empty `voice_id` inherits `podcast_tts_voice`** |
+| `voice_ref_audio_url`                              | Chatterbox clone reference (optional)                                                     |
+| `portrait_url`, `portrait_prompt`, `portrait_seed` | The canonical reference still (R2) and how to regenerate it                               |
+| `style_policy`                                     | `photoreal` or `stylized`; must agree with the niche media policy                         |
+| `enabled`                                          | A disabled persona resolves to none, never to a different one                             |
+| `render_prompt_suffix`                             | Per-persona shaping for the S2V prompt (framing, mood)                                    |
 
 **Selection:** `niche.<slug>.media.persona` → `media_default_persona` → none.
 The seeded default is `presenter` (photoreal, voice inherited), so a fresh
@@ -45,7 +45,7 @@ the persona — an operator who turned rotation on asked for variety.
 with its own `voice_ref_audio_url` as the zero-shot clone reference (a path
 inside the sidecar, e.g. `/app/voices/matt-voice.wav`), whatever
 `podcast_tts_engine` says; a `kokoro` persona renders through Speaches. If the
-clone fails, the ladder falls back to the install's normal voices *without*
+clone fails, the ladder falls back to the install's normal voices _without_
 the persona, so a broken reference degrades to the house voice, never to
 silence.
 
@@ -98,6 +98,23 @@ director put beside it (for the midpoint, anywhere in the middle third) or
 else promotes the target shot, dropping its visual fields. A `holdover` or
 `cli_demo` is never overwritten, and three presenter shots are never stacked,
 because the schema rejects any source three times running.
+
+One chunk per shot (2026-10-05): S2V renders speech in 4.8 s chunks, and
+every chunk seam jumps. The next chunk does not continue the previous chunk's
+pose, so the face lurches and the lips miss for about a second (12 of 12 seams
+on raw clips, each a 7-10x spike in frame-to-frame change at exactly 4.81 s;
+the operator saw it on a Short's closing beat). The narration fit stretches
+planned durations by up to ~1.36x, so a cap on the director's plan cannot
+hold; the renderer applies it to the FITTED window instead.
+`_fit_presenter_to_chunk_budget` runs in the presenter phase, after every other
+shot has rendered. When the fitted window exceeds
+`video_presenter_max_chunks_per_shot` chunks (default 1; `0` = uncapped),
+planned seconds move to a b-roll neighbour until it fits, and the total does
+not change, so no other shot moves. The opening and middle beats keep the
+start of their passage and the next shot plays the rest; the closing beat
+keeps the end, so the sign-off stays on the face. The neighbour's plan and its
+rendered result both carry the moved seconds, so the assembly and any repair
+re-render lay out the timeline the speech was cut from.
 
 Budget: `video_presenter_shots_max` defaults to `-1`, meaning no ceiling. The
 operator's rule is no limit the render does not need in order to work. A

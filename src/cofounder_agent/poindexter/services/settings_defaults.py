@@ -779,6 +779,14 @@ DEFAULTS: dict[str, str] = {
     # the script earns (operator, 2026-09-23: no limit the render does not
     # need to work). A number >= 0 is an optional GPU budget.
     'video_presenter_shots_max': '-1',
+    # How many S2V chunks (4.8 s each) one presenter shot may span. Every
+    # chunk seam jumps: the next chunk does not continue the previous one's
+    # pose, so the face lurches and the lips miss for about a second (12 of
+    # 12 seams measured, 2026-10-05). 1 = seamless: when a presenter shot's
+    # fitted window is longer than one chunk, the renderer hands the overflow
+    # to the neighbouring b-roll shot and the presenter speaks only what fits.
+    # 0 = uncapped (the pre-2026-10-05 behaviour, multi-chunk with seams).
+    'video_presenter_max_chunks_per_shot': '1',
     # YouTube altered/synthetic-content disclosure: auto = true when the video
     # has a presenter shot and the niche's persona is photoreal; true/false
     # force it for the channel.
@@ -6216,6 +6224,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'video_presenter_max_chunks_per_shot': {'owner': 'video', 'value_type': 'integer'},
     'youtube_contains_synthetic_media': {'owner': 'video', 'value_type': 'string'},
     'video_thumbnail_enabled': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
     'video_thumbnail_background_order': {'owner': 'video_thumbnail', 'value_type': 'string'},

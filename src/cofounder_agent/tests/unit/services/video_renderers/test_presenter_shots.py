@@ -443,6 +443,110 @@ class TestFittedShotWindow:
         assert (target, hold, plan) == (284.4, 1.5, None)
 
 
+
+class TestOneSeamlessChunk:
+    """Every S2V chunk seam jumps: the next chunk does not continue the last
+    one's pose, so the face lurches and the lips miss for about a second.
+    Measured 2026-10-05 on raw presenter clips: 12 of 12 seams, each a 7-10x
+    spike in frame-to-frame change at exactly 4.81 s. The operator saw it on
+    the Pitch Short's closing beat (39-42 s). A presenter shot now speaks at
+    most one chunk; the fitted window's overflow plays over a b-roll
+    neighbour instead."""
+
+    @staticmethod
+    def _states(sources, durs):
+        out = []
+        for i, (src, d) in enumerate(zip(sources, durs, strict=True)):
+            shot = _shot(i, source=src, duration_s=d)
+            ok = src != "presenter"  # b-roll already rendered; presenter pending
+            out.append(slr._ShotState(
+                shot=shot,
+                result=slr.ShotRenderResult(
+                    idx=i, source=src, success=ok,
+                    clip_path=f"/clips/{i}.mp4" if ok else None,
+                    duration_s=d if ok else 0.0,
+                ),
+                is_reused=False,
+            ))
+        return out
+
+    @staticmethod
+    def _window_for(position, target):
+        return lambda durs: slr._fitted_shot_window(position, durs, target, max_shot_s=60.0)
+
+    def test_budget_is_one_chunk_less_a_margin(self):
+        assert abs(slr._presenter_window_budget_s(_sc()) - (77 / 16 - 0.15)) < 1e-9
+
+    def test_budget_follows_the_chunk_settings(self):
+        sc = _sc(video_presenter_max_chunks_per_shot="2", video_comfyui_s2v_length_frames="81")
+        assert abs(slr._presenter_window_budget_s(sc) - (2 * 81 / 16 - 0.15)) < 1e-9
+
+    def test_zero_chunks_means_uncapped(self):
+        assert slr._presenter_window_budget_s(_sc(video_presenter_max_chunks_per_shot="0")) is None
+
+    def test_opening_and_middle_beats_give_the_overflow_to_the_next_shot(self):
+        sources = ["presenter", "generative", "presenter", "pexels", "presenter"]
+        assert slr._presenter_overflow_donor(0, sources) == 1
+        assert slr._presenter_overflow_donor(2, sources) == 3
+
+    def test_the_closing_beat_keeps_its_end(self):
+        sources = ["presenter", "generative", "presenter", "pexels", "presenter"]
+        assert slr._presenter_overflow_donor(4, sources) == 3
+
+    def test_never_donates_to_another_presenter(self):
+        assert slr._presenter_overflow_donor(1, ["generative", "presenter", "presenter"]) == 0
+        assert slr._presenter_overflow_donor(0, ["presenter", "presenter"]) is None
+
+    def test_a_long_opening_fits_one_chunk_and_nothing_else_moves(self):
+        # The 1.36x stretch that made openings run 7.6-10.9 s in production.
+        sources = ["presenter", "generative", "pexels", "image_kenburns"]
+        durs = [8.0, 14.0, 12.0, 18.0]
+        target = sum(durs) * 1.36
+        states = self._states(sources, durs)
+        before_shot2 = slr._fitted_shot_window(2, durs, target, max_shot_s=60.0)
+
+        window = slr._fit_presenter_to_chunk_budget(0, states, self._window_for(0, target), _sc())
+
+        budget = slr._presenter_window_budget_s(_sc())
+        assert window[0] == 0.0 and window[1] <= budget + 1e-6
+        moved = 8.0 - states[0].shot.duration_s
+        assert moved > 0
+        # The donor carries the moved seconds in its plan AND its result, so a
+        # repair re-render (which reports the plan) keeps the same timeline.
+        assert abs(states[1].shot.duration_s - (14.0 + moved)) < 1e-3
+        assert abs(states[1].result.duration_s - (14.0 + moved)) < 1e-3
+        new_durs = [float(st.result.duration_s or st.shot.duration_s) for st in states]
+        assert abs(sum(new_durs) - sum(durs)) < 1e-3
+        assert slr._fitted_shot_window(2, new_durs, target, max_shot_s=60.0) == before_shot2
+
+    def test_a_long_closing_beat_keeps_the_sign_off_on_the_face(self):
+        sources = ["generative", "pexels", "presenter"]
+        durs = [10.0, 10.0, 8.0]
+        target = sum(durs) * 1.2
+        states = self._states(sources, durs)
+        end_before = sum(slr._fitted_shot_window(2, durs, target, max_shot_s=60.0))
+
+        window = slr._fit_presenter_to_chunk_budget(2, states, self._window_for(2, target), _sc())
+
+        assert window[1] <= slr._presenter_window_budget_s(_sc()) + 1e-6
+        # Same end point: the face speaks the LAST words of its passage.
+        assert abs(sum(window) - end_before) < 0.05
+        assert states[1].shot.duration_s > 10.0
+
+    def test_a_window_that_already_fits_changes_nothing(self):
+        states = self._states(["presenter", "generative"], [4.0, 10.0])
+        window = slr._fit_presenter_to_chunk_budget(0, states, self._window_for(0, 14.0), _sc())
+        assert window == (0.0, 4.0)
+        assert states[0].shot.duration_s == 4.0 and states[1].shot.duration_s == 10.0
+
+    def test_uncapped_keeps_the_multi_chunk_window(self):
+        states = self._states(["presenter", "generative"], [8.0, 10.0])
+        sc = _sc(video_presenter_max_chunks_per_shot="0")
+        window = slr._fit_presenter_to_chunk_budget(0, states, self._window_for(0, 18.0), sc)
+        assert window == (0.0, 8.0)
+        assert states[0].shot.duration_s == 8.0
+
+
 class TestPresenterNegativePrompt:
     """The shared Wan negative punishes stillness (静态 / 静止 / 静止不动的画面) —
     right for a hero illustration, wrong for a person talking to camera, whom
