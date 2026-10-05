@@ -1969,6 +1969,20 @@ DEFAULTS: dict[str, str] = {
     # Charts are deliberately not definable in settings — that would mean
     # operator-authored SQL reachable from an LLM-chosen key.
     'chart_catalog_enabled_keys': '',
+    # A catalog chart that ran on another post within this many days leaves
+    # its slot empty instead of repeating (0 = off). The catalog held one
+    # chart on 2026-10-05, and ten posts in thirty days carried it, three
+    # inside a week. Writer [DATA-CHART:] charts are never held back.
+    'chart_catalog_repeat_cooldown_days': '7',
+    # Writer-authored data charts (services/data_chart.py): the writer may
+    # plot figures the research states, and the chart is drawn only if every
+    # value is found in the research beside its own label. Per-niche
+    # override: niche.<slug>.writer_data_charts_enabled.
+    'writer_data_charts_enabled': 'true',
+    'data_chart_max_points': '10',
+    # How far (characters, either side of a label occurrence) a value may sit
+    # from its label in the research and still count as that label's figure.
+    'data_chart_label_window_chars': '240',
     'plugin.image_provider.chart.scale': '2',
     # Spec width in points; a spec's own `width` wins when present.
     'plugin.image_provider.chart.width': '1200',
@@ -7304,6 +7318,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'pipeline_writer_unload_grace_seconds': {'owner': 'ollama_unload', 'value_type': 'integer'},
     'pipeline_writer_unload_poll_interval_seconds': {'value_type': 'float'},
     'chart_catalog_enabled_keys': {'owner': 'chart_catalog'},
+    'chart_catalog_repeat_cooldown_days': {'owner': 'chart_catalog', 'value_type': 'float'},
+    'writer_data_charts_enabled': {'owner': 'data_chart', 'value_type': 'boolean'},
+    'data_chart_max_points': {'owner': 'data_chart', 'value_type': 'integer'},
+    'data_chart_label_window_chars': {'owner': 'data_chart', 'value_type': 'integer'},
     'plugin.image_provider.chart.scale': {'owner': 'chart', 'value_type': 'integer'},
     'plugin.image_provider.chart.timeout_ms': {'owner': 'chart', 'value_type': 'integer'},
     'plugin.image_provider.chart.upload_to': {'owner': 'chart'},

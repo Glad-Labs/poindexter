@@ -87,6 +87,7 @@ class TestTwoPassGenerateWithContextPrompt:
             # str.format raises KeyError on an unmatched placeholder, so every
             # template var must be supplied — the [CHART:] allowlist included.
             chart_targets="none available",
+            data_chart_instructions="",
             screenshot_targets="- qa-rails: The QA Rails board",
         )
         # The requested word budget must appear in the rendered prompt so

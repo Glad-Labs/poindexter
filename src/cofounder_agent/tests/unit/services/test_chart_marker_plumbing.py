@@ -169,6 +169,134 @@ class TestGenerationRouting:
         assert out["url"] is None and out["source"] == "none"
 
 
+
+_RESEARCH = (
+    "The RTX 5090 ships with 32GB of GDDR7. The RTX 4090 carries 24GB of GDDR6X."
+)
+
+
+def _fake_provider(captured):
+    result = SimpleNamespace(
+        url="https://cdn/d.png", alt_text="Bar chart: VRAM.", width=1200, height=400,
+        metadata={"chart_source": "writer_data_chart"},
+    )
+
+    async def fetch(payload, config):
+        captured.append(payload)
+        return [result]
+
+    return SimpleNamespace(name="chart", fetch=fetch)
+
+
+class TestWriterDataCharts:
+    """[DATA-CHART:] — the writer plots figures the research states; every
+    value must be found beside its own label, or nothing is drawn."""
+
+    async def test_a_data_chart_marker_becomes_a_data_target_plan(self):
+        state = {
+            "content": "Intro.\n\n## S\n\n[IMAGE-1: datachart:bar | VRAM | GB | RTX 5090 = 32; RTX 4090 = 24]\n",
+            "site_config": SiteConfig(),
+        }
+        plans = (await planner.run(state))["image_plans"]
+        assert plans[0]["chart_target"] == "data:bar | VRAM | GB | RTX 5090 = 32; RTX 4090 = 24"
+        assert plans[0]["desc"] == "VRAM"
+
+    def test_a_data_chart_spends_the_one_chart_budget(self):
+        from poindexter.modules.content.atoms._writer_markers import number_inline_markers
+
+        body = (
+            "[DATA-CHART: bar | VRAM | GB | RTX 5090 = 32; RTX 4090 = 24]\n"
+            "[CHART: llm-decode-vs-delivered]\n"
+        )
+        out = number_inline_markers(body, max_inline=3, max_evidence_per_kind=1)
+        assert out.count("[IMAGE-") == 1
+        assert "datachart:" in out
+
+    async def test_a_verified_data_chart_renders_without_touching_the_catalog(self):
+        from poindexter.modules.content.atoms import content_generate_images as atom
+
+        captured: list[str] = []
+        resolve = AsyncMock(return_value=None)
+        with (
+            patch("poindexter.services.chart_catalog.resolve", resolve),
+            patch("poindexter.plugins.registry.get_image_providers", lambda: [_fake_provider(captured)]),
+            patch(
+                "poindexter.modules.content.atoms._image_helpers.record_inline_image_asset",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            out = await atom._render_chart(
+                "data:bar | VRAM | GB | RTX 5090 = 32; RTX 4090 = 24",
+                site_config=None, task_id="t", post_id=None, num="1",
+                pool=None, research_context=_RESEARCH,
+            )
+        assert out["source"] == "chart"
+        resolve.assert_not_awaited()
+        assert '"categories": ["RTX 5090", "RTX 4090"]' in captured[0]
+
+    async def test_an_unverified_data_chart_leaves_an_empty_slot(self):
+        from poindexter.modules.content.atoms import content_generate_images as atom
+
+        captured: list[str] = []
+        with patch("poindexter.plugins.registry.get_image_providers", lambda: [_fake_provider(captured)]):
+            out = await atom._render_chart(
+                # 48 is stated nowhere — the writer invented it.
+                "data:bar | VRAM | GB | RTX 5090 = 48; RTX 4090 = 24",
+                site_config=None, task_id="t", post_id=None, num="1",
+                pool=None, research_context=_RESEARCH,
+            )
+        assert out == {"num": "1", "url": None, "alt_text": "", "source": "none"}
+        assert captured == []
+
+    async def test_the_research_reaches_the_chart_from_the_atom_state(self):
+        import inspect
+
+        from poindexter.modules.content.atoms import content_generate_images as atom
+
+        src = inspect.getsource(atom.run)
+        assert 'state.get("research_context")' in src
+        assert "research_context=research_context" in src
+
+
+class TestCatalogCooldown:
+    """One catalog chart ran on ten posts in thirty days; a catalog chart used
+    on another post inside chart_catalog_repeat_cooldown_days is held back."""
+
+    async def test_a_recently_used_catalog_chart_leaves_an_empty_slot(self):
+        from poindexter.modules.content.atoms import content_generate_images as atom
+
+        pool = SimpleNamespace(fetchval=AsyncMock(return_value=1))
+        resolve = AsyncMock()
+        with patch("poindexter.services.chart_catalog.resolve", resolve):
+            out = await atom._render_chart(
+                "llm-decode-vs-delivered", site_config=SiteConfig(), task_id="t",
+                post_id="p", num="1", pool=pool,
+            )
+        assert out["url"] is None
+        resolve.assert_not_awaited()
+        args = pool.fetchval.await_args.args
+        assert args[1] == "llm-decode-vs-delivered" and args[2] == 7 * 86400.0
+        assert args[3] == "p" and args[4] == "t"  # this post / task never block themselves
+
+    async def test_a_cooldown_of_zero_turns_it_off(self):
+        from poindexter.modules.content.atoms import content_generate_images as atom
+
+        pool = SimpleNamespace(fetchval=AsyncMock(return_value=1))
+        sc = SiteConfig(initial_config={"chart_catalog_repeat_cooldown_days": "0"})
+        assert not await atom._catalog_chart_recently_used(
+            "k", pool=pool, site_config=sc, post_id="p", task_id="t",
+        )
+        pool.fetchval.assert_not_awaited()
+
+    async def test_a_failed_lookup_lets_the_chart_render(self):
+        from poindexter.modules.content.atoms import content_generate_images as atom
+
+        pool = SimpleNamespace(fetchval=AsyncMock(side_effect=RuntimeError("db down")))
+        assert not await atom._catalog_chart_recently_used(
+            "k", pool=pool, site_config=SiteConfig(), post_id="p", task_id="t",
+        )
+
+
 class TestWriterPrompt:
     def test_the_skill_pack_enumerates_charts_and_forbids_inventing_keys(self):
         from pathlib import Path

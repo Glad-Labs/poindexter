@@ -26,6 +26,7 @@ _CALL_SITE_KWARGS = {
     "internal_link_titles": "none",
     "screenshot_targets": "- qa-rails: The QA Rails board",
     "chart_targets": "- llm-decode-vs-delivered: decode vs delivered",
+    "data_chart_instructions": "- DATA CHARTS. [DATA-CHART: bar | title | unit | a = 1; b = 2]",
     "image_subject_rule": "People may appear in an image subject when the section is about them.",
     "target_length": 1200,
     "word_count": 1200,
@@ -116,6 +117,7 @@ def test_two_pass_writer_prompt_also_offers_the_chart_marker():
         target_length=1200,
         chart_targets="- llm-decode-vs-delivered: decode vs delivered",
         screenshot_targets="- qa-rails: The QA Rails board",
+        data_chart_instructions="",
     )
     assert "[CHART: chart-key]" in rendered
     assert "{chart_targets}" not in rendered
@@ -138,6 +140,7 @@ def test_two_pass_prompt_offers_the_screenshot_marker():
         target_length=1200,
         chart_targets="- llm-decode-vs-delivered: decode vs delivered",
         screenshot_targets="- qa-rails: The QA Rails board",
+        data_chart_instructions="",
     )
     assert "[SCREENSHOT: target-key]" in rendered
     assert "{screenshot_targets}" not in rendered
@@ -162,6 +165,10 @@ def test_two_pass_prompt_opens_only_the_two_evidence_markers():
     assert "[SCREENSHOT: target-key]" in body
     assert "[HERO-IMAGE:" not in body
     assert "[IMAGE:" not in body
+    # [DATA-CHART:] is offered through {data_chart_instructions}, rendered by
+    # services.data_chart so a niche that switches it off never sees it.
+    assert "{data_chart_instructions}" in body
+    assert "[DATA-CHART:" not in body
 
 
 # --- topic gate: the allowlist is offered only on posts about this system ---

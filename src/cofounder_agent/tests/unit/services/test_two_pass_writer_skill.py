@@ -81,6 +81,7 @@ def test_two_pass_templates_render_without_stray_braces() -> None:
         snippet_block="[posts/1] we ran it on a 32GB card",
         target_length=1500,
         chart_targets="- llm-decode-vs-delivered: decode vs delivered",
+        data_chart_instructions="- DATA CHARTS. [DATA-CHART: bar | title | unit | a = 1; b = 2]",
         screenshot_targets="- qa-rails: The QA Rails board",
     )
     assert "RTX 5090 local LLM inference" in generate

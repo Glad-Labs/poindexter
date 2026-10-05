@@ -474,6 +474,7 @@ IMAGE_PLACEHOLDER_PATTERNS = [
     r"\[FIGURE(?:-\d+)?:\s*[^\]]+\]",  # [FIGURE-1: description]
     r"\[DIAGRAM(?:-\d+)?:\s*[^\]]+\]",  # [DIAGRAM: description]
     r"\[CHART(?:-\d+)?:\s*[^\]]+\]",  # [CHART: description]
+    r"\[DATA-CHART:\s*[^\]]+\]",  # [DATA-CHART: form | title | unit | a = 1; …]
     r"\[SCREENSHOT(?:-\d+)?:\s*[^\]]+\]",  # [SCREENSHOT: description]
 ]
 

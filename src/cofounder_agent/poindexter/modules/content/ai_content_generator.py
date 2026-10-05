@@ -38,6 +38,7 @@ from typing import Any
 
 import httpx
 
+from poindexter.services.data_chart import prompt_block as data_chart_prompt_block
 from poindexter.services.logger_config import get_logger
 from poindexter.services.media_subject_policy import resolve_media_policy, writer_image_subject_rule
 from poindexter.services.prompt_manager import get_prompt_manager
@@ -1693,6 +1694,10 @@ async def generate_with_context(
             _sc, topic_kind=topic_kind, texts=(topic, angle),
         ),
         image_subject_rule=writer_image_subject_rule(resolve_media_policy(_sc, niche_slug)),
+        # [DATA-CHART:] — a chart of figures the research states, verified
+        # number-by-number before it is drawn (services.data_chart). Rendered
+        # by code so a niche that switches it off is never offered it.
+        data_chart_instructions=data_chart_prompt_block(_sc, niche_slug),
     )
     if prompt_metrics is not None:
         prompt_metrics["prompt_chars"] = len(prompt)

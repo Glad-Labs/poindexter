@@ -68,12 +68,13 @@ Lead with what you (the publisher) have actually built, run, or found here; use
 outside sources to corroborate, not to carry the whole article:
 {snippet_block}
 
-EVIDENCE MARKERS — the only two markers this prompt accepts:
+EVIDENCE MARKERS — the only markers this prompt accepts:
 
-Both show the reader something REAL instead of a diffusion model's impression
-of it. Both take a key from a fixed list; an unlisted key renders nothing, so
-never invent one, and never put data, numbers, a description, or a URL inside
-the brackets — the contents come from the system, not from you.
+Each shows the reader something REAL instead of a diffusion model's impression
+of it. [CHART:] and [SCREENSHOT:] take a key from a fixed list; an unlisted key
+renders nothing, so never invent one, and never put data, numbers, a
+description, or a URL inside those two — their contents come from the system,
+not from you.
 
 - CHARTS. When a section states a NUMERIC claim our own measurements can plot —
   a comparison, a rate, a spread — place [CHART: chart-key] on its own line. It
@@ -84,6 +85,7 @@ the brackets — the contents come from the system, not from you.
   [SCREENSHOT: target-key] on its own line. It captures the live surface, so the
   reader sees the actual numbers. Available targets:
 {screenshot_targets}
+{data_chart_instructions}
 
 - Place at most one of each, and only where the surrounding prose actually
   discusses what it shows. Add no OTHER image markers: ordinary illustrations

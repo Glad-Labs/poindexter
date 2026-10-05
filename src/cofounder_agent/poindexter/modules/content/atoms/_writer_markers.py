@@ -36,6 +36,10 @@ import re
 #: Description prefix that marks a numbered placeholder as a screenshot slot.
 SCREENSHOT_PREFIX = "screenshot:"
 CHART_PREFIX = "chart:"
+#: A writer-authored data chart (``[DATA-CHART: form | title | unit | a = 1; …]``,
+#: ``services.data_chart``). Same budget as a catalog chart — one chart per
+#: post either way — but its payload is data to verify, not a catalog key.
+DATA_CHART_PREFIX = "datachart:"
 
 _HERO_RE = re.compile(
     r"^[ \t]*\[HERO-IMAGE:\s*([^\]]*)\][ \t]*\n?", re.IGNORECASE | re.MULTILINE
@@ -43,7 +47,7 @@ _HERO_RE = re.compile(
 # Matches [IMAGE: …] and [SCREENSHOT: …] in one pass so the two share a single
 # document-order counter. Group 1 is the keyword, group 2 the payload.
 _UNNUMBERED_RE = re.compile(
-    r"\[(IMAGE|SCREENSHOT|CHART):\s*([^\]]*)\]", re.IGNORECASE,
+    r"\[(IMAGE|SCREENSHOT|DATA-CHART|CHART):\s*([^\]]*)\]", re.IGNORECASE,
 )
 
 
@@ -61,7 +65,7 @@ def extract_hero_subject(content: str) -> tuple[str, str | None]:
 #: group 2 the description (which may carry an evidence prefix).
 PLACEHOLDER_RE = re.compile(r"\[IMAGE-(\d+)(?::\s*([^\]]*))?\]")
 
-_EVIDENCE_PREFIXES = (SCREENSHOT_PREFIX, CHART_PREFIX)
+_EVIDENCE_PREFIXES = (SCREENSHOT_PREFIX, CHART_PREFIX, DATA_CHART_PREFIX)
 
 
 def is_evidence_desc(desc: str) -> bool:
@@ -103,6 +107,11 @@ def number_inline_markers(
 
     def _sub(match: re.Match[str]) -> str:
         keyword = (match.group(1) or "").upper()
+        # A data chart is a chart: it spends the CHART budget, so a post still
+        # carries at most one chart whichever kind the writer reached for.
+        data_chart = keyword == "DATA-CHART"
+        if data_chart:
+            keyword = "CHART"
         if keyword not in counts:
             keyword = "IMAGE"
         if max_evidence_per_kind is None or keyword == "IMAGE":
@@ -118,6 +127,8 @@ def number_inline_markers(
         # Each keyword carries its own prefix so the plan builder can route
         # the slot without re-parsing the original marker.
         prefix = {"SCREENSHOT": SCREENSHOT_PREFIX, "CHART": CHART_PREFIX}.get(keyword, "")
+        if data_chart:
+            prefix = DATA_CHART_PREFIX
         desc = f"{prefix}{payload}"
         return f"[IMAGE-{counts['n']}: {desc}]"
 
@@ -153,8 +164,19 @@ def split_chart_target(desc: str) -> tuple[str, str | None]:
     ``"chart:llm-decode-vs-delivered"`` → ``("llm-decode-vs-delivered",
     "llm-decode-vs-delivered")``. Mirrors :func:`split_screenshot_target`; the
     description is kept equal to the key so a logged plan still reads.
+
+    A writer data chart (``"datachart:bar | VRAM | GB | …"``) becomes the
+    target ``"data:bar | VRAM | GB | …"`` (``services.data_chart``'s routing
+    prefix), with its title as the description.
     """
     stripped = (desc or "").strip()
+    if stripped.lower().startswith(DATA_CHART_PREFIX):
+        payload = stripped[len(DATA_CHART_PREFIX):].strip()
+        if not payload:
+            return "", None
+        parts = [p.strip() for p in payload.split("|")]
+        title = parts[1] if len(parts) > 1 and parts[1] else "data chart"
+        return title, f"data:{payload}"
     if not stripped.lower().startswith(CHART_PREFIX):
         return stripped, None
     target = stripped[len(CHART_PREFIX):].strip()
@@ -177,6 +199,7 @@ def split_screenshot_target(desc: str) -> tuple[str, str | None]:
 
 __all__ = [
     "CHART_PREFIX",
+    "DATA_CHART_PREFIX",
     "PLACEHOLDER_RE",
     "SCREENSHOT_PREFIX",
     "extract_hero_subject",

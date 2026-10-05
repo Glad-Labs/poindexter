@@ -42,7 +42,7 @@ import re
 #: markdown links are untouched: ``[Image processing]`` does not match (the
 #: char after ``IMAGE`` is neither ``:`` nor ``]``), nor does ``[Images: x]``.
 _UNRESOLVED_MARKER_RE = re.compile(
-    r"\[(?:HERO-IMAGE|SCREENSHOT|IMAGE(?:-\d+)?)\s*(?::[^\]]*)?\]",
+    r"\[(?:HERO-IMAGE|SCREENSHOT|DATA-CHART|CHART|IMAGE(?:-\d+)?)\s*(?::[^\]]*)?\]",
     re.IGNORECASE,
 )
 

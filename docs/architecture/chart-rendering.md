@@ -188,6 +188,60 @@ Adding a chart means adding a builder function — one read-only query returning
 a fully-populated `ChartSpec`, including the `source` line, because a published
 chart must always say what produced it.
 
+### Writer data charts: `[DATA-CHART:]`
+
+The catalog held one chart on 2026-10-05, so every post that wanted a chart got
+the same one: ten posts in thirty days, three of them published within a week.
+Most hardware and AI posts carry figures worth plotting (VRAM per card,
+benchmark scores, prices) that no catalog entry could hold, because they come
+from the post's own research rather than from our database.
+
+The writer may therefore propose a chart of figures the research states:
+
+```text
+[DATA-CHART: bar | VRAM by card | GB | RTX 5090 = 32; RTX 4090 = 24; RTX 3060 = 12]
+```
+
+The marker is `form | title | unit | label = number; …`, where form is `bar` or
+`line`, with 2 to `data_chart_max_points` points. It joins the same numbering
+sequence as `[CHART:]` and spends the same one-chart budget, becomes the plan
+target `data:<payload>`, and `content.generate_images` hands it to
+`services/data_chart.build_verified_spec` instead of the catalog. A chart is
+drawn only if **every** value passes two checks against the post's
+`research_context`:
+
+- **The value is in the research.** `services.numeric_fidelity` extracts the
+  numbers, and `_matches` compares them at the precision the writer wrote.
+  These are the same rules `qa.numeric_fidelity` applies to the prose, so a
+  chart value is judged exactly like a sentence's.
+- **The value is the number nearest its label.** The label must appear in the
+  research, and at one of its occurrences the closest number, within
+  `data_chart_label_window_chars` and ignoring any digits inside the label
+  itself (the 4090 of "RTX 4090"), must be the value. "Nearby" is not enough.
+  In "16,000 requests from more than 4,000 users", both numbers are near both
+  labels, and a window test drew a chart that swapped them (caught on real
+  research before merge).
+
+One failed point drops the whole chart and logs the reasons. There is still
+no query surface: the data comes from the marker and is checked against text
+already in pipeline state.
+
+The writer prompt offers the marker through `{data_chart_instructions}`, which
+`data_chart.prompt_block` renders. It returns an empty string when
+`writer_data_charts_enabled` is off, globally or per niche through
+`niche.<slug>.writer_data_charts_enabled`, so a niche that switches it off is
+never told about it.
+
+### No back-to-back catalog charts
+
+A catalog chart that rendered for another post within
+`chart_catalog_repeat_cooldown_days` (default 7; `0` = off) leaves its slot
+empty. A chart identical to yesterday's post adds nothing, and an empty slot
+costs nothing. Assets of the same post or task never count, so a re-run is not
+blocked by its own earlier chart. Writer data charts are built from each post's
+own research and are never held back. The lookup fails open: no pool, or a
+failed query, lets the chart render.
+
 ## The provider takes data, never a query
 
 `ChartProvider` accepts a JSON **chart spec** — categories and values already
@@ -234,6 +288,11 @@ belongs in a **service that owns the query**, handing the result here as a spec.
 | `width`      | `1200`  | spec width in points; a spec's own `width` wins                                 |
 | `timeout_ms` | `30000` | render timeout                                                                  |
 | `upload_to`  | `r2`    | `r2` or `none` (serves a `file://` URL)                                         |
+
+Chart content settings: `chart_catalog_enabled_keys` (catalog allowlist),
+`chart_catalog_repeat_cooldown_days` (7), `writer_data_charts_enabled` (true;
+per-niche override `niche.<slug>.writer_data_charts_enabled`),
+`data_chart_max_points` (10) and `data_chart_label_window_chars` (240).
 
 The shared uploader transcodes PNG → WebP@80 and fits the result inside
 1920×1920, so a 1200pt spec at `scale=2` (2400px) lands at 1920px — still ~1.6×

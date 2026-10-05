@@ -83,6 +83,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Per-run override from `rebuild-images --allow-stock`; absent (False) on
     # the ordinary canonical_blog path, where the global setting governs.
     allow_stock = bool(state.get("allow_stock", False))
+    # The post's research — what a writer [DATA-CHART:] is verified against
+    # (services.data_chart). Read straight off the state like the citation
+    # atoms do; an empty string means a data chart cannot be verified and
+    # renders nothing.
+    research_context = str(state.get("research_context") or "")
 
     # Screenshot slots never reach the diffusion batch: they resolve against
     # an allow-listed URL, cost no GPU, and a diffusion "impression of a
@@ -138,7 +143,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             chart = await _render_chart(
                 chart_target,
                 site_config=site_config, task_id=task_id, post_id=post_id,
-                num=num, pool=pool,
+                num=num, pool=pool, research_context=research_context,
             )
             image_results.append(chart)
             continue
@@ -368,6 +373,46 @@ def _build_alt_text(desc: str, topic: str, site_config: Any) -> str:
 __all__ = ["ATOM_META", "run"]
 
 
+async def _catalog_chart_recently_used(
+    key: str, *, pool: Any, site_config: Any, post_id: Any, task_id: Any = None,
+) -> bool:
+    """Did catalog chart ``key`` render for ANOTHER post in the cooldown window?
+
+    The catalog is small (one chart on 2026-10-05), so without this every post
+    that asks for a chart gets the same image — ten posts in thirty days, three
+    of them published within a week. ``chart_catalog_repeat_cooldown_days``
+    (``0`` = off) spaces a catalog chart out; a writer ``[DATA-CHART:]`` is
+    built from that post's own research and is never held back. Fails open:
+    no pool or a failed lookup lets the chart render.
+    """
+    try:
+        days = float(site_config.get("chart_catalog_repeat_cooldown_days", 7) or 0) if site_config is not None else 7.0
+    except (TypeError, ValueError):
+        days = 7.0
+    if days <= 0 or pool is None:
+        return False
+    try:
+        hit = await pool.fetchval(
+            """
+            SELECT 1 FROM media_assets
+             WHERE provider_plugin = 'image.chart'
+               AND metadata->>'chart_target' = $1
+               AND created_at > now() - make_interval(secs => $2)
+               AND post_id::text IS DISTINCT FROM $3
+               AND COALESCE(metadata->>'task_id', '') IS DISTINCT FROM $4
+             LIMIT 1
+            """,
+            key, days * 86400.0, str(post_id) if post_id else None,
+            # The post row may not exist yet at generate time, so a re-run of
+            # this task must not count its own earlier chart as "another post".
+            str(task_id or ""),
+        )
+    except Exception as e:  # noqa: BLE001 — silent-ok: the cooldown is a nicety; a failed lookup must not cost the post its chart
+        logger.debug("[content.generate_images] chart cooldown lookup failed: %s", e)
+        return False
+    return bool(hit)
+
+
 async def _render_chart(
     key: str,
     *,
@@ -376,8 +421,15 @@ async def _render_chart(
     post_id: Any,
     num: str,
     pool: Any = None,
+    research_context: str = "",
 ) -> dict[str, Any]:
-    """Resolve a catalogued chart key to real data and render it.
+    """Resolve a chart target to real data and render it.
+
+    Two kinds of target. A catalogued key resolves through
+    ``services.chart_catalog`` to our own measurements. A ``data:`` target is
+    a writer ``[DATA-CHART:]`` whose every value must be stated, beside its
+    label, in ``research_context`` (``services.data_chart``); one unverified
+    point drops the chart.
 
     The key → data step happens HERE, in a service call, never inside the image
     provider: ``ChartProvider`` takes a finished data spec and has no query
@@ -390,8 +442,29 @@ async def _render_chart(
     """
     from poindexter.modules.content.atoms._image_helpers import record_inline_image_asset
     from poindexter.services.chart_catalog import resolve as resolve_chart
+    from poindexter.services.data_chart import DATA_TARGET_PREFIX, build_verified_spec
 
-    spec = await resolve_chart(key, pool=pool, site_config=site_config)
+    if key.startswith(DATA_TARGET_PREFIX):
+        spec, reasons = build_verified_spec(
+            key[len(DATA_TARGET_PREFIX):], research_context, site_config=site_config,
+        )
+        if spec is None:
+            logger.warning(
+                "[content.generate_images] data chart dropped — %s",
+                "; ".join(reasons) or "unverified",
+            )
+            return {"num": num, "url": None, "alt_text": "", "source": "none"}
+    elif await _catalog_chart_recently_used(
+        key, pool=pool, site_config=site_config, post_id=post_id, task_id=task_id,
+    ):
+        logger.info(
+            "[content.generate_images] chart %r ran on another post within "
+            "chart_catalog_repeat_cooldown_days — leaving the slot empty so "
+            "consecutive posts do not carry the same chart", key,
+        )
+        return {"num": num, "url": None, "alt_text": "", "source": "none"}
+    else:
+        spec = await resolve_chart(key, pool=pool, site_config=site_config)
     if spec is None:
         logger.warning(
             "[content.generate_images] chart key %r did not resolve — "

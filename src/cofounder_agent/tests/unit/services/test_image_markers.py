@@ -104,3 +104,16 @@ def test_strips_the_hero_marker_the_writer_places():
     _, hero = extract_hero_subject(body)
     assert hero == "a token tree"
     assert "[HERO-IMAGE" not in strip_unresolved_image_markers(body)
+
+
+def test_leftover_chart_markers_never_reach_the_reader():
+    """[CHART:] and [DATA-CHART:] are numbered into [IMAGE-N: …] by the planner,
+    but a raw one that survives (a writer path that does not number markers)
+    must be stripped like every other marker, not published as brackets."""
+    text = (
+        "Intro.\n\n[CHART: llm-decode-vs-delivered]\n\n"
+        "[DATA-CHART: bar | VRAM | GB | RTX 5090 = 32; RTX 4090 = 24]\n\nOutro."
+    )
+    out = strip_unresolved_image_markers(text)
+    assert "[CHART" not in out and "[DATA-CHART" not in out
+    assert out.startswith("Intro.") and out.endswith("Outro.")
