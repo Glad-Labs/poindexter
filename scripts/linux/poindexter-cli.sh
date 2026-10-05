@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # poindexter — host launcher for the Poindexter CLI. Runs the DEPLOYED code.
-# (Glad-Labs/glad-labs-stack#4156)
+# (Glad-Labs/poindexter#4156)
 #
 # Installed by scripts/linux/install-host-cli.sh as a SYMLINK:
 #
