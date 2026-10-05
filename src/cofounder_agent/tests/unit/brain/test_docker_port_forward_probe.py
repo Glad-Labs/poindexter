@@ -155,6 +155,17 @@ def _reset_module_state():
     pf._reset_state()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_port_bindings(monkeypatch):
+    """Never shell out to ``docker inspect`` for port bindings.
+
+    ``None`` is "could not tell", which keeps the full internal + external
+    probe every other test here was written against. Tests of the
+    loopback-only path inject ``published_host_ips_fn`` themselves.
+    """
+    monkeypatch.setattr(pf, "_published_host_ips", lambda container, port: None)
+
+
 # ---------------------------------------------------------------------------
 # Scenario 1 — both probes succeed → ok, no restart, no alert
 # ---------------------------------------------------------------------------
@@ -2260,3 +2271,115 @@ class TestEventLoopStaysFree:
         assert summary["services"]["poindexter-postgres-local"]["status"] == "alert_only"
         assert len(gaps) > 20
         assert max(gaps) < 0.15, f"event loop blocked ~{max(gaps):.2f}s"
+
+
+# ---------------------------------------------------------------------------
+# Loopback-only publishes — postgres-local is bound to 127.0.0.1 so the
+# database is not on the LAN or the tailnet. host.docker.internal arrives on
+# the Docker bridge, so no container can reach that port: there is no
+# external leg to compare, and probing it would page a "wedge" every cycle.
+# ---------------------------------------------------------------------------
+
+
+_PG_WATCH_LIST = json.dumps([
+    {
+        "container": "poindexter-postgres-local",
+        "internal_hostname": "postgres-local",
+        "port": 5432,
+        "host_port": 5433,
+        "probe_type": "postgres",
+    },
+])
+
+
+@pytest.mark.unit
+class TestLoopbackOnlyPublish:
+    async def _run(self, *, host_ips, internal_ok=True):
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: _PG_WATCH_LIST})
+        dialled: list[str] = []
+
+        def fake_pg(host, _port, _timeout):
+            dialled.append(host)
+            return internal_ok if host == "postgres-local" else False
+
+        restart_calls: list[str] = []
+        auth = AsyncMock(return_value=(False, None))
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=fake_pg,
+            pg_auth_probe_fn=auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=restart_stub(restart_calls),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+            published_host_ips_fn=lambda c, p: host_ips,
+        )
+        return summary, pool, dialled, restart_calls, auth
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host_ips", [["127.0.0.1"], ["127.0.0.1", "::1"]])
+    async def test_loopback_publish_skips_the_external_leg(self, host_ips):
+        summary, pool, dialled, restarts, auth = await self._run(host_ips=host_ips)
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "loopback_only", svc
+        assert svc["ok"] is True
+        assert summary["ok"] is True
+        assert "host.docker.internal" not in dialled
+        auth.assert_not_awaited()
+        assert restarts == []
+        assert _executed_alertnames(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_loopback_publish_with_internal_down_is_service_down(self):
+        summary, pool, dialled, restarts, _ = await self._run(
+            host_ips=["127.0.0.1"], internal_ok=False,
+        )
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "service_down", svc
+        assert svc["ok"] is False
+        assert "host.docker.internal" not in dialled
+        assert restarts == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host_ips", [[""], ["0.0.0.0"], ["127.0.0.1", "0.0.0.0"], None])
+    async def test_any_non_loopback_or_unknown_binding_keeps_the_external_probe(self, host_ips):
+        """All interfaces, a mixed publish, or "could not tell" probe as before."""
+        summary, _pool, dialled, _restarts, _ = await self._run(host_ips=host_ips)
+        assert "host.docker.internal" in dialled
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] != "loopback_only", svc
+
+
+@pytest.mark.unit
+class TestPublishedHostIps:
+    def _inspect(self, monkeypatch, *, stdout="", returncode=0):
+        class _Result:
+            pass
+
+        result = _Result()
+        result.stdout, result.returncode = stdout, returncode
+        monkeypatch.setattr(pf.subprocess, "run", lambda *a, **k: result)
+
+    def test_reads_host_ips_for_the_container_port(self, monkeypatch):
+        ports = {"5432/tcp": [{"HostIp": "127.0.0.1", "HostPort": "5433"}]}
+        self._inspect(monkeypatch, stdout=json.dumps(ports))
+        # The autouse fixture stubs the module attribute; call the original.
+        assert _ORIGINAL_PUBLISHED_HOST_IPS("poindexter-postgres-local", 5432) == ["127.0.0.1"]
+
+    def test_all_interfaces_reads_as_empty_host_ip(self, monkeypatch):
+        ports = {"5432/tcp": [{"HostIp": "", "HostPort": "5433"}]}
+        self._inspect(monkeypatch, stdout=json.dumps(ports))
+        assert _ORIGINAL_PUBLISHED_HOST_IPS("c", 5432) == [""]
+        assert pf._loopback_only([""]) is False
+
+    @pytest.mark.parametrize(
+        "stdout, returncode",
+        [("", 1), ("null", 0), ('{"5432/tcp": null}', 0), ("not json", 0), ('{"80/tcp": []}', 0)],
+    )
+    def test_unknown_is_none(self, monkeypatch, stdout, returncode):
+        self._inspect(monkeypatch, stdout=stdout, returncode=returncode)
+        assert _ORIGINAL_PUBLISHED_HOST_IPS("c", 5432) is None
+
+
+_ORIGINAL_PUBLISHED_HOST_IPS = pf._published_host_ips

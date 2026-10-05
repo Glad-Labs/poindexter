@@ -57,7 +57,7 @@ table first.**
 | RIFE server         | poindexter-rife             | **9842**  | 9842           | Frame interpolation for generative clips (RIFE v4; 5-min idle self-unload)                 |
 | ComfyUI             | poindexter-comfyui          | **8188**  | 8188           | Wan 2.2 14B hero renderer, localhost-bound (opt-in: `--profile comfyui`)                   |
 | Stable Audio server | poindexter-stable-audio     | **9839**  | 9839           | Ambient music bed + intro/outro stings (Stable Audio Open 1.0; 5-min idle self-unload)     |
-| Postgres            | poindexter-postgres-local   | **5433**  | 5432           | `postgresql://...@localhost:5433/poindexter_brain`                                         |
+| Postgres            | poindexter-postgres-local   | **5433**  | 5432           | `postgresql://...@localhost:5433/poindexter_brain`, loopback-bound (`POSTGRES_BIND_ADDR`)  |
 | pgAdmin             | poindexter-pgadmin          | **18443** | 80             | <http://localhost:18443>                                                                   |
 
 **Bolded host-port column is what the host (your browser, host-CLI, or
@@ -100,6 +100,15 @@ exists to self-heal. On bare-metal Linux there is no port-forwarding proxy
 in the path, so that wedge class cannot occur and the probe is dead weight:
 turn it off with `docker_port_forward_probe_enabled=false`. It ships enabled
 because Docker Desktop installs are the ones that need it.
+
+Postgres is published on `127.0.0.1` only (`POSTGRES_BIND_ADDR`, default
+`127.0.0.1`), so the database is not reachable from the LAN or the tailnet.
+Every host-side consumer dials `localhost`, and containers use
+`postgres-local:5432`. A loopback publish can't be reached from inside a
+container: `host.docker.internal` arrives on the Docker bridge. So the probe
+reads the real binding with `docker inspect` and, for a loopback-only publish,
+checks only the internal side and reports `loopback_only`. It does not report
+a wedge that no container could ever see past.
 
 ## When to add a row here
 

@@ -26,7 +26,14 @@ services:
       # outside the Hyper-V grabs); override via POSTGRES_HOST_PORT in bootstrap.toml
       # if it's reserved on your box (`netsh int ipv4 show excludedportrange
       # protocol=tcp`). Keep in sync with the port in bootstrap.toml's database_url.
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      #
+      # Bound to loopback: every host-side consumer dials localhost, and an
+      # all-interfaces publish put the database on the LAN and the tailnet
+      # (until 2026-10-03 its password was a literal that sat in the public
+      # repo). Set POSTGRES_BIND_ADDR in bootstrap.toml to publish wider on
+      # purpose. The brain's port-forward probe can't reach a loopback publish
+      # from its container and checks the internal side only.
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}

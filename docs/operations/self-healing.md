@@ -1697,6 +1697,14 @@ The rolling restart cap (3 per 60 min) still applies to the case it was built
 for: a **flapping** forward that a restart genuinely recovers each cycle but
 which keeps re-wedging.
 
+**Loopback-only publishes are not probed externally.** Since 2026-10-05
+`postgres-local` is published on `127.0.0.1` (`POSTGRES_BIND_ADDR`), which is
+unreachable from any container by design. The probe reads the binding from
+`docker inspect`. When every binding of the watched port is loopback, it checks
+the internal side only and reports `loopback_only`, or `service_down` if that
+fails. An all-interfaces or mixed publish, or a binding it couldn't read, is
+probed as before.
+
 ### The SCRAM-corruption blind spot — a second, real-auth tier
 
 The `probe_type=postgres` reachability check is a **credential-free

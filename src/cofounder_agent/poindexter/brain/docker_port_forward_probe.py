@@ -668,6 +668,53 @@ def _container_exists(container: str) -> bool:
         return False
 
 
+_LOOPBACK_HOST_IPS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _published_host_ips(container: str, container_port: int) -> list[str] | None:
+    """Host IPs ``container_port/tcp`` is published on, from ``docker inspect``.
+
+    ``None`` means "could not tell" (docker unreachable, unparseable output,
+    or the port is not published), and the caller then probes as it always
+    has. An empty ``HostIp`` is Docker's spelling of "all interfaces".
+    """
+    try:
+        kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+            "timeout": DOCKER_COMMAND_TIMEOUT_SECONDS,
+        }
+        if os.name == "nt":
+            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", container],
+            **kwargs,
+        )
+        if result.returncode != 0:
+            return None
+        bindings = (json.loads(result.stdout or "null") or {}).get(f"{container_port}/tcp")
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: None falls back to the full internal + external probe,
+        # i.e. the behaviour before loopback publishes were recognised.
+        logger.debug("[PORT_FORWARD] port bindings of %s unavailable: %s", container, exc)
+        return None
+    if not bindings:
+        return None
+    return [str(b.get("HostIp") or "") for b in bindings if isinstance(b, dict)]
+
+
+def _loopback_only(host_ips: list[str] | None) -> bool:
+    """True when every published binding is loopback.
+
+    The external leg dials ``host.docker.internal``, which arrives on the
+    Docker bridge, never on the host's loopback. A loopback-only publish
+    (postgres-local is bound to 127.0.0.1 so the database is not on the LAN
+    or the tailnet) is therefore unreachable from any container BY DESIGN,
+    and probing it would page a "wedge" on every cycle.
+    """
+    return bool(host_ips) and all(ip in _LOOPBACK_HOST_IPS for ip in host_ips)
+
+
 # ---------------------------------------------------------------------------
 # Restart cap — rolling-window per-container.
 # ---------------------------------------------------------------------------
@@ -1050,6 +1097,7 @@ async def _check_one_service(
     sleep_fn: Callable[[float], Awaitable[None]],
     notify_fn: Callable[..., Any],
     now_fn: Callable[[], float],
+    published_host_ips_fn: Callable[[str, int], list[str] | None],
 ) -> dict[str, Any]:
     """Probe a single service.
 
@@ -1115,6 +1163,34 @@ async def _check_one_service(
 
         async def _probe_external() -> bool:
             return await asyncio.to_thread(http_probe_fn, external_url, timeout)
+
+    # A loopback-only publish can't be reached from this container, so there is
+    # no external leg to compare: report the internal side alone.
+    host_ips = await asyncio.to_thread(published_host_ips_fn, container, port)
+    if _loopback_only(host_ips):
+        if not ok_internal:
+            return {
+                "ok": False,
+                "status": "service_down",
+                "container": container,
+                "internal_url": internal_url,
+                "detail": (
+                    f"Service {container} unreachable on {internal_url}; its host "
+                    f"port is published on loopback only, so there is no external "
+                    f"leg to compare. Letting other monitoring page."
+                ),
+            }
+        return {
+            "ok": True,
+            "status": "loopback_only",
+            "container": container,
+            "internal_url": internal_url,
+            "detail": (
+                f"{container} host port {host_port} is published on "
+                f"{', '.join(host_ips or [])} only; a container cannot reach it, "
+                f"so only the internal side ({internal_url}) is probed."
+            ),
+        }
 
     ok_external = await _probe_external()
 
@@ -1548,6 +1624,7 @@ async def run_docker_port_forward_probe(
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., Any] | None = None,
     now_fn: Callable[[], float] | None = None,
+    published_host_ips_fn: Callable[[str, int], list[str] | None] | None = None,
 ) -> dict[str, Any]:
     """Single execution of the Docker port-forward probe.
 
@@ -1580,6 +1657,10 @@ async def run_docker_port_forward_probe(
             :func:`brain.operator_notifier.notify_operator`. Used for
             cap-fired and docker-broken paths only.
         now_fn: ``() -> float`` — defaults to ``time.time``.
+        published_host_ips_fn: ``(container, container_port) -> host IPs or
+            None`` — defaults to :func:`_published_host_ips` (``docker
+            inspect``). A loopback-only publish skips the external leg, which
+            no container can reach. Tests inject a stub.
 
     Returns a structured summary suitable for inclusion in
     ``brain_decisions`` / the cycle's ``probe_results`` map.
@@ -1592,6 +1673,7 @@ async def run_docker_port_forward_probe(
     sleep_fn = sleep_fn or asyncio.sleep
     notify_fn = notify_fn or notify_operator
     now_fn = now_fn or time.time
+    published_host_ips_fn = published_host_ips_fn or _published_host_ips
 
     config = await _read_config(pool)
     if not config["enabled"]:
@@ -1633,6 +1715,7 @@ async def run_docker_port_forward_probe(
                 sleep_fn=sleep_fn,
                 notify_fn=notify_fn,
                 now_fn=now_fn,
+                published_host_ips_fn=published_host_ips_fn,
             )
         except Exception as exc:  # noqa: BLE001
             # One service blowing up shouldn't take the others down —

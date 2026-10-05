@@ -72,7 +72,9 @@ services:
       # Override via POSTGRES_HOST_PORT if 5433 is reserved on your
       # machine (Windows Hyper-V dynamically reserves TCP ranges that
       # can include it). See docker-compose.local.yml for details.
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      # Loopback only, so the database isn't reachable from your network; set
+      # POSTGRES_BIND_ADDR to publish it wider on purpose.
+      - "${POSTGRES_BIND_ADDR:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
