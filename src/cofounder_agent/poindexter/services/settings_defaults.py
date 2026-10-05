@@ -5956,9 +5956,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Every value below is the exact inline code default at its read site,
     # so seeding is behavior-neutral by construction; the row's existence is
     # what changes (discoverable + tunable without reading source).
-    # Platform prose limits _polish_social_copy trims to (social_poster.py).
+    # Platform limits, in characters as POSTIZ counts them (each & is 5, a
+    # link on X is 23 — social_drafts.postiz_counted_length).
+    # _polish_social_copy trims generated copy to them and edit_draft refuses
+    # a hand edit over them. LinkedIn's 700 is a brevity target, not the
+    # platform's 3000.
     'social_twitter_char_limit': '280',
     'social_linkedin_char_limit': '700',
+    'social_bluesky_char_limit': '300',
+    'social_mastodon_char_limit': '500',
     # LLM token budget for one social-promo generation call.
     'social_poster_max_tokens': '300',
     # Consecutive self-inflicted un-claims before a media piece stops getting
@@ -7651,6 +7657,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Seed-gap audit, 2026-08-26 (see the matching DEFAULTS section) -----
     'social_twitter_char_limit': {'owner': 'social_poster', 'value_type': 'integer'},
     'social_linkedin_char_limit': {'owner': 'social_poster', 'value_type': 'integer'},
+    'social_bluesky_char_limit': {'owner': 'social_poster', 'value_type': 'integer'},
+    'social_mastodon_char_limit': {'owner': 'social_poster', 'value_type': 'integer'},
     'social_poster_max_tokens': {'owner': 'social_poster', 'value_type': 'integer'},
     'media_pipeline_unclaim_max': {'owner': 'dispatch_media_pipeline', 'value_type': 'integer'},
     'podcast_include_intro': {'owner': 'podcast_service', 'value_type': 'boolean'},

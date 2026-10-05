@@ -54,10 +54,13 @@ It does **not** distribute anything. `generate_social_posts` returns
   `post_slug` from state, so every draft promoted the dead `…/posts/`
   index URL — and approve pushed it as-is.)
 - **Twitter copy is reused for Bluesky + Mastodon.** Both are X-style
-  short-form (Bluesky 300, Mastodon 500 chars), so the ≤280-char tweet fits
-  both — no separate prompt or extra LLM call. The `social.generate_drafts`
-  atom filters the returned list down to whatever `social_draft_platforms`
-  actually requests.
+  short-form (Bluesky 300, Mastodon 500), so one prompt and one LLM call feed
+  all three. Each sibling is then **re-fitted** to its own limit by
+  `_polish_social_copy`, because fitting X does not make the copy fit Bluesky:
+  X counts the link as 23, Bluesky counts every character of it plus five per
+  `&` (see "Lengths are Postiz's count" below). Copy that already fits comes
+  through byte-identical. The `social.generate_drafts` atom filters the
+  returned list down to whatever `social_draft_platforms` actually requests.
 - **Draft creation is idempotent per `(pipeline_task_id, platform,
 subreddit)`** (poindexter#833). Finalize re-runs (preview_gate regen loops,
   checkpoint restore, task retry) used to stack a fresh draft per platform on
@@ -93,7 +96,7 @@ subreddit)`** (poindexter#833). Finalize re-runs (preview_gate regen loops,
   draft passes through a repair net before it becomes a row: strip a dangling
   ellipsis trail-off, lift the post URL out of the text and re-append it LAST
   (so a trim can never eat the link — the 2026-08-16 Cosine-Similarity
-  regression), then fit the prose to `char_limit − len(url) − 1`. The fit
+  regression), then fit the prose to `char_limit − counted(url) − 1`. The fit
   prefers the **last sentence boundary** that fits and only falls back to a
   word-boundary cut when no whole sentence fits — an overrunning draft loses
   its final sentence whole instead of shipping a mid-clause fragment
@@ -105,6 +108,33 @@ subreddit)`** (poindexter#833). Finalize re-runs (preview_gate regen loops,
   from "under 280 including the URL" (roughly half of all drafts overran
   before the budget was spelled out).
 
+## Lengths are Postiz's count, not `len()`
+
+Postiz refuses a post whose length, as **it** counts it, exceeds the
+provider's maximum (HTTP 400 "post is too long, please fix it"). It strips the
+content through parse5 first, which serializes `&`, `<`, `>` and U+00A0 as
+`&amp;`, `&lt;`, `&gt;`, `&nbsp;` (quotes are left alone), and then counts:
+JavaScript `String.length` (UTF-16 units) for most providers, twitter-text v3
+weights for X (every link 23, CJK and emoji 2). So every `&` in our UTM link
+costs five characters. On 2026-10-04 a hand-edited Bluesky draft of 297 by
+`len()` counted 301 and was refused; the link that published still had a plain
+`&`, so only the count inflates.
+
+`social_drafts.postiz_counted_length(content, platform)` mirrors that count. It
+was checked against the pinned `postiz-app:v2.24.0` by running Postiz's own
+helpers under node in the container, and the measured table lives in
+`tests/unit/services/test_social_drafts.py` (re-measure on an image bump). Its
+one known undercount: on X a bare domain with no scheme (`x.ai`) counts at its
+own length, where twitter-text matches its TLD list and counts 23.
+
+Three things use it: `_polish_social_copy` budgets with it, the sibling re-fit
+uses it, and `SocialDraftsService.edit_draft` (behind `poindexter social edit`,
+`PATCH /api/social/drafts/{id}` and the MCP `edit_social_draft` tool) refuses
+over-limit copy with the counted length and the limit (HTTP 422 on the route).
+The X prompt's prose budget still uses the link's full length, which is
+tighter than X needs. That is deliberate: it is roughly Bluesky's budget, so
+the shared copy normally fits all three platforms without a re-fit trim.
+
 ## Configuration
 
 All from `app_settings` via the injected `SiteConfig`:
@@ -115,9 +145,13 @@ All from `app_settings` via the injected `SiteConfig`:
   call. (The old `cost_tier.*` tier fallback was removed.)
 - `social_poster_max_tokens` (default `300`) — `num_predict` cap. Social copy
   rarely needs more than ~100 tokens.
-- `social_twitter_char_limit` (default `280`) — Twitter/Bluesky/Mastodon cap.
+- `social_twitter_char_limit` (default `280`), `social_bluesky_char_limit`
+  (`300`), `social_mastodon_char_limit` (`500`) — the platforms' limits, in
+  Postiz-counted characters. Generation trims to them and `edit_draft`
+  refuses a hand edit over them.
 - `social_linkedin_char_limit` (default `700`) — LinkedIn cap (LinkedIn's
-  actual limit is 3000; the prompt asks for newsletter-friendly brevity).
+  actual limit is 3000; the prompt asks for newsletter-friendly brevity). It
+  gates `edit_draft` too, so raise it to post a longer hand-written edit.
 - `site_url` — used to build the `post_url`.
 - `company_name` — injected into the prompt as the speaker.
 

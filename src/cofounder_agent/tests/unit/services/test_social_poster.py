@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from poindexter.services.site_config import SiteConfig
+from poindexter.services.social_drafts import postiz_counted_length
 from poindexter.services.social_poster import (
     SocialPost,
     _build_linkedin_prompt,
@@ -377,39 +378,39 @@ class TestPolishSocialCopy:
 
     def test_strips_trail_off_and_keeps_clean_copy(self):
         assert (
-            _polish_social_copy("Local LLMs win on cost…", post_url="", char_limit=280)
+            _polish_social_copy("Local LLMs win on cost…", post_url="", char_limit=280, platform="bluesky")
             == "Local LLMs win on cost"
         )
 
     def test_appends_absolute_url_when_absent(self):
-        result = _polish_social_copy("Punchy tweet #AI", post_url=self.URL, char_limit=280)
+        result = _polish_social_copy("Punchy tweet #AI", post_url=self.URL, char_limit=280, platform="bluesky")
         assert result == f"Punchy tweet #AI {self.URL}"
 
     def test_does_not_duplicate_existing_url(self):
         text = f"Read more #AI {self.URL}"
-        result = _polish_social_copy(text, post_url=self.URL, char_limit=280)
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=280, platform="bluesky")
         assert result.count(self.URL) == 1
 
     def test_ignores_relative_url(self):
         # site_url unset -> "/posts/slug"; never inject a broken relative link.
-        result = _polish_social_copy("Punchy tweet #AI", post_url="/posts/foo", char_limit=280)
+        result = _polish_social_copy("Punchy tweet #AI", post_url="/posts/foo", char_limit=280, platform="bluesky")
         assert result == "Punchy tweet #AI"
         assert "/posts/foo" not in result
 
     def test_ignores_empty_url(self):
-        assert _polish_social_copy("Punchy tweet", post_url="", char_limit=280) == "Punchy tweet"
+        assert _polish_social_copy("Punchy tweet", post_url="", char_limit=280, platform="bluesky") == "Punchy tweet"
 
     def test_trims_prose_not_url_when_over_limit(self):
         # Prose long enough to force a trim; the URL must survive intact and
         # the whole thing must fit the limit.
         prose = "word " * 60  # 300 chars, over a 100-char limit
-        result = _polish_social_copy(prose, post_url=self.URL, char_limit=100)
+        result = _polish_social_copy(prose, post_url=self.URL, char_limit=100, platform="bluesky")
         assert len(result) <= 100
         assert result.endswith(self.URL)
         assert not result.replace(self.URL, "").strip().endswith("...")
 
     def test_empty_text_stays_empty(self):
-        assert _polish_social_copy("   ", post_url=self.URL, char_limit=280) == ""
+        assert _polish_social_copy("   ", post_url=self.URL, char_limit=280, platform="bluesky") == ""
 
     def test_inline_url_survives_when_trailing_hashtags_overrun_limit(self):
         # The 2026-08-16 Cosine-Similarity draft: model emitted the URL
@@ -420,14 +421,14 @@ class TestPolishSocialCopy:
         prose = "Cosine similarity is the default in almost every vector database " * 3
         text = f"{prose.strip()} {self.URL} #RAG #vectors"
         assert len(text) > 200
-        result = _polish_social_copy(text, post_url=self.URL, char_limit=200)
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=200, platform="bluesky")
         assert len(result) <= 200
         assert result.endswith(self.URL)
         assert result.count(self.URL) == 1
 
     def test_inline_url_mid_text_is_moved_last_and_kept(self):
         text = f"Read this {self.URL} it changes how you think about RAG " + "filler " * 40
-        result = _polish_social_copy(text, post_url=self.URL, char_limit=120)
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=120, platform="bluesky")
         assert len(result) <= 120
         assert result.endswith(self.URL)
         assert result.count(self.URL) == 1
@@ -438,7 +439,7 @@ class TestPolishSocialCopy:
         limit = 280
         prose = "x" * (limit - len(self.URL) - 1)
         text = f"{prose} {self.URL} #tag"
-        result = _polish_social_copy(text, post_url=self.URL, char_limit=limit)
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=limit, platform="bluesky")
         assert result.endswith(self.URL)
         assert len(result) <= limit
 
@@ -452,9 +453,52 @@ class TestPolishSocialCopy:
         second = "The results challenge the assumption that larger memories automatically create better agents."
         url = "https://www.gladlabs.io/posts/ibm-tested-eight-models-on-agent-memory-dumping-mo-fca93be5"
         text = f"{first} {second} {url}"
-        result = _polish_social_copy(text, post_url=url, char_limit=280)
+        result = _polish_social_copy(text, post_url=url, char_limit=280, platform="bluesky")
         assert len(result) <= 280
         assert result == f"{first} {url}"
+
+
+class TestPolishSocialCopyCountsLikePostiz:
+    """The polish budgets in Postiz's count, not ``len()`` (2026-10-04: a
+    297-char Bluesky draft counted 301 because each & in the UTM link is
+    escaped to &amp; before Postiz measures it)."""
+
+    TAGGED_URL = (
+        "https://www.gladlabs.io/posts/decode-speed-lies-phi4-14b-abcd1234"
+        "?utm_source=bluesky&utm_medium=social&utm_campaign=promo"
+    )
+
+    def test_bluesky_trim_accounts_for_escaped_ampersands(self):
+        # Prose sized so prose + 1 + URL is exactly 300 by len() — fits by the
+        # old arithmetic, 308 as Postiz counts it (two & in the link).
+        prose_len = 300 - len(self.TAGGED_URL) - 1
+        words = ("word " * 100)[:prose_len].rstrip()
+        text = f"{words.ljust(prose_len, 'x')} {self.TAGGED_URL}"
+        assert len(text) == 300
+        result = _polish_social_copy(
+            text, post_url=self.TAGGED_URL, char_limit=300, platform="bluesky"
+        )
+        assert postiz_counted_length(result, "bluesky") <= 300
+        assert result.endswith(self.TAGGED_URL)
+
+    def test_ampersand_in_prose_costs_five_on_bluesky(self):
+        prose = "Q&A " * 40  # each & is 5 to Postiz
+        result = _polish_social_copy(
+            prose, post_url=self.TAGGED_URL, char_limit=300, platform="bluesky"
+        )
+        assert postiz_counted_length(result, "bluesky") <= 300
+        assert len(result) < 300 - 4  # the escapes ate real room
+
+    def test_x_counts_the_link_as_23(self):
+        # 230 chars of prose + a ~120-char link: 351 by len(), 254 on X, so
+        # X keeps every word.
+        prose = ("Local inference is cheap and we measured it. " * 6)[:230].rstrip()
+        url = self.TAGGED_URL.replace("bluesky", "twitter")
+        text = f"{prose} {url}"
+        assert len(text) > 280
+        result = _polish_social_copy(text, post_url=url, char_limit=280, platform="twitter")
+        assert result == text
+        assert postiz_counted_length(result, "twitter") <= 280
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +536,27 @@ class TestGenerateSocialPosts:
                 f"utm_source={sibling}", "utm_source=twitter"
             ) == by_platform["twitter"]
             assert f"utm_source={sibling}" in by_platform[sibling]
+
+    @pytest.mark.asyncio
+    async def test_sibling_copy_is_refitted_to_its_own_count(self):
+        # A tweet that uses X's whole budget (link = 23) overruns Bluesky,
+        # which counts the whole link plus 5 per &. The reused copy must be
+        # re-fitted per platform, not inherited at X's length.
+        long_tweet = " ".join(
+            f"Sentence number {i} about local inference costs." for i in range(12)
+        )
+        ollama = _make_ollama_mock(long_tweet)
+        posts = await generate_social_posts(
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
+        )
+        by_platform = {p.platform: p for p in posts}
+        limits = {"twitter": 280, "bluesky": 300, "mastodon": 500}
+        for platform, limit in limits.items():
+            post = by_platform[platform]
+            assert postiz_counted_length(post.text, platform) <= limit, platform
+            assert post.text.endswith(post.post_url)
+        # The tweet budget was the binding one before; now Bluesky's is.
+        assert len(by_platform["bluesky"].text) < len(by_platform["twitter"].text)
 
     @pytest.mark.asyncio
     async def test_posts_have_correct_url(self):

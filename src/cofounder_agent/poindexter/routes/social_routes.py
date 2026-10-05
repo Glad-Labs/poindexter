@@ -12,7 +12,11 @@ from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
 from poindexter.services.database_service import DatabaseService
-from poindexter.services.social_drafts import SocialDraftRow, SocialDraftsService
+from poindexter.services.social_drafts import (
+    SocialDraftRow,
+    SocialDraftsService,
+    SocialDraftTooLongError,
+)
 from poindexter.utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = logging.getLogger(__name__)
@@ -136,8 +140,17 @@ async def edit_draft(
     draft_id: str,
     body: EditDraftRequest,
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
-    await _svc.edit_draft(draft_id, body.content, body.platform_config, db_service.pool)
+    try:
+        await _svc.edit_draft(
+            draft_id, body.content, body.platform_config, db_service.pool,
+            site_config=site_config,
+        )
+    except SocialDraftTooLongError as exc:
+        # 422, not 409: nothing about the draft's state is wrong, the
+        # submitted copy is. The detail carries the count and the limit.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"ok": True}
 
 

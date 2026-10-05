@@ -5,9 +5,11 @@ that writes to social_post_drafts or calls PostizClient.
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
@@ -132,6 +134,186 @@ _LIVE_STATUSES: tuple[str, ...] = ("pending", "scheduled", "failed")
 # connection; the loser of the race bails WITHOUT posting. A stable arbitrary
 # int32 chosen to not collide with GPU_ADVISORY_LOCK_KEY.
 _SOCIAL_POST_LOCK_NS: int = 0x50AC  # "SoAC" — social approve critical section
+
+
+# ---------------------------------------------------------------------------
+# Postiz character counting
+# ---------------------------------------------------------------------------
+#
+# Postiz refuses a post its own count puts over the provider's maxLength
+# (HTTP 400 "post is too long, please fix it"), and its count is NOT Python's
+# ``len()``. Its posts service runs ``stripHtmlValidation('normal', content,
+# true)`` and then ``countLength(provider, stripped)``. Measured
+# against the pinned image (``postiz-app:v2.24.0``) by running those two
+# helpers under node in the container, 2026-10-04:
+#
+# * The strip step round-trips plain text through parse5, which serializes a
+#   text node with ``&``, ``<``, ``>`` and U+00A0 escaped to ``&amp;``,
+#   ``&lt;``, ``&gt;`` and ``&nbsp;``. Quotes are NOT escaped (that only
+#   happens inside attribute values). Every ``&`` in a UTM link is therefore
+#   counted as five characters: a Bluesky draft of 297 by ``len()`` counted
+#   301 and was refused. The link that actually publishes keeps its plain
+#   ``&``, so only the count inflates.
+# * Non-X providers count JavaScript ``String.length``: UTF-16 code units, so
+#   an emoji outside the BMP counts 2 where ``len()`` says 1.
+# * X counts with twitter-text v3 ``parseTweet`` — every URL is 23, code
+#   points outside the Latin/punctuation ranges weigh 2, an emoji sequence
+#   weighs 2 as a whole, and the text is NFC-normalised first.
+#
+# Three known approximations. The first two only ever OVER-count: a literal
+# ``<word`` is counted escaped (parse5 would read it as a tag and drop it,
+# which is a worse problem than its length), and an emoji sequence the rules
+# below don't recognise may count a little high on X. The third can
+# UNDER-count: on X a bare domain with no scheme (``x.ai``) is counted at its
+# own length, where twitter-text matches it against a TLD list we don't carry
+# and counts 23. Our generated copy always carries the full ``https://`` link.
+
+# platform → (app_settings key, default). The defaults are the platforms'
+# own limits except LinkedIn's, which is a brevity target (Postiz allows
+# 3000); tune the key rather than editing a literal.
+_CHAR_LIMIT_SETTINGS: dict[str, tuple[str, int]] = {
+    "twitter": ("social_twitter_char_limit", 280),
+    "linkedin": ("social_linkedin_char_limit", 700),
+    "bluesky": ("social_bluesky_char_limit", 300),
+    "mastodon": ("social_mastodon_char_limit", 500),
+}
+
+# twitter-text v3 config, as Postiz's countLength passes it for X.
+_X_URL_WEIGHT = 23
+_X_LIGHT_RANGES: tuple[tuple[int, int], ...] = (
+    (0, 4351),
+    (8192, 8205),
+    (8208, 8223),
+    (8242, 8247),
+)
+# A link the way twitter-text sees one: scheme or www., up to whitespace, with
+# trailing sentence punctuation left outside it ("…see https://x.co/a." is a
+# 23-char link plus a full stop).
+_X_URL_RE = re.compile(r"(?<![\w@$#/.])(?:https?://|www\.)\S+", re.IGNORECASE)
+_X_URL_TRAILING = ".,:;!?'\"’”)]}>…"
+_ZWJ = 0x200D
+_VARIATION_SELECTORS = (0xFE0E, 0xFE0F)
+_KEYCAP = 0x20E3
+
+
+class SocialDraftTooLongError(ValueError):
+    """Edited copy that Postiz would refuse as too long for its platform."""
+
+
+def postiz_escaped_text(content: str) -> str:
+    """The text Postiz measures: *content* as its strip step serializes it.
+
+    ``html.unescape`` first because parse5 decodes entities before it
+    re-serializes, so an author who typed ``&amp;`` is counted once, not as
+    ``&amp;amp;``.
+    """
+    text = html.unescape(content)
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace(" ", "&nbsp;")
+    )
+
+
+def _utf16_length(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _x_weight(text: str) -> int:
+    """twitter-text v3 weight of *text* with no URLs in it."""
+    codepoints = [ord(ch) for ch in text]
+    total = 0
+    i = 0
+    n = len(codepoints)
+    while i < n:
+        cp = codepoints[i]
+        nxt = codepoints[i + 1] if i + 1 < n else None
+        if cp == _ZWJ and nxt is not None:
+            # Joins the next code point onto the emoji before it; the whole
+            # sequence already paid its 2.
+            i += 2
+            continue
+        if cp in _VARIATION_SELECTORS or cp == _KEYCAP or 0x1F3FB <= cp <= 0x1F3FF:
+            # Presentation selector, keycap, skin tone: part of the emoji
+            # before it.
+            i += 1
+            continue
+        if 0x1F1E6 <= cp <= 0x1F1FF and nxt is not None and 0x1F1E6 <= nxt <= 0x1F1FF:
+            total += 2  # regional-indicator pair = one flag
+            i += 2
+            continue
+        if nxt == 0xFE0F:
+            total += 2  # "1️", "©️": emoji presentation of a light char
+            i += 1
+            continue
+        light = any(lo <= cp <= hi for lo, hi in _X_LIGHT_RANGES)
+        total += 1 if light else 2
+        i += 1
+    return total
+
+
+def _x_weighted_length(text: str) -> int:
+    text = unicodedata.normalize("NFC", text)
+    total = 0
+    pos = 0
+    for match in _X_URL_RE.finditer(text):
+        url = match.group(0)
+        stripped = url.rstrip(_X_URL_TRAILING)
+        if not stripped or stripped.lower() in ("http://", "https://", "www."):
+            continue
+        start = match.start()
+        total += _x_weight(text[pos:start]) + _X_URL_WEIGHT
+        pos = start + len(stripped)
+    return total + _x_weight(text[pos:])
+
+
+def postiz_counted_length(content: str, platform: str) -> int:
+    """The length Postiz will count for *content* on *platform*.
+
+    *platform* is our draft platform name (``twitter``, ``bluesky``, …), the
+    same keys ``_PLATFORM_TYPE`` maps to Postiz provider identifiers. See the
+    block comment above for exactly what is mirrored and how it was measured.
+    """
+    escaped = postiz_escaped_text(content)
+    if _PLATFORM_TYPE.get(platform, platform) == "x":
+        return _x_weighted_length(escaped)
+    return _utf16_length(escaped)
+
+
+def platform_char_limit(platform: str, *, site_config: SiteConfig) -> int | None:
+    """The configured character limit for *platform*, or None if it has none."""
+    entry = _CHAR_LIMIT_SETTINGS.get(platform)
+    if entry is None:
+        return None
+    key, default = entry
+    return site_config.get_int(key, default)
+
+
+def check_social_copy_length(
+    content: str, platform: str, *, site_config: SiteConfig
+) -> None:
+    """Raise ``SocialDraftTooLongError`` when Postiz would refuse *content*."""
+    limit = platform_char_limit(platform, site_config=site_config)
+    if limit is None:
+        return
+    counted = postiz_counted_length(content, platform)
+    if counted <= limit:
+        return
+    key = _CHAR_LIMIT_SETTINGS[platform][0]
+    detail = []
+    if counted != len(content):
+        detail.append(f"{len(content)} by plain count")
+        if "&" in content:
+            detail.append("each & counts as 5 (&amp;)")
+        if _PLATFORM_TYPE.get(platform) == "x":
+            detail.append("links count as 23")
+    how = f" ({'; '.join(detail)})" if detail else ""
+    raise SocialDraftTooLongError(
+        f"{platform} copy is {counted} characters as Postiz counts it{how}; "
+        f"the limit is {limit} (app_settings.{key}). "
+        f"Cut {counted - limit} character{'s' if counted - limit != 1 else ''}."
+    )
 
 
 @dataclass
@@ -877,7 +1059,22 @@ class SocialDraftsService:
         content: str,
         platform_config: dict[str, Any] | None,
         pool: Any,
+        *,
+        site_config: SiteConfig,
     ) -> None:
+        """Replace a draft's copy (and optionally its platform_config).
+
+        Refuses copy Postiz would refuse — measured the way Postiz measures
+        it (``postiz_counted_length``), not by ``len()`` — so an over-limit
+        hand edit fails here with the count and the limit, instead of at
+        approve time as a bare Postiz 400. Raises ``SocialDraftTooLongError``.
+        """
+        async with pool.acquire() as conn:
+            platform = await conn.fetchval(
+                "SELECT platform FROM social_post_drafts WHERE id = $1", draft_id
+            )
+        if platform:
+            check_social_copy_length(content, platform, site_config=site_config)
         updates: list[str] = ["content = $2"]
         args: list[Any] = [draft_id, content]
         if platform_config is not None:

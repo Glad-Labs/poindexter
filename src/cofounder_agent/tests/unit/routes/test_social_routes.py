@@ -247,3 +247,38 @@ class TestListDraftsPagination:
 
         assert "drafts" in body
         assert "items" not in body
+
+
+@pytest.mark.unit
+class TestEditDraftLengthGate:
+    """PATCH /drafts/{id} (also what the MCP edit tool calls) must refuse copy
+    Postiz would refuse, with the count and the limit in the body."""
+
+    def test_over_limit_edit_returns_422_with_the_count(self, monkeypatch):
+        from poindexter.services.social_drafts import SocialDraftTooLongError
+
+        mock_svc = MagicMock()
+        mock_svc.edit_draft = AsyncMock(
+            side_effect=SocialDraftTooLongError(
+                "bluesky copy is 301 characters as Postiz counts it; the limit is 300"
+            )
+        )
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        resp = client.patch("/api/social/drafts/draft-1", json={"content": "x"})
+
+        assert resp.status_code == 422
+        assert "301" in resp.json()["detail"]
+        assert "300" in resp.json()["detail"]
+
+    def test_edit_passes_site_config_through(self, monkeypatch):
+        mock_svc = MagicMock()
+        mock_svc.edit_draft = AsyncMock(return_value=None)
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        resp = client.patch("/api/social/drafts/draft-1", json={"content": "x"})
+
+        assert resp.status_code == 200
+        assert "site_config" in mock_svc.edit_draft.call_args.kwargs

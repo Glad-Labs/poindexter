@@ -8,10 +8,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from poindexter.services.site_config import SiteConfig
 from poindexter.services.social_drafts import (
     _KEY_HELD_STATUSES,
     _LIVE_STATUSES,
     SocialDraftsService,
+    SocialDraftTooLongError,
+    check_social_copy_length,
+    platform_char_limit,
+    postiz_counted_length,
+    postiz_escaped_text,
 )
 
 # ---------------------------------------------------------------------------
@@ -851,9 +857,9 @@ async def test_backfill_post_id_executes_update():
 
 @pytest.mark.asyncio
 async def test_edit_draft_content_only():
-    pool, conn = _make_pool()
+    pool, conn = _make_pool(fetchval="twitter")
     svc = SocialDraftsService()
-    await svc.edit_draft("d5", "new content", None, pool)
+    await svc.edit_draft("d5", "new content", None, pool, site_config=SiteConfig())
     conn.execute.assert_called_once()
     sql = conn.execute.call_args[0][0]
     assert "content" in sql.lower()
@@ -863,12 +869,150 @@ async def test_edit_draft_content_only():
 
 @pytest.mark.asyncio
 async def test_edit_draft_with_platform_config():
-    pool, conn = _make_pool()
+    pool, conn = _make_pool(fetchval="reddit")
     svc = SocialDraftsService()
-    await svc.edit_draft("d6", "updated", {"subreddit": "r/Python"}, pool)
+    await svc.edit_draft(
+        "d6", "updated", {"subreddit": "r/Python"}, pool, site_config=SiteConfig()
+    )
     conn.execute.assert_called_once()
     sql = conn.execute.call_args[0][0]
     assert "platform_config" in sql.lower()
+
+
+# ---------------------------------------------------------------------------
+# Postiz character count + the edit_draft length gate.
+#
+# 2026-10-04: a hand-edited Bluesky draft measured 297 by len() and Postiz
+# refused it as too long — its strip step escapes & to &amp; before counting,
+# so the two & in the UTM link made it 301.
+# ---------------------------------------------------------------------------
+
+# (text, Bluesky count, X count), each count measured by running Postiz's own
+# stripHtmlValidation('normal', text, true) + countLength() under node in the
+# pinned postiz-app:v2.24.0 container. Re-measure on an image bump.
+_POSTIZ_MEASURED = [
+    ("a & b", 9, 9),
+    ("a < b", 8, 8),
+    ("a > b", 8, 8),
+    ('say "hi"', 8, 8),  # quotes are NOT escaped
+    ("it's", 4, 4),
+    ("a\u00a0b", 8, 8),  # nbsp → &nbsp;
+    ("a &amp; b", 9, 9),  # an entity the author typed is counted once
+    ("hi \U0001f680", 5, 5),  # astral emoji: 2 UTF-16 units, X weight 2
+    ("日本語 text", 8, 11),
+    ("\u2600\ufe0f sun", 6, 6),
+    ("\U0001f468\u200d\U0001f469\u200d\U0001f467 fam", 12, 6),
+    ("\U0001f44d\U0001f3fd ok", 7, 5),
+    ("1\ufe0f\u20e3 one", 7, 6),
+    ("\U0001f1fa\U0001f1f8 flag", 9, 7),
+    ("e\u0301 accent", 9, 8),  # X NFC-normalises first
+    ("\u2014 dash \u2026 ellipsis \u201cq\u201d", 21, 22),
+    ("Next.js 16 and Bun.WebView and llama3.2", 39, 39),
+    ("(https://gladlabs.io/posts/x)", 29, 25),
+    ("see https://a.co/x?a=1&b=2.", 31, 28),
+    ("https://gladlabs.io/posts/x, then", 33, 29),
+    ("www.gladlabs.io/x more", 22, 28),
+    ("Two lines\nwith newline https://gladlabs.io/a?b=1&c=2", 56, 46),
+]
+
+
+@pytest.mark.parametrize(("text", "bluesky", "x"), _POSTIZ_MEASURED)
+def test_postiz_counted_length_matches_postiz(text, bluesky, x):
+    assert postiz_counted_length(text, "bluesky") == bluesky
+    assert postiz_counted_length(text, "mastodon") == bluesky
+    assert postiz_counted_length(text, "twitter") == x
+
+
+def test_postiz_escaped_text_escape_set():
+    assert postiz_escaped_text("a & b < c > d \u00a0 \"e\" 'f'") == (
+        "a &amp; b &lt; c &gt; d &nbsp; \"e\" 'f'"
+    )
+
+
+def test_each_ampersand_in_a_link_counts_five_on_bluesky():
+    url = "https://www.gladlabs.io/posts/x?utm_source=bluesky&utm_medium=social"
+    assert postiz_counted_length(url, "bluesky") == len(url) + 4
+
+
+def test_x_counts_a_link_as_23_whatever_its_length():
+    short = "https://a.co/x"
+    long = "https://www.gladlabs.io/posts/" + "a" * 200 + "?utm_source=twitter&utm_medium=social"
+    assert postiz_counted_length(f"Read {short}", "twitter") == 5 + 23
+    assert postiz_counted_length(f"Read {long}", "twitter") == 5 + 23
+
+
+def test_platform_char_limit_reads_settings_with_defaults():
+    sc = SiteConfig()
+    assert platform_char_limit("twitter", site_config=sc) == 280
+    assert platform_char_limit("linkedin", site_config=sc) == 700
+    assert platform_char_limit("bluesky", site_config=sc) == 300
+    assert platform_char_limit("mastodon", site_config=sc) == 500
+    assert platform_char_limit("reddit", site_config=sc) is None
+    tuned = SiteConfig(initial_config={"social_bluesky_char_limit": "250"})
+    assert platform_char_limit("bluesky", site_config=tuned) == 250
+
+
+_BLUESKY_URL = (
+    "https://www.gladlabs.io/posts/decode-speed-lies-abcd1234"
+    "?utm_source=bluesky&utm_medium=social"
+)
+
+
+def _bluesky_copy(counted: int) -> str:
+    """Bluesky copy ending in the tagged link that Postiz counts as *counted*."""
+    prose = "x" * (counted - postiz_counted_length(_BLUESKY_URL, "bluesky") - 1)
+    text = f"{prose} {_BLUESKY_URL}"
+    assert postiz_counted_length(text, "bluesky") == counted
+    return text
+
+
+@pytest.mark.asyncio
+async def test_edit_draft_rejects_bluesky_copy_postiz_counts_over_300():
+    # The incident shape: 297 by len(), 301 once each & is &amp;.
+    text = _bluesky_copy(301)
+    assert len(text) == 297
+    pool, conn = _make_pool(fetchval="bluesky")
+    svc = SocialDraftsService()
+    with pytest.raises(SocialDraftTooLongError) as exc:
+        await svc.edit_draft("d7", text, None, pool, site_config=SiteConfig())
+    msg = str(exc.value)
+    assert "301" in msg and "300" in msg
+    assert "297 by plain count" in msg
+    assert "social_bluesky_char_limit" in msg
+    conn.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_edit_draft_accepts_bluesky_copy_counted_under_limit():
+    text = _bluesky_copy(299)
+    pool, conn = _make_pool(fetchval="bluesky")
+    svc = SocialDraftsService()
+    await svc.edit_draft("d8", text, None, pool, site_config=SiteConfig())
+    conn.execute.assert_called_once()
+    assert conn.execute.call_args[0][2] == text
+
+
+@pytest.mark.asyncio
+async def test_edit_draft_limit_follows_the_setting():
+    text = _bluesky_copy(299)
+    pool, conn = _make_pool(fetchval="bluesky")
+    sc = SiteConfig(initial_config={"social_bluesky_char_limit": "280"})
+    with pytest.raises(SocialDraftTooLongError):
+        await SocialDraftsService().edit_draft("d9", text, None, pool, site_config=sc)
+    conn.execute.assert_not_called()
+
+
+def test_x_copy_with_a_long_link_fits_where_len_says_it_does_not():
+    url = "https://www.gladlabs.io/posts/" + "a" * 120 + "?utm_source=twitter&utm_medium=social"
+    text = f"{'y' * 250} {url}"
+    assert len(text) > 280
+    check_social_copy_length(text, "twitter", site_config=SiteConfig())  # 274 on X
+    with pytest.raises(SocialDraftTooLongError, match="links count as 23"):
+        check_social_copy_length(f"{'y' * 260} {url}", "twitter", site_config=SiteConfig())
+
+
+def test_platform_without_a_limit_is_not_checked():
+    check_social_copy_length("z" * 5000, "reddit", site_config=SiteConfig())
 
 
 # ---------------------------------------------------------------------------

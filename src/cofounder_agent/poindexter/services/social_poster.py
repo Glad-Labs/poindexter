@@ -28,6 +28,7 @@ Postiz became the distribution mechanism.
 """
 
 import re
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -39,6 +40,7 @@ from poindexter.services.llm_providers.dispatcher import dispatch_complete
 from poindexter.services.llm_providers.thinking_models import strip_think_blocks
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
+from poindexter.services.social_drafts import platform_char_limit, postiz_counted_length
 
 # SiteConfig DI (#272 Phase-2e): the module-level ``site_config`` global +
 # ``set_site_config`` setter were removed. Injection is mandatory — the
@@ -92,15 +94,22 @@ async def _resolve_social_model(*, site_config: SiteConfig) -> str:
     )
 
 
+def _char_limit(platform: str, *, site_config: SiteConfig) -> int:
+    # social_<platform>_char_limit, with the defaults held in one place
+    # (social_drafts._CHAR_LIMIT_SETTINGS) so edit_draft's gate and this
+    # generator can never disagree about a platform's limit. (#198)
+    limit = platform_char_limit(platform, site_config=site_config)
+    if limit is None:
+        raise ValueError(f"social_poster: no char limit configured for {platform!r}")
+    return limit
+
+
 def _twitter_char_limit(*, site_config: SiteConfig) -> int:
-    # Defaults match current public platform limits; tune via app_settings
-    # social_twitter_char_limit / social_linkedin_char_limit when platforms
-    # change. (#198)
-    return site_config.get_int("social_twitter_char_limit", 280)
+    return _char_limit("twitter", site_config=site_config)
 
 
 def _linkedin_char_limit(*, site_config: SiteConfig) -> int:
-    return site_config.get_int("social_linkedin_char_limit", 700)
+    return _char_limit("linkedin", site_config=site_config)
 
 
 # ---------------------------------------------------------------------------
@@ -189,8 +198,8 @@ def _post_url_for(slug: str, *, platform: str, site_config: SiteConfig) -> str:
     the model the exact string), the prose-budget arithmetic, and the
     deterministic repair — so the three can never disagree about how long the
     link is. That matters: ``_polish_social_copy`` reserves ``char_limit −
-    len(url) − 1`` for prose, so a URL that grows after the budget was computed
-    is prose the operator loses.
+    (the URL's counted length) − 1`` for prose, so a URL that grows after the
+    budget was computed is prose the operator loses.
 
     ``approve_draft`` re-tags with the draft's own platform at post time, which
     is what corrects the short-form copy Bluesky and Mastodon inherit from the
@@ -220,9 +229,14 @@ def _build_twitter_prompt(
         char_limit=char_limit,
         # Slugged post URLs run ~90 chars — a third of the tweet budget — and
         # models are bad at deriving that subtraction themselves, so the
-        # prompt hands them the prose budget _polish_social_copy will
-        # actually enforce (limit − URL − 1 joining space). Before this,
-        # roughly half of all drafts overran and got trimmed.
+        # prompt hands them a prose budget (limit − URL − 1 joining space).
+        # Before this, roughly half of all drafts overran and got trimmed.
+        #
+        # This uses the URL's FULL length on purpose, though X itself counts
+        # a link as 23 (and _polish_social_copy enforces that looser X
+        # budget). The tweet copy is reused for Bluesky, which counts every
+        # character of the link, so the tighter budget is what lets one copy
+        # fit all three platforms without a second trim.
         url_chars=len(post_url),
         prose_budget=max(char_limit - len(post_url) - 1, 0),
         title=title,
@@ -286,8 +300,8 @@ def _strip_trailing_ellipsis(text: str) -> str:
     return _TRAILING_ELLIPSIS_RE.sub("", text).rstrip()
 
 
-def _fit_prose(text: str, limit: int) -> str:
-    """Trim *text* to <= *limit* chars, preferring a sentence boundary.
+def _fit_prose(text: str, limit: int, measure: Callable[[str], int] = len) -> str:
+    """Trim *text* to ``measure(text) <= limit``, preferring a sentence boundary.
 
     An over-limit draft is cut at the last sentence terminator that fits, so
     the survivor reads as finished copy — a complete short post beats a longer
@@ -296,25 +310,37 @@ def _fit_prose(text: str, limit: int) -> str:
     sentence fits (one long unbroken sentence) does it fall back to the last
     whole word, re-stripping any ellipsis the cut exposed so shortening copy
     never manufactures a trail-off.
+
+    *measure* is the length the platform will count. It defaults to ``len``;
+    ``_polish_social_copy`` passes Postiz's count, under which a ``&`` costs
+    five and an emoji two, so a prefix's measured length can exceed its
+    character count.
     """
     if limit <= 0:
         return ""
-    if len(text) <= limit:
+    if measure(text) <= limit:
         return text
     sentence_end = 0
     for m in _SENTENCE_END_RE.finditer(text):
-        if m.end() > limit:
+        if measure(text[: m.end()]) > limit:
             break
         sentence_end = m.end()
     if sentence_end:
         return _strip_trailing_ellipsis(text[:sentence_end].rstrip())
-    cut = text[:limit].rstrip()
+    # Longest prefix whose measured length fits. measure() never counts a
+    # character as less than one, so the answer is at most ``limit`` chars.
+    end = min(len(text), limit)
+    while end > 0 and measure(text[:end]) > limit:
+        end -= 1
+    cut = text[:end].rstrip()
     if " " in cut:
         cut = cut.rsplit(" ", 1)[0]
     return _strip_trailing_ellipsis(cut)
 
 
-def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
+def _polish_social_copy(
+    text: str, *, post_url: str, char_limit: int, platform: str
+) -> str:
     """Repair one generated social draft deterministically.
 
     1. Strip a trailing ellipsis trail-off (``…`` / ``..`` / ``...``) — it reads
@@ -330,6 +356,12 @@ def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
        (``_fit_prose``), so an overrunning draft loses its last sentence
        whole rather than surfacing a mid-clause fragment.
 
+    Every length here is the one Postiz counts for *platform*
+    (``postiz_counted_length``), not ``len()``: a ``&`` in the UTM link costs
+    five characters on Bluesky, and a link costs 23 on X however long it is.
+    Budgeting with ``len()`` is how a 297-character Bluesky draft got refused
+    as 301 (2026-10-04).
+
     ``post_url`` is honored only when absolute (``http(s)://``); an empty or
     relative value (``site_url`` unset -> ``/posts/slug``) is treated as
     "no URL" so a broken link is never injected. The model is handed the exact
@@ -340,6 +372,9 @@ def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
     text = _strip_trailing_ellipsis(text.strip())
     if not text:
         return text
+
+    def measure(s: str) -> int:
+        return postiz_counted_length(s, platform)
 
     url = post_url.strip()
     if url.startswith(("http://", "https://")):
@@ -355,11 +390,11 @@ def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
         # be truncated or dropped.
         prose = " ".join(text.replace(url, " ").split())
         prose = _strip_trailing_ellipsis(prose)
-        prose = _fit_prose(prose, char_limit - len(url) - 1)
+        prose = _fit_prose(prose, char_limit - measure(url) - 1, measure)
         text = f"{prose} {url}".strip() if prose else url
     else:
         # URL unconfigured/relative — just enforce the platform limit.
-        text = _fit_prose(text, char_limit)
+        text = _fit_prose(text, char_limit, measure)
     return text
 
 
@@ -449,7 +484,7 @@ async def _generate_social_text(
         if text.startswith('"') and text.endswith('"'):
             text = text[1:-1].strip()
 
-        if len(text) > char_limit:
+        if postiz_counted_length(text, platform) > char_limit:
             logger.warning(
                 "[social_poster] %s text exceeded %d chars, trimming", platform, char_limit
             )
@@ -458,7 +493,9 @@ async def _generate_social_text(
         # guarantee the post URL is present, and fit to the platform limit by
         # trimming prose (never the link). Fixes the "…"-trail-off and the
         # dropped/mangled URL a weak model can still emit despite the prompt.
-        return _polish_social_copy(text, post_url=post_url, char_limit=char_limit)
+        return _polish_social_copy(
+            text, post_url=post_url, char_limit=char_limit, platform=platform
+        )
 
     except Exception as e:
         logger.error("[social_poster] LLM generation failed for %s: %s", platform, e, exc_info=True)
@@ -518,10 +555,10 @@ async def generate_social_posts(
     if twitter_text:
         posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=twitter_url))
         logger.info("[social_poster] Twitter post generated (%d chars)", len(twitter_text))
-        # Bluesky (300 chars) and Mastodon (500) are X-style short-form, so the
-        # ≤280-char tweet copy fits both — reuse it instead of authoring a
-        # separate prompt + spending another LLM call. The draft atom filters
-        # these down to whatever social_draft_platforms actually requests.
+        # Bluesky and Mastodon are X-style short-form, so reuse the tweet copy
+        # instead of authoring a separate prompt + spending another LLM call.
+        # The draft atom filters these down to whatever social_draft_platforms
+        # actually requests.
         #
         # The copy is shared but the ATTRIBUTION must not be: swap the tweet's
         # tag for each sibling's before the draft is stored, so the operator's
@@ -529,12 +566,23 @@ async def generate_social_posts(
         # is never counted as an X click. _polish_social_copy guarantees the
         # exact twitter_url is present (it re-appends it last), so the
         # substring swap is exact rather than a regex guess.
+        #
+        # Fitting the tweet does NOT make it fit the siblings: X counts the
+        # link as 23, while Bluesky counts every character of it and five for
+        # each & (Postiz's escape), so a tweet at its limit is ~70 over on
+        # Bluesky. Each sibling is re-fitted to its own limit and count; for
+        # copy that already fits, the polish leaves it byte-identical.
         for sibling in ("bluesky", "mastodon"):
             sibling_url = _post_url_for(slug, platform=sibling, site_config=_sc)
             posts.append(
                 SocialPost(
                     platform=sibling,
-                    text=twitter_text.replace(twitter_url, sibling_url),
+                    text=_polish_social_copy(
+                        twitter_text.replace(twitter_url, sibling_url),
+                        post_url=sibling_url,
+                        char_limit=_char_limit(sibling, site_config=_sc),
+                        platform=sibling,
+                    ),
                     post_url=sibling_url,
                 )
             )

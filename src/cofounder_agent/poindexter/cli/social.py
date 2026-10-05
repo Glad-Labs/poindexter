@@ -209,7 +209,11 @@ def reject_draft(draft_id: str) -> None:
 def edit_draft(draft_id: str, content: str) -> None:
     """Edit draft copy before approving."""
     try:
-        run_service(lambda p: _svc.edit_draft(draft_id, content, None, p))
+        async def _impl(pool: Any) -> None:
+            sc = await _with_site_config(pool)
+            await _svc.edit_draft(draft_id, content, None, pool, site_config=sc)
+
+        run_service(_impl)
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
