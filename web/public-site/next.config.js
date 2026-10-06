@@ -16,7 +16,7 @@
 // tracking and only a build-log line nobody reads. Failing the build is the
 // louder, correct behaviour (CLAUDE.md "fail loud + notify"). If this ever
 // throws again, fix the hoisting rather than re-adding the catch.
-import { withSentryConfig } from '@sentry/nextjs';
+import { withSentryConfig } from '@sentry/nextjs/config';
 // With the extension: Node's ESM loader runs this file and does not add it.
 import { STATIC_ORIGIN } from './lib/static-url.js';
 

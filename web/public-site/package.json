@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@glad-labs/brand": "*",
-    "@sentry/nextjs": "^10.75.0",
+    "@sentry/nextjs": "^11.2.0",
     "next": "^16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

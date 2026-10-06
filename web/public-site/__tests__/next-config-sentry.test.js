@@ -28,7 +28,7 @@ function loadConfig(env) {
       ...cfg,
       __sentryOptions: opts,
     }));
-    jest.doMock('@sentry/nextjs', () => ({ withSentryConfig }));
+    jest.doMock('@sentry/nextjs/config', () => ({ withSentryConfig }));
     config = require('../next.config.js').default;
   });
   return config;

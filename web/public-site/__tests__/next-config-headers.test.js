@@ -14,11 +14,11 @@
  * Production chunk URLs are hashed, so the 30-day header stays there.
  */
 
-// next.config.js is an ES module that imports @sentry/nextjs. It only calls
+// next.config.js is an ES module that imports @sentry/nextjs/config. It only calls
 // withSentryConfig when a DSN is set, and the shared setup mock does not
 // provide it, so stub it: a SENTRY_DSN in the developer's shell must not
 // break this file.
-jest.mock('@sentry/nextjs', () => ({
+jest.mock('@sentry/nextjs/config', () => ({
   withSentryConfig: (config) => config,
 }));
 

@@ -24,7 +24,7 @@ if (sentryRelayEnabled(relay)) {
       // error. Next.js instruments incoming requests itself.
       Sentry.httpIntegration({
         disableIncomingRequestSpans: true,
-        trackIncomingRequestsAsSessions: false,
+        sessions: false,
       }),
     ],
   });
