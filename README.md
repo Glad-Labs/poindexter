@@ -286,7 +286,7 @@ Built by one person in evening hours, directing AI coding agents (Claude Code) t
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
-- 210+ live posts on [gladlabs.io](https://www.gladlabs.io) (380+ posts total, 2,000+ pipeline runs).
+- 210+ live posts on [gladlabs.io](https://www.gladlabs.io) (390+ posts total, 2,000+ pipeline runs).
 - 21,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup --auto` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling — and the quick start above runs on a clean GitHub runner every week (with a tiny stand-in model, since a runner has no GPU), failing unless the queued post reaches the approval queue.
 - Live in-place upgrades — schema changes applied to a running instance with zero data loss.
