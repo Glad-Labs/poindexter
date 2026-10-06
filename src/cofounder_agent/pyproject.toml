@@ -129,7 +129,7 @@ transformers = { version = ">=5.16.1", optional = true }
 
 # Additional Required Packages
 structlog = "^26"
-pyjwt = ">=2.12.0,<3.0.0"  # CVE GHSA-752w-5fwx-jx9f fix — pin to safe 2.x series
+pyjwt = ">=2.15.0,<3.0.0"  # CVE GHSA-752w-5fwx-jx9f fix — pin to safe 2.x series
 # redis removed — redis_enabled=false, in-memory TTL cache is sufficient
 diffusers = { version = ">=0.39.0,<0.40", optional = true }
 # `peft` removed — zero imports in tracked code. Was optional ml extra.
