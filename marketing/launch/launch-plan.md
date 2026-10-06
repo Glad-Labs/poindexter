@@ -4,6 +4,9 @@
 
 **The division of labor, up front:** Claude drafts every piece of writing in this plan. Your job is three things only: record what's on your screen, edit drafts for truth, and press buttons. Estimated _your-time_ is listed on every task. Nothing here requires charisma.
 
+**Short on time?** [`checklist.md`](checklist.md) is this plan boiled down to
+one page, in the order to do things.
+
 ---
 
 ## Operating rules
@@ -25,6 +28,12 @@
 > link, embedding the GIF), **the funnel check** (1.3), and the four remaining
 > `[FILL]`s in the copy — now down to the 1am failure, the relicensing reason,
 > and tooling/subscription spend.
+
+> **Status as of 2026-10-05** (audited against the repo): the "four remaining
+> `[FILL]`s" above is out of date, because no `[FILL]` markers are left in the
+> copy pack. No demo has been committed (`docs/assets/readme/` has no
+> `demo.gif`) and the README doesn't embed one. The field-guide waitlist page is
+> built but off. The order to finish in is [`checklist.md`](checklist.md).
 
 ---
 
@@ -135,7 +144,7 @@ The single highest-value asset you're missing.
 
 - [x] Retitle away from "factory" → lead with rejection (e.g., "the content pipeline that rejects half of what it writes").
 - [x] Put the actual Pro price in the tier table. **(DONE 2026-09-16 — $19/mo / $180/yr now in the table, replacing the "See gladlabs.ai" deferral.)**
-- [ ] Add a "kick the tires in 10 minutes" demo config (one small model in every role, clearly labeled demo-quality) for people below 8 GB VRAM or below 30 GB of patience.
+- [ ] Add a "kick the tires in 10 minutes" demo config (one small model in every role, clearly labeled demo-quality) for people below 8 GB VRAM or below 30 GB of patience. **(Parked in #4100 by the 2026-09-26 update; not a launch blocker.)**
 - [x] Add one line + link in Project Status: built by one person directing AI agents (links to the story post from 1.4). **(line added 2026-09-26; add the story's URL to it the day the story publishes)**
 - [x] Enable GitHub Discussions (verified on 2026-09-16) and seed it with 2–3 starter threads (a welcome/intro thread, a "what are you running it on?" thread).
 
@@ -175,6 +184,7 @@ Staggered on purpose: each post is a feedback dry-run for the next, and simultan
 
 > **(changed 2026-09-26)** Submit the **story post** here as a plain link, not the Show HN — see "Strategy update" item 2. The timing, first-comment and repost advice below still applies.
 
+- [ ] Night before: publish the story post on gladlabs.io (canonical) — HN gets that link. Syndication to dev.to follows in 2.3.
 - [ ] Night before: final read of submission + first-comment, crib sheet on your phone.
 - [ ] Submit **Tue/Wed/Thu ~8–10am ET from your phone** (2 minutes — this is the one daytime action in the whole plan; conventional wisdom on timing, not gospel).
 - [ ] Post your prepared first comment immediately after submitting.
@@ -185,7 +195,7 @@ Staggered on purpose: each post is a feedback dry-run for the next, and simultan
 
 > **(changed 2026-09-26)** The story post already went out in 2.2, so this step is r/selfhosted plus, optionally, the Show HN for the tool.
 
-- [ ] Publish the story post on gladlabs.io; syndicate to dev.to with canonical link.
+- [ ] Syndicate the story post to dev.to with the canonical link (it was published on gladlabs.io before 2.2).
 - [ ] Post to r/selfhosted (their audience loves a well-tested self-hosted alternative to SaaS).
 - [ ] The story post is also independently HN-submittable later — it's a second lottery ticket, separate from the Show HN.
 
