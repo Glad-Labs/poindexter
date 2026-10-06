@@ -1612,3 +1612,39 @@ class TestFlowStampsSettingsReads:
         assert "telemetry disabled" in outcomes[0].detail
         assert outcomes[0].keys_read > 0
         assert _stamped_keys(await _conn_of(pool)) == set()
+
+
+# --- the claiming flow run is recorded on the task ---------------------------
+#
+# The brain's stuck-flow probe reads a RUNNING run's heartbeat by this id.
+# Without it the probe looked for "the in_progress task", which vanishes when
+# content.persist_task moves the row to awaiting_approval three nodes before
+# the end — 7 of 36 runs were cancelled mid-finalize (2026-09-06 → 10-06).
+
+
+@pytest.mark.asyncio
+async def test_the_claiming_flow_run_is_stamped_on_the_task():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from poindexter.services.flows import content_generation as cg
+
+    db = MagicMock()
+    db.pool.execute = AsyncMock()
+    await cg._record_claiming_flow_run(db, "task-1", "run-1")
+    sql, *args = db.pool.execute.await_args.args
+    assert "content_flow_run_id" in sql
+    assert args == ["task-1", "run-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_stamp_never_fails_the_run():
+    from unittest.mock import AsyncMock, MagicMock
+
+    from poindexter.services.flows import content_generation as cg
+
+    db = MagicMock()
+    db.pool.execute = AsyncMock(side_effect=RuntimeError("column missing"))
+    await cg._record_claiming_flow_run(db, "task-1", "run-1")  # must not raise
+
+    no_pool = MagicMock(spec=[])
+    await cg._record_claiming_flow_run(no_pool, "task-1", "run-1")

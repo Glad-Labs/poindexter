@@ -220,3 +220,32 @@ brain probe (5-min cycle) ──reads in_progress progress──►
 None. Two operator-facing defaults were chosen with rationale (dedicated
 column over reusing `updated_at`; stall default 20 min) and are tunable /
 reversible at review.
+
+## Addendum 2026-10-06: the heartbeat follows the run, not the status
+
+The progress-aware rule above found the heartbeat through
+`pipeline_tasks WHERE status = 'in_progress'`. But `content.persist_task` moves
+the task to `awaiting_approval` with three graph nodes still to run:
+`social.generate_drafts`, `content.record_pipeline_version` and
+`content.evaluate_auto_publish`. For those last minutes there was no
+`in_progress` row, the probe fell back to its flat 30-minute age rule, and any
+run still finishing at that mark was cancelled.
+
+That hit 7 of 36 runs in the 30 days to 2026-10-06. Two of those posts were
+published anyway, with no social drafts, no recorded pipeline version and no
+auto-publish evaluation. The run on 2026-10-04 was cancelled 40 seconds after
+its last node started, while it was waiting for the GPU.
+
+The fix has three parts:
+
+- **The content flow stamps `pipeline_tasks.content_flow_run_id`** with its
+  Prefect flow run id when it claims a task (migration `20261006_150927`).
+- **The probe reads each RUNNING run's own heartbeat by that id**
+  (`_read_run_progress`), whatever the task's status. An exact match is trusted
+  even when more than one run is RUNNING.
+- **With a single RUNNING run, that heartbeat also answers the queue-backlog
+  "is the slot-holder progressing?" gate.**
+
+A task with no stamp (claimed before the migration, or the stamp write failed)
+falls back to the `in_progress` lookup, and then to the flat age rule, as
+before.

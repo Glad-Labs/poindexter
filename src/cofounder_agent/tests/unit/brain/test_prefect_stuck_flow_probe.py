@@ -29,6 +29,7 @@ def _make_pool(
     *,
     setting_values: dict[str, str] | None = None,
     inprogress_row: dict[str, Any] | None = None,
+    run_rows: dict[str, dict[str, Any]] | None = None,
 ):
     """asyncpg-style mock pool: canned settings, recorded writes, and an
     optional in_progress heartbeat row for _read_inprogress_progress."""
@@ -47,6 +48,8 @@ def _make_pool(
         return None
 
     async def _fetchrow(query, *args):
+        if "pipeline_tasks" in query and "content_flow_run_id" in query:
+            return (run_rows or {}).get(args[0])
         if "pipeline_tasks" in query and "in_progress" in query:
             return inprogress_row
         return None
@@ -1712,3 +1715,88 @@ async def test_orphan_reaping_can_be_switched_off():
     )
     assert called == []  # no docker call at all when the rule is off
     assert summary["auto_crashed_count"] == 0
+
+
+# --- the run's OWN heartbeat (content_flow_run_id) ---------------------------
+#
+# content.persist_task moves the task to awaiting_approval with three graph
+# nodes still to run. The in_progress lookup then finds nothing and the probe
+# fell back to its flat 30-minute age rule: 7 of 36 runs (2026-09-06 → 10-06)
+# were cancelled mid-finalize, two of them later published with no social
+# drafts. The 2026-10-04 run was cancelled 40 s after its last node started.
+
+_SETTINGS = {
+    "prefect_stuck_flow_probe_enabled": "true",
+    "prefect_stuck_flow_threshold_minutes": "30",
+    "prefect_stuck_flow_progress_stall_minutes": "20",
+}
+
+
+def test_running_is_stuck_exact_holder_maps_even_with_two_runs():
+    holder = {"task_id": "t", "minutes": 1.0}
+    assert not psfp._running_is_stuck(
+        age_minutes=45, flat_threshold_minutes=30, stall_minutes=20,
+        holder=holder, running_run_count=2, exact_holder=True,
+    )
+    assert psfp._running_is_stuck(
+        age_minutes=45, flat_threshold_minutes=30, stall_minutes=20,
+        holder={"task_id": "t", "minutes": 25.0}, running_run_count=2, exact_holder=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_run_finishing_after_persist_task_is_not_cancelled():
+    """The 2026-10-04 incident: RUNNING 31 min, no in_progress task (persist
+    already moved it to awaiting_approval), its own last node 40 s ago."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values=_SETTINGS,
+        inprogress_row=None,
+        run_rows={"r1": {"task_id": "b4cb6894", "minutes": 0.7}},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="encouraging-cassowary", minutes_ago=31)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_run_whose_own_task_stalled_is_still_stuck():
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values=_SETTINGS,
+        inprogress_row=None,
+        run_rows={"r1": {"task_id": "t", "minutes": 26.0}},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="stalled-run", minutes_ago=31)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_without_a_run_stamp_the_old_fallback_still_applies():
+    """Tasks claimed before the column existed carry no run id: the flat
+    age rule still catches a genuinely stuck run."""
+    notify = MagicMock()
+    pool = _make_pool(setting_values=_SETTINGS, inprogress_row=None, run_rows={})
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="old-run", minutes_ago=31)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+

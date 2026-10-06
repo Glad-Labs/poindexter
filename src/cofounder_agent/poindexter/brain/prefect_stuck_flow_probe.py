@@ -658,6 +658,47 @@ async def _read_inprogress_progress(pool) -> dict[str, Any] | None:
     }
 
 
+async def _read_run_progress(pool, flow_run_id: str) -> dict[str, Any] | None:
+    """Heartbeat age of the task THIS flow run claimed, whatever its status.
+
+    ``pipeline_tasks.content_flow_run_id`` is stamped by the content flow when
+    it claims a task. Reading by it follows the run past
+    ``content.persist_task``, which moves the task to ``awaiting_approval``
+    with three graph nodes still to run — the window in which the
+    ``in_progress`` lookup above finds nothing and the probe used to fall back
+    to the flat age rule (7 of 36 runs cancelled mid-finalize, 2026-09-06 →
+    10-06). ``None`` when no row carries the id (older task, missed stamp, or
+    the column not migrated yet) — the caller falls back to the in_progress
+    holder. Same return shape as :func:`_read_inprogress_progress`.
+    """
+    if not flow_run_id:
+        return None
+    try:
+        row = await pool.fetchrow(
+            """
+            SELECT task_id,
+                   EXTRACT(EPOCH FROM (now() - last_progress_at)) / 60.0 AS minutes
+            FROM pipeline_tasks
+            WHERE content_flow_run_id = $1
+            ORDER BY last_progress_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            flow_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: falls back to the in_progress lookup (and before the
+        # migration lands, the column does not exist yet).
+        logger.debug("[PREFECT_STUCK_FLOW] run-progress read failed: %s", exc)
+        return None
+    if row is None:
+        return None
+    minutes = row["minutes"]
+    return {
+        "task_id": str(row["task_id"]),
+        "minutes": float(minutes) if minutes is not None else None,
+    }
+
+
 def _worker_container_started_at(container: str) -> datetime | None:
     """``docker inspect`` the worker container's StartedAt, or ``None``.
 
@@ -713,6 +754,7 @@ def _running_is_stuck(
     stall_minutes: int,
     holder: dict[str, Any] | None,
     running_run_count: int,
+    exact_holder: bool = False,
 ) -> bool:
     """Decide whether a RUNNING flow run is stuck.
 
@@ -723,11 +765,15 @@ def _running_is_stuck(
     write never landed), or >1 RUNNING run (can't map a holder to a specific
     run) — fall back to the legacy flat duration threshold on the run's RUNNING
     age, preserving pre-heartbeat behaviour.
+
+    ``exact_holder`` means ``holder`` was read by this run's own id
+    (:func:`_read_run_progress`), so it maps to the run whatever the run count.
     """
     holder_minutes = holder.get("minutes") if holder else None
-    # Progress-aware only when a heartbeat exists AND exactly one RUNNING run
-    # (so the single in_progress holder unambiguously maps to it).
-    if holder_minutes is not None and running_run_count == 1:
+    # Progress-aware when a heartbeat exists AND it unambiguously belongs to
+    # this run: read by the run's own id, or the single in_progress holder
+    # with exactly one RUNNING run.
+    if holder_minutes is not None and (exact_holder or running_run_count == 1):
         return holder_minutes >= stall_minutes
     return age_minutes >= flat_threshold_minutes
 
@@ -900,6 +946,20 @@ async def run_prefect_stuck_flow_probe(
                 1 for r in watched
                 if ((r.get("state") or {}).get("type")) == "RUNNING"
             )
+            # Each RUNNING run's OWN heartbeat, read by the id the content
+            # flow stamped on the task it claimed. Follows the run past
+            # content.persist_task, where the in_progress lookup goes blind.
+            run_holders: dict[str, dict[str, Any]] = {}
+            for r in watched:
+                if ((r.get("state") or {}).get("type")) == "RUNNING":
+                    rid = str(r.get("id") or "")
+                    exact = await _read_run_progress(pool, rid)
+                    if exact is not None:
+                        run_holders[rid] = exact
+            # The queue-backlog gate below asks whether the slot-holder is
+            # progressing; with one RUNNING run its own heartbeat answers that.
+            if running_run_count == 1 and len(run_holders) == 1:
+                holder = next(iter(run_holders.values()))
 
             for run in watched:
                 run_id = str(run.get("id") or "")
@@ -934,8 +994,9 @@ async def run_prefect_stuck_flow_probe(
                         age_minutes=age,
                         flat_threshold_minutes=threshold_for_state,
                         stall_minutes=progress_stall_minutes,
-                        holder=holder,
+                        holder=run_holders.get(run_id, holder),
                         running_run_count=running_run_count,
+                        exact_holder=run_id in run_holders,
                     ):
                         continue
                 else:  # PENDING / CANCELLING — no progress signal; flat time-in-state rule.
@@ -947,11 +1008,12 @@ async def run_prefect_stuck_flow_probe(
                 # age-in-state rule? Mirrors the exact condition
                 # _running_is_stuck uses to pick its branch, so it's true iff
                 # that branch — and not the flat-age one — is what matched.
+                run_holder = run_holders.get(run_id, holder)
                 stall_rule_triggered = (
                     state_type == "RUNNING"
-                    and holder is not None
-                    and holder.get("minutes") is not None
-                    and running_run_count == 1
+                    and run_holder is not None
+                    and run_holder.get("minutes") is not None
+                    and (run_id in run_holders or running_run_count == 1)
                 )
 
                 # Surface the stall reason so the page isn't confusing for a
@@ -960,9 +1022,9 @@ async def run_prefect_stuck_flow_probe(
                 # stored ``stall_rule_triggered`` bool) even though it's
                 # already implied by the flag being true.
                 progress_note = ""
-                if stall_rule_triggered and holder is not None:
+                if stall_rule_triggered and run_holder is not None:
                     progress_note = (
-                        f" No graph-node progress for {holder['minutes']:.0f}m "
+                        f" No graph-node progress for {run_holder['minutes']:.0f}m "
                         f"(stall threshold {progress_stall_minutes}m)."
                     )
 
@@ -1028,10 +1090,10 @@ async def run_prefect_stuck_flow_probe(
                 # past its threshold — a title showing "(0m)" then reads as
                 # nothing's wrong. See the 2026-07-12 agile-nyala page
                 # (age=0, holder['minutes']=21, stall threshold 20).
-                if stall_rule_triggered and holder is not None:
+                if stall_rule_triggered and run_holder is not None:
                     title = (
                         f"Prefect flow stalled (no progress): {name} "
-                        f"({holder['minutes']:.0f}m)"
+                        f"({run_holder['minutes']:.0f}m)"
                     )
                 else:
                     title = f"Prefect flow stuck in {state_type}: {name} ({age}m)"

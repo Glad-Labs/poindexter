@@ -712,7 +712,9 @@ def _loopback_only(host_ips: list[str] | None) -> bool:
     or the tailnet) is therefore unreachable from any container BY DESIGN,
     and probing it would page a "wedge" on every cycle.
     """
-    return bool(host_ips) and all(ip in _LOOPBACK_HOST_IPS for ip in host_ips)
+    if not host_ips:
+        return False
+    return all(ip in _LOOPBACK_HOST_IPS for ip in host_ips)
 
 
 # ---------------------------------------------------------------------------

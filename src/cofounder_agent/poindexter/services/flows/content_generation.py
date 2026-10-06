@@ -156,6 +156,37 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
     return dict(row)
 
 
+async def _record_claiming_flow_run(
+    database_service: Any, task_id: Any, prefect_run_id: str,
+) -> None:
+    """Stamp ``pipeline_tasks.content_flow_run_id`` with this flow run's id.
+
+    The brain's stuck-flow probe reads a RUNNING run's heartbeat
+    (``last_progress_at``) by this id. Before it existed the probe looked for
+    "the in_progress task", which stops existing the moment
+    ``content.persist_task`` moves the row to ``awaiting_approval`` — three
+    nodes before the graph ends — so a run still finishing at the 30-minute
+    mark was cancelled (7 of 36 runs, 2026-09-06 → 10-06). Best-effort: a
+    missed stamp only means the probe falls back to its old lookup, and must
+    never fail the run that is about to write a post.
+    """
+    pool = getattr(database_service, "pool", None)
+    if pool is None:
+        return
+    try:
+        await pool.execute(
+            "UPDATE pipeline_tasks SET content_flow_run_id = $2 WHERE task_id = $1",
+            task_id, prefect_run_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: observability stamp for the stuck-flow probe; the probe's
+        # in_progress fallback still applies when it is missing.
+        logger.warning(
+            "[CONTENT_FLOW] could not record flow run %s on task %s: %s",
+            prefect_run_id, task_id, exc,
+        )
+
+
 @task(
     name="reclaim_stale_inprogress_tasks",
     cache_policy=NO_CACHE,
@@ -640,6 +671,7 @@ async def _run_content_generation_flow(
             "[CONTENT_FLOW] task_id=%s prefect_run_id=%s",
             task_id, prefect_run_id,
         )
+        await _record_claiming_flow_run(database_service, task_id, prefect_run_id)
 
     # Bind task_id + prefect_run_id into the structlog async-local context so
     # every downstream structlog log call (pipeline stages, QA rails, etc.)
