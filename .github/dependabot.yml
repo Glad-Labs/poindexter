@@ -415,6 +415,17 @@ updates:
       day: 'monday'
       time: '04:30'
     open-pull-requests-limit: 3
+    ignore:
+      # pytorch/pytorch 2.10+ images are Ubuntu-based with a PEP 668
+      # externally-managed Python: the sidecar Dockerfiles' bare `pip install`
+      # fails with "externally-managed-environment" and every GPU sidecar stops
+      # building. CI does not build these images, so such a PR goes green and
+      # the break shows up only at deploy (#3756 reverted by #3794, #3915
+      # reverted by #3946, #4134 closed). Lift this together with the
+      # `pip install --break-system-packages` migration the Dockerfile headers
+      # describe, after a local `docker compose build`.
+      - dependency-name: 'pytorch/pytorch'
+        versions: ['>= 2.10']
     labels:
       - 'dependencies'
       - 'docker'
