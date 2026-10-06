@@ -105,7 +105,7 @@ _CC_RE = re.compile(r"^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$")
 # Substance policy — "is this day worth a diary at all?"
 # ---------------------------------------------------------------------------
 #
-# Measured on Glad-Labs/glad-labs-stack across 2026-07-08..07-31 (24 days):
+# Measured on Glad-Labs/poindexter across 2026-07-08..07-31 (24 days):
 # four days (07-21, 07-22, 07-25, 07-27) had merged PRs but ZERO substantive
 # work — every PR was release-please, dependabot, or a docs/ci sweep. Each
 # still produced a dev diary, because the old gate only asked whether ANY
