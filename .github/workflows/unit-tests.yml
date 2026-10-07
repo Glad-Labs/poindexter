@@ -341,6 +341,10 @@ jobs:
           # CRLF. Same class as the whole-repo-walk exemption already named
           # above; matching them would buy a 9-14 minute run that no ordinary
           # edit to those trees could ever fail.
+          # test_security_deps_classifier.py walks the repo for lockfile NAMES
+          # (never their content) and checks security.yml's any-depth `deps`
+          # pattern covers each one, so no lockfile edit can fail it either;
+          # that is why the Worker lockfiles stay unmatched here.
           # NOT `echo "$changed" | grep -q ...`: under `set -o pipefail`, grep -q exits
           # at its FIRST match and a list larger than the pipe buffer leaves echo
           # holding SIGPIPE, so the pipeline reports failure and the branch below

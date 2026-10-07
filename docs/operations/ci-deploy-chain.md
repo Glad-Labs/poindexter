@@ -404,9 +404,13 @@ bots, dependabot) multiplies fast. The rules that keep the bill down:
 - **`security.yml` classifies changed paths first** (the `changes`
   job), then runs only the relevant file-specific jobs (`trivy-config`
   / `action-pins` / `shell-line-endings` / `poetry-lock`). `gitleaks`
-  / `trivy-fs` / `sbom` always run — a secret or CVE can land in any
-  file. The weekly baseline + manual `workflow_dispatch` scans run
-  every job regardless.
+  always runs, since a secret can land in any file. `trivy-fs` runs when
+  the `deps` class matches, which is any `package*.json`, `pyproject.toml`,
+  `poetry.lock`, `uv.lock` or `requirements*.txt` at any depth, plus
+  everything under `web/`. `sbom` runs on schedule and dispatch only. The
+  weekly baseline + manual `workflow_dispatch` scans run every job
+  regardless. Why GitHub's Dependabot alert list can disagree with a green
+  Trivy gate is in [dependency-alerts.md](dependency-alerts.md).
   - **`.gitleaks.toml` carries one repo-local rule on top of the
     bundled set** (`[extend] useDefault = true` keeps the defaults):
     `github-app-token-stateless`. gitleaks' own `github-app-token` rule

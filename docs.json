@@ -84,6 +84,7 @@
               "docs/operations/cli-reference",
               "docs/operations/ports",
               "docs/operations/ci-deploy-chain",
+              "docs/operations/dependency-alerts",
               "docs/operations/extending-poindexter",
               "docs/operations/claude-code-permissions",
               "docs/operations/commit-signing"

@@ -116,8 +116,14 @@ jobs:
           if grep -qiE 'dockerfile|docker-compose|(^|/)compose\.ya?ml$|^infrastructure/' <<<"$changed"; then emit docker true; else emit docker false; fi
           # deps: fires when Python or JS lockfiles/manifests change. Used to
           # gate trivy-fs (CVE scan only matters when deps actually change).
+          # Matches a manifest at ANY depth: until 2026-10-07 it listed only
+          # src/cofounder_agent's Poetry pair + the root package*.json, so a
+          # bump to mcp-server*/uv.lock, the brain's poetry.lock or a
+          # Cloudflare Worker's package-lock.json never ran the CVE scan on
+          # its own PR. test_security_deps_classifier.py checks every tracked
+          # lockfile against this pattern.
           if grep -qE \
-            '^src/cofounder_agent/(pyproject\.toml|poetry\.lock)$|^package(-lock)?\.json$|^web/' \
+            '(^|/)(package(-lock)?\.json|pyproject\.toml|poetry\.lock|uv\.lock|requirements[^/]*\.txt)$|^web/' \
             <<<"$changed"; then emit deps true; else emit deps false; fi
 
   gitleaks:
