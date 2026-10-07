@@ -116,6 +116,24 @@ keeps the end, so the sign-off stays on the face. The neighbour's plan and its
 rendered result both carry the moved seconds, so the assembly and any repair
 re-render lay out the timeline the speech was cut from.
 
+A neighbour has to exist, so two shapes are tidied away
+(`media_subject_policy.tidy_presenter_sequence`, 2026-10-07). Both shipped in
+the 2026-10-06 renders. **No two presenter shots back to back.** Unsealed closed
+on a pair: the face cut to the face (framing, head and light all jump), and the
+closing one had no b-roll beside it, so it rendered two chunks and the second
+turned the frame green and blurred the face. In a run of adjacent presenter
+shots the first is kept, or the last when the run ends the video, and the rest
+become `image_kenburns` stills of their intent. **Nothing after the closing
+presenter.** DeepSeek's director appended a 16 s "buffer for the branded end
+card" that drew the logo, so 21 s of narration played over a white wordmark
+after the face had signed off. When the format has a closing beat, shots after
+the last presenter shot move in front of it, and `narration_offset_s` is laid
+out again over the moved span. `place_presenter_beats` runs the tidy before the
+list is stored, and the renderer runs it again (`_tidy_presenter_sequence`) so
+a list stored before the rule, or a reviewer that re-introduced either shape,
+is still covered. It never adds a face, and at render time it keeps the stored
+`idx`. The director is told both rules in the PRESENTER section of its prompt.
+
 Budget: `video_presenter_shots_max` defaults to `-1`, meaning no ceiling. The
 operator's rule is no limit the render does not need in order to work. A
 value of 0 or more is an optional GPU budget (each clip is a full S2V render,

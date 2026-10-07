@@ -63,14 +63,14 @@ dash pass.
 Measured on the first presenter video, running whisper over the **rendered** narration
 (the instrument for "which words came out"):
 
-| written                       | heard before                      | spoken now                              |
-| ----------------------------- | --------------------------------- | --------------------------------------- |
-| `decodes at 236.7 tok/s`      | "decodes at 2036.7 talks"         | "236.7 tokens per second"               |
-| `105.5 tok/s, 55.4% gone`     | "105 talks by 5, 4% gone"         | "105.5 tokens per second, 55.4 percent" |
-| `a 2,068 ms overhead`         | "a 2068 misses overhead"          | "a 2068 milliseconds overhead"          |
-| `from 2,218 production calls` | "from 2000 to 2008 production…"   | "from 2218 production calls"            |
-| `calls "evalduration."`       | quote voiced as a break           | "calls evalduration."                   |
-| `Ms. Smith`, `it's`, `$1.65`  | unchanged                         | unchanged                               |
+| written                       | heard before                    | spoken now                              |
+| ----------------------------- | ------------------------------- | --------------------------------------- |
+| `decodes at 236.7 tok/s`      | "decodes at 2036.7 talks"       | "236.7 tokens per second"               |
+| `105.5 tok/s, 55.4% gone`     | "105 talks by 5, 4% gone"       | "105.5 tokens per second, 55.4 percent" |
+| `a 2,068 ms overhead`         | "a 2068 misses overhead"        | "a 2068 milliseconds overhead"          |
+| `from 2,218 production calls` | "from 2000 to 2008 production…" | "from 2218 production calls"            |
+| `calls "evalduration."`       | quote voiced as a break         | "calls evalduration."                   |
+| `Ms. Smith`, `it's`, `$1.65`  | unchanged                       | unchanged                               |
 
 Every raw form reads correctly in a short isolated sentence; the damage only appears in the
 real utterance where they cluster (a slash unit next to a percent, a thousands comma two
@@ -88,16 +88,16 @@ Rules, all speech-boundary only (stored scripts keep the written forms):
   "the ms server" are not units — while a slash unit fires anywhere as a whole token
   (`km/h` is not in the map and is left alone).
 - **Percent after a digit** is spoken ("55.4 percent").
-- **Quotes**: straight double quotes are dropped; single quotes that *wrap* a word are
+- **Quotes**: straight double quotes are dropped; single quotes that _wrap_ a word are
   unwrapped; apostrophes inside words stay. Timing measured at most 0.08 s of extra gap in
   isolation — the quote characters carry nothing the engine can voice, so they go.
 
 Switches: `tts_number_normalization_enabled`, `tts_strip_quotes` (both default on).
 
 Verification (prod voice `bf_emma`, Kokoro via speaches, then `Systran/faster-whisper-medium`):
-the rewritten qwen sentence came back as *"236.7 tokens per second, but delivers just 105.5
-tokens per second. 55.4% gone with a 2068 milliseconds overhead"*, the calls sentence as
-*"2218 production calls"*, and the quoted phrase as *"calls eval duration."* Gaps ≥ 0.3 s
+the rewritten qwen sentence came back as _"236.7 tokens per second, but delivers just 105.5
+tokens per second. 55.4% gone with a 2068 milliseconds overhead"_, the calls sentence as
+_"2218 production calls"_, and the quoted phrase as _"calls eval duration."_ Gaps ≥ 0.3 s
 fell only at commas and sentence ends.
 
 Model names: the collapse now puts a comma between a version and the size that follows it
@@ -157,17 +157,16 @@ that is every common letter, so the ratio collapses.
 
 Measured on the 2026-09-22 "Skip NCCL" long form:
 
-| comparison | ratio |
-| --- | --- |
+| comparison                               | ratio     |
+| ---------------------------------------- | --------- |
 | **as shipped** — characters, autojunk on | **0.400** |
-| characters, `autojunk=False` | 0.980 |
-| **words, `autojunk=False`** (now) | **0.941** |
+| characters, `autojunk=False`             | 0.980     |
+| **words, `autojunk=False`** (now)        | **0.941** |
 
 548 of its 591 words matched. The check was not detecting a TTS fault; it was
 reporting one that did not exist, and its finding text asserted "likely a TTS
 dropout or truncation", which sent the next reader looking for a problem in
-the wrong component. The `asr_len` / `script_len` in that finding (3794 vs
-3836) were the tell: a truncation does not preserve length.
+the wrong component. The `asr_len` / `script_len` in that finding (3794 vs 3836) were the tell: a truncation does not preserve length.
 
 The old tests could not catch this — their fixtures were a few dozen
 characters, under the autojunk floor. **A guard for a length-dependent bug has
@@ -177,7 +176,7 @@ blocks to lock onto and scores 0.65 where varied prose scores 0.04.
 
 ### What the threshold means now
 
-For a transcript holding fraction *k* of the script, the word-level ratio is
+For a transcript holding fraction _k_ of the script, the word-level ratio is
 `2k / (k + 1)`, so the default `0.80` sits at **k = 2/3** — it fires when
 roughly a third or more of the narration is missing from the audio. That is a
 dropout alarm, not a transcription-accuracy alarm.
@@ -186,3 +185,31 @@ A perfect round trip does **not** score 1.0 and should not be expected to. The
 reference is the text TTS received, so acronyms and numbers are spelled out —
 `v l l m` against ASR's `vllm`, `one point one four` against `1 14`. On the
 NCCL narration that accounted for most of the 43 unmatched words.
+
+## A chunk that stops early is caught in the sidecar (2026-10-07)
+
+The fidelity alarm above fires when about a third of the narration is
+missing, so a lost sentence or two is invisible to it by design. That is the
+failure Chatterbox actually has. The sidecar splits text into chunks of
+about 240 characters (`text_chunking.py`) and generates each one separately,
+and now and then a generation emits its stop token after the chunk's first
+sentence. The audio sounds natural and nothing errors. The 2026-10-06
+"Unsealed OpenAI Briefs" long video lost "The contents? A highlight reel no
+one at OpenAI wanted public. Two elements stand out starkly from this
+filing." that way: about 4% of the script, a 0.95 word ratio, no finding. The
+same chunk rendered in full the next day, so the stop is intermittent.
+
+`scripts/tts_sidecars/truncation_guard.py` checks each chunk's speaking rate
+(characters per second of edge-trimmed audio) against the median of its own
+request, so no per-voice rate needs tuning. Across 41 production chunks every
+rate fell within 0.73-1.23x of that median. A chunk faster than
+`plugin.tts_provider.chatterbox.truncation_max_rate_ratio` (default 1.5x)
+had too little audio for its text. It is generated again, one sentence at a
+time, up to `plugin.tts_provider.chatterbox.truncation_retries` (default 2)
+times, and the longest take is kept. A repair logs a WARNING with the before
+and after durations. A chunk still short after the retries logs a WARNING
+that quotes the text the audio is missing. Chunks under 40 characters are not
+judged, and a request with fewer than three judgeable chunks is measured
+against the production median (16.4 chars/s). Either setting at `0` turns the
+guard off. The sidecar returns only audio, so the warnings live in the
+chatterbox container's log, not in a finding.

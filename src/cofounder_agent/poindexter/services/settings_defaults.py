@@ -3546,6 +3546,13 @@ DEFAULTS: dict[str, str] = {
     # 0.40 (+ the joiner's 2x30ms margins = ~0.46s) matches the measured median
     # of Chatterbox's own sentence pauses, so a chunk seam is inaudible.
     'plugin.tts_provider.chatterbox.chunk_gap_seconds': '0.40',
+    # Early-stop guard: Chatterbox sometimes ends a chunk after its first
+    # sentence and the rest is never spoken (a 2026-10-06 narration lost two
+    # sentences, with no error). A chunk speaking faster than this multiple of
+    # its request's median chars/s is re-generated sentence by sentence, up to
+    # _retries times. Normal chunks measured 0.73-1.23x. 0 disables either.
+    'plugin.tts_provider.chatterbox.truncation_max_rate_ratio': '1.5',
+    'plugin.tts_provider.chatterbox.truncation_retries': '2',
     # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
     # VRAM), where a full paragraph takes minutes — well past the 120s default.
     'plugin.tts_provider.chatterbox.timeout_s': '600',
@@ -7350,6 +7357,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'plugin.llm_provider.gemini.enabled': {'owner': 'gemini', 'value_type': 'boolean'},
     'plugin.tts_provider.chatterbox.atempo': {'owner': 'podcast_service', 'value_type': 'float'},
     'plugin.tts_provider.chatterbox.chunk_gap_seconds': {'owner': 'podcast_service', 'value_type': 'float'},
+    'plugin.tts_provider.chatterbox.truncation_max_rate_ratio': {'owner': 'podcast_service', 'value_type': 'float'},
+    'plugin.tts_provider.chatterbox.truncation_retries': {'owner': 'podcast_service', 'value_type': 'integer'},
     'plugin.tts_provider.chatterbox.audio_prompt_path': {'owner': 'podcast_service'},
     'plugin.tts_provider.chatterbox.base_url': {'value_type': 'url'},
     'plugin.tts_provider.chatterbox.cfg_weight': {'owner': 'podcast_service', 'value_type': 'float'},

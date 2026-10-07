@@ -113,6 +113,15 @@ class ChatterboxTTSProvider:
         # loudnorm/remux keys below) rather than duplicating the value here.
         if str(cfg.get("chunk_gap_seconds") or "").strip():
             extra_body["gap_seconds"] = _as_float(cfg.get("chunk_gap_seconds"), 0.25)
+        # Early-stop guard (scripts/tts_sidecars/truncation_guard.py): a chunk
+        # that came back too short for its text is re-generated sentence by
+        # sentence. Same forward-only-when-set contract as the gap.
+        if str(cfg.get("truncation_max_rate_ratio") or "").strip():
+            extra_body["truncation_max_rate_ratio"] = _as_float(
+                cfg.get("truncation_max_rate_ratio"), 1.5,
+            )
+        if str(cfg.get("truncation_retries") or "").strip():
+            extra_body["truncation_retries"] = int(_as_float(cfg.get("truncation_retries"), 2))
 
         # remux_bitrate / loudnorm_* are forwarded ONLY when the caller
         # (podcast_service._generate_with_chatterbox) actually configured

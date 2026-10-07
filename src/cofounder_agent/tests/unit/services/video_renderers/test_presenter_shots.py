@@ -58,6 +58,37 @@ class TestCap:
         assert all(s.source == "presenter" for s in out)
 
 
+class TestRenderTimeTidy:
+    """Lists stored before the store-time rule (the 2026-10-06 renders) are
+    tidied by the renderer: never adds a face, keeps the stored idx."""
+
+    def _policy(self):
+        from poindexter.services.media_subject_policy import resolve_media_policy
+
+        return resolve_media_policy(_sc(), "glad-labs")
+
+    def test_unsealed_back_to_back_closers_keep_only_the_sign_off(self):
+        shots = [_shot(0), _shot(1, "pexels"), _shot(24, "image_kenburns"),
+                 _shot(25, intent="the decisions were deliberate"), _shot(26, intent="sign-off")]
+        out = slr._tidy_presenter_sequence(shots, self._policy())
+        assert [s.source for s in out] == ["presenter", "pexels", "image_kenburns", "image_kenburns", "presenter"]
+        assert out[3].prompt and "the decisions were deliberate" in out[3].prompt
+        assert [s.idx for s in out] == [0, 1, 24, 25, 26]
+
+    def test_deepseek_logo_buffer_moves_before_the_closing_presenter(self):
+        shots = [_shot(0), _shot(27, "pexels"), _shot(28, intent="closing takeaway"),
+                 _shot(29, "image_kenburns", intent="final buffer for branded end card")]
+        out = slr._tidy_presenter_sequence(shots, self._policy())
+        assert [s.idx for s in out] == [0, 27, 29, 28]
+        assert out[-1].source == "presenter"
+        assert out[2].narration_offset_s == shots[2].narration_offset_s
+
+    def test_a_tidy_list_comes_back_as_the_same_objects(self):
+        shots = [_shot(0), _shot(1, "pexels"), _shot(2)]
+        out = slr._tidy_presenter_sequence(shots, self._policy())
+        assert all(a is b for a, b in zip(out, shots, strict=True))
+
+
 class TestComposePrompt:
     def test_template_persona_suffix_and_note_are_joined(self):
         from poindexter.services.persona_service import get_persona

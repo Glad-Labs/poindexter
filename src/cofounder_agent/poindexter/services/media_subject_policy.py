@@ -446,7 +446,8 @@ _BEAT_DIRECTIONS: dict[str, str] = {
     ),
     "closing": (
         "CLOSING: the last shot is the presenter saying the takeaway as the "
-        "sign-off. The branded end card follows it automatically."
+        "sign-off. Nothing comes after it: no logo, end-card or outro shot, "
+        "because the branded end card is added automatically."
     ),
 }
 
@@ -527,6 +528,9 @@ def video_presenter_policy(policy: MediaPolicy) -> str:
         "THE FORMAT: the presenter anchors the video at these beats:",
         *(f"- {_BEAT_DIRECTIONS[b]}" for b in PRESENTER_BEATS[:beats]),
         more,
+        "Never put two presenter shots back to back. Each one renders as a single "
+        "short take of about five seconds, and the footage beside it carries the "
+        "rest of a longer passage.",
         'A presenter shot carries no "query" and no "demo_id". Its optional '
         '"prompt" is a one-line delivery note (mood, framing) that is added to the '
         "talking-head render, so it describes the delivery, not a scene.",
@@ -651,12 +655,102 @@ def place_presenter_beats(shots: list[dict[str, Any]], fmt: PresenterFormat) -> 
     if fmt.max_shots >= 0:
         extras = [i for i in range(n) if is_p(i) and i not in taken]
         for i in extras[max(0, fmt.max_shots - len(taken)):]:
-            subject = str(shots[i].get("intent") or "").strip() or "an abstract visual for this beat"
-            shots[i]["source"] = "image_kenburns"
-            shots[i]["prompt"] = f"{fmt.style_prefix}, {subject}" if fmt.style_prefix else subject
-            shots[i].pop("query", None)
-            shots[i].pop("demo_id", None)
+            _demote_presenter_to_still(shots[i], fmt.style_prefix)
             notes.append(f"shot {i} presenter -> image_kenburns (over the {fmt.max_shots}-shot budget)")
+    notes += tidy_presenter_sequence(
+        shots, closing=fmt.beats >= len(PRESENTER_BEATS), style_prefix=fmt.style_prefix,
+    )
+    return notes
+
+
+def _demote_presenter_to_still(shot: dict[str, Any], style_prefix: str) -> None:
+    """Turn a presenter shot into a Ken-Burns still of its intent, in place."""
+    subject = str(shot.get("intent") or "").strip() or "an abstract visual for this beat"
+    shot["source"] = "image_kenburns"
+    shot["prompt"] = f"{style_prefix}, {subject}" if style_prefix else subject
+    shot.pop("query", None)
+    shot.pop("demo_id", None)
+
+
+def tidy_presenter_sequence(
+    shots: list[dict[str, Any]],
+    *,
+    closing: bool,
+    style_prefix: str = "",
+    renumber: bool = True,
+) -> list[str]:
+    """Keep every presenter shot a single seamless take, in place.
+
+    A presenter clip is one S2V chunk (``video_presenter_max_chunks_per_shot``);
+    a passage longer than that hands its overflow to a b-roll NEIGHBOUR
+    (``shot_list_renderer._fit_presenter_to_chunk_budget``). Two shapes left it
+    no neighbour, and both shipped (2026-10-06 renders):
+
+    - **Two presenter shots back to back.** The face cut to the face (framing,
+      head and light all jump) and the closing one, with no b-roll beside it,
+      rendered multi-chunk: a second chunk that turned the frame green and
+      blurred the face. In a run of adjacent presenter shots one is kept, the
+      first, or the last when the run ends the video (that one is the
+      sign-off), and the rest become Ken-Burns stills of their intent, the same
+      demotion an over-budget presenter shot gets.
+    - **Shots after the closing presenter.** The director appended a 16 s
+      "buffer for the branded end card" that drew the logo, so 21 s of
+      narration played over it after the face had signed off. With ``closing``
+      (the format has a closing beat), shots that follow the last presenter
+      shot move in front of it, so the face says the final lines and the
+      renderer's own end card follows. ``narration_offset_s`` is laid out again
+      from durations over the moved span; nothing before it changes.
+
+    Never adds a face, so it is safe at render time on an already-stored list
+    (the synthetic-media disclosure reads faces from the stored list).
+    ``renumber`` rewrites ``idx`` to list order; the renderer passes False and
+    keeps the stored indexes, which name the clip files and the audit rows.
+    Returns one note per change, for the log.
+    """
+    notes: list[str] = []
+    n = len(shots)
+    if n == 0:
+        return notes
+
+    def is_p(i: int) -> bool:
+        return shots[i].get("source") == _PRESENTER_SOURCE
+
+    presenters = [i for i in range(n) if is_p(i)]
+    if closing and len(presenters) >= 2 and presenters[-1] < n - 1:
+        last = presenters[-1]
+        trailing = shots[last + 1:]
+        offset = _as_seconds(shots[last].get("narration_offset_s"))
+        shots[last:] = [*trailing, shots[last]]
+        for shot in shots[last:]:
+            shot["narration_offset_s"] = round(offset, 3)
+            offset += _as_seconds(shot.get("duration_s"))
+        notes.append(
+            f"closing presenter moved after the {len(trailing)} shot(s) that followed it"
+        )
+
+    i = 0
+    while i < n:
+        if not is_p(i):
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and is_p(j + 1):
+            j += 1
+        if j > i:
+            keep = j if j == n - 1 else i
+            for k in range(i, j + 1):
+                if k != keep:
+                    _demote_presenter_to_still(shots[k], style_prefix)
+                    notes.append(
+                        f"shot {shots[k].get('idx', k)} presenter -> image_kenburns "
+                        f"(adjacent to presenter shot {shots[keep].get('idx', keep)})"
+                    )
+        i = j + 1
+
+    if renumber and notes:
+        for k, shot in enumerate(shots):
+            if "idx" in shot:
+                shot["idx"] = k
     return notes
 
 

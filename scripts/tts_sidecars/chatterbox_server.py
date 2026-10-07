@@ -45,10 +45,16 @@ from typing import Any
 import numpy as np
 import soundfile as sf
 from _voice_paths import contained_voice_path, voice_roots  # noqa: E402
-from audio_join import join_segments
+from audio_join import join_segments, trim_edge_silence
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from text_chunking import chunk_text
+from truncation_guard import (
+    DEFAULT_MAX_RATE_RATIO,
+    is_truncated,
+    reference_rate,
+    split_sentences,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("chatterbox-server")
@@ -327,6 +333,11 @@ class SpeechRequest(BaseModel):
     # the ACTUAL boundary length rather than a floor under the model's own tails.
     gap_seconds: float | None = None
     trim_chunk_silence: bool = True
+    # Early-stop guard (truncation_guard.py): a chunk whose speaking rate is more
+    # than this multiple of the request's median lost text, and is re-generated
+    # sentence by sentence up to ``truncation_retries`` times. 0 disables either.
+    truncation_max_rate_ratio: float = DEFAULT_MAX_RATE_RATIO
+    truncation_retries: int = 2
 
 
 class UnloadRequest(BaseModel):
@@ -569,6 +580,64 @@ def _speech(req: SpeechRequest) -> Response:
             _last_used = time.time()
 
 
+def _spoken_seconds(wav: np.ndarray, sample_rate: int) -> float:
+    return trim_edge_silence(wav, sample_rate).size / max(1, sample_rate)
+
+
+def _repair_truncated_chunks(
+    chunks: list[str],
+    segments: list[np.ndarray],
+    sample_rate: int,
+    generate: Any,
+    *,
+    max_ratio: float,
+    retries: int,
+    gap_seconds: float,
+    trim: bool,
+) -> list[np.ndarray]:
+    """Re-generate any chunk that stopped early (``truncation_guard``).
+
+    A suspect chunk is generated again one sentence at a time and joined, up to
+    ``retries`` times; the longest take wins. A chunk still short after the
+    retries keeps its best take and logs a WARNING naming the text, since the
+    audio is about to ship without part of it. Pure apart from ``generate``.
+    """
+    if max_ratio <= 0 or retries <= 0 or not chunks:
+        return segments
+    seconds = [_spoken_seconds(s, sample_rate) for s in segments]
+    reference = reference_rate(chunks, seconds)
+    out = list(segments)
+    for i, (chunk, secs) in enumerate(zip(chunks, seconds, strict=False)):
+        if not is_truncated(chunk, secs, reference, max_ratio=max_ratio):
+            continue
+        best, best_secs = out[i], secs
+        for attempt in range(1, retries + 1):
+            parts = [generate(p) for p in (split_sentences(chunk) or [chunk])]
+            take = parts[0] if len(parts) == 1 else join_segments(
+                parts, sample_rate, gap_seconds=gap_seconds, trim=trim,
+            )
+            take_secs = _spoken_seconds(take, sample_rate)
+            if take_secs > best_secs:
+                best, best_secs = take, take_secs
+            if not is_truncated(chunk, best_secs, reference, max_ratio=max_ratio):
+                logger.warning(
+                    "chunk %d stopped early (%.1fs for %d chars, %.1f chars/s vs "
+                    "median %.1f); repaired on retry %d -> %.1fs",
+                    i, secs, len(chunk), len(chunk) / max(secs, 1e-6), reference,
+                    attempt, best_secs,
+                )
+                break
+        else:
+            logger.warning(
+                "chunk %d stopped early and is STILL short after %d retries "
+                "(%.1fs for %d chars, median %.1f chars/s) — part of this text "
+                "is missing from the audio: %r",
+                i, retries, best_secs, len(chunk), reference, chunk[:200],
+            )
+        out[i] = best
+    return out
+
+
 def _synthesize(req: SpeechRequest, voice_ref: str | None) -> Response:
     """Render one request. Caller MUST hold ``_model_lock``."""
     model = _get_model()
@@ -576,20 +645,27 @@ def _synthesize(req: SpeechRequest, voice_ref: str | None) -> Response:
 
     # voice_ref was resolved and existence-checked by the caller, before the
     # model load — per-request ref > env default > built-in voice (None).
-    segments: list[np.ndarray] = []
-    chunks = chunk_text(req.input)
-    for chunk in chunks:
+    def generate(text: str) -> np.ndarray:
         # generate(text, audio_prompt_path=, exaggeration=, cfg_weight=) -> torch
         # tensor [1, N] at model.sr. audio_prompt_path=None => default voice.
-        wav = model.generate(chunk, audio_prompt_path=voice_ref,
+        wav = model.generate(text, audio_prompt_path=voice_ref,
                              exaggeration=req.exaggeration, cfg_weight=req.cfg_weight)
-        segments.append(wav.squeeze(0).detach().cpu().numpy().astype(np.float32))
+        return wav.squeeze(0).detach().cpu().numpy().astype(np.float32)
+
+    chunks = chunk_text(req.input)
+    segments: list[np.ndarray] = [generate(chunk) for chunk in chunks]
 
     # Each generation carries its own unpredictable leading/trailing silence, so
     # raw-concatenating with a fixed gap produced (tail + gap + head) — measured
     # up to 3.46s where only 0.25s was ever inserted, on ~40% of boundaries.
     # join_segments trims the edges first so the boundary is exactly gap_seconds.
     gap_seconds = _GAP_SECONDS if req.gap_seconds is None else req.gap_seconds
+    segments = _repair_truncated_chunks(
+        chunks, segments, sample_rate, generate,
+        max_ratio=req.truncation_max_rate_ratio,
+        retries=req.truncation_retries,
+        gap_seconds=gap_seconds, trim=req.trim_chunk_silence,
+    )
     audio_samples = join_segments(
         segments, sample_rate,
         gap_seconds=gap_seconds, trim=req.trim_chunk_silence,

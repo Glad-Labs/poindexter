@@ -262,7 +262,9 @@ def test_place_never_stacks_three_presenter_shots_in_a_row():
     shots = _beat_shots(["image_kenburns", "presenter", "presenter", "image_kenburns",
                          "cli_demo", "image_kenburns", "pexels", "image_kenburns", "pexels"])
     mp.place_presenter_beats(shots, _FMT)
-    assert _presenters(shots) == [1, 2, 5, 8]
+    # Shot 2 is no longer a presenter either: two back to back would cut the
+    # face to the face (tidy_presenter_sequence keeps the first of the pair).
+    assert _presenters(shots) == [1, 5, 8]
     _validates(shots)
 
 
@@ -282,6 +284,74 @@ def test_a_budget_turns_extra_presenter_shots_into_on_style_stills():
     assert shots[2]["source"] == "image_kenburns"
     assert shots[2]["prompt"] == "flat vector illustration, beat 2"
     assert len(notes) == 2
+
+
+# --- one seamless take per presenter shot (2026-10-07) ---------------------------
+# Two 2026-10-06 renders: Unsealed closed on two presenter shots back to back (the
+# face cut to the face, then a second S2V chunk turned the frame green), and
+# DeepSeek appended a 16 s logo "end card buffer" after the closing presenter.
+
+
+def test_back_to_back_closing_presenters_keep_only_the_sign_off():
+    # The Unsealed shape: ... b-roll, presenter, presenter (last).
+    shots = _beat_shots(["presenter", "pexels", "image_kenburns", "presenter", "pexels",
+                         "image_kenburns", "pexels", "presenter", "presenter"])
+    notes = mp.tidy_presenter_sequence(shots, closing=True, style_prefix="flat vector illustration")
+    assert _presenters(shots) == [0, 3, 8]
+    assert shots[7]["source"] == "image_kenburns"
+    assert shots[7]["prompt"] == "flat vector illustration, beat 7"
+    assert any("adjacent" in n for n in notes)
+    _validates(shots)
+
+
+def test_back_to_back_presenters_mid_video_keep_the_first():
+    shots = _beat_shots(["presenter", "presenter", "pexels", "image_kenburns", "presenter"])
+    mp.tidy_presenter_sequence(shots, closing=True)
+    assert _presenters(shots) == [0, 4]
+
+
+def test_shots_after_the_closing_presenter_move_in_front_of_it():
+    # The DeepSeek shape: the closing presenter (9 s), then a 16.4 s "end card buffer".
+    shots = _beat_shots(["presenter", "pexels", "pexels", "presenter", "image_kenburns"])
+    shots[3].update(duration_s=9.0, intent="closing takeaway", narration_offset_s=9.0)
+    shots[4].update(duration_s=16.4, intent="final buffer for branded end card", narration_offset_s=18.0)
+    notes = mp.tidy_presenter_sequence(shots, closing=True)
+    assert [s["source"] for s in shots] == ["presenter", "pexels", "pexels", "image_kenburns", "presenter"]
+    assert shots[-1]["intent"] == "closing takeaway"
+    # Offsets are laid out again over the moved span; the shots before it keep theirs.
+    assert [s["narration_offset_s"] for s in shots] == [0.0, 3.0, 6.0, 9.0, 25.4]
+    assert [s["idx"] for s in shots] == [0, 1, 2, 3, 4]
+    assert any("closing presenter moved" in n for n in notes)
+    _validates(shots)
+
+
+def test_without_a_closing_beat_trailing_shots_stay_put():
+    shots = _beat_shots(["presenter", "pexels", "presenter", "pexels"])
+    before = [dict(s) for s in shots]
+    assert mp.tidy_presenter_sequence(shots, closing=False) == []
+    assert shots == before
+
+
+def test_a_lone_opening_presenter_is_never_moved_to_the_end():
+    shots = _beat_shots(["presenter", "pexels", "image_kenburns", "pexels"])
+    before = [dict(s) for s in shots]
+    assert mp.tidy_presenter_sequence(shots, closing=True) == []
+    assert shots == before
+
+
+def test_render_time_tidy_keeps_the_stored_indexes():
+    shots = _beat_shots(["presenter", "pexels", "presenter", "image_kenburns"])
+    for s in shots:
+        s["idx"] += 10
+    mp.tidy_presenter_sequence(shots, closing=True, renumber=False)
+    assert [s["idx"] for s in shots] == [10, 11, 13, 12]
+    assert [s["source"] for s in shots] == ["presenter", "pexels", "image_kenburns", "presenter"]
+
+
+def test_the_director_is_told_both_rules():
+    text = mp.video_presenter_policy(mp.resolve_media_policy(_presenter_sc(), "glad-labs"))
+    assert "Never put two presenter shots back to back" in text
+    assert "Nothing comes after it" in text
 
 
 def test_no_beats_is_a_no_op():

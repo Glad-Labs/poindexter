@@ -40,6 +40,33 @@ class TestChatterboxTTSProvider:
         assert result.metadata["engine"] == "chatterbox"
         assert result.metadata["exaggeration"] == 0.8
 
+    async def test_truncation_guard_knobs_are_forwarded_when_set(self, tmp_path):
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"X"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "hi", tmp_path / "x.mp3",
+                config={"truncation_max_rate_ratio": "1.5", "truncation_retries": "2"},
+            )
+        extra = m.await_args.kwargs["extra_body"]
+        assert extra["truncation_max_rate_ratio"] == 1.5
+        assert extra["truncation_retries"] == 2
+
+    async def test_truncation_guard_knobs_are_omitted_when_unset(self, tmp_path):
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"X"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "hi", tmp_path / "x.mp3",
+                config={"truncation_max_rate_ratio": "", "truncation_retries": ""},
+            )
+        extra = m.await_args.kwargs["extra_body"]
+        assert "truncation_max_rate_ratio" not in extra and "truncation_retries" not in extra
+
     async def test_bad_float_falls_back_to_default(self, tmp_path):
         from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
         with patch(

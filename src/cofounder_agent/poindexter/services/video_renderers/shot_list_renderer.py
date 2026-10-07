@@ -3047,6 +3047,36 @@ def _cap_presenter_shots(
     return out
 
 
+def _tidy_presenter_sequence(shots: list[Shot], policy: Any) -> list[Shot]:
+    """Apply ``media_subject_policy.tidy_presenter_sequence`` to rendered shots.
+
+    ``closing`` follows the niche's format (the closing beat exists only when
+    all three beats fit the presenter budget). Returns the shots unchanged when
+    nothing needed tidying, so a clean list is never re-validated.
+    """
+    from poindexter.services.media_subject_policy import (
+        PRESENTER_BEATS,
+        presenter_beat_count,
+        tidy_presenter_sequence,
+        video_style_prefix,
+    )
+
+    if sum(1 for s in shots if s.source == _PRESENTER_SOURCE) < 2:
+        return shots
+    dicts = [s.model_dump() for s in shots]
+    notes = tidy_presenter_sequence(
+        dicts,
+        closing=presenter_beat_count(policy) >= len(PRESENTER_BEATS),
+        style_prefix=video_style_prefix(policy),
+        renumber=False,
+    )
+    if not notes:
+        return shots
+    for note in notes:
+        logger.info("[SHOT_LIST] presenter sequence: %s", note)
+    return [Shot.model_validate(d) for d in dicts]
+
+
 # The interpolated presenter clip comes out a frame or two short of
 # ``length / fps`` (77 frames @ 16 fps → 143 frames @ 30 fps = 4.767 s, not
 # 4.8125), so the window a single chunk can cover keeps a margin.
@@ -5214,6 +5244,11 @@ async def render_shot_list(
         capped_shots, _presenter_policy.presenter_max_shots,
         available=_presenter_policy.presenter_available,
     )
+    # Every presenter shot one seamless take: no two back to back, nothing after
+    # the closing one. The director stage does this before the list is stored;
+    # here it also covers lists stored before that rule (and a reviewer that
+    # re-introduced either shape). Never adds a face; keeps the stored idx.
+    capped_shots = _tidy_presenter_sequence(capped_shots, _presenter_policy)
 
     presenter_window_fn = None
     if narration_fit and audio_path and any(

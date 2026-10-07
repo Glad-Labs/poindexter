@@ -2163,6 +2163,12 @@ class PodcastService:
             "chunk_gap_seconds": sc.get(
                 "plugin.tts_provider.chatterbox.chunk_gap_seconds", "",
             ),
+            "truncation_max_rate_ratio": sc.get(
+                "plugin.tts_provider.chatterbox.truncation_max_rate_ratio", "",
+            ),
+            "truncation_retries": sc.get(
+                "plugin.tts_provider.chatterbox.truncation_retries", "",
+            ),
             "remux_bitrate": sc.get("podcast_tts_remux_bitrate", ""),
             "loudnorm_enabled": sc.get_bool("podcast_tts_loudnorm_enabled", True),
             "loudnorm_i": sc.get("podcast_tts_loudnorm_i", ""),
