@@ -5539,6 +5539,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'container_restart_loop_threshold': '3',
     # Reminder cadence while the loop continues; 0 = page once per episode.
     'container_restart_loop_reminder_hours': '1',
+    # Sidecars that end their own process (os._exit(0)) to hand a CUDA context
+    # back and rely on the restart policy: an [IDLE EXIT] timer or a [HARD
+    # UNLOAD] from the video pipeline. Their growth is excused only while the
+    # exit was clean (code 0), the container is running and not unhealthy, and
+    # it restarted at most _max_per_cycle times this cycle. Empty = excuse none;
+    # max 0 = excuse none. 2026-10-06: a render paged "image-gen restart-looping".
+    'container_restart_loop_planned_exit_containers': (
+        'poindexter-image-gen-server,poindexter-wan-server,poindexter-rife,'
+        'poindexter-stable-audio,poindexter-chatterbox'
+    ),
+    'container_restart_loop_planned_exit_max_per_cycle': '10',
     # ----- Container health watch (poindexter/brain/container_health_watch.py) -----
     # Docker restart policies act only when a process EXITS; a container that is
     # alive but failing its healthcheck stays wedged. A container unhealthy this
@@ -7151,6 +7162,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'container_restart_loop_probe_enabled': {'owner': 'container_restart_loop_probe', 'value_type': 'boolean'},
     'container_restart_loop_reminder_hours': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
     'container_restart_loop_threshold': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
+    'container_restart_loop_planned_exit_containers': {'owner': 'container_restart_loop_probe', 'value_type': 'string'},
+    'container_restart_loop_planned_exit_max_per_cycle': {'owner': 'container_restart_loop_probe', 'value_type': 'integer'},
     'container_health_watch_enabled': {'owner': 'container_health_watch', 'value_type': 'boolean'},
     'container_health_alert_after_minutes': {'owner': 'container_health_watch', 'value_type': 'float'},
     'container_health_alert_after_overrides': {'owner': 'container_health_watch', 'value_type': 'string'},

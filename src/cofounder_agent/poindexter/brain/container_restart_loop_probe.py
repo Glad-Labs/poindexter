@@ -21,6 +21,21 @@ been running without new restarts for two consecutive cycles.
 Deliberately-stopped containers (``exited`` with a stable count — parked voice,
 one-shot runners) are not loops. A container that restarted once because the
 deploy recreated it is not a loop either — the threshold is per cycle.
+
+**Planned exits are not loops (2026-10-07).** Five GPU sidecars end their own
+process on purpose and let the restart policy bring them back, because exiting
+is the only way to hand a CUDA context back to the host: rife, chatterbox and
+stable-audio on an idle timer (``[IDLE EXIT]``), image-gen and wan when the
+video pipeline asks them to free VRAM (``[HARD UNLOAD]``). Each is an
+``os._exit(0)``. RIFE reached 87 restarts in ten days, one per interpolation,
+and on 2026-10-06 a render that unloaded image-gen three times inside one cycle
+paged a critical "restart-looping" for a container that was healthy the whole
+time. A container named in ``container_restart_loop_planned_exit_containers``
+has its growth excused only while the evidence says the exits were clean: last
+exit code 0, ``running`` (not ``restarting``), not ``unhealthy``, and at most
+``container_restart_loop_planned_exit_max_per_cycle`` restarts this cycle. A
+crash (non-zero exit), a wedge (unhealthy), or a runaway that exits cleanly
+over and over still pages.
 """
 
 from __future__ import annotations
@@ -41,8 +56,17 @@ ALERTNAME = "container_restart_loop"
 THRESHOLD_KEY = "container_restart_loop_threshold"
 REMINDER_HOURS_KEY = "container_restart_loop_reminder_hours"
 ENABLED_KEY = "container_restart_loop_probe_enabled"
+PLANNED_EXIT_CONTAINERS_KEY = "container_restart_loop_planned_exit_containers"
+PLANNED_EXIT_MAX_KEY = "container_restart_loop_planned_exit_max_per_cycle"
 DEFAULT_THRESHOLD = 3
 DEFAULT_REMINDER_HOURS = 1
+# The sidecars whose own code ends with os._exit(0) to return a CUDA context
+# (scripts/{image-gen,wan,rife,stable-audio}-server.py, tts_sidecars/chatterbox_server.py).
+DEFAULT_PLANNED_EXIT_CONTAINERS = (
+    "poindexter-image-gen-server,poindexter-wan-server,poindexter-rife,"
+    "poindexter-stable-audio,poindexter-chatterbox"
+)
+DEFAULT_PLANNED_EXIT_MAX = 10
 DOCKER_TIMEOUT_SECONDS = 60
 LOG_TAIL_LINES = 15
 STATE_TTL_DAYS = 14
@@ -150,6 +174,18 @@ async def _read_setting(pool: Any, key: str, default: str) -> str:
     return str(val).strip() if val is not None and str(val).strip() else default
 
 
+async def _read_planned_exit_containers(pool: Any) -> frozenset[str]:
+    """The planned-exit allowlist. Unlike the other knobs, an explicit empty value
+    is honoured (no container is excused); only a missing row means the default."""
+    try:
+        val = await pool.fetchval("SELECT value FROM app_settings WHERE key = $1", PLANNED_EXIT_CONTAINERS_KEY)
+    except Exception as exc:  # noqa: BLE001 — a probe must never crash a cycle
+        logger.warning("[%s] could not read %s: %s", PROBE_NAME.upper(), PLANNED_EXIT_CONTAINERS_KEY, exc)
+        val = None
+    raw = DEFAULT_PLANNED_EXIT_CONTAINERS if val is None else str(val)
+    return frozenset(name.strip() for name in raw.split(",") if name.strip())
+
+
 async def _read_int(pool: Any, key: str, default: int) -> int:
     raw = await _read_setting(pool, key, str(default))
     try:
@@ -219,17 +255,40 @@ async def _write_alert(pool: Any, *, name: str, status: str, severity: str, titl
 # decision
 # ---------------------------------------------------------------------------
 
-def classify(container: dict[str, Any], previous: int | None, threshold: int) -> str:
-    """``looping`` | ``calm`` | ``unknown`` for one container against its last-cycle count.
+def _exited_cleanly(container: dict[str, Any]) -> bool:
+    """Running again after a code-0 exit, and not failing its healthcheck."""
+    exit_code = container.get("exit_code")
+    return (
+        isinstance(exit_code, int)
+        and exit_code == 0
+        and container.get("status") == "running"
+        and not container.get("restarting")
+        and container.get("health") != "unhealthy"
+    )
+
+
+def classify(
+    container: dict[str, Any],
+    previous: int | None,
+    threshold: int,
+    *,
+    planned_exit_max: int | None = None,
+) -> str:
+    """``looping`` | ``planned`` | ``calm`` | ``unknown`` for one container against its last-cycle count.
 
     ``unknown`` = no baseline yet (first sight of this container): a count
     is recorded, nothing is judged — a fresh brain must not page for history.
+    ``planned`` = growth past the threshold that a planned-exit container
+    explains (``planned_exit_max`` is set only for those; ``0`` excuses nothing):
+    clean exits, healthy now, no more than ``planned_exit_max`` this cycle.
     """
     count = int(container.get("restart_count") or 0)
     if previous is None:
         return "unknown"
     grew_by = count - previous
     if grew_by >= threshold:
+        if planned_exit_max and grew_by <= planned_exit_max and _exited_cleanly(container):
+            return "planned"
         return "looping"
     if container.get("restarting") and count >= threshold:
         return "looping"
@@ -243,6 +302,8 @@ async def run_container_restart_loop_probe(pool: Any, *, now: float | None = Non
         return {"ok": True, "detail": "disabled", "looping": [], "checked": 0}
     threshold = max(1, await _read_int(pool, THRESHOLD_KEY, DEFAULT_THRESHOLD))
     reminder_hours = max(0, await _read_int(pool, REMINDER_HOURS_KEY, DEFAULT_REMINDER_HOURS))
+    planned_exit_containers = await _read_planned_exit_containers(pool)
+    planned_exit_max = max(0, await _read_int(pool, PLANNED_EXIT_MAX_KEY, DEFAULT_PLANNED_EXIT_MAX))
     await _load_baseline(pool)
 
     containers = await asyncio.to_thread(inspect_stack_containers)
@@ -250,6 +311,7 @@ async def run_container_restart_loop_probe(pool: Any, *, now: float | None = Non
         return {"ok": False, "detail": "docker unreachable — restart-loop watch blind this cycle", "looping": [], "checked": 0}
 
     looping: list[str] = []
+    planned: list[str] = []
     paged: list[str] = []
     recovered: list[str] = []
     for c in containers:
@@ -257,7 +319,12 @@ async def run_container_restart_loop_probe(pool: Any, *, now: float | None = Non
         if not name:
             continue
         previous = _baseline.get(name)
-        verdict = classify(c, previous, threshold)
+        verdict = classify(
+            c, previous, threshold,
+            planned_exit_max=planned_exit_max if name in planned_exit_containers else None,
+        )
+        if verdict == "planned":
+            planned.append(name)
         count = int(c["restart_count"])
         if previous != count:
             await _persist_count(pool, name, count)
@@ -290,7 +357,9 @@ async def run_container_restart_loop_probe(pool: Any, *, now: float | None = Non
                 paged.append(name)
         elif name in _alerted_at:
             # In an episode; count the calm cycles before calling it recovered.
-            calm_now = c["status"] == "running" and not c["restarting"] and previous == count
+            calm_now = c["status"] == "running" and not c["restarting"] and (
+                previous == count or verdict == "planned"
+            )
             _stable_cycles[name] = _stable_cycles.get(name, 0) + 1 if calm_now else 0
             if _stable_cycles[name] >= 2:
                 await _write_alert(
@@ -305,8 +374,9 @@ async def run_container_restart_loop_probe(pool: Any, *, now: float | None = Non
 
     detail = (
         f"{len(containers)} containers; looping: {', '.join(looping) if looping else 'none'}"
+        + (f"; planned exits: {', '.join(planned)}" if planned else "")
         + (f"; paged: {', '.join(paged)}" if paged else "")
         + (f"; recovered: {', '.join(recovered)}" if recovered else "")
     )
-    return {"ok": not looping, "detail": detail, "looping": looping, "paged": paged,
+    return {"ok": not looping, "detail": detail, "looping": looping, "planned": planned, "paged": paged,
             "recovered": recovered, "checked": len(containers)}

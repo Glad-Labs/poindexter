@@ -35,9 +35,10 @@ def _pool(settings=None, baseline=None):
     return pool
 
 
-def _c(name, count, status="running", restarting=False, health="healthy"):
+def _c(name, count, status="running", restarting=False, health="healthy", exit_code=None):
     return {"name": name, "status": status, "restarting": restarting, "restart_count": count,
-            "health": health, "started_at": "t", "exit_code": 1 if restarting else 0, "image": f"img-{name}"}
+            "health": health, "started_at": "t",
+            "exit_code": (1 if restarting else 0) if exit_code is None else exit_code, "image": f"img-{name}"}
 
 
 def _alerts(pool):
@@ -151,3 +152,95 @@ def test_classify_table():
     assert crl.classify(_c("c", 2), 0, 3) == "calm"
     assert crl.classify(_c("c", 3, status="restarting", restarting=True), 3, 3) == "looping"
     assert crl.classify(_c("c", 1, status="exited"), 1, 3) == "calm"
+
+
+# --- planned exits (2026-10-07) -------------------------------------------------
+# GPU sidecars os._exit(0) to hand back a CUDA context and let the restart policy
+# revive them. The 2026-10-06 page: a render unloaded image-gen three times in one
+# cycle and the probe called a healthy container "restart-looping".
+
+IMG = "poindexter-image-gen-server"
+
+
+async def test_the_2026_10_06_page_is_now_a_planned_exit(monkeypatch):
+    pool = _pool(baseline={IMG: 31})
+    out = await _run(pool, [_c(IMG, 34)], T0, monkeypatch)
+    assert out["ok"] is True and out["looping"] == [] and out["planned"] == [IMG]
+    assert _alerts(pool) == []
+    assert "planned exits: " + IMG in out["detail"]
+    assert _persisted(pool) == {IMG: 34}, "the baseline still moves, so the next cycle measures from 34"
+
+
+async def test_every_default_planned_exit_sidecar_is_excused(monkeypatch):
+    names = crl.DEFAULT_PLANNED_EXIT_CONTAINERS.split(",")
+    assert set(names) == {"poindexter-image-gen-server", "poindexter-wan-server", "poindexter-rife",
+                          "poindexter-stable-audio", "poindexter-chatterbox"}
+    pool = _pool(baseline=dict.fromkeys(names, 0))
+    out = await _run(pool, [_c(n, 4) for n in names], T0, monkeypatch)
+    assert out["looping"] == [] and sorted(out["planned"]) == sorted(names) and _alerts(pool) == []
+
+
+async def test_a_container_not_on_the_list_still_pages_for_the_same_growth(monkeypatch):
+    pool = _pool(baseline={"poindexter-worker": 31})
+    out = await _run(pool, [_c("poindexter-worker", 34)], T0, monkeypatch)
+    assert out["looping"] == ["poindexter-worker"] and len(_alerts(pool)) == 1
+
+
+@pytest.mark.parametrize("bad", [
+    {"exit_code": 1},                                      # it crashed
+    {"exit_code": 137},                                    # OOM-killed
+    {"exit_code": None, "restarting": True, "status": "restarting"},  # caught mid-backoff
+    {"health": "unhealthy"},                               # back up, but wedged
+    {"status": "exited"},                                  # did not come back
+])
+async def test_a_planned_exit_container_pages_when_the_exit_was_not_clean(monkeypatch, bad):
+    pool = _pool(baseline={IMG: 31})
+    out = await _run(pool, [_c(IMG, 34, **bad)], T0, monkeypatch)
+    assert out["looping"] == [IMG] and out["planned"] == []
+    assert len(_alerts(pool)) == 1 and _alerts(pool)[0]["severity"] == "critical"
+
+
+async def test_clean_exits_past_the_per_cycle_ceiling_are_a_runaway(monkeypatch):
+    pool = _pool(baseline={IMG: 0})
+    out = await _run(pool, [_c(IMG, crl.DEFAULT_PLANNED_EXIT_MAX + 1)], T0, monkeypatch)
+    assert out["looping"] == [IMG] and len(_alerts(pool)) == 1
+
+
+async def test_the_ceiling_comes_from_settings(monkeypatch):
+    pool = _pool(settings={crl.PLANNED_EXIT_MAX_KEY: "20"}, baseline={IMG: 0})
+    out = await _run(pool, [_c(IMG, 15)], T0, monkeypatch)
+    assert out["planned"] == [IMG] and _alerts(pool) == []
+
+
+@pytest.mark.parametrize("settings", [
+    {crl.PLANNED_EXIT_CONTAINERS_KEY: ""},     # an explicit empty list excuses no one
+    {crl.PLANNED_EXIT_MAX_KEY: "0"},           # a zero ceiling excuses nothing
+    {crl.PLANNED_EXIT_CONTAINERS_KEY: "poindexter-rife"},  # the operator's list replaces the default
+])
+async def test_the_exemption_can_be_narrowed_or_switched_off(monkeypatch, settings):
+    pool = _pool(settings=settings, baseline={IMG: 31})
+    out = await _run(pool, [_c(IMG, 34)], T0, monkeypatch)
+    assert out["looping"] == [IMG] and len(_alerts(pool)) == 1
+
+
+async def test_planned_exits_count_as_calm_when_an_episode_is_open(monkeypatch):
+    # A real crash loop opens the episode; afterwards the sidecar goes back to its
+    # ordinary idle exits, which must not hold the episode open forever.
+    pool = _pool(baseline={IMG: 0})
+    await _run(pool, [_c(IMG, 5, exit_code=1)], T0, monkeypatch)
+    pool.execute.reset_mock()
+    await _run(pool, [_c(IMG, 8)], T0 + 300, monkeypatch)           # planned, calm 1
+    out = await _run(pool, [_c(IMG, 11)], T0 + 600, monkeypatch)    # planned, calm 2
+    assert out["recovered"] == [IMG]
+    assert [a["status"] for a in _alerts(pool)] == ["resolved"]
+
+
+def test_classify_planned_exit_table():
+    assert crl.classify(_c("c", 3), 0, 3, planned_exit_max=10) == "planned"
+    assert crl.classify(_c("c", 3), 0, 3) == "looping"                               # not on the list
+    assert crl.classify(_c("c", 3, exit_code=2), 0, 3, planned_exit_max=10) == "looping"
+    assert crl.classify(_c("c", 11), 0, 3, planned_exit_max=10) == "looping"
+    assert crl.classify(_c("c", 3), 0, 3, planned_exit_max=0) == "looping"
+    assert crl.classify(_c("c", 2), 0, 3, planned_exit_max=10) == "calm"             # under threshold
+    assert crl.classify(_c("c", 3, health=None), 0, 3, planned_exit_max=10) == "planned"   # no healthcheck
+    assert crl.classify(_c("c", 3, health="starting"), 0, 3, planned_exit_max=10) == "planned"

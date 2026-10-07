@@ -436,11 +436,18 @@ evidence instead of requiring an nvidia-smi PID hunt to interpret.
 RIFE's ladder rung stays **soft-only** on purpose — it runs before every hero
 render and on every mid-wait newcomer eviction (see [Idle models, and tenants
 that arrive mid-wait](#idle-models-and-tenants-that-arrive-mid-wait-2026-09-23)),
-and exiting it that often would cost a cold start per hero and inflate its
-restart count against the [restart-loop
-probe](../../src/cofounder_agent/poindexter/brain/container_restart_loop_probe.py).
-Its own idle timer (`RIFE_IDLE_TIMEOUT`, default 300s) is where the exit
-happens instead. Chatterbox's idle unloader gained the same second stage wan
+and exiting it that often would cost a cold start per hero. Its own idle
+timer (`RIFE_IDLE_TIMEOUT`, default 300s) is where the exit happens instead.
+Those exits still climb its `RestartCount` (87 in ten days by 2026-10-07), so
+all five sidecars that `os._exit(0)` to hand a context back (image-gen, wan,
+rife, stable-audio, chatterbox) are listed in
+`container_restart_loop_planned_exit_containers`. The [restart-loop
+probe](../../src/cofounder_agent/poindexter/brain/container_restart_loop_probe.py)
+excuses their growth only while the exit was clean: code 0, running again, not
+unhealthy, and at most `container_restart_loop_planned_exit_max_per_cycle`
+(10) restarts in one cycle. Before that list existed, a render that hard-unloaded
+image-gen three times inside one cycle paged a critical "restart-looping"
+(2026-10-06). Chatterbox's idle unloader gained the same second stage wan
 and stable-audio already had — drop the model, then exit if a context is left
 — plus an `_inflight` counter (mirroring wan/stable-audio's) so neither
 `/unload` nor the new idle exit can act while a synthesis is running or
