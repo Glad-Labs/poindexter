@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.153.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.153.0...v0.153.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **brain:** don't page a restart loop for GPU sidecars that exit on purpose ([#4327](https://github.com/Glad-Labs/glad-labs-stack/issues/4327)) ([de417a5](https://github.com/Glad-Labs/glad-labs-stack/commit/de417a50d5936e8e45cef39cb6004700c62b0334))
+* **brain:** the stuck-flow probe follows the run's own heartbeat, not "the in_progress task" ([#4313](https://github.com/Glad-Labs/glad-labs-stack/issues/4313)) ([0783071](https://github.com/Glad-Labs/glad-labs-stack/commit/0783071a8510369c643a6d4ae2d9eec1e413c966))
+* **deps:** clear the fixable Dependabot alert backlog; scan every lockfile ([#4328](https://github.com/Glad-Labs/glad-labs-stack/issues/4328)) ([c802102](https://github.com/Glad-Labs/glad-labs-stack/commit/c802102701200f0c9f563103a846ba989b01bd51))
+* **security:** publish postgres-local on loopback only ([#4310](https://github.com/Glad-Labs/glad-labs-stack/issues/4310)) ([8b7672a](https://github.com/Glad-Labs/glad-labs-stack/commit/8b7672a2ccab9a48ae55cf647f04a992e79f7d31))
+* **topics:** pool each internal snippet once, not once per rewording ([#4333](https://github.com/Glad-Labs/glad-labs-stack/issues/4333)) ([8eb34b2](https://github.com/Glad-Labs/glad-labs-stack/commit/8eb34b23b9da4d97b001fbb856675eb144c64dd0))
+* **topics:** read scope verdicts the judge keys by candidate line ([#4332](https://github.com/Glad-Labs/glad-labs-stack/issues/4332)) ([e308091](https://github.com/Glad-Labs/glad-labs-stack/commit/e308091103a21d9c7546e5cd17717ddad4e88f6d))
+* **topics:** remember not-storyworthy verdicts so a snippet is judged once ([#4335](https://github.com/Glad-Labs/glad-labs-stack/issues/4335)) ([1ebd058](https://github.com/Glad-Labs/glad-labs-stack/commit/1ebd058583a98d9b6bad493b15a5ef753ad793ae))
+* **video:** one seamless take per presenter shot, and catch TTS chunks that stop early ([#4331](https://github.com/Glad-Labs/glad-labs-stack/issues/4331)) ([3acc387](https://github.com/Glad-Labs/glad-labs-stack/commit/3acc387aa1b6016f10bb34d62eb8fe2754e289ee))
+
 ## [0.153.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.152.1...v0.153.0) (2026-10-05)
 
 
