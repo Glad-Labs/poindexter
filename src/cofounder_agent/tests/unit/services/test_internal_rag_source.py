@@ -395,7 +395,12 @@ async def test_distill_skips_not_storyworthy_verdict(monkeypatch):
     fake_pm.get_prompt = lambda *a, **k: "prompt"
     monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
 
-    assert await src._distill_topic_angle(["clean cycle completed"]) is None
+    # A deliberate verdict, distinct from None (a failure, retried next run).
+    from poindexter.services.internal_rag_source import NotStoryworthy
+
+    assert await src._distill_topic_angle(["clean cycle completed"]) == NotStoryworthy(
+        "routine ops status",
+    )
 
 
 async def test_distill_rejects_leaked_reasoning_in_angle(monkeypatch):
@@ -845,3 +850,94 @@ async def test_pooled_refs_fail_open_to_nothing():
 
     src = InternalRagSource(_Boom(), site_config=SiteConfig())
     assert await src._pooled_refs("n") == set()
+
+
+# --- remember not-storyworthy verdicts (2026-10-08) -----------------------------
+# 7 of a run's 8 distill calls re-judged snippets the model had already turned
+# down, every 30 minutes. The verdict is now a pool row the next run skips.
+
+
+async def test_a_not_storyworthy_verdict_is_recorded_and_not_a_candidate():
+    from poindexter.services.internal_rag_source import NotStoryworthy, snippet_ref
+
+    src, _calls = _snippet_source({"audit_event": [("a-1", "clean cycle completed")]})
+
+    async def verdict(snippets, niche_context=None):
+        return NotStoryworthy("routine ops status")
+
+    recorded: list[dict] = []
+
+    async def record(niche_id, *, kind, ref, reason):
+        recorded.append({"niche": niche_id, "kind": kind, "ref": ref, "reason": reason})
+
+    src._distill_topic_angle = verdict  # type: ignore[method-assign]
+    src._record_not_storyworthy = record  # type: ignore[method-assign]
+    out = await src.generate(niche_id="n", source_kinds=["audit_event"], per_kind_limit=4)
+    assert out == []
+    assert recorded == [{
+        "niche": "n", "kind": "audit_event",
+        "ref": snippet_ref("audit", "a-1", "clean cycle completed"),
+        "reason": "routine ops status",
+    }]
+
+
+async def test_a_failed_distill_is_not_recorded_so_it_is_retried():
+    src, _calls = _snippet_source({"audit_event": [("a-1", "text")]})
+
+    async def failed(snippets, niche_context=None):
+        return None
+
+    async def record(*a, **k):
+        raise AssertionError("a failure must not be remembered as a verdict")
+
+    src._distill_topic_angle = failed  # type: ignore[method-assign]
+    src._record_not_storyworthy = record  # type: ignore[method-assign]
+    assert await src.generate(niche_id="n", source_kinds=["audit_event"], per_kind_limit=4) == []
+
+
+async def test_a_recorded_verdict_is_skipped_on_the_next_run():
+    from poindexter.services.internal_rag_source import snippet_ref
+
+    src, calls = _snippet_source(
+        {"audit_event": [("a-1", "clean cycle completed")]},
+        pooled_refs={snippet_ref("audit", "a-1", "clean cycle completed")},
+    )
+    assert await src.generate(niche_id="n", source_kinds=["audit_event"], per_kind_limit=4) == []
+    assert calls == []
+
+
+async def test_the_verdict_row_is_keyed_on_the_snippet_and_never_pooled():
+    from poindexter.services.internal_rag_source import NOT_STORYWORTHY_STATUS
+
+    executed: list[tuple] = []
+
+    class _Conn:
+        async def execute(self, sql, *args):
+            executed.append((sql, args))
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _Conn()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _Pool:
+        def acquire(self):
+            return _Ctx()
+
+    src = InternalRagSource(_Pool(), site_config=SiteConfig())
+    await src._record_not_storyworthy("n", kind="audit_event", ref="internal_rag:audit:a-1:x", reason="routine")
+    sql, args = executed[0]
+    assert "ON CONFLICT (niche_id, dedup_key) DO NOTHING" in sql
+    assert args[4] == "ref:internal_rag:audit:a-1:x"
+    assert args[5] == NOT_STORYWORTHY_STATUS != "pooled"
+
+
+async def test_recording_a_verdict_never_raises():
+    class _Boom:
+        def acquire(self):
+            raise RuntimeError("pool down")
+
+    src = InternalRagSource(_Boom(), site_config=SiteConfig())
+    await src._record_not_storyworthy("n", kind="k", ref="r", reason="x")

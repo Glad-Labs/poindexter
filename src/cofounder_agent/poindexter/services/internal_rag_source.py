@@ -69,6 +69,23 @@ def snippet_ref(table: str, source_id: str, snippet: str) -> str:
     return f"internal_rag:{table}:{source_id}:{digest}"
 
 
+@dataclass(frozen=True)
+class NotStoryworthy:
+    """The distiller's deliberate ``{"storyworthy": false}`` verdict.
+
+    Distinct from ``None`` (an empty / unparseable / leaked reply), which is
+    a failure worth retrying next run. A verdict is remembered: the snippet
+    gets a ``not_storyworthy`` pool row and is not sent to the distiller
+    again (2026-10-08: 7 of a run's 8 distill calls re-judged snippets the
+    model had already turned down, every 30 minutes).
+    """
+
+    reason: str = ""
+
+
+NOT_STORYWORTHY_STATUS = "not_storyworthy"
+
+
 @dataclass
 class InternalCandidate:
     source_kind: str
@@ -195,6 +212,11 @@ class InternalRagSource:
                 # candidate too). Skip the bad candidate, keep the rest.
                 if distilled is None:
                     continue
+                if isinstance(distilled, NotStoryworthy):
+                    await self._record_not_storyworthy(
+                        niche_id, kind=kind, ref=ref, reason=distilled.reason,
+                    )
+                    continue
                 topic, angle = distilled
                 results.append(InternalCandidate(
                     source_kind=kind,
@@ -206,6 +228,40 @@ class InternalRagSource:
                     dedup_ref=ref,
                 ))
         return results
+
+    async def _record_not_storyworthy(
+        self, niche_id: UUID | str, *, kind: str, ref: str, reason: str,
+    ) -> None:
+        """Remember a non-story verdict as a ``not_storyworthy`` pool row.
+
+        The batch reads only ``pooled`` rows, so it never sees this one, but
+        :meth:`_pooled_refs` reads every status and skips the snippet from
+        then on. The topic_pool retention policy prunes these after the
+        same 30 days it gives pooled rows, by which time the snippet has
+        left the selection window. Best effort: a failed write only means
+        the snippet is judged once more next run.
+        """
+        from poindexter.services.topic_pool import dedup_key
+
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO topic_pool "
+                    "(niche_id, source, title, summary, category, dedup_key, status) "
+                    "VALUES ($1::uuid, 'internal_rag', $2, $3, $4, $5, $6) "
+                    "ON CONFLICT (niche_id, dedup_key) DO NOTHING",
+                    str(niche_id),
+                    f"(not storyworthy) {reason}"[:200] or "(not storyworthy)",
+                    reason,
+                    kind,
+                    dedup_key("", ref),
+                    NOT_STORYWORTHY_STATUS,
+                )
+        except Exception:  # noqa: BLE001 — best effort, see docstring
+            logger.warning(
+                "[internal_rag] could not record a not-storyworthy verdict; "
+                "the snippet will be judged again next run", exc_info=True,
+            )
 
     async def _pooled_refs(self, niche_id: UUID | str) -> set[str]:
         """Snippet refs this niche's pool already holds, in any status.
@@ -396,12 +452,14 @@ class InternalRagSource:
         snippets: list[str],
         *,
         niche_context: str | None = None,
-    ) -> tuple[str, str] | None:
+    ) -> tuple[str, str] | NotStoryworthy | None:
         """Run a small LLM call to extract a proposed (topic, angle) from raw snippets.
 
         Returns ``None`` when the model returns an empty or unparseable
         response so the caller can skip this candidate instead of crashing
-        the whole sweep (2026-05-28 content-gen stall).
+        the whole sweep (2026-05-28 content-gen stall), and
+        :class:`NotStoryworthy` for a deliberate non-story verdict, which the
+        caller records so the snippet is not judged again.
 
         ``niche_context`` is formatted into the prompt (templates without a
         ``{niche_context}`` placeholder simply ignore it), and the prompt
@@ -455,12 +513,12 @@ class InternalRagSource:
         # of the storyworthiness prompt, not a failure. Only prompts that
         # ask for the verdict ever emit it, so old templates are unaffected.
         if isinstance(parsed, dict) and parsed.get("storyworthy") is False:
+            reason = str(parsed.get("reason") or "")[:200]
             logger.info(
                 "[internal_rag] distiller judged snippets not storyworthy "
-                "(reason=%r) — skipping candidate",
-                str(parsed.get("reason") or "")[:120],
+                "(reason=%r) — skipping candidate", reason[:120],
             )
-            return None
+            return NotStoryworthy(reason)
         # The LLM occasionally returns `{"topic": ""}` (or omits the key).
         # An empty topic means the model failed to distill — skip the
         # candidate like the empty/unparseable cases above. Inventing a
