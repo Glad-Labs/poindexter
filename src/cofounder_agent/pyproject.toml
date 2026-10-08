@@ -211,7 +211,7 @@ datasets = { version = ">=5.0.0,<6", optional = true }
 # (proxy SSTI — high), GHSA-v4p8-mg3p-g94g (proxy MCP RCE — high).
 # Poindexter doesn't run litellm-proxy; the bump is hygiene + closing
 # the dependabot alerts that landed with the guardrails-ai dep.
-litellm = { version = ">=1.83.7,<2.0", optional = true }
+litellm = { version = ">=1.104.0,<2.0", optional = true }
 
 # Langfuse — same gap as litellm. PR #47 (Langfuse-first prompt manager)
 # and PR #241 (LiteLLM→Langfuse callback) both import langfuse with
