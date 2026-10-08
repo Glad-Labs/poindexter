@@ -20,14 +20,26 @@ from poindexter.plugins.topic_source import DiscoveredTopic
 _ALLOWED_TABLES = frozenset({"topic_pool"})
 
 
-def dedup_key(title: str) -> str:
-    """Canonical per-niche dedup key: lowercased, whitespace-collapsed title.
+REF_KEY_PREFIX = "ref:"
 
-    Backs the UNIQUE(niche_id, dedup_key) constraint so trivial title
-    variants ("Local  LLM " vs "local llm") collapse to one pool row. The
-    fuzzy/semantic pass in the tap handler catches near-dupes this exact key
-    misses.
+
+def dedup_key(title: str, ref: str = "") -> str:
+    """Canonical per-niche dedup key.
+
+    With ``ref`` (``DiscoveredTopic.dedup_ref``) the key is the source
+    material's identity, ``ref:<ref>``: internal_rag re-distilled the same two
+    snippets into ~40 differently-worded pool rows in eight days ("Reranker
+    Update", "Re-ranker Update Impact", "Quality Reranker Enhancements" …),
+    each a new title and so a new title key, and they filled the batch's
+    per-source read with one story. Otherwise it is the lowercased,
+    whitespace-collapsed title, which backs the UNIQUE(niche_id, dedup_key)
+    constraint so trivial title variants ("Local  LLM " vs "local llm")
+    collapse to one pool row. The tap handler's dedup pass compares against
+    recent COVERAGE (posts, tasks), not against the pool.
     """
+    ref = (ref or "").strip()
+    if ref:
+        return f"{REF_KEY_PREFIX}{ref}"
     return " ".join((title or "").lower().split())
 
 
@@ -66,7 +78,7 @@ async def insert_pooled_topics(
             getattr(t, "source_url", "") or "",
             getattr(t, "category", "") or "",
             float(getattr(t, "relevance_score", 0.0) or 0.0),
-            dedup_key(t.title),
+            dedup_key(t.title, getattr(t, "dedup_ref", "") or ""),
         )
         if new_id is not None:
             inserted += 1

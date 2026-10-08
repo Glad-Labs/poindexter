@@ -21,6 +21,7 @@ discovery sweep (same posture as the dedup pass).
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -48,6 +49,25 @@ VALID_SOURCE_KINDS = (
     "git_commit", "decision_log", "memory_file", "post_history",
 )
 
+# source_kind -> embeddings.source_table (git_commit: not plumbed yet).
+_KIND_TABLE = {
+    "claude_session": "claude_sessions",
+    "brain_knowledge": "brain",
+    "audit_event": "audit",
+    "decision_log": "memory",
+    "memory_file": "memory",
+    "post_history": "posts",
+}
+
+
+def snippet_ref(table: str, source_id: str, snippet: str) -> str:
+    """The stable identity of one embedded snippet: its table, its row and a
+    digest of its text. Keyed on the table, not the kind, because
+    decision_log and memory_file both read ``memory`` and can pick the same
+    chunk. The digest makes an edited file a new snippet."""
+    digest = hashlib.sha256((snippet or "").encode("utf-8")).hexdigest()[:16]
+    return f"internal_rag:{table}:{source_id}:{digest}"
+
 
 @dataclass
 class InternalCandidate:
@@ -57,6 +77,9 @@ class InternalCandidate:
     distilled_angle: str
     supporting_refs: list[dict[str, Any]] = field(default_factory=list)
     raw_snippet: str = ""
+    # snippet_ref(): the pool dedups on it, so the same snippet re-distilled
+    # into a new title on a later run is not pooled again.
+    dedup_ref: str = ""
 
 
 class InternalRagSource:
@@ -103,6 +126,7 @@ class InternalRagSource:
                 category=c.source_kind,
                 source="internal_rag",
                 description=c.distilled_angle,
+                dedup_ref=c.dedup_ref,
             )
             for c in candidates
         ]
@@ -137,6 +161,12 @@ class InternalRagSource:
         )
 
         results: list[InternalCandidate] = []
+        # Snippets already turned into a pool row (any status), and ones taken
+        # earlier in this run under another kind. The selection is a stable
+        # vector ranking over a 30-day window, so most of a run's snippets are
+        # last run's; without this each one cost a distill call and, under its
+        # new wording, a new pool row (~40 rows from 2 snippets, 2026-10).
+        done_refs = await self._pooled_refs(niche_id)
         for kind in source_kinds:
             # Bias sampling toward story-dense kinds: effective limit =
             # per_kind_limit x weight (half-up rounding). Weight 0 skips
@@ -148,7 +178,12 @@ class InternalRagSource:
                 kind, eff_limit,
                 query_vec=query_vec, lookback_days=lookback_days,
             )
+            table = _KIND_TABLE.get(kind, kind)
             for primary_ref, snippet, supporting in snippets:
+                ref = snippet_ref(table, primary_ref, snippet)
+                if ref in done_refs:
+                    continue
+                done_refs.add(ref)
                 distilled = await self._distill_topic_angle(
                     [snippet] + [s["snippet"] for s in supporting],
                     niche_context=niche_context,
@@ -168,8 +203,34 @@ class InternalRagSource:
                     distilled_angle=angle,
                     supporting_refs=supporting,
                     raw_snippet=snippet,
+                    dedup_ref=ref,
                 ))
         return results
+
+    async def _pooled_refs(self, niche_id: UUID | str) -> set[str]:
+        """Snippet refs this niche's pool already holds, in any status.
+
+        Fails open to an empty set: a read error must not stop discovery,
+        and the pool's unique key still refuses the duplicate row.
+        """
+        from poindexter.services.topic_pool import REF_KEY_PREFIX
+
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT dedup_key FROM topic_pool "
+                    "WHERE niche_id = $1::uuid AND source = 'internal_rag' "
+                    "AND dedup_key LIKE $2",
+                    str(niche_id), f"{REF_KEY_PREFIX}internal_rag:%",
+                )
+        except Exception:  # noqa: BLE001 — fail open, see docstring
+            logger.warning(
+                "[internal_rag] could not read pooled snippet refs; every "
+                "selected snippet will be distilled", exc_info=True,
+            )
+            return set()
+        prefix = len(REF_KEY_PREFIX)
+        return {str(r["dedup_key"])[prefix:] for r in rows}
 
     async def _resolve_selection_context(
         self, niche_id: UUID | str,
@@ -280,15 +341,7 @@ class InternalRagSource:
           post_history → 'posts'
         """
         # Translate source_kind to the embeddings.source_table name
-        table_map = {
-            "claude_session": "claude_sessions",
-            "brain_knowledge": "brain",
-            "audit_event": "audit",
-            "decision_log": "memory",
-            "memory_file": "memory",
-            "post_history": "posts",
-        }
-        st = table_map.get(source_kind)
+        st = _KIND_TABLE.get(source_kind)
         if st is None:
             # git_commit not yet implemented — would query git log directly
             return []

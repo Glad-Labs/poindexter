@@ -44,6 +44,12 @@ class DiscoveredTopic:
     relevance_score: float = 0.0
     description: str = ""
     keywords: list[str] = field(default_factory=list)
+    # Stable identity of the material the topic was made from, when the title
+    # is not one. ``topic_pool`` dedups on it instead of the title, so a source
+    # that rewords the same material on every run cannot pool it twice.
+    # internal_rag sets it (an LLM distils a new title per run); empty for
+    # sources whose titles come from the outside world.
+    dedup_ref: str = ""
     # Whether the dedup pass found a recent duplicate. Set by the
     # dispatcher, not the source itself.
     is_duplicate: bool = False

@@ -23,6 +23,26 @@ def _conn_returning(ids):
     return conn
 
 
+def test_a_source_ref_replaces_the_title_as_the_key():
+    # The same snippet, reworded by the distiller on two runs, is one key.
+    ref = "internal_rag:memory:project_x.md:0123456789abcdef"
+    assert dedup_key("Reranker Update", ref) == dedup_key("Re-ranker Update Impact", ref)
+    assert dedup_key("Reranker Update", ref) == f"ref:{ref}"
+    assert dedup_key("Reranker Update", "  ") == "reranker update"  # blank ref = title key
+
+
+@pytest.mark.asyncio
+async def test_insert_keys_a_topic_with_a_ref_on_the_ref():
+    conn = _conn_returning(["11111111-1111-1111-1111-111111111111"])
+    topic = DiscoveredTopic(title="Reranker Update", category="memory_file",
+                            source="internal_rag", dedup_ref="internal_rag:memory:a:b")
+    await insert_pooled_topics(
+        conn, niche_id="22222222-2222-2222-2222-222222222222",
+        source="internal_rag", topics=[topic],
+    )
+    assert conn.fetchval.await_args_list[0].args[8] == "ref:internal_rag:memory:a:b"
+
+
 @pytest.mark.asyncio
 async def test_insert_counts_only_new_rows():
     # First insert returns an id (new), second returns None (ON CONFLICT no-op).

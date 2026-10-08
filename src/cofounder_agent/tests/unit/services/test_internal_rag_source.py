@@ -768,3 +768,80 @@ async def test_extract_returns_empty_when_generate_returns_empty(monkeypatch):
         pool, config={"niche_id": "00000000-0000-0000-0000-000000000001"}
     )
     assert result == []
+
+
+# --- one pool row per snippet (2026-10-08) -------------------------------------
+# The vector ranking picks the same snippets every run; the distiller rewords
+# them, so the title-keyed pool took ~40 rows from two snippets in eight days.
+
+
+def _snippet_source(rows_by_kind, pooled_refs=()):
+    src = InternalRagSource(object(), site_config=SiteConfig())
+
+    async def fetch(kind, limit, **kwargs):
+        return [(sid, text, []) for sid, text in rows_by_kind.get(kind, [])]
+
+    async def pooled(niche_id):
+        return set(pooled_refs)
+
+    calls: list[str] = []
+
+    async def distill(snippets, niche_context=None):
+        calls.append(snippets[0])
+        return (f"Reworded title {len(calls)}", "angle")
+
+    src._fetch_recent_snippets = fetch  # type: ignore[method-assign]
+    src._pooled_refs = pooled  # type: ignore[method-assign]
+    src._distill_topic_angle = distill  # type: ignore[method-assign]
+    src._resolve_selection_context = AsyncMock(return_value=(None, None))  # type: ignore[method-assign]
+    return src, calls
+
+
+async def test_an_already_pooled_snippet_is_not_distilled_again():
+    from poindexter.services.internal_rag_source import snippet_ref
+
+    text = "Re-ranker fix: keep the engine's own order as a signal."
+    src, calls = _snippet_source(
+        {"memory_file": [("project_rerank.md", text), ("project_other.md", "something new")]},
+        pooled_refs={snippet_ref("memory", "project_rerank.md", text)},
+    )
+    out = await src.generate(niche_id="n", source_kinds=["memory_file"], per_kind_limit=4)
+    assert calls == ["something new"]
+    assert [c.primary_ref for c in out] == ["project_other.md"]
+
+
+async def test_one_snippet_picked_under_two_kinds_is_one_candidate():
+    # decision_log and memory_file both read the memory table.
+    src, calls = _snippet_source({
+        "decision_log": [("decision_log.md", "chose Ollama over vLLM")],
+        "memory_file": [("decision_log.md", "chose Ollama over vLLM")],
+    })
+    out = await src.generate(niche_id="n", source_kinds=["decision_log", "memory_file"], per_kind_limit=4)
+    assert len(out) == 1 and len(calls) == 1
+
+
+async def test_an_edited_snippet_is_new_material():
+    from poindexter.services.internal_rag_source import snippet_ref
+
+    assert snippet_ref("memory", "a.md", "v1") != snippet_ref("memory", "a.md", "v2")
+    assert snippet_ref("memory", "a.md", "v1") == snippet_ref("memory", "a.md", "v1")
+
+
+async def test_the_ref_reaches_the_pool_through_extract(monkeypatch):
+    src = InternalRagSource(object(), site_config=SiteConfig())
+    cand = InternalCandidate(
+        source_kind="memory_file", primary_ref="a.md", distilled_topic="T",
+        distilled_angle="A", dedup_ref="internal_rag:memory:a.md:abc",
+    )
+    monkeypatch.setattr(src, "generate", AsyncMock(return_value=[cand]))
+    topics = await src.extract(None, {"niche_id": "n"})
+    assert topics[0].dedup_ref == "internal_rag:memory:a.md:abc"
+
+
+async def test_pooled_refs_fail_open_to_nothing():
+    class _Boom:
+        def acquire(self):
+            raise RuntimeError("pool down")
+
+    src = InternalRagSource(_Boom(), site_config=SiteConfig())
+    assert await src._pooled_refs("n") == set()
