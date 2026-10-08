@@ -25,6 +25,7 @@ let everything through would hide that the filter is off. Both are loud.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -54,7 +55,8 @@ class ScopeResult:
     out_of_scope: set[str] = field(default_factory=set)
     # Ids the model did not return a usable verdict for. Kept by the caller.
     unjudged: set[str] = field(default_factory=set)
-    # Set when a whole chunk failed (model error, unparseable reply).
+    # Why anything is unjudged: a whole chunk failed (model error, unparseable
+    # reply), or a reply left ids without a verdict (names its stray keys).
     errors: list[str] = field(default_factory=list)
 
 
@@ -79,22 +81,48 @@ def scope_block(niche: Any) -> str:
     return "\n".join(lines)
 
 
-def _parse_verdicts(raw: str) -> dict[str, bool]:
+# A key that carries more than the id: "[i9] Re-ranker Improvement", "[i9]",
+# "i9: Re-ranker Improvement". The leading bracketed or bare token is the id.
+_KEY_ID_RE = re.compile(r"^\s*\[?\s*([A-Za-z]+\d+)\s*\]?")
+
+
+def _key_to_id(key: str, ids: set[str] | None) -> str:
+    """The candidate id a reply key names.
+
+    qwen3-vl keyed a whole chunk by its candidate LINES ("[i9] Re-ranker
+    Improvement": true) on every sweep from 2026-10-06; read verbatim, none
+    of those keys was an id, so all 11 verdicts were discarded and the chunk
+    went unjudged with no error. A key that is not an id itself resolves to
+    the id it starts with, but only to an id of this chunk.
+    """
+    key = str(key)
+    if ids is None or key in ids:
+        return key
+    m = _KEY_ID_RE.match(key)
+    if m and m.group(1) in ids:
+        return m.group(1)
+    return key
+
+
+def _parse_verdicts(raw: str, ids: set[str] | None = None) -> dict[str, bool]:
     """Map id -> in scope. Accepts booleans, "true"/"false" and 1/0.
 
     A value that is none of those is skipped, which leaves that id unjudged.
+    With ``ids``, a key that wraps an id in its candidate line resolves to it
+    (:func:`_key_to_id`).
     """
     blob = json.loads(raw)
     if not isinstance(blob, dict):
         raise ValueError(f"expected a JSON object, got {type(blob).__name__}")
     verdicts: dict[str, bool] = {}
     for key, value in blob.items():
+        item_id = _key_to_id(key, ids)
         if isinstance(value, bool):
-            verdicts[str(key)] = value
+            verdicts[item_id] = value
         elif isinstance(value, (int, float)) and value in (0, 1):
-            verdicts[str(key)] = bool(value)
+            verdicts[item_id] = bool(value)
         elif isinstance(value, str) and value.strip().lower() in ("true", "false"):
-            verdicts[str(key)] = value.strip().lower() == "true"
+            verdicts[item_id] = value.strip().lower() == "true"
     return verdicts
 
 
@@ -149,7 +177,7 @@ async def check_scope(
                 PROMPT_KEY, scope_block=block, cand_block=cand_block,
             )
             raw = await _ollama_chat_json(prompt, model=model, site_config=site_config)
-            verdicts = _parse_verdicts(raw or "")
+            verdicts = _parse_verdicts(raw or "", ids)
         except Exception as exc:  # noqa: BLE001 — fail open, reported by the caller
             logger.warning(
                 "[topic_scope] scope check failed for %d candidate(s) (%s: %s); "
@@ -158,14 +186,23 @@ async def check_scope(
             result.errors.append(f"{type(exc).__name__}: {exc}")
             result.unjudged |= ids
             continue
+        missing = 0
         for item_id in ids:
             verdict = verdicts.get(item_id)
             if verdict is None:
                 result.unjudged.add(item_id)
+                missing += 1
             elif verdict:
                 result.in_scope.add(item_id)
             else:
                 result.out_of_scope.add(item_id)
+        if missing:
+            # Say why, or the caller's finding names a count and nothing else.
+            stray = [k for k in verdicts if k not in ids][:3]
+            result.errors.append(
+                f"no verdict for {missing} of {len(ids)} candidate(s) in a chunk"
+                + (f"; the reply used keys that are not candidate ids: {stray}" if stray else "")
+            )
     return result
 
 

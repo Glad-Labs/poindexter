@@ -86,8 +86,9 @@ mention of the subject does not count.
 Candidates:
 {cand_block}
 
-Return STRICT JSON mapping each candidate id to true (in scope) or false:
-{{"<id>": true, "<id>": false, ...}}
+Return STRICT JSON mapping each candidate id to true (in scope) or false.
+The key is the id alone, without its brackets or its title:
+{{"e0": true, "i3": false, ...}}
 
 Return ONLY the JSON, no commentary.
 ```

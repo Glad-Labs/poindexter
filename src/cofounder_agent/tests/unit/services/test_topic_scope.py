@@ -76,8 +76,64 @@ async def test_check_scope_sorts_verdicts_and_keeps_skipped_ids(monkeypatch):
     assert result.in_scope == {"a"}
     assert result.out_of_scope == {"b", "c"}
     assert result.unjudged == {"d"}
-    assert result.errors == []
+    # A skipped id is kept, and the result says why (the finding body prints it).
+    assert result.errors == ["no verdict for 1 of 4 candidate(s) in a chunk"]
     assert SUBJECT in calls[0] and "[a] llama.cpp vs vLLM" in calls[0]
+
+
+# The reply qwen3-vl gave for the last chunk of every glad-labs sweep from
+# 2026-10-06 on: keyed by the candidate LINE, not the id. Read verbatim, no key
+# was an id, so the whole chunk went unjudged with an empty error list.
+_LINE_KEYED_REPLY = {
+    "[i9] Re-ranker Improvement": True,
+    "[i10] Re-ranker Update Impact": True,
+    "[i15] Dynamic Learning Through Collaboration": False,
+    "[i16] GPU Selection Challenges": True,
+    "[i18] Data Mining for Insights": False,
+}
+
+
+@_async
+async def test_check_scope_reads_a_reply_keyed_by_candidate_line(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        topic_ranking, "_ollama_chat_json", _fake_chat(json.dumps(_LINE_KEYED_REPLY), calls),
+    )
+    items = [ScopeItem("i9", "Re-ranker Improvement"), ScopeItem("i10", "Re-ranker Update Impact"),
+             ScopeItem("i15", "Dynamic Learning Through Collaboration"),
+             ScopeItem("i16", "GPU Selection Challenges"), ScopeItem("i18", "Data Mining for Insights")]
+    result = await check_scope(items, _niche(), site_config=SiteConfig(), model="m")
+    assert result.in_scope == {"i9", "i10", "i16"}
+    assert result.out_of_scope == {"i15", "i18"}
+    assert result.unjudged == set() and result.errors == []
+
+
+@pytest.mark.parametrize("key", ["[i9] Re-ranker Improvement", "[i9]", "i9: Re-ranker", " [ i9 ] x"])
+def test_a_wrapped_key_resolves_to_its_id(key):
+    assert topic_scope._parse_verdicts(json.dumps({key: True}), {"i9", "i10"}) == {"i9": True}
+
+
+@_async
+async def test_a_wrapped_key_for_another_chunks_id_is_not_adopted(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        topic_ranking, "_ollama_chat_json",
+        _fake_chat(json.dumps({"[e3] Some other title": True}), calls),
+    )
+    result = await check_scope(
+        [ScopeItem("i9", "Re-ranker Improvement")], _niche(), site_config=SiteConfig(), model="m",
+    )
+    assert result.unjudged == {"i9"} and result.in_scope == set()
+    assert "[e3] Some other title" in result.errors[0]
+
+
+def test_the_prompt_shows_the_bare_id_key():
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt(
+        topic_scope.PROMPT_KEY, scope_block="In scope: x", cand_block="[e0] a",
+    )
+    assert '"e0": true' in prompt and "without its brackets" in prompt
 
 
 @_async
