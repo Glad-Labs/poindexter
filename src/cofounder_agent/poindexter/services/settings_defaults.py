@@ -2314,6 +2314,16 @@ DEFAULTS: dict[str, str] = {
     # fabricated sentences as quoted in the issue rather than the original
     # drafts, which were edited before publish. 'off'|'advisory'|'enforcing'.
     'qa_self_claim_experiment_mode': 'advisory',
+    # Layer 9 — first-person event claims ("we moved the library and noticed
+    # nothing") grounded in our own records (sessions, memory, issues) by
+    # services/self_claim_grounding. 'note' lists unbacked claims in the
+    # feedback and changes nothing else: on the 20 newest published posts
+    # (2026-10-09) it still flagged 3, all true claims it could not find.
+    # 'off' | 'note' | 'advisory'. Judge = this model, else pipeline_critic_model.
+    'qa_self_claim_grounding_mode': 'note',
+    'qa_self_claim_grounding_model': '',
+    'qa_self_claim_grounding_top_k': '6',
+    'qa_self_claim_grounding_max_claims': '8',
     # The ONLY source that can license a first-person claim about the author.
     # Empty = every such claim is unsourced, which is the intended default:
     # research_context cannot ground a claim about us (it routinely carries
@@ -6232,6 +6242,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_self_claim_offender_penalty': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_self_claim_biography_mode': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_experiment_mode': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_self_claim_grounding_mode': {'owner': 'multi_model_qa', 'value_type': 'string'},
+    'qa_self_claim_grounding_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'qa_self_claim_grounding_top_k': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_self_claim_grounding_max_claims': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_self_claim_founder_facts': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'qa_self_claim_known_components': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'operating_record_gpus': {'owner': 'multi_model_qa', 'value_type': 'string'},

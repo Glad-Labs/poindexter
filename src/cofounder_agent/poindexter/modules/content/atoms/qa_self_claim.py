@@ -673,6 +673,79 @@ def _experiment_mode(site_config: Any) -> str:
     return mode if mode in ("off", "advisory", "enforcing") else "advisory"
 
 
+def _grounding_mode(site_config: Any) -> str:
+    """``off`` | ``note`` (default) | ``advisory``.
+
+    Layer 9 grounds first-person event claims ("we moved the library to a
+    slower drive and noticed nothing") in our own records
+    (``services.self_claim_grounding``). ``note`` lists the claims no record
+    backs in the review feedback and changes nothing else. Measured on the 20
+    newest published posts (2026-10-09) it still flags 3 of them, every flag a
+    true claim it could not find (a research finding, an audit summary, a
+    measurement held in database rows), so it is a reviewer's aid, not a
+    score. ``advisory`` also scores, like layers 7-8; there is no
+    ``enforcing``.
+    """
+    try:
+        raw = str(site_config.get("qa_self_claim_grounding_mode", "note") or "note")
+    except Exception:  # noqa: BLE001 — stubbed site_config
+        # silent-ok: an unreadable switch falls back to the seeded default,
+        # which only annotates the feedback.
+        return "note"
+    mode = raw.strip().lower()
+    return mode if mode in ("off", "note", "advisory") else "note"
+
+
+def _grounding_model(site_config: Any) -> str:
+    for key in ("qa_self_claim_grounding_model", "pipeline_critic_model"):
+        try:
+            value = str(site_config.get(key, "") or "").strip()
+        except Exception:  # noqa: BLE001 — stubbed site_config
+            value = ""
+        if value:
+            return value
+    return ""
+
+
+async def ground_in_records(
+    content: str, *, site_config: Any, pool: Any,
+) -> tuple[list[str], int, bool]:
+    """Layer 9. ``(unbacked claims, claims judged, judge failed)``.
+
+    A claim our records contradict, or that no record mentions, comes back as
+    one line for the reviewer. Evidence must predate this check, so a review
+    session quoting the draft cannot back it.
+    """
+    from datetime import datetime, timezone
+
+    from poindexter.services.self_claim_grounding import ground_draft
+
+    def _int(key: str, default: int) -> int:
+        try:
+            return int(site_config.get(key, default) or default)
+        except Exception:  # noqa: BLE001 — stubbed site_config / bad value
+            # silent-ok: a bad dial falls back to the measured default.
+            return default
+
+    results = await ground_draft(
+        pool, content, site_config=site_config, model=_grounding_model(site_config),
+        before=datetime.now(timezone.utc),
+        top_k=_int("qa_self_claim_grounding_top_k", 6),
+        max_claims=_int("qa_self_claim_grounding_max_claims", 8),
+    )
+    lines: list[str] = []
+    for g in results:
+        sentence = " ".join(g.claim.sentence.split())
+        if len(sentence) > 160:
+            sentence = sentence[:157] + "..."
+        if g.verdict == "contradicted":
+            lines.append(f"“{sentence}” (our records say otherwise: {g.record})")
+        elif g.verdict == "no_evidence":
+            lines.append(f"“{sentence}” (no record of this in our sessions, notes or issues)")
+    judged = sum(1 for g in results if g.verdict != "error")
+    return lines, judged, bool(results) and judged == 0
+
+
 def _founder_facts(site_config: Any) -> str:
     try:
         return str(site_config.get("qa_self_claim_founder_facts", "") or "")
@@ -870,12 +943,44 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 len(exp_claims), len(corpus), _MIN_CORPUS_CHARS,
             )
 
+    # Layer 9 also runs outside the self-reference gate, for the same reason
+    # as layer 8: "we moved the library to a slower drive" is about our work
+    # whatever the post is about.
+    pool = resolve_pool(state, atom="qa.self_claim")
+    coverage_gaps: list[str] = []
+    grounding_mode = _grounding_mode(site_config)
+    grounding_notes: list[str] = []
+    grounding_checked = False
+    if grounding_mode != "off" and pool is not None and _grounding_model(site_config):
+        try:
+            grounding_notes, judged, failed = await ground_in_records(
+                content, site_config=site_config, pool=pool,
+            )
+            # Only a scoring mode counts as a check: in "note" mode a draft
+            # with nothing else to resolve stays not_applicable, so a vacuous
+            # 100 never enters the all-rail average.
+            grounding_checked = judged > 0 and grounding_mode == "advisory"
+            if failed:
+                coverage_gaps.append("record-grounding layer (judge failed)")
+        except Exception as e:  # noqa: BLE001
+            coverage_gaps.append("record-grounding layer (retrieval failed)")
+            logger.warning(
+                "[qa.self_claim] record grounding skipped (reduced coverage, "
+                "never a fake verdict): %s", e,
+            )
+    note = (
+        " First-person claims with no record behind them (check by hand): " + "; ".join(grounding_notes[:5])
+        if grounding_notes and grounding_mode == "note" else ""
+    )
+
     if not is_self_referential(content, topic, markers) and not (
-        bio_checked or exp_checked
+        bio_checked or exp_checked or grounding_checked
     ):
         return _na(
             "Draft makes no claims about this system — nothing to check "
             "against the repo, the settings table or the operating record."
+            + (" Reduced coverage: " + "; ".join(coverage_gaps) + "." if coverage_gaps else "")
+            + note
         )
 
     self_referential = is_self_referential(content, topic, markers)
@@ -897,11 +1002,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         ]
     offenders += check_paths(paths)
 
-    pool = resolve_pool(state, atom="qa.self_claim")
-    # Layers a failed dependency prevented from running. The rail stays
-    # fail-open (reduced coverage, never a fake verdict), but the N/A review
-    # must SAY so rather than read as "the draft asserted nothing".
-    coverage_gaps: list[str] = []
+    # Layers a failed dependency prevented from running (coverage_gaps, above).
+    # The rail stays fail-open (reduced coverage, never a fake verdict), but
+    # the N/A review must SAY so rather than read as "the draft asserted nothing".
     checked_db_layers = False
     if pool is not None and (qscore_claims or settings_tokens):
         try:
@@ -970,6 +1073,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         or specs_checked
         or bio_checked
         or exp_checked
+        or grounding_checked
     )
     # An ENFORCING biography layer vetoes with the rest; an advisory one only
     # scores and names the claim, so graduating it is a settings change.
@@ -979,6 +1083,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             offenders += found
         else:
             advisory_offenders += found
+    if grounding_mode == "advisory":
+        advisory_offenders += grounding_notes
     if not offenders and not advisory_offenders and not checked_anything:
         if coverage_gaps:
             return _na(
@@ -989,6 +1095,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "Draft discusses this system but asserts nothing falsifiable — "
             "no version, path, settings key, quality score, named capability, "
             "install spec, biography or conducted-experiment claim to resolve."
+            + note
         )
 
     from poindexter.modules.content.multi_model_qa import MultiModelQA, ReviewerResult
@@ -1012,7 +1119,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "Unsourced first-person claims (advisory): "
             + "; ".join(advisory_offenders[:5])
         )
-    feedback = " ".join(parts) or "Self-claims verified against the running system."
+    feedback = (" ".join(parts) or "Self-claims verified against the running system.") + note
     review = ReviewerResult(
         reviewer="self_claim",
         approved=not offenders,

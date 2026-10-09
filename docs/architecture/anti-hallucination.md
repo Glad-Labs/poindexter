@@ -98,6 +98,28 @@ both while still satisfying the required gate honestly instead of by absence
 not talk about us). A fact the record cannot derive is skipped, never guessed.
 **Required since 2026-09-15** (migration `20260915_014128`); the
 poindexter#454 lever demotes it without a deploy.
+
+**Layer 9, record grounding (2026-10-09), is the one LLM call in this rail.**
+An invented anecdote ("we moved the library to a slower PCIe 4 drive and
+noticed nothing") has no structured record to check, so
+`services/self_claim_grounding.py` searches the records of what we actually
+did: work sessions, memory notes and issues, never published posts, and only
+records written before the check. It extracts first-person event sentences
+whose verb belongs to us ("we moved", "our topic source ran", not "the team
+shipped… a pattern we keep running into"), skips disclaimers, asides and
+sentences that link to our own posts, and finds candidate records by vector
+search fused with a keyword pass weighted toward numbers, product names and
+code tokens. A judge (`qa_self_claim_grounding_model`, else
+`pipeline_critic_model`) answers supported / contradicted / no_evidence /
+vague, and code checks it: a decisive verdict must quote words that exist in a
+record it was shown, and a "contradicted" quote must share at least three
+content words with the claim. `qa_self_claim_grounding_mode` is `note` by
+default: unbacked claims are listed in the review feedback for the reviewer,
+and the score and gate are untouched. On 2026-10-09 it caught 4 of 4 invented
+anecdotes and passed 4 of 4 true ones in a labelled draft, and flagged 3 of the
+20 newest published posts (14 of 20 before the precision pass), every one a
+true claim it could not find. That is why it is a note, not a score. Measure
+any change with `scripts/eval_self_claim_grounding.py` first.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
 delegate to.

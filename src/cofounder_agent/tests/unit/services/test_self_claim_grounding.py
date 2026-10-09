@@ -166,3 +166,90 @@ async def test_a_broken_reply_is_an_error_not_a_raise(monkeypatch):
 
 def test_posts_are_never_evidence():
     assert "posts" not in g.DEFAULT_EVIDENCE_TABLES
+
+
+# --- precision pass (2026-10-09): the published-post flag shapes ---------------
+
+
+@pytest.mark.parametrize("sentence", [
+    # Someone else acts; "we" only comments.
+    "The team at Hugging Face just shipped a fix, and it is a pattern we keep running into ourselves.",
+    # A disclaimer is not an anecdote.
+    "We haven't benchmarked them ourselves, so we're ranking them on VRAM alone.",
+    # An aside comparing the reader to us.
+    "If you put a router in front of it the way we did in 2025, you can switch engines later.",
+    # Opinion about someone else's project, with their event verb.
+    "This is the sharpest version we've seen yet: a system that took ninety minutes on one GPU.",
+    # A pointer at our own post.
+    "Our piece on the RTX 5090's 32GB threshold goes into what that headroom buys.",
+])
+def test_comments_disclaimers_and_pointers_are_not_claims(sentence):
+    assert g.extract_experiential_claims(sentence) == []
+
+
+def test_a_sentence_linking_one_of_our_posts_is_skipped():
+    md = ("We spent the day on a GPU lock bug (see [Fixing the GPU lock and taming "
+          "the RAG sweep](/posts/fixing-the-gpu-lock-1234)) in June 2026.")
+    assert g.extract_experiential_claims(md) == []
+
+
+@pytest.mark.parametrize("sentence", [
+    "Our Google autocomplete topic source ran for six weeks and produced zero topics.",
+    "We recently fixed our model-eval harness after five separate bugs.",
+    "When chatterbox restarted 507 times behind a green board, we built a probe.",
+])
+def test_events_with_our_own_subject_are_claims(sentence):
+    assert [c.sentence for c in g.extract_experiential_claims(sentence)] == [sentence]
+
+
+def test_anchor_words_outweigh_common_ones():
+    terms = dict(g.keyword_terms(
+        "We recently fixed our model-eval harness after five separate bugs on the RTX 3090."
+    ))
+    assert terms["model <-> eval"] == 2 and terms["five"] == 2 and terms["3090"] == 2
+    assert terms["rtx"] == 2  # capitalised mid-sentence
+    assert terms["harness"] == 1
+    assert list(terms)[0] in ("model <-> eval", "five", "rtx", "3090")  # anchors first
+
+
+def test_the_judge_may_cite_the_id_the_way_the_block_shows_it():
+    # Run 3 overruled a correct "supported" because the judge echoed "[id] (date)".
+    evidence = [_ev("memory:doctrine.md", "The harness was dead until stack#3394 — five stacked bugs, every prior run vanished.")]
+    assert g.quote_holds("five stacked bugs, every prior run vanished",
+                         "[memory:doctrine.md] (2026-08-27)", evidence)
+
+
+def test_a_contradiction_must_be_about_the_same_thing():
+    claim = "We recently fixed our model-eval harness after five separate bugs made every run vanish."
+    assert not g.shares_subject("#4032 ships the long-tail as a DRY RUN", claim)
+    assert g.shares_subject("the model-eval harness had five bugs and no fix", claim)
+
+
+@_async
+async def test_an_off_topic_contradiction_becomes_no_evidence(monkeypatch):
+    _fake_judge(monkeypatch, {"verdict": "contradicted", "record": "memory:b",
+                              "quote": "ships the long-tail as a dry run with the brain fallback"})
+    claim = g.Claim(sentence="We recently fixed our model-eval harness after five separate bugs.", context="")
+    out = await g.judge_claim(
+        claim, [_ev("memory:b", "#4032 ships the long-tail as a dry run with the brain fallback true")],
+        site_config=SiteConfig(), model="m", prompt_template="{context}{claim}{evidence}",
+    )
+    assert out.verdict == "no_evidence" and out.judge_verdict == "contradicted"
+
+
+@_async
+async def test_max_claims_bounds_the_judge_calls(monkeypatch):
+    seen = []
+
+    async def fake_retrieve(pool, claim, **kw):
+        return []
+
+    async def fake_judge(claim, evidence, **kw):
+        seen.append(claim.sentence)
+        return g.Grounding(claim=claim, verdict="no_evidence")
+
+    monkeypatch.setattr(g, "retrieve_evidence", fake_retrieve)
+    monkeypatch.setattr(g, "judge_claim", fake_judge)
+    text = " ".join(f"We moved drive {i} to the NAS in 2026." for i in range(5))
+    out = await g.ground_draft(None, text, site_config=SiteConfig(), model="m", before=None, max_claims=2)
+    assert len(out) == 2 and len(seen) == 2

@@ -799,3 +799,105 @@ async def test_a_rail_that_could_not_run_still_fails_closed(monkeypatch):
     _patch_gates(monkeypatch)
     assert await atom.run({"content": "", "site_config": _sc()}) == {}
     assert await atom.run({"content": "x", "site_config": None}) == {}
+
+
+# ---------------------------------------------------------------------------
+# Layer 9 — first-person event claims grounded in our own records
+# ---------------------------------------------------------------------------
+
+_INVENTED = (
+    "We moved our Ollama model store to a RAID 0 array of two Samsung 990 Pro "
+    "drives in March, and cold loads dropped by 40%."
+)
+
+
+def _patch_grounding(monkeypatch, verdicts: list[str]):
+    from poindexter.services import self_claim_grounding as g
+
+    calls = {}
+
+    async def _ground(pool, content, **kw):
+        calls.update(kw)
+        claim = g.Claim(sentence=_INVENTED, context="")
+        return [g.Grounding(claim=claim, verdict=v, record="memory:x") for v in verdicts]
+
+    monkeypatch.setattr(g, "ground_draft", _ground)
+    return calls
+
+
+async def test_note_mode_lists_the_unbacked_claim_and_scores_nothing(monkeypatch):
+    _patch_gates_required(monkeypatch)
+    calls = _patch_grounding(monkeypatch, ["no_evidence"])
+    result = await atom.run({
+        "content": _INVENTED, "topic": "storage", "database_service": SimpleNamespace(pool=_pool()),
+        "site_config": _sc(pipeline_critic_model="ollama/judge"),
+    })
+    review = result["qa_rail_reviews"][0]
+    assert "RAID 0" in review["feedback"] and "no record" in review["feedback"]
+    # Nothing else was checkable, so the review stays not_applicable: a
+    # reviewer's note must not become a vacuous 100 in the rail average.
+    assert review["score"] is None or review.get("not_applicable")
+    assert review["approved"] is True
+    assert calls["model"] == "ollama/judge"
+    assert calls["max_claims"] == 8
+
+
+async def test_advisory_mode_scores_without_vetoing(monkeypatch):
+    _patch_gates_required(monkeypatch)
+    _patch_grounding(monkeypatch, ["contradicted"])
+    result = await atom.run({
+        "content": _INVENTED, "topic": "storage", "database_service": SimpleNamespace(pool=_pool()),
+        "site_config": _sc(
+            pipeline_critic_model="ollama/judge",
+            qa_self_claim_grounding_mode="advisory",
+        ),
+    })
+    review = result["qa_rail_reviews"][0]
+    assert review["approved"] is True
+    assert review["score"] == 75
+    assert "our records say otherwise" in review["feedback"]
+
+
+async def test_off_mode_and_a_missing_judge_skip_the_layer(monkeypatch):
+    _patch_gates_required(monkeypatch)
+    calls = _patch_grounding(monkeypatch, ["no_evidence"])
+    for sc in (
+        _sc(pipeline_critic_model="ollama/judge", qa_self_claim_grounding_mode="off"),
+        _sc(),  # no judge model resolvable
+    ):
+        result = await atom.run(
+            {"content": _INVENTED, "topic": "storage", "database_service": SimpleNamespace(pool=_pool()), "site_config": sc}
+        )
+        assert "RAID 0" not in result["qa_rail_reviews"][0]["feedback"]
+    assert calls == {}
+
+
+async def test_a_failed_judge_is_reported_as_reduced_coverage(monkeypatch):
+    _patch_gates_required(monkeypatch)
+    _patch_grounding(monkeypatch, ["error"])
+    result = await atom.run({
+        "content": _INVENTED, "topic": "storage", "database_service": SimpleNamespace(pool=_pool()),
+        "site_config": _sc(
+            pipeline_critic_model="ollama/judge",
+            qa_self_claim_grounding_mode="advisory",
+        ),
+    })
+    feedback = result["qa_rail_reviews"][0]["feedback"]
+    assert "record-grounding layer (judge failed)" in feedback
+
+
+async def test_retrieval_failure_never_fakes_a_verdict(monkeypatch):
+    from poindexter.services import self_claim_grounding as g
+
+    async def _boom(*a, **kw):
+        raise RuntimeError("embeddings unavailable")
+
+    _patch_gates_required(monkeypatch)
+    monkeypatch.setattr(g, "ground_draft", _boom)
+    result = await atom.run({
+        "content": _INVENTED, "topic": "storage", "database_service": SimpleNamespace(pool=_pool()),
+        "site_config": _sc(pipeline_critic_model="ollama/judge"),
+    })
+    review = result["qa_rail_reviews"][0]
+    assert review["approved"] is True
+    assert "retrieval failed" in review["feedback"]

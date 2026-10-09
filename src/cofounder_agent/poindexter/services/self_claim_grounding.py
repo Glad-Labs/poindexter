@@ -26,10 +26,12 @@ settled by hand in minutes by searching it. This module does that per claim:
 3. :func:`judge_claim` — one small JSON call (``qa.self_claim_grounding``):
    supported / contradicted / no_evidence, with the deciding record.
 
-Prototype: nothing in the pipeline calls this yet. The evaluation harness is
-``scripts/eval_self_claim_grounding.py``; wire it into ``qa.self_claim`` as an
-advisory layer only after the harness shows its precision on real drafts and
-published posts.
+``qa.self_claim`` calls it as layer 9 (``qa_self_claim_grounding_mode``,
+default ``note``: unbacked claims are listed in the review feedback, nothing
+else changes). Measure any change with ``scripts/eval_self_claim_grounding.py``
+before trusting it: on 2026-10-09 it caught 4 of 4 invented anecdotes and
+passed 4 of 4 true ones in a labelled draft, and flagged 3 of the 20 newest
+published posts (from 14 of 20 before extraction and retrieval were tightened).
 """
 
 from __future__ import annotations
@@ -81,7 +83,26 @@ _EVENT_VERBS = (
     "traced", "tracked", "tried", "turned", "upgraded", "watched", "went",
     "wired", "wrote",
 )
-_EVENT_RE = re.compile(r"\b(?:" + "|".join(_EVENT_VERBS) + r")\b", re.IGNORECASE)
+_VERBS = "|".join(_EVENT_VERBS)
+# The event verb must be OURS: "we moved", "we recently fixed", "our topic
+# source ran", "it took us". A sentence where someone else acts and "we" only
+# comments ("the team at Hugging Face just shipped a fix ... a pattern we keep
+# running into") reports no event of ours; that shape was a third of the
+# published-post flags on 2026-10-09.
+_OUR_EVENT_RE = re.compile(
+    rf"\b(?:[Ww]e|I)(?:'ve|'d)?\s+(?:[\w-]+\s+){{0,2}}?(?:{_VERBS})\b"
+    rf"|\b[Oo]ur\s+(?:[\w-]+\s+){{0,4}}?(?:{_VERBS})\b"
+    rf"|\b(?:{_VERBS})\s+(?:us|me)\b",
+)
+# A disclaimer ("we haven't benchmarked them ourselves") or an aside comparing
+# the reader to us ("if you've put a router in front, the way we did") is not
+# an anecdote a record could hold or an invention worth flagging.
+_DISCLAIMER_RE = re.compile(
+    r"\b(?:we|i)\s+(?:haven't|have not|hadn't|didn't|did not|never|don't|do not|"
+    r"can't|cannot|couldn't|won't|wouldn't)\b"
+    r"|\b(?:the way|just as|like)\s+we\s+did\b",
+    re.IGNORECASE,
+)
 # Reader-inclusive "we" ("if we", "let's") is advice, not a report. "When"
 # is not here: "When we looked at moving to vLLM, the benchmarks said no" is a
 # past-tense report (the event verb already filters "when we need ...").
@@ -91,8 +112,16 @@ _HYPOTHETICAL_RE = re.compile(
 # Pointers at our own writing ("we wrote up the 27B variant", "we covered it in
 # ...") are backed by the linked post, and posts are not evidence here.
 _OWN_WRITING_RE = re.compile(
-    r"\b(?:we|i)\s+(?:also\s+)?(?:wrote|covered|published|posted)\s+(?:up|about|more|on|it|this|that)\b",
+    r"\b(?:we|i)\s+(?:also\s+)?(?:wrote|covered|published|posted)\s+(?:up|about|more|on|it|this|that)\b"
+    r"|\bour\s+(?:piece|post|article|write-?up|postmortem)\s+(?:on|about)\b",
     re.IGNORECASE,
+)
+# A link to one of our own posts: the sentence summarises that post, and the
+# post was checked when it was written ("(see Fixing the GPU lock and taming
+# the internal RAG sweep)"). Five of the twenty published-post flags on
+# 2026-10-09 were sentences like this.
+_INTERNAL_LINK_RE = re.compile(
+    r"\[([^\]]+)\]\((?:/posts/|https?://(?:www\.)?gladlabs\.io/)[^)]*\)",
 )
 # Something a record could hold: a number, a code-ish token (phi4:14b,
 # poetry.lock, PR #4231) or a mid-sentence proper noun (Steam, vLLM, Ollama).
@@ -159,13 +188,21 @@ def extract_experiential_claims(content: str) -> list[Claim]:
     context: claims often lean on it ("We did exactly that with a 680 GiB
     library." means nothing alone).
     """
+    own_posts = {
+        " ".join(m.split()) for m in _INTERNAL_LINK_RE.findall(content or "") if len(m.split()) >= 2
+    }
     sentences = [s.strip() for s in _SENTENCE_RE.split(_plain_text(content)) if s.strip()]
     claims: list[Claim] = []
     for i, sentence in enumerate(sentences):
         unquoted = _QUOTED_RE.sub(" ", sentence)
-        if not _FIRST_PERSON_RE.search(unquoted) or not _EVENT_RE.search(unquoted):
+        if not _FIRST_PERSON_RE.search(unquoted) or not _OUR_EVENT_RE.search(unquoted):
             continue
-        if _HYPOTHETICAL_RE.match(sentence) or _OWN_WRITING_RE.search(sentence):
+        if (
+            _HYPOTHETICAL_RE.match(sentence)
+            or _OWN_WRITING_RE.search(sentence)
+            or _DISCLAIMER_RE.search(sentence)
+            or any(title in sentence for title in own_posts)
+        ):
             continue
         if not _ANCHOR_RE.search(sentence):
             continue
@@ -197,9 +234,37 @@ def is_echo(claim_sentence: str, snippet: str, *, ratio: float = _ECHO_RATIO) ->
     return False
 
 
-def _tsquery(text: str) -> str:
-    terms = sorted(set(_terms(text)))[:24]
-    return " | ".join(t.replace("'", "") for t in terms if re.fullmatch(r"[a-z0-9]+", t))
+_MAX_KEYWORD_TERMS = 16
+
+
+def keyword_terms(sentence: str) -> list[tuple[str, int]]:
+    """``(tsquery phrase, weight)`` for each content word of the claim.
+
+    Anchor words weigh 2: a number, a code-ish token (``qwen3-vl``,
+    ``model-eval``) or a word capitalised mid-sentence (``Corsair``,
+    ``DeepEval``). Records are ranked by the summed weight of the words they
+    contain, so the session that says "chatterbox restarted 507 times" outranks
+    one that merely shares "restarted" and "board". An OR over every term,
+    ranked by ``ts_rank_cd``, ranked long sessions full of common words first
+    and missed three true events on 2026-10-09 whose records were in the corpus.
+    """
+    capitalised = {
+        w.lower() for w in re.findall(r"(?<=[\w,;:)] )[A-Z][\w.'-]*", sentence or "")
+    }
+    out: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for term in _terms(sentence):
+        parts = re.findall(r"[a-z0-9]+", term)
+        if not parts or term in seen:
+            continue
+        seen.add(term)
+        anchor = (
+            any(ch.isdigit() for ch in term) or len(parts) > 1 or term in capitalised
+            or re.fullmatch(_NUMBER_WORDS, term) is not None
+        )
+        out.append((" <-> ".join(parts), 2 if anchor else 1))
+    out.sort(key=lambda tw: -tw[1])
+    return out[:_MAX_KEYWORD_TERMS]
 
 
 async def retrieve_evidence(
@@ -226,15 +291,22 @@ async def retrieve_evidence(
             f"WHERE {where} ORDER BY embedding <=> $3::vector LIMIT $4",  # nosec B608 — constant SQL
             list(tables), cutoff, vec_str, _CANDIDATES_PER_LIST,
         )
-        tsq = _tsquery(claim.sentence)
+        weighted = keyword_terms(claim.sentence)
         by_keyword = []
-        if tsq:
+        if weighted:
+            phrases = [p for p, _ in weighted]
+            any_term = " | ".join(f"({p})" for p in phrases)
             by_keyword = await conn.fetch(
-                "SELECT source_table, source_id, created_at, "
-                "COALESCE(chunk_text, text_preview) AS body FROM embeddings "
-                f"WHERE {where} AND text_search @@ to_tsquery('simple', $3) "  # nosec B608 — constant SQL
-                "ORDER BY ts_rank_cd(text_search, to_tsquery('simple', $3)) DESC LIMIT $4",
-                list(tables), cutoff, tsq, _CANDIDATES_PER_LIST,
+                "SELECT source_table, source_id, created_at, body FROM ("
+                " SELECT e.source_table, e.source_id, e.created_at,"
+                " COALESCE(e.chunk_text, e.text_preview) AS body,"
+                " (SELECT COALESCE(sum(t.w), 0) FROM unnest($3::text[], $4::int[]) AS t(q, w)"
+                "  WHERE e.text_search @@ to_tsquery('simple', t.q)) AS score,"
+                " ts_rank_cd(e.text_search, to_tsquery('simple', $5)) AS rank"
+                f" FROM embeddings e WHERE {where} AND e.text_search @@ to_tsquery('simple', $5)"  # nosec B608 — constant SQL
+                ") s ORDER BY score DESC, rank DESC LIMIT $6",
+                list(tables), cutoff, phrases, [w for _, w in weighted], any_term,
+                _CANDIDATES_PER_LIST,
             )
 
     fused: dict[str, dict[str, Any]] = {}
@@ -265,6 +337,10 @@ def _norm(text: str) -> str:
 
 
 _QUOTE_MATCH_RATIO = 0.85
+# A contradiction must be about the same thing. All four "contradicted"
+# verdicts on published posts (2026-10-09) quoted a real line from an unrelated
+# record: a firefighter dry-run note "contradicted" a true model-eval fix.
+_CONTRADICTION_MIN_SHARED_TERMS = 3
 
 
 def _fuzzy_contains(needle: str, hay: str) -> bool:
@@ -283,6 +359,9 @@ def _fuzzy_contains(needle: str, hay: str) -> bool:
     return False
 
 
+_RECORD_ID_RE = re.compile(r"[a-z_]+:[^\]\s]+")
+
+
 def quote_holds(quote: str, record: str, evidence: list[Evidence]) -> bool:
     """Is ``quote`` really in the record the judge cited?
 
@@ -295,7 +374,12 @@ def quote_holds(quote: str, record: str, evidence: list[Evidence]) -> bool:
     q = _norm(quote)
     if len(q.split()) < 3:
         return False
-    rid = (record or "").strip().strip("[]")
+    # The judge echoes the id the way the block shows it, "[memory:x] (2026-08-27)";
+    # an exact compare overruled a correct "supported" that way (2026-10-09).
+    m = _RECORD_ID_RE.search(record or "")
+    rid = m.group(0) if m else ""
+    if rid and not any(ev.ref == rid for ev in evidence):
+        rid = ""  # an id we never showed: look for the words in every record
     for ev in evidence:
         if rid and ev.ref != rid:
             continue
@@ -304,6 +388,13 @@ def quote_holds(quote: str, record: str, evidence: list[Evidence]) -> bool:
         if _fuzzy_contains(q, _norm(ev.excerpt)):
             return True
     return False
+
+
+def shares_subject(quote: str, claim_sentence: str) -> bool:
+    """Do the quote and the claim name enough of the same things for one to
+    contradict the other?"""
+    shared = set(_terms(quote)) & set(_terms(claim_sentence))
+    return len(shared) >= _CONTRADICTION_MIN_SHARED_TERMS
 
 
 def _evidence_block(evidence: list[Evidence]) -> str:
@@ -352,6 +443,8 @@ async def judge_claim(
         if verdict in ("supported", "contradicted") and not quote_holds(quote, record, evidence):
             # A decisive verdict without words to show for it is no verdict.
             judge_verdict, verdict = verdict, "no_evidence"
+        elif verdict == "contradicted" and not shares_subject(quote, claim.sentence):
+            judge_verdict, verdict = verdict, "no_evidence"
         return Grounding(
             claim=claim, verdict=verdict, record=record, quote=quote,
             missing=str(parsed.get("missing") or ""), evidence=evidence,
@@ -372,10 +465,15 @@ async def ground_draft(
     tables: tuple[str, ...] = DEFAULT_EVIDENCE_TABLES,
     top_k: int = DEFAULT_TOP_K,
     prompt_template: str | None = None,
+    max_claims: int | None = None,
 ) -> list[Grounding]:
-    """Extract the draft's experiential claims and ground each one."""
+    """Extract the draft's experiential claims and ground each one (the first
+    ``max_claims`` of them: each costs an embedding and a judge call)."""
     results: list[Grounding] = []
-    for claim in extract_experiential_claims(content):
+    claims = extract_experiential_claims(content)
+    if max_claims is not None:
+        claims = claims[:max(0, max_claims)]
+    for claim in claims:
         evidence = await retrieve_evidence(
             pool, claim, site_config=site_config, before=before, tables=tables, top_k=top_k,
         )
@@ -395,6 +493,8 @@ __all__ = [
     "extract_experiential_claims",
     "ground_draft",
     "is_echo",
+    "keyword_terms",
+    "shares_subject",
     "quote_holds",
     "judge_claim",
     "retrieve_evidence",

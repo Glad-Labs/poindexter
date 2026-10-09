@@ -673,16 +673,24 @@ Decide:
 - "supported": a record describes this same specific event or fact, and
   agrees with every specific the claim states (what was done, to what, and any
   numbers, durations or outcomes).
-- "contradicted": a record describes the same event or fact but disagrees
-  with a specific the claim states.
+- "contradicted": a record describes the same event or fact, at the same
+  point in time, and disagrees with a specific the claim states. A record of
+  what happened LATER (the fix, the change, the next version) does not
+  contradict a claim about what happened before it. A record about a
+  different system, file or event never contradicts the claim.
 - "no_evidence": no record describes this event or fact, or the records cover
   only the topic without the claim's specifics. A related topic is not support.
-- "vague": the claim states nothing a record could confirm or deny (no
-  specific action, object, number or outcome), e.g. "We saw the same thing."
+- "vague": the claim states nothing a record could confirm or deny: a
+  generalisation, summary or opinion with no specific action, object, number
+  or outcome. Examples: "We saw the same thing." "We learned this the
+  expensive way, across three parts of our stack." "That framing matches what
+  we found in practice." Counting areas or lessons is not a specific. Use
+  "vague" for these rather than "no_evidence".
 
 For "supported" and "contradicted", copy the exact words from the deciding
 record into "quote" (up to 30 words, copied character for character) and put
-that record's id in "record". The quote is checked against the record.
+that record's id in "record": the text inside the square brackets, without
+the brackets or the date. The quote is checked against the record.
 
 Return ONLY a JSON object, no other text:
 {{"verdict": "supported" | "contradicted" | "no_evidence" | "vague", "record": "<record id or empty>", "quote": "<exact words from that record or empty>", "missing": "<the specific the records do not back, or empty>"}}

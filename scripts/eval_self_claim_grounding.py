@@ -59,7 +59,7 @@ def _claim_line(g) -> str:
     )
     missing = f" — missing: {g.missing}" if g.missing else ""
     overruled = f" (judge said {g.judge_verdict}; quote not found)" if g.judge_verdict else ""
-    quote = f"\n  - quote: “{g.quote}”" if g.quote and not g.judge_verdict else ""
+    quote = f"\n  - quote: “{g.quote}”" if g.quote else ""
     return f"- **{g.verdict}**{overruled}{missing}\n  - claim: {g.claim.sentence}{quote}\n  - top record: {ev}"
 
 
