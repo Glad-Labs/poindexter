@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.154.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.153.1...v0.154.0) (2026-10-09)
+
+
+### Features
+
+* **qa:** prototype grounding of first-person claims in our own records (unwired) ([#4339](https://github.com/Glad-Labs/glad-labs-stack/issues/4339)) ([d6134fb](https://github.com/Glad-Labs/glad-labs-stack/commit/d6134fb1065be0a8fe8fdc9e2552611c50a5f0bd))
+
+
+### Bug Fixes
+
+* **brain:** page "service is DOWN" only after two consecutive failed probes ([#4343](https://github.com/Glad-Labs/glad-labs-stack/issues/4343)) ([f708b65](https://github.com/Glad-Labs/glad-labs-stack/commit/f708b65d591d31cc84ca077e732851d528a976ee))
+
 ## [0.153.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.153.0...v0.153.1) (2026-10-08)
 
 
