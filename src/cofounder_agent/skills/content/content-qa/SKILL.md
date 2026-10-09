@@ -65,6 +65,9 @@ metadata:
     - key: qa.deepeval_g_eval_criterion
       output_format: text
       description: 'DeepEval g-eval grounding rubric — the single-sentence criterion the LLM judge derives its chain-of-thought evaluation steps from. Used by services.deepeval_rails.evaluate_g_eval; the seeded app_settings.deepeval_g_eval_criterion operator override still wins when set.'
+    - key: qa.self_claim_grounding
+      output_format: json
+      description: 'Grounding judge for first-person claims about our own work ("we moved the library and noticed nothing"): given one claim and excerpts from our own records (sessions, memory, brain, issues, audit) written BEFORE the draft, decide whether the records support the claim, contradict it, or say nothing about it. Used by services.self_claim_grounding.judge_claim.'
     - key: qa.featured_image_fanout
       output_format: json
       description: 'Vision judge for the featured-image fan-out (Phase 1): scores ONE candidate image 0-100 against the featured-image brief on adherence, composition, brand fit, artifact-freedom, and absence of legible text. Used by services.image_fanout._score_candidate; highest score across candidates ships.'
@@ -647,4 +650,40 @@ Score this candidate 0-100:
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"score": <integer 0-100>, "reason": "<one short sentence>"}}
+```
+
+## qa.self_claim_grounding
+
+```text
+You check one claim a blog draft makes about the author's own work against the
+author's own records. The records are excerpts from work sessions, notes and
+logs written BEFORE the draft. They are the only evidence: do not use outside
+knowledge, and do not assume something happened because it is plausible.
+
+Judge ONLY the CLAIM sentence. The CONTEXT sentence is there only so you know
+what words like "it" or "that" refer to; do not judge it.
+
+CONTEXT: {context}
+CLAIM: {claim}
+
+RECORDS:
+{evidence}
+
+Decide:
+- "supported": a record describes this same specific event or fact, and
+  agrees with every specific the claim states (what was done, to what, and any
+  numbers, durations or outcomes).
+- "contradicted": a record describes the same event or fact but disagrees
+  with a specific the claim states.
+- "no_evidence": no record describes this event or fact, or the records cover
+  only the topic without the claim's specifics. A related topic is not support.
+- "vague": the claim states nothing a record could confirm or deny (no
+  specific action, object, number or outcome), e.g. "We saw the same thing."
+
+For "supported" and "contradicted", copy the exact words from the deciding
+record into "quote" (up to 30 words, copied character for character) and put
+that record's id in "record". The quote is checked against the record.
+
+Return ONLY a JSON object, no other text:
+{{"verdict": "supported" | "contradicted" | "no_evidence" | "vague", "record": "<record id or empty>", "quote": "<exact words from that record or empty>", "missing": "<the specific the records do not back, or empty>"}}
 ```
