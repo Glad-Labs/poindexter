@@ -1048,6 +1048,12 @@ _external_outage_paged: set[str] = set()
 # delays a genuine heal by one extra cycle.
 _consecutive_down: dict[str, int] = {}
 BRAIN_RESTART_CONSECUTIVE_FAILURES_DEFAULT = 2
+# The page waits for the same streak (2026-10-09). A deploy restarts the
+# worker and it answers again 10-90 s later, so the 5-minute probe catches it
+# down on at most one cycle; paging on that one cycle sent "api is DOWN" to
+# Telegram for a planned restart (09:40:12 restart, 09:40:18 page, 09:41:23
+# healthy) while the restart path beside it correctly waited.
+BRAIN_SERVICE_DOWN_PAGE_CONSECUTIVE_FAILURES_DEFAULT = 2
 # poindexter#963 — the brain's own boot is not evidence about anyone else.
 # When deploy-sync recreates the brain container, its first probe cycle can
 # fail on the brain's side (DNS not yet resolvable one second after start:
@@ -1905,8 +1911,11 @@ async def monitor_services(pool) -> list:
       HTTP error). Auto-restart waits for
       ``app_settings.brain_restart_consecutive_failures`` consecutive
       failed cycles (default 2), then fires every failing cycle
-      thereafter; the critical-alert triage path is untouched and still
-      fires from the first failed cycle.
+      thereafter. The critical page waits for
+      ``app_settings.brain_service_down_page_consecutive_failures``
+      consecutive failed cycles (default 2) too, then fires every failing
+      cycle: a deploy restart is down for one probe at most, a real outage
+      for two or more. ``1`` restores paging on the first failed cycle.
     """
     global _last_openclaw_doctor
     issues = []
@@ -1918,6 +1927,11 @@ async def monitor_services(pool) -> list:
     boot_grace_s = await _setting_int(
         pool, "brain_boot_grace_seconds", BRAIN_BOOT_GRACE_SECONDS_DEFAULT,
     )
+    page_after = max(1, await _setting_int(
+        pool,
+        "brain_service_down_page_consecutive_failures",
+        BRAIN_SERVICE_DOWN_PAGE_CONSECUTIVE_FAILURES_DEFAULT,
+    ))
     uptime_s = time.monotonic() - _DAEMON_STARTED_AT
     in_boot_grace = uptime_s < boot_grace_s
     for name, config in SERVICES.items():
@@ -2041,8 +2055,16 @@ async def monitor_services(pool) -> list:
                 "(host-side service, no in-container recovery path)",
             )
 
-        # Auto-triage: check alert_actions table before escalating
-        if config["critical"]:
+        # Auto-triage: check alert_actions table before escalating. The page
+        # waits for ``page_after`` consecutive failed cycles (see the
+        # docstring): one failed probe is what a deploy restart looks like.
+        if config["critical"] and fails < page_after:
+            logger.info(
+                "[BRAIN] %s down %d/%d consecutive cycle(s) — page deferred "
+                "(a deploy restart answers again within one cycle)",
+                name, fails, page_after,
+            )
+        elif config["critical"]:
             try:
                 pattern = f"{name}_down" if name != "api" else "api_down"
                 action = await pool.fetchrow(

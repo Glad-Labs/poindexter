@@ -299,7 +299,11 @@ class TestMonitorServices:
 
     async def test_a_critical_service_down_pages(self, channels, monkeypatch):
         _services(monkeypatch, {"api": (False, 0, "timed out")}, {"api": True})
+        monkeypatch.setattr(bd, "_consecutive_down", {})
 
+        # The page waits for a second failed cycle (a deploy restart is down
+        # for one probe at most), then goes to the paging channel.
+        await bd.monitor_services(_Pool())
         await bd.monitor_services(_Pool())
 
         assert channels.reached("api is DOWN") == PAGE

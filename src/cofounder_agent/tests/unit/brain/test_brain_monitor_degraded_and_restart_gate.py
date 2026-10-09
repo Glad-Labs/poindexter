@@ -194,20 +194,50 @@ class TestMonitorServicesDegraded:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestMonitorServicesRestartGate:
-    async def test_first_down_cycle_defers_restart_but_still_alerts(self, monkeypatch, monitor_env):
+    async def test_first_down_cycle_defers_restart_and_page(self, monkeypatch, monitor_env):
+        # 2026-10-09: a deploy restart is down for one probe at most; the page
+        # used to fire on it ("api is DOWN" at 09:40:18, healthy at 09:41:23).
         _set_services(
             monkeypatch,
-            {"api": (False, 0, "timed out"), "worker": (False, 0, "timed out")},
+            {"api": (False, 0, "Connection refused"), "worker": (False, 0, "Connection refused")},
             critical={"api": True},
         )
 
         issues = await bd.monitor_services(monitor_env["pool"])
 
         monitor_env["restart"].assert_not_awaited()
+        monitor_env["notify"].assert_not_awaited()
+        # Still surfaced: the issues list and the knowledge graph record it.
         assert {i["service"]: i["state"] for i in issues} == {"api": "down", "worker": "down"}
-        # Critical alerting is NOT gated on the restart threshold.
+
+    async def test_second_consecutive_down_cycle_pages_and_keeps_paging(self, monkeypatch, monitor_env):
+        _set_services(monkeypatch, {"api": (False, 0, "timed out")}, critical={"api": True})
+
+        await bd.monitor_services(monitor_env["pool"])
+        monitor_env["notify"].assert_not_awaited()
+        await bd.monitor_services(monitor_env["pool"])
         assert monitor_env["notify"].await_count == 1
         assert "api is DOWN" in monitor_env["notify"].await_args_list[0].args[0]
+        await bd.monitor_services(monitor_env["pool"])
+        assert monitor_env["notify"].await_count == 2
+
+    async def test_a_deploy_blip_that_recovers_never_pages(self, monkeypatch, monitor_env):
+        _set_services(monkeypatch, {"api": (False, 0, "Connection refused")}, critical={"api": True})
+        await bd.monitor_services(monitor_env["pool"])
+        _set_services(monkeypatch, {"api": (True, 200, "healthy")}, critical={"api": True})
+        await bd.monitor_services(monitor_env["pool"])
+        _set_services(monkeypatch, {"api": (False, 0, "Connection refused")}, critical={"api": True})
+        await bd.monitor_services(monitor_env["pool"])
+        monitor_env["notify"].assert_not_awaited()
+
+    async def test_page_threshold_of_one_restores_the_first_cycle_page(self, monkeypatch, monitor_env):
+        async def setting(query, key=None, *args):
+            return "1" if key == "brain_service_down_page_consecutive_failures" else None
+
+        monitor_env["pool"].fetchval = AsyncMock(side_effect=setting)
+        _set_services(monkeypatch, {"api": (False, 0, "timed out")}, critical={"api": True})
+        await bd.monitor_services(monitor_env["pool"])
+        assert monitor_env["notify"].await_count == 1
 
     async def test_second_consecutive_down_cycle_restarts(self, monkeypatch, monitor_env):
         _set_services(monkeypatch, {"worker": (False, 0, "timed out")})
@@ -325,9 +355,10 @@ class TestRestartGuardedByRecentStart:
 
         assert [c.args[0][1] for c in run.call_args_list] == ["inspect"], "no `docker restart`"
         notice.assert_not_awaited()  # not a heal
-        # Only the critical-alert path paged, once per failing cycle. The
-        # declined heal added no page (it is not a failure either).
-        assert monitor_env["notify"].await_count == 2
+        # Only the critical-alert path paged: from the second failing cycle
+        # (the page waits out a one-probe blip). The declined heal added no
+        # page (it is not a failure either).
+        assert monitor_env["notify"].await_count == 1
         assert all(
             "worker is DOWN" in c.args[0] for c in monitor_env["notify"].await_args_list
         )
