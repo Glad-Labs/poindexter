@@ -15,7 +15,7 @@
 ## The flow
 
 ```
-Glad-Labs/glad-labs-stack (private GitHub, source of truth)
+Glad-Labs/poindexter (private GitHub, source of truth)
     │
     ├─→ GitHub Actions (several workflows — there is no single ci.yml)
     │       required checks: unit-tests.yml (job test-backend,
@@ -44,7 +44,7 @@ Glad-Labs/glad-labs-stack (private GitHub, source of truth)
                         (no deploy)
 ```
 
-Vercel watches `Glad-Labs/glad-labs-stack` (the private origin),
+Vercel watches `Glad-Labs/poindexter` (the private origin),
 NOT the public `poindexter` repo. The public repo has no deploy
 workflow — Release Please is the only thing producing artifacts.
 
@@ -232,7 +232,7 @@ the pytest suites CI runs through other workflows (`mcp-server-tests.yml`,
   workflow. Strips operator-only files before pushing the public
   subset.
 - `.github/workflows/release-please.yml` — Release Please on
-  `Glad-Labs/glad-labs-stack` (the source repo — NOT the public
+  `Glad-Labs/poindexter` (the source repo — NOT the public
   mirror; running it on the force-rebuilt mirror broke versioning,
   see the workflow header). Versioning only. **Runs daily at 08:00
   UTC** (was `on: push` to main) so a day's `feat:`/`fix:` commits
@@ -507,7 +507,7 @@ pins`, `Lint shell + PowerShell scripts`, `poetry check --lock
 
   Config is `app_settings.scheduled_workflows`, and it ships **empty**:
   a useful default would have to name this operator's repos, and a
-  `Glad-Labs/glad-labs-stack` literal in `settings_defaults.py` would
+  `Glad-Labs/poindexter` literal in `settings_defaults.py` would
   reach the public mirror and trip the private-repo leak guard. Set
   `max_age_hours` to roughly 1.5x the cron period — GitHub's scheduler
   is best-effort and routinely runs late, so a window equal to the
@@ -673,7 +673,7 @@ is exercised", instead of just the test count.
 `github.com/Glad-Labs/poindexter` is the open-source release repo.
 It gets a filtered snapshot via the auto-sync workflow above. It
 does NOT auto-deploy anywhere. Vercel watches the private origin
-(`Glad-Labs/glad-labs-stack`), not the public mirror.
+(`Glad-Labs/poindexter`), not the public mirror.
 
 The public mirror has `allow_force_pushes: true` in its branch
 protection — the mirror is rebuilt from scratch on every sync, so
@@ -1016,7 +1016,7 @@ at the working checkout:
 Unit-template changes for the connector stayed manual until 2026-09-28 (copy the
 rendered template to `/etc/systemd/system`, then `sudo systemctl daemon-reload &&
 sudo systemctl restart poindexter-mcp-http`), like the session units'. Since
-Glad-Labs/glad-labs-stack#4232, `install-deploy-sync.sh` re-renders the unit
+Glad-Labs/poindexter#4232, `install-deploy-sync.sh` re-renders the unit
 onto the clone when the host already has it, and restarts it only when a
 non-comment line changed; see
 [Install and operate](#the-deploy-driver-runs-the-deploy-clone-with-a-last-known-good-fallback)
@@ -1025,7 +1025,7 @@ below. The session units' template is still the manual one.
 ## The host CLI is a fifth surface, and it runs the deploy clone
 
 The `poindexter` command on the operator host is not a container, so none of the
-surfaces above covered it until 2026-09-28 (Glad-Labs/glad-labs-stack#4156).
+surfaces above covered it until 2026-09-28 (Glad-Labs/poindexter#4156).
 It ran out of a poetry venv editable-installed against the **working
 checkout**: `~/.local/bin/poindexter` was a hand-written launcher that exec'd
 the newest `~/.cache/pypoetry/virtualenvs/poindexter-*/bin/poindexter`, and
@@ -1132,7 +1132,7 @@ else here. The CLI launcher's own `--ensure` never depended on either.
 ## The deploy driver runs the deploy clone, with a last-known-good fallback
 
 `deploy-checkout-sync.sh` keeps every other surface above current, and until
-2026-09-28 it was the one that went stale itself (Glad-Labs/glad-labs-stack#4172).
+2026-09-28 it was the one that went stale itself (Glad-Labs/poindexter#4172).
 `poindexter-deploy-sync.service` ran it out of the operator's **working
 checkout**. The unit said that was deliberate, so a broken merge could not
 brick the syncer that would fix it. But the only thing that ever advanced that
@@ -1250,7 +1250,7 @@ protected against a broken merge. It also gained its first tests
 (`test_docker_watchdog.py`).
 
 **Long-running host daemons are restarted when their files change**
-(Glad-Labs/glad-labs-stack#4188). A process reads its code once, at start, so
+(Glad-Labs/poindexter#4188). A process reads its code once, at start, so
 running it from the deploy clone only updates the files it will load next
 time; a launcher buys it nothing. `poindexter-recovery-agent` already ran from
 the clone and still ran pre-#4158 code a day after that merge, because nothing
@@ -1346,7 +1346,7 @@ enabling it: `gpu_metrics` is optional, and the scraper needs host
 pass notes on every pass that the scraper does not run from the deploy clone.
 
 **It also refreshes the connector's and the recovery agent's units, on a host
-that already has them** (Glad-Labs/glad-labs-stack#4232).
+that already has them** (Glad-Labs/poindexter#4232).
 `poindexter-mcp-http.service` and `poindexter-recovery-agent.service` run from
 the clone too, but their templates used to reach a host only by a hand render.
 The installer renders the same three directives (`User=`, `WorkingDirectory=`,

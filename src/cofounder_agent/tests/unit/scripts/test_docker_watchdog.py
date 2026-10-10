@@ -2,7 +2,7 @@
 
 It had no tests while it ran out of the operator's working checkout, where a
 merged change reached it only when someone pulled. Since
-Glad-Labs/glad-labs-stack#4172 the unit runs the deploy clone's copy, so a
+Glad-Labs/poindexter#4172 the unit runs the deploy clone's copy, so a
 merged change runs within one deploy pass, and these pin the behaviour that
 change has to keep (both properties from the 2026-08-27 incident, see the
 script header):
