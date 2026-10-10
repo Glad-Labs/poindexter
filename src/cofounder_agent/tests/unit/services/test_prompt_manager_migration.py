@@ -37,33 +37,12 @@ def test_self_review_resolver_uses_prompt_manager():
             title="Hello",
             topic="AI",
             draft="Body",
-            fallback="FALLBACK {title}",
         )
     assert result == "PM: title=Hello topic=AI draft=Body"
     mock_pm.return_value.get_prompt.assert_called_once_with(
         "qa.self_review.contradictions_review",
         title="Hello", topic="AI", draft="Body",
     )
-
-
-@pytest.mark.unit
-def test_self_review_resolver_falls_back_when_pm_raises():
-    """Bootstrap / test paths where UnifiedPromptManager is unavailable
-    must keep working — the inline fallback gets ``.format(**kwargs)``'d."""
-    from poindexter.services import self_review
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("no DB pool"),
-    ):
-        result = self_review._resolve_prompt(
-            "qa.self_review.contradictions_review",
-            title="T",
-            topic="O",
-            draft="D",
-            fallback="FB title={title} topic={topic} draft={draft}",
-        )
-    assert result == "FB title=T topic=O draft=D"
 
 
 @pytest.mark.unit
@@ -79,23 +58,6 @@ def test_self_consistency_resolver_uses_prompt_manager():
     mock_pm.return_value.get_prompt.assert_called_once_with(
         "qa.self_consistency.summarize", topic="t", content="c",
     )
-
-
-@pytest.mark.unit
-def test_self_consistency_resolver_falls_back_on_pm_failure():
-    from poindexter.services import self_consistency_rail
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = self_consistency_rail._resolve_summary_prompt(
-            topic="quantum gardening", content="ARTICLE_BODY",
-        )
-    # Fallback template includes "Summarize the following article" + topic + content
-    assert "Summarize the following article" in result
-    assert "quantum gardening" in result
-    assert "ARTICLE_BODY" in result
 
 
 @pytest.mark.unit
@@ -123,17 +85,3 @@ def test_retention_resolver_returns_raw_template_from_prompt_manager():
     assert "{joined}" in result
 
 
-@pytest.mark.unit
-def test_retention_resolver_falls_back_when_pm_unavailable():
-    """When prompt_manager import / lookup fails, the inline fallback
-    template is returned — handler keeps working without Langfuse / YAML."""
-    from poindexter.services.integrations.handlers import retention_summarize_to_table
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=ImportError("module missing"),
-    ):
-        result = retention_summarize_to_table._resolve_summary_prompt_template()
-    assert "compressing one calendar day" in result
-    assert "{bucket_start_iso}" in result
-    assert "{row_count}" in result

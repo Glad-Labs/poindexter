@@ -875,48 +875,6 @@ class TestResolveSystemPrompt:
         assert "site_url" in captured_kwargs[0], "site_url kwarg must be passed"
         assert key == "atoms.narrate_bundle.system_prompt"
 
-    def test_falls_back_to_inline_constant_and_logs_error(self, caplog):
-        """When the prompt registry raises, _resolve_system_prompt must
-        log at ERROR (the operator needs to know the registry is down) and
-        return the inline fallback constant with unrendered placeholders.
-
-        Note: before the kwargs fix, the fallback fired on every dev_diary run
-        (missing {site_name}/{site_url} kwargs → KeyError in every call), so
-        the log level was temporarily lowered to WARNING to reduce noise.
-        Now that kwargs are passed correctly, the fallback only fires when the
-        registry is genuinely unreachable — ERROR is appropriate.
-        """
-        import logging
-        from unittest.mock import MagicMock, patch
-
-        from poindexter.modules.content.atoms.narrate_bundle import (
-            _NARRATIVE_SYSTEM_PROMPT_FALLBACK,
-            _resolve_system_prompt,
-        )
-
-        def _raise(_key, **_kw):
-            raise KeyError("atoms.narrate_bundle.system_prompt")
-
-        mock_mgr = MagicMock()
-        mock_mgr.get_prompt_resolution.side_effect = _raise
-
-        with patch(
-            "poindexter.services.prompt_manager.get_prompt_manager",
-            return_value=mock_mgr,
-        ):
-            with caplog.at_level(logging.ERROR, logger="poindexter.modules.content.atoms.narrate_bundle"):
-                text, key, version = _resolve_system_prompt(None)
-
-        assert text == _NARRATIVE_SYSTEM_PROMPT_FALLBACK, (
-            "inline fallback must be returned when registry lookup fails"
-        )
-        assert key is None
-        assert version is None
-        error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
-        assert error_records, (
-            "fallback must log at ERROR so the operator knows the registry is unreachable"
-        )
-
 
 # ---------------------------------------------------------------------------
 # Title-variety guidance (stack#3209)

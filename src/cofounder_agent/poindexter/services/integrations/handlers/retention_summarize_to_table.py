@@ -211,58 +211,20 @@ def _day_bucket(ts: datetime) -> tuple[datetime, datetime]:
 
 _SUMMARY_PROMPT_KEY = "ops.retention.summarize_to_table"
 
-_SUMMARY_PROMPT_FALLBACK = (
-    "You are compressing one calendar day of {source_table} rows so the "
-    "system remembers the gist without storing every row. Below are "
-    "{n} representative rows from {bucket_start_iso}, each separated by "
-    "'---'.\n\n"
-    "Write a single paragraph (3-6 sentences) summarizing what happened "
-    "that day. Preserve specific event types, sources, severity, "
-    "decisions, and outcomes. Drop boilerplate and repetition. The "
-    "summary will be stored as a single row replacing all {row_count} "
-    "raw rows for the day, so dense factual content beats prose.\n\n"
-    "Rows:\n{joined}\n\n"
-    "Summary:\n"
-)
-"""Inline bootstrap fallback. Production reads come from the
-``ops.retention.summarize_to_table`` SKILL.md key; this constant protects
-the cold-start / test path per ``feedback_prompts_must_be_db_configurable``
-and must stay byte-identical to the SKILL.md body (including the trailing
-newline the loader appends) — the shared drift guard in
-tests/unit/services/test_prompt_fallback_drift.py enforces it."""
 
 
 def _resolve_summary_prompt_template() -> str:
-    """Pull the retention-summary prompt template via UnifiedPromptManager
-    *without* substituting any placeholders. The caller does the
-    ``.replace()`` dance for ``{bucket_start_iso}`` / ``{row_count}`` and
-    then hands the half-formatted template to
-    :func:`build_summary_text_via_llm`, which fills the remaining
-    ``{n}`` / ``{source_table}`` / ``{joined}`` placeholders. Returns the
-    inline fallback when the manager is unreachable (mirrors the
-    self_review + self_consistency_rail pattern, ``feedback_prompts_must_be_db_configurable``).
-    """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
+    """The retention-summary prompt template with no placeholders filled.
 
-        # Raw-template fetch (no placeholders filled) via the manager's
-        # resolution seam. _resolve_template_with_meta honors the
-        # langfuse_prompt_overrides_enabled gate (poindexter#825) — the
-        # previous hand-rolled pm._fetch_from_langfuse() call bypassed it,
-        # leaving this the one Langfuse-first prompt after the SKILL.md-
-        # authoritative flip.
-        pm = get_prompt_manager()
-        return pm._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
-    except Exception as exc:  # noqa: BLE001
-        # ERROR, not WARNING — the fallback self-heals but must not
-        # suppress the "prompt registry unreachable" signal, per
-        # feedback_self_heal_not_suppress (drift-guard contract).
-        logger.error(
-            "[retention.summarize_to_table] prompt_manager lookup for "
-            "%r failed (%s) — using inline fallback",
-            _SUMMARY_PROMPT_KEY, exc,
-        )
-        return _SUMMARY_PROMPT_FALLBACK
+    The caller replaces ``{bucket_start_iso}`` / ``{row_count}`` and
+    :func:`build_summary_text_via_llm` fills ``{n}`` / ``{source_table}`` /
+    ``{joined}``. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
+    """
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    # Raw-template fetch (no placeholders filled) via the manager's resolution
+    # seam, which honors the langfuse_prompt_overrides_enabled gate (poindexter#825).
+    return get_prompt_manager()._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
 
 
 def _row_to_excerpt(row: dict[str, Any], cols: Sequence[str]) -> str:

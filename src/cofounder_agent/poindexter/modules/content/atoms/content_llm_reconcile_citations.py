@@ -166,43 +166,15 @@ ATOM_META = AtomMeta(
 )
 
 _PROMPT_KEY = "atoms.content.llm_reconcile_citations"
-_PROMPT_FALLBACK = """\
-You are a citation auditor. Below is an article and a list of research SOURCES
-(name and URL). Find every place the article refers to one of these SOURCES **as
-the source of a claim or framing** (e.g. "X says", "according to X", "what X
-calls", "an X piece argues") but does NOT already link it.
-
-Return ONLY compact JSON, no prose, no code fence:
-{{"links":[{{"text":"<exact verbatim phrase from the article naming the source>","url":"<the matching SOURCE url, copied verbatim>"}}],
- "ungrounded":["<name of any source the article attributes a claim to that is NOT in the SOURCES list>"]}}
-
-Rules:
-- Use ONLY urls copied verbatim from the SOURCES list. Never invent a url.
-- "text" MUST be an exact substring of the article (do not paraphrase).
-- Only source-attribution mentions — ignore names mentioned in passing.
-- If nothing matches, return {{"links":[],"ungrounded":[]}}.
-
-SOURCES:
-{sources}
-
-ARTICLE:
-{content}
-"""
 
 
 def _resolve_prompt(*, sources: str, content: str) -> str:
-    """Langfuse/SKILL.md-configurable prompt, inline fallback for bootstrap/test."""
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
-            _PROMPT_KEY, sources=sources, content=content,
-        )
-    except Exception as exc:  # noqa: BLE001 — registry unreachable (bootstrap/test)
-        logger.warning(
-            "[llm_reconcile_citations] prompt lookup failed (%s) — inline fallback",
-            exc,
-        )
-        return _PROMPT_FALLBACK.format(sources=sources, content=content)
+    """The citation-audit prompt from the SKILL.md pack. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09)."""
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt(
+        _PROMPT_KEY, sources=sources, content=content,
+    )
 
 
 def _parse_llm_json(raw: str) -> dict:

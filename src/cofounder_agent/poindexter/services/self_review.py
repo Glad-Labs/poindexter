@@ -34,50 +34,13 @@ from poindexter.services.site_config import SiteConfig
 logger = logging.getLogger(__name__)
 
 
-# Inline fallbacks — used when UnifiedPromptManager is unavailable
-# (bootstrap / tests / Langfuse + YAML both missing). Per
-# feedback_prompts_must_be_db_configurable the live edit surface is
-# Langfuse → YAML; these constants only protect the cold-start path.
-_REVIEW_PROMPT_FALLBACK = (
-    "You are reviewing your own draft for internal contradictions.\n\n"
-    "TITLE: {title}\n"
-    "TOPIC: {topic}\n\n"
-    "DRAFT:\n{draft}\n\n"
-    "Read every section. Identify any claim in one section that contradicts "
-    "a claim, code example, or recommendation in another section. "
-    "Ignore stylistic variation; focus on factual or logical conflicts.\n\n"
-    "If you find contradictions, output a numbered list of specific corrections "
-    "needed (one per line, format: 'SECTION X conflicts with SECTION Y: <details>'). "
-    "If you find none, reply with exactly: PASS"
-)
-
-_REVISE_PROMPT_FALLBACK = (
-    "Here is your draft. Fix these specific contradictions and nothing else:\n\n"
-    "CONTRADICTIONS TO FIX:\n{review_text}\n\n"
-    "ORIGINAL DRAFT:\n{draft}\n\n"
-    "Output only the revised draft. Keep the structure, length, and tone "
-    "identical. Only change what's needed to resolve the contradictions. "
-    "Preserve any [IMAGE: ...], [IMAGE-N: ...], and [HERO-IMAGE: ...] markers "
-    "exactly as they appear — do not remove, renumber, reword, or relocate them."
-)
-
-
-def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
-    """Pull a prompt via UnifiedPromptManager; format the inline fallback
-    if the manager is unreachable. Mirrors the standard resolve-then-fallback
-    prompt pattern so operator-edited prompts in Langfuse win without forcing
-    a restart.
+def _resolve_prompt(key: str, **kwargs: Any) -> str:
+    """A self-review prompt from the SKILL.md pack (a Langfuse override wins when
+    ``langfuse_prompt_overrides_enabled``). A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
     """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(key, **kwargs)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[self_review] prompt_manager lookup for %r failed (%s) — "
-            "using inline fallback",
-            key, exc,
-        )
-        return fallback.format(**kwargs)
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt(key, **kwargs)
 
 
 async def _resolve_self_review_model(
@@ -341,7 +304,6 @@ async def detect_contradictions(
         title=title,
         topic=topic,
         draft=draft,
-        fallback=_REVIEW_PROMPT_FALLBACK,
     )
 
     # Thinking budget (mirrors the critic path's qa_thinking_model_max_tokens).
@@ -438,7 +400,6 @@ async def revise_contradictions(
             "qa.self_review.contradictions_revise",
             review_text=review_text,
             draft=draft,
-            fallback=_REVISE_PROMPT_FALLBACK,
         )
         revised = await ctx.complete(
             revise_prompt,

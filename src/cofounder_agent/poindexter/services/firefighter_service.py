@@ -25,9 +25,8 @@ Public surface (called by ``routes/triage_routes.py`` once step 3 lands):
   LLM produces nothing — the caller's spec'd behaviour is to skip
   the follow-up rather than post empty.
 - :func:`_resolve_system_prompt` — operator-persona prompt; resolves via
-  :class:`UnifiedPromptManager` (Langfuse → ``skills/ops/triage/SKILL.md``)
-  and falls back to the inline ``_FALLBACK_SYSTEM_PROMPT`` — logged at
-  ERROR — only when the prompt registry is unreachable.
+  :class:`UnifiedPromptManager` (``skills/ops/triage/SKILL.md``). A missing
+  key raises; there is no in-code copy.
 
 DI rules (poindexter#95 / Phase H):
 
@@ -64,26 +63,7 @@ _CHARS_PER_TOKEN = 4
 # table is retired, poindexter#47 Phase 2); a Langfuse ``production`` label
 # can override only behind ``langfuse_prompt_overrides_enabled``.
 _PROMPT_KEY = "ops.triage.system_prompt"
-
-
-# Last-resort fallback for :func:`_resolve_system_prompt`, used only when the
-# prompt registry is unreachable (early bootstrap, monkey-patched manager in
-# tests). This MUST stay byte-identical to the canonical SKILL.md body —
-# INCLUDING the trailing newline the SKILL.md loader emits — or the
-# parametrized drift-guard in tests/unit/services/test_prompt_fallback_drift.py
-# trips. Edit the SKILL.md body and this constant together.
-_FALLBACK_SYSTEM_PROMPT = (
-    "You are the Poindexter operator. The system you are diagnosing is "
-    "the Poindexter content pipeline -- a self-hosted FastAPI worker, "
-    "brain daemon, Postgres + pgvector, Ollama for LLM inference. You "
-    "will be shown an alert + curated database state. Your job is to "
-    "write ONE SHORT PARAGRAPH (<=400 tokens) explaining: what likely "
-    "happened, why you think so (cite the rows you saw), and one "
-    "suggested next step the operator could take. Do NOT propose code "
-    "changes -- those go to a different escalation path. Do NOT suggest "
-    "ALL POSSIBLE causes -- commit to your most likely diagnosis. If "
-    "the context is genuinely ambiguous, say so plainly and stop.\n"
-)
+_SELECT_PROMPT_KEY = "ops.firefighter.select_action"
 
 
 class _ModelRouterLike(Protocol):
@@ -344,21 +324,6 @@ async def run_triage(
 # rate-cap); this layer only validates the shape and surfaces the score.
 # ---------------------------------------------------------------------------
 
-_SELECT_SYSTEM_PROMPT = (
-    "You are an SRE remediation action selector for an autonomous ops system. "
-    "You are given an ALERT that has no pre-written rule, plus a fixed CATALOG "
-    "of remediation actions. Choose the SINGLE best action from the catalog to "
-    "try first, or abstain if none is clearly safe and appropriate.\n\n"
-    "Respond with ONLY a JSON object — no prose, no code fence:\n"
-    '{"action_name": "<exactly one catalog name, or empty string to abstain>", '
-    '"params": {<only the params that action documents>}, '
-    '"confidence": <float 0.0-1.0>, "reason": "<one short sentence>"}\n\n'
-    "Rules: action_name MUST be exactly one of the catalog names, or empty to "
-    "abstain. Prefer to abstain (empty action_name, confidence 0) when the alert "
-    "is ambiguous or no catalog action addresses it — a wrong action is worse "
-    "than paging a human."
-)
-
 
 def _parse_selection_json(text: str) -> dict[str, Any] | None:
     """Best-effort parse of the model's JSON selection.
@@ -431,10 +396,13 @@ async def select_remediation_action(
         {"alert": alert, "catalog": action_catalog}, default=str, ensure_ascii=False
     )
 
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    select_prompt = get_prompt_manager().get_prompt(_SELECT_PROMPT_KEY)
     started = time.perf_counter()
     try:
         result = await model_router.invoke(
-            model_class=model_class, system=_SELECT_SYSTEM_PROMPT,
+            model_class=model_class, system=select_prompt,
             user=user_payload, max_tokens=512,
         )
     except Exception as e:  # noqa: BLE001 — selection must not raise into the caller
@@ -479,33 +447,10 @@ async def select_remediation_action(
 
 
 def _resolve_system_prompt() -> str:
-    """Return the operator-persona triage system prompt.
+    """The operator-persona triage prompt (``ops.triage.system_prompt``).
 
-    Resolves through :class:`services.prompt_manager.UnifiedPromptManager`,
-    which chains the Langfuse ``production`` label → the
-    ``skills/ops/triage/SKILL.md`` default. The pre-#485
-    ``app_settings.ops_triage_system_prompt`` override key was retired
-    (poindexter#485 follow-up) in favour of that stack — operators now tune
-    the prompt via the SKILL.md pack (authoritative; PR-managed) with
-    Langfuse overrides only behind ``langfuse_prompt_overrides_enabled``,
-    per ``docs/architecture/prompt-management.md``.
-
-    ``_FALLBACK_SYSTEM_PROMPT`` is the last-resort fallback for the case
-    where ``get_prompt_manager()`` itself fails (DB pool not yet wired
-    during early bootstrap, test fixtures that monkey-patch the manager).
-    Triage must produce SOME system prompt — an empty system slot is worse
-    than the seeded default — so per ``feedback_self_heal_not_suppress`` we
-    self-heal LOUDLY: the fallback logs at ERROR so a broken registry
-    surfaces instead of silently serving the inline copy.
+    A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
     """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(_PROMPT_KEY)
-    except Exception as exc:  # noqa: BLE001 — triage must not be gated on the registry
-        logger.error(
-            "[firefighter] prompt_manager lookup for %r failed (%s) — using "
-            "inline fallback. Re-check the ops/triage SKILL.md pack + "
-            "UnifiedPromptManager wiring.",
-            _PROMPT_KEY, exc,
-        )
-        return _FALLBACK_SYSTEM_PROMPT
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt(_PROMPT_KEY)

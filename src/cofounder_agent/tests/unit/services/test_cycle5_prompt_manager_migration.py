@@ -12,12 +12,9 @@ can surface them for review:
   ``memory.collapse_old_embeddings.summary`` key (the 2026-06-24
   job-to-handler fold had left the handler on its inline constant).
 
-Each resolver pulls from UnifiedPromptManager and falls back to the
-inline constant on any lookup failure — same pattern as the cycle-3/-4
-migrations (#612). Byte-agreement between the SKILL.md default and the
-inline fallback is enforced by test_prompt_fallback_drift.py; this file
-pins the resolver *behavior* (PM path taken, fallback on failure, and
-the explicit-override precedence rules).
+Each resolver pulls from UnifiedPromptManager; there is no in-code copy
+since 2026-10-09 (test_prompts_live_only_in_packs.py). This file pins the
+resolver *behavior* (PM path taken, the explicit-override precedence rules).
 """
 
 from __future__ import annotations
@@ -44,19 +41,6 @@ def test_image_caption_resolver_uses_prompt_manager():
     )
 
 
-@pytest.mark.unit
-def test_image_caption_resolver_falls_back_on_pm_failure():
-    from poindexter.services import image_captioner
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = image_captioner._prompt(budget=97)
-    assert "under 97 characters" in result
-    assert "ONLY what is actually visible" in result
-
-
 # ---------------------------------------------------------------------------
 # qa.deepeval_g_eval_criterion (services/deepeval_rails.py)
 # ---------------------------------------------------------------------------
@@ -76,28 +60,13 @@ def test_g_eval_criterion_resolver_uses_prompt_manager():
 
 
 @pytest.mark.unit
-def test_g_eval_criterion_resolver_falls_back_on_pm_failure():
+def test_g_eval_criterion_is_newline_free():
+    """The resolved criterion is a bare one-line rubric, matching the shape of
+    the seeded ``app_settings.deepeval_g_eval_criterion`` value."""
     from poindexter.services import deepeval_rails
 
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = deepeval_rails._resolve_g_eval_criterion()
-    assert result == deepeval_rails._DEFAULT_G_EVAL_CRITERION
-    assert "well-grounded" in result
-
-
-@pytest.mark.unit
-def test_g_eval_fallback_matches_seeded_app_setting_shape():
-    """The inline fallback must stay newline-free: it mirrors the seeded
-    ``app_settings.deepeval_g_eval_criterion`` value, so all three sources
-    (constant, seed, stripped SKILL.md body) grade against the same rubric."""
-    from poindexter.services import deepeval_rails
-
-    assert deepeval_rails._DEFAULT_G_EVAL_CRITERION == (
-        deepeval_rails._DEFAULT_G_EVAL_CRITERION.strip()
-    )
+    criterion = deepeval_rails._resolve_g_eval_criterion()
+    assert criterion == criterion.strip() and "\n" not in criterion
 
 
 class _FakeGEvalMetric:
@@ -220,18 +189,6 @@ def test_collapse_resolver_default_path_never_consults_langfuse():
         template = retention_embeddings_collapse._resolve_summary_prompt_template()
     lf.assert_not_called()
     assert template == pm.prompts["memory.collapse_old_embeddings.summary"]["template"]
-
-
-@pytest.mark.unit
-def test_collapse_resolver_falls_back_on_pm_failure():
-    from poindexter.services.integrations.handlers import retention_embeddings_collapse
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = retention_embeddings_collapse._resolve_summary_prompt_template()
-    assert result == retention_embeddings_collapse._DEFAULT_SUMMARY_PROMPT
 
 
 @pytest.mark.unit

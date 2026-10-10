@@ -24,8 +24,7 @@ Config keys (from the ``config`` JSONB column on the retention_policies row):
 - ``summary_timeout_s`` (int, default 60) — per-cluster LLM timeout.
 - ``prompt_template`` (str, optional) — per-policy-row summarizer prompt.
   When unset, the ``memory.collapse_old_embeddings.summary`` SKILL.md
-  catalog key is resolved via UnifiedPromptManager (inline fallback when
-  the manager is unreachable).
+  catalog key is resolved via UnifiedPromptManager.
 
 Returns: {
     "deleted":      int,   # raw rows removed
@@ -56,7 +55,7 @@ to the configured ``summary_model`` for a 3-6 sentence dense factual summary.
 Any LLM failure silently falls back to the joined-preview heuristic (no
 crash, no abort). Prompt resolution order: per-policy-row
 ``config.prompt_template`` > ``memory.collapse_old_embeddings.summary``
-catalog key > inline ``_DEFAULT_SUMMARY_PROMPT`` fallback.
+catalog key (SKILL.md; no in-code copy).
 """
 
 from __future__ import annotations
@@ -228,50 +227,14 @@ def build_summary_text(previews: Iterable[str], *, chars_per_member: int = 200) 
 
 _SUMMARY_PROMPT_KEY = "memory.collapse_old_embeddings.summary"
 
-# Inline bootstrap fallback — must stay byte-identical to the
-# ``## memory.collapse_old_embeddings.summary`` body in
-# skills/ops/hygiene/SKILL.md (including the trailing newline the SKILL.md
-# loader appends); the shared drift guard in
-# tests/unit/services/test_prompt_fallback_drift.py enforces it.
-_DEFAULT_SUMMARY_PROMPT = (
-    "You are compressing a cluster of older memories so the system "
-    "remembers the gist without storing every detail. Below are "
-    "{n} excerpts from the same source ({source_table}), each "
-    "separated by '---'.\n\n"
-    "Write a single paragraph (3-6 sentences) summarizing what these "
-    "excerpts collectively say. Preserve specific names, dates, "
-    "decisions, errors, and outcomes. Drop boilerplate, repetition, "
-    "and verbose phrasing. The summary will be embedded and used for "
-    "future semantic search, so dense factual content beats prose.\n\n"
-    "Excerpts:\n{joined}\n\n"
-    "Summary:\n"
-)
-
 
 def _resolve_summary_prompt_template() -> str:
-    """Pull the cluster-collapse summarizer template (no placeholders
-    filled) via the manager's resolution seam — the caller
-    (:func:`build_summary_text_via_llm`) fills ``{n}`` /
-    ``{source_table}`` / ``{joined}`` itself.
-
-    ``_resolve_template_with_meta`` honors the
-    ``langfuse_prompt_overrides_enabled`` gate (poindexter#825; mirrors
-    the #2103 fix in ``retention_summarize_to_table``). Inline fallback
-    when the manager is unreachable, per
-    ``feedback_prompts_must_be_db_configurable``.
+    """The cluster-collapse summarizer template with no placeholders filled; the
+    caller fills ``{n}`` / ``{source_table}`` / ``{joined}``. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
     """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-        pm = get_prompt_manager()
-        return pm._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[retention.embeddings_collapse] prompt_manager lookup for %r "
-            "failed (%s) — using inline fallback",
-            _SUMMARY_PROMPT_KEY, exc,
-        )
-        return _DEFAULT_SUMMARY_PROMPT
+    return get_prompt_manager()._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
 
 
 async def build_summary_text_via_llm(

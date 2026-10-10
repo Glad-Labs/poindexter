@@ -71,6 +71,15 @@ metadata:
     - key: qa.featured_image_fanout
       output_format: json
       description: 'Vision judge for the featured-image fan-out (Phase 1): scores ONE candidate image 0-100 against the featured-image brief on adherence, composition, brand fit, artifact-freedom, and absence of legible text. Used by services.image_fanout._score_candidate; highest score across candidates ships.'
+    - key: qa.media.video_topic_match
+      output_format: json
+      description: 'Vision judge for the composed video (media_quality_service._score_video_topic_match): do the sampled stills belong in an article with this title? JSON {score 0-100}.'
+    - key: qa.media.podcast_faithfulness
+      output_format: json
+      description: 'Gate-2 Layer-2 podcast judge (media_quality_service._score_podcast_faithfulness): does the Whisper transcript faithfully represent the source article? JSON {score 0-100, reason}.'
+    - key: qa.media.frame_human_detect
+      output_format: text
+      description: 'Vision yes/no check used by atoms.media_qa: does a rendered video frame contain a photorealistic human? One word.'
 ---
 
 # Content QA skill
@@ -712,4 +721,30 @@ the brackets or the date. The quote is checked against the record.
 
 Return ONLY a JSON object, no other text:
 {{"verdict": "supported" | "contradicted" | "no_evidence" | "vague", "record": "<record id or empty>", "quote": "<exact words from that record or empty>", "missing": "<the specific the records do not back, or empty>"}}
+```
+
+## qa.media.video_topic_match
+
+```text
+You are grading whether a video still belongs in an article titled "{title}". Consider subject, style, and on-topic-ness. Reply with ONLY a JSON object: {{"score": <0-100 integer>}}. 100 = perfectly on-topic, 0 = unrelated.
+```
+
+## qa.media.podcast_faithfulness
+
+```text
+Compare a podcast transcript against the source article it was generated from. Does the episode faithfully represent the article's key claims (no fabrication, no major omission, no contradiction)?
+
+SOURCE ARTICLE:
+{source}
+
+EPISODE TRANSCRIPT:
+{transcript}
+
+Reply with ONLY JSON: {{"score": <0-100 integer>, "reason": "<one sentence>"}}. 100 = fully faithful, 0 = unrelated or fabricated.
+```
+
+## qa.media.frame_human_detect
+
+```text
+Does this video frame contain a PHOTOREALISTIC human face, hands, or body? Stylized illustrations, silhouettes, and cartoon figures do NOT count. Answer with one word: yes or no.
 ```

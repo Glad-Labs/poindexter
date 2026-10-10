@@ -690,10 +690,3 @@ class TestSummaryPromptResolution:
         # not Langfuse)
         assert template == pm.prompts["ops.retention.summarize_to_table"]["template"]
 
-    def test_falls_back_inline_when_manager_unavailable(self):
-        with patch(
-            "poindexter.services.prompt_manager.get_prompt_manager",
-            side_effect=RuntimeError("boom"),
-        ):
-            template = mod._resolve_summary_prompt_template()
-        assert template == mod._SUMMARY_PROMPT_FALLBACK

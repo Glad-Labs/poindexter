@@ -23,23 +23,6 @@ logger = logging.getLogger(__name__)
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _PROMPT_KEY = "task.affiliate_derive_keywords"
-_PROMPT_FALLBACK = """\
-You are naming and tagging a product for an affiliate-link catalog.
-
-Given the product title and description below, respond with ONLY a JSON
-object: {{"display_text": "<short human name, 2-6 words>", "keywords":
-["<alias 1>", "<alias 2>", ...]}}
-
-- display_text: a short, natural name a reader would recognize (not the
-  full marketing title).
-- keywords: 3 to 6 short phrases (1-4 words each) that might plausibly
-  appear in prose referring to this product - brand names, model numbers,
-  common nicknames. Avoid generic single words that could describe many
-  products.
-
-Title: {title}
-Description: {description}
-"""
 
 
 def slugify_code(product_name: str, *, max_words: int = 6, max_len: int = 60) -> str:
@@ -85,14 +68,11 @@ class ImportReport:
 
 
 def _resolve_prompt(*, title: str, description: str) -> str:
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
-            _PROMPT_KEY, title=title, description=description,
-        )
-    except Exception as exc:  # noqa: BLE001 — registry unreachable (bootstrap/test)
-        logger.error("[affiliate_import] prompt lookup failed (%s) — inline fallback", exc)
-        return _PROMPT_FALLBACK.format(title=title, description=description)
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt(
+        _PROMPT_KEY, title=title, description=description,
+    )
 
 
 def _parse_llm_json(raw: str) -> dict:

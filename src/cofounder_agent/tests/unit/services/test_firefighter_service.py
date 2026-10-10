@@ -28,7 +28,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from poindexter.services.firefighter_service import (
-    _FALLBACK_SYSTEM_PROMPT,
     _resolve_system_prompt,
     build_triage_context,
     run_triage,
@@ -400,7 +399,7 @@ class TestResolveSystemPrompt:
     or the ``prompt_templates`` table (key ``ops.triage.system_prompt``). The
     byte-for-byte drift guard (SKILL.md default == inline fallback) and the
     fallback-logs-at-ERROR contract live in the shared parametrized suite
-    ``test_prompt_fallback_drift.py``; the firefighter-specific behaviour
+    ``test_prompts_live_only_in_packs.py``; the firefighter-specific behaviour
     contracts stay here.
     """
 
@@ -414,23 +413,20 @@ class TestResolveSystemPrompt:
         assert result == "FROM_PROMPT_MANAGER"
         mock_pm.return_value.get_prompt.assert_called_with("ops.triage.system_prompt")
 
-    def test_falls_back_to_inline_when_prompt_manager_raises(self):
-        """Triage must produce SOME system prompt. If prompt_manager itself
-        fails (DB pool not wired during bootstrap, etc.), we fall back to the
-        inline ``_FALLBACK_SYSTEM_PROMPT`` rather than passing an empty system
-        prompt to the LLM.
-        """
+    def test_a_registry_failure_raises_rather_than_serving_a_copy(self):
+        """The prompt lives only in skills/ops/triage/SKILL.md (2026-10-09). A
+        registry failure surfaces instead of quietly serving an in-code copy."""
         with patch(
             "poindexter.services.prompt_manager.get_prompt_manager",
             side_effect=RuntimeError("prompt_manager not initialised"),
         ):
-            result = _resolve_system_prompt()
+            with pytest.raises(RuntimeError):
+                _resolve_system_prompt()
 
-        assert result == _FALLBACK_SYSTEM_PROMPT
+    def test_pack_prompt_matches_spec_keywords(self):
+        from poindexter.services.prompt_manager import UnifiedPromptManager
 
-    def test_fallback_matches_spec_keywords(self):
-        # Tripwire — gross edits to the inline fallback trip here; the shared
-        # drift-guard enforces exact equality with the SKILL.md default.
-        assert "Poindexter operator" in _FALLBACK_SYSTEM_PROMPT
-        assert "ONE SHORT PARAGRAPH" in _FALLBACK_SYSTEM_PROMPT
-        assert "Do NOT propose code" in _FALLBACK_SYSTEM_PROMPT
+        text = UnifiedPromptManager().get_prompt("ops.triage.system_prompt")
+        assert "Poindexter operator" in text
+        assert "ONE SHORT PARAGRAPH" in text
+        assert "Do NOT propose code" in text

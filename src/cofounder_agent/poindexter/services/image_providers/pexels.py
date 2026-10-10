@@ -213,28 +213,9 @@ async def build_semantic_pexels_query(topic: str, *, site_config: SiteConfig) ->
             )
             return None
 
-    prompt = (
-        "Convert this blog topic into a 3-5 word Pexels stock photo "
-        "search query that represents the CONCEPT or ABSTRACT IDEA, "
-        "NOT the literal words. Avoid brand names, product names, and "
-        "technical jargon — Pexels doesn't have photos of software.\n\n"
-        "Focus on what the reader cares about: the work being done, "
-        "the problem being solved, the emotion involved, or the "
-        "industry context.\n\n"
-        "Examples:\n"
-        "- Topic: 'Postgres row-level security for multi-tenant SaaS'\n"
-        "  Query: secure database architecture\n"
-        "- Topic: 'When to choose DuckDB over Postgres for analytics'\n"
-        "  Query: data analytics dashboard\n"
-        "- Topic: 'Building a FastAPI background task queue'\n"
-        "  Query: server room infrastructure\n"
-        "- Topic: 'Why local LLMs beat cloud APIs for indie hackers'\n"
-        "  Query: modern developer workspace\n"
-        "- Topic: 'Kubernetes pod lifecycle debugging'\n"
-        "  Query: data center network cables\n\n"
-        f"Topic: {topic}\n\n"
-        "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
-    )
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt("image.pexels_query", topic=topic)
 
     messages = [{"role": "user", "content": prompt}]
     try:

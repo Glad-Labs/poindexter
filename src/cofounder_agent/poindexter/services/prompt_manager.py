@@ -233,6 +233,15 @@ class UnifiedPromptManager:
         if skills_dir is None:
             skills_dir = Path(__file__).resolve().parents[2] / "skills"
         if not skills_dir.is_dir():
+            # Loud, not silent: every pipeline prompt lives in these packs and
+            # code carries no copies (2026-10-09), so a missing directory means
+            # every get_prompt raises. Name the path so the KeyError is traceable.
+            self._missing_skills_dir = str(skills_dir)
+            logger.error(
+                "[prompt_manager] no SKILL.md prompt packs at %s — every "
+                "get_prompt() will raise KeyError until the packs are present",
+                skills_dir,
+            )
             return
 
         for skill_md in sorted(skills_dir.glob("*/*/SKILL.md")):

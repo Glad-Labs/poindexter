@@ -206,24 +206,16 @@ async def _generate_reddit_copy(
     if not model:
         return ""
 
-    post_url = f"{site_config.get('site_url', 'https://gladlabs.io')}/posts/{slug}"
-    try:
-        pm = UnifiedPromptManager(site_config=site_config)
-        prompt = pm.get_prompt(
-            "social.reddit_promote",
-            subreddit=subreddit,
-            title=title,
-            excerpt=excerpt,
-            post_url=post_url,
-        )
-    except (KeyError, Exception):
-        prompt = (
-            f"Write a Reddit post for {subreddit} promoting this article.\n"
-            f"Title: {title}\nSummary: {excerpt}\nURL: {post_url}\n"
-            "Rules: be conversational, match the subreddit culture, "
-            "no spammy self-promotion, include genuine value first.\n"
-            "Output only the post text."
-        )
+    # site_url is required to publish at all; never a hardcoded domain here.
+    post_url = f"{site_config.require('site_url').rstrip('/')}/posts/{slug}"
+    pm = UnifiedPromptManager(site_config=site_config)
+    prompt = pm.get_prompt(
+        "social.reddit_promote",
+        subreddit=subreddit,
+        title=title,
+        excerpt=excerpt,
+        post_url=post_url,
+    )
 
     text = await ollama_chat_text(
         prompt,

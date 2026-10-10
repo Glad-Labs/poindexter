@@ -23,6 +23,9 @@ metadata:
     - key: social.linkedin_promote
       output_format: text
       description: 'LinkedIn-format promo for a published blog post — professional but approachable tone, hook → summary → CTA → URL → hashtags structure.'
+    - key: social.reddit_promote
+      output_format: text
+      description: 'Reddit promo copy for a published post (atoms.social_generate_drafts). Placeholders {subreddit} {title} {excerpt} {post_url}.'
 ---
 
 # Social media skill
@@ -99,4 +102,15 @@ Blog title: {title}
 Excerpt: {excerpt}
 URL: {post_url}
 Suggested hashtags: {hashtags}
+```
+
+## social.reddit_promote
+
+```text
+Write a Reddit post for {subreddit} promoting this article.
+Title: {title}
+Summary: {excerpt}
+URL: {post_url}
+Rules: be conversational, match the subreddit culture, no spammy self-promotion, include genuine value first.
+Output only the post text.
 ```

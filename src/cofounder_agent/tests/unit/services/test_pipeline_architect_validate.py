@@ -253,7 +253,6 @@ def test_architect_prompt_references_only_live_atoms():
     pattern = r"\b(?:" + "|".join(map(re.escape, namespaces)) + r")\.\w+"
 
     sources = {
-        "inline_fallback": pipeline_architect._ARCHITECT_SYSTEM_PROMPT_FALLBACK,
         "skill_md": UnifiedPromptManager().prompts[
             "atoms.pipeline_architect.system_prompt"
         ]["template"],
@@ -290,31 +289,6 @@ def test_resolve_system_prompt_renders_site_name_registry_up():
     assert "{site_name}" not in rendered, "left a literal {site_name} placeholder"
     assert "{{" not in rendered, "JSON-schema braces were not rendered to single braces"
     # The JSON schema block must survive as valid single-brace text.
-    assert '"name":' in rendered
-
-
-def test_resolve_system_prompt_renders_site_name_registry_down():
-    """Same brand-render guarantee on the inline-fallback path.
-
-    When the prompt registry is unreachable the resolver renders the inline
-    fallback constant itself (single ``.format`` pass), so it must produce the
-    same fully-rendered shape — brand present, no literal ``{site_name}``, JSON
-    braces collapsed — never the raw ``{{site_name}}`` / ``{{`` template.
-    """
-    from poindexter.services.site_config import SiteConfig
-
-    sc = SiteConfig(
-        initial_config={"site_name": "Glad Labs", "site_url": "https://gladlabs.io"}
-    )
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("registry down"),
-    ):
-        rendered = pipeline_architect._resolve_system_prompt(sc)
-
-    assert "Glad Labs" in rendered, "brand was not injected into the fallback prompt"
-    assert "{site_name}" not in rendered, "left a literal {site_name} placeholder"
-    assert "{{" not in rendered, "fallback JSON-schema braces were not rendered"
     assert '"name":' in rendered
 
 

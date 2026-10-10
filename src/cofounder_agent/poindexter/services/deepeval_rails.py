@@ -560,40 +560,20 @@ def _surface_deepeval_degraded(reason: str, detail: str, *, rail: str) -> None:
 
 _G_EVAL_CRITERION_KEY = "qa.deepeval_g_eval_criterion"
 
-# Inline bootstrap fallback — must stay identical to the
-# ``## qa.deepeval_g_eval_criterion`` body in skills/content/content-qa/SKILL.md
-# AND to the seeded ``app_settings.deepeval_g_eval_criterion`` value, so all
-# three sources grade against the same rubric. The resolver strips the SKILL.md
-# loader's trailing newline, so this constant carries none; the shared drift
-# guard in tests/unit/services/test_prompt_fallback_drift.py enforces agreement.
-_DEFAULT_G_EVAL_CRITERION = (
-    "The output is well-grounded in the input topic, internally "
-    "consistent across paragraphs, and does not invent specific facts, "
-    "names, statistics, or quotes that lack support."
-)
-
 
 def _resolve_g_eval_criterion() -> str:
     """Resolve the g-eval grounding rubric via UnifiedPromptManager
-    (``qa.deepeval_g_eval_criterion``), inline fallback on any lookup
-    failure per ``feedback_prompts_must_be_db_configurable``.
+    (``qa.deepeval_g_eval_criterion``). A missing key raises: there is no
+    in-code copy (2026-10-09).
 
     Strips the loader's trailing newline: the criterion is a bare
     single-sentence rubric handed to DeepEval's GEval (and mirrored by
     the seeded ``deepeval_g_eval_criterion`` app_setting, which is also
     newline-free), not a rendered prompt body.
     """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-        return get_prompt_manager().get_prompt(_G_EVAL_CRITERION_KEY).strip()
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[deepeval] prompt_manager lookup for %r failed (%s) — "
-            "using inline fallback",
-            _G_EVAL_CRITERION_KEY, exc,
-        )
-        return _DEFAULT_G_EVAL_CRITERION
+    return get_prompt_manager().get_prompt(_G_EVAL_CRITERION_KEY).strip()
 
 
 async def _resolve_judge_model(site_config: Any) -> str:

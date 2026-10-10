@@ -46,22 +46,16 @@ def test_video_templates_contain_key_placeholders() -> None:
     assert '"SHORT:"' in narration
 
 
-def test_short_narration_is_wired_and_matches_its_fallback() -> None:
+def test_short_narration_is_wired() -> None:
     """poindexter#1071: the key must be the prompt the stage actually sends.
-
-    The stage resolves this key and falls back to an in-code copy; the two
-    must be identical or an edit to the pack silently diverges from what a
-    store-less boot sends. The pre-#867 fossil ("60-second", "150 words")
-    must not come back.
+    The pre-#867 fossil ("60-second", "150 words") must not come back.
     """
     from poindexter.modules.content.stages.generate_media_scripts import (
-        _SHORT_SCENES_FALLBACK,
         _build_scene_prompt,
     )
 
     pm = UnifiedPromptManager()
     narration = pm.prompts["video.short_form_narration"]["template"]
-    assert narration.rstrip("\n") == _SHORT_SCENES_FALLBACK
     assert "150 words" not in narration and "60-second" not in narration
     rendered = _build_scene_prompt(
         "T", "body", "Site", target_seconds=45, target_words=95,

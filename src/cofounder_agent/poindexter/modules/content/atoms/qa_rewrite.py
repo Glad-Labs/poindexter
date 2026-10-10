@@ -81,44 +81,17 @@ _REVIEW_RESET = [{"__reset__": True}]
 
 _REVISE_PROMPT_KEY = "atoms.qa_rewrite.revise_prompt"
 
-_REVISE_PROMPT_FALLBACK = """\
-You are revising a draft article that review flagged for specific, fixable \
-issues. Apply the fixes listed below. Preserve the article's structure, \
-headings, length, links, citations, and voice — do not add new sections or \
-remove existing ones unless a fix requires it.
-
-Use real names and numbers, never placeholders. Replace every bracketed \
-stand-in (e.g. [High-End Consumer GPU], [Product Name], [source], [TBD]) with \
-the actual name or figure from the draft's topic and context — if the title \
-names a product, name it. A bracketed placeholder is always worse than naming \
-the thing; leave no fill-in-the-blank token in the result.
-
-Return the COMPLETE revised article in Markdown — body only, no preamble, no \
-commentary, no JSON envelope.
-
-FIXES TO ADDRESS:
-{feedback}
-
-ORIGINAL DRAFT:
-{content}
-"""
-
 
 def _resolve_revise_prompt(*, content: str, feedback: str) -> str:
-    """Pull the revise prompt via UnifiedPromptManager (Langfuse/DB override
-    surface), falling back to the inline constant, per
-    feedback_prompts_must_be_db_configurable."""
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
-            _REVISE_PROMPT_KEY, content=content, feedback=feedback,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[qa.rewrite] prompt lookup for %r failed (%s) — inline fallback",
-            _REVISE_PROMPT_KEY, exc,
-        )
-        return _REVISE_PROMPT_FALLBACK.format(content=content, feedback=feedback)
+    """The QA-rescue revise prompt from the SKILL.md pack.
+
+    A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
+    """
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt(
+        _REVISE_PROMPT_KEY, content=content, feedback=feedback,
+    )
 
 
 def _failing_review_feedback(reviews: list[dict[str, Any]]) -> str:

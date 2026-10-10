@@ -88,7 +88,13 @@ The contract tests serve two purposes:
 - **Drift detection.** A prod-side Langfuse edit that strays from the `SKILL.md` default still lands on the dashboard but ALSO trips the test in CI, forcing a conscious revert-or-update.
 - **Migration safety.** When prompts moved (f-string → YAML → `SKILL.md`), the tests verified the rendered body stayed byte-for-byte identical, so format-string gotchas (`{{`/`}}` doubling, trailing newlines) couldn't sneak through.
 
-**Inline-fallback resilience (`test_prompt_fallback_drift.py`).** Several resolvers keep an inline `_*_FALLBACK` copy so the pipeline survives a prompt-registry outage. A parametrized guard drives each resolver with the registry up (`SKILL.md` path) and down (inline path) and asserts they agree — so a fired fallback can never silently serve stale text. When a fallback DOES fire, the resolver logs at `error` (per `feedback_self_heal_not_suppress`: self-heal by serving the byte-identical inline copy, but surface the registry outage loudly rather than swallow it).
+**Prompts live only in the packs (`test_prompts_live_only_in_packs.py`, 2026-10-09).** Until then about twenty resolvers kept an inline `_*_FALLBACK` copy and served it whenever the registry lookup failed. The copies hid real bugs instead of surviving outages. The architect's pack prompt was dead for weeks behind a missing format variable, quietly replaced by the copy. `social.reddit_promote` was never added to a pack, so every Reddit draft used the code's copy and nothing said so. Now:
+
+- A missing key raises into the step's own error handling.
+- A missing `skills/` directory logs an error at startup.
+- CI asserts three things: every key the package requests exists in a pack (an AST scan, so a new call site is covered the day it lands); each resolver renders its pack prompt and raises when the registry is down; no module-level prompt text exists in the package beyond a short, reasoned allowlist.
+
+The allowlist is the voice agent (its container ships only the `poindexter` package, not `skills/`), operator-overlay seed values, and eval fixtures. Shipping the packs inside the package would retire the voice exception.
 
 ## How callers fetch prompts
 

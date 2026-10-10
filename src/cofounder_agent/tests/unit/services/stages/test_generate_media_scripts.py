@@ -868,7 +868,6 @@ def test_resolve_media_title_prefers_full_h1_over_truncated_seo_title():
 # ---------------------------------------------------------------------------
 
 from poindexter.modules.content.stages.generate_media_scripts import (  # noqa: E402
-    _VIDEO_NARRATION_FALLBACK,
     _sanitize_short_script,
 )
 
@@ -986,8 +985,14 @@ def test_scene_prompt_carries_voice_rules() -> None:
     assert "Output NOTHING after the narration" in p
 
 
-def test_long_narration_fallback_carries_voice_rules() -> None:
-    p = _VIDEO_NARRATION_FALLBACK
+def test_long_narration_prompt_carries_voice_rules() -> None:
+    # The prompt lives only in the video SKILL.md pack (no in-code copy).
+    from poindexter.services.prompt_manager import UnifiedPromptManager
+
+    p = UnifiedPromptManager().get_prompt(
+        "video.long_form_narration", title="T", content="C",
+        target_seconds=120, target_words=300,
+    )
     assert "COLD OPEN" in p
     assert "delve" in p  # banned-word list present
     assert "In conclusion" in p  # named as banned

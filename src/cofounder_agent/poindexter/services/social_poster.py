@@ -133,62 +133,11 @@ class SocialPost:
 # ---------------------------------------------------------------------------
 
 
-_TWITTER_PROMPT_FALLBACK = (
-    "You write the social account of {company_name} — an engineer-run publication sharing what it learns in public.\n"
-    "Write a single tweet promoting the blog post below to technical readers.\n\n"
-    "Method:\n"
-    "1. Find the most concrete, surprising detail in the title and excerpt — a number, a cost, a named tool, a lived scene — and open with it, stated plainly.\n"
-    "2. Add one sentence on what the article shows or why that detail matters.\n"
-    "3. Close with the exact URL.\n\n"
-    "Rules:\n"
-    "- The tweet MUST be under {char_limit} characters including the URL and any hashtags. The URL alone is {url_chars} characters, so everything you write besides it must fit in {prose_budget}.\n"
-    "- Include the exact URL below — do not shorten or modify it.\n"
-    "- Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.\n"
-    "- Vary the opener across posts — a detail, a claim, or a scene. Stock openers (“Stop guessing…”, “Ever wondered…?”) read as spam.\n"
-    "- Hashtags: none by default; at most one from the suggested list, only when it reads naturally.\n"
-    "- At most one emoji, only where it adds meaning; open with words.\n"
-    "- Output ONLY the tweet text. No quotes, labels, or commentary.\n\n"
-    "Blog title: {title}\n"
-    "Excerpt: {excerpt}\n"
-    "URL: {post_url}\n"
-    "Suggested hashtags: {hashtags}\n"
-)
+def _resolve_social_prompt(key: str, **kwargs: Any) -> str:
+    """A social-copy prompt from the SKILL.md pack. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09)."""
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-_LINKEDIN_PROMPT_FALLBACK = (
-    "You write the company page of {company_name} — an engineer-run publication sharing what it learns in public.\n"
-    "Write a LinkedIn post promoting the blog article below to a technical professional audience.\n\n"
-    "Method:\n"
-    "1. Open with the article's most concrete, surprising detail — a number, a cost, a named tool, a lived scene — stated plainly in one line.\n"
-    "2. Follow with two or three short sentences on what the article shows and who it helps.\n"
-    "3. Invite the click in one plain sentence, then the exact URL.\n\n"
-    "Rules:\n"
-    "- The post MUST be under {char_limit} characters including the URL and any hashtags. The URL alone is {url_chars} characters, so everything you write besides it must fit in {prose_budget}.\n"
-    "- Include the exact URL below — do not shorten or modify it.\n"
-    "- Specifics carry the post: use the article's own numbers, names, and scenes rather than adjectives, questions, or hype.\n"
-    "- Hashtags: at most two from the suggested list, placed at the very end, only when they read naturally.\n"
-    "- Output ONLY the post text. No quotes, labels, or commentary.\n\n"
-    "Blog title: {title}\n"
-    "Excerpt: {excerpt}\n"
-    "URL: {post_url}\n"
-    "Suggested hashtags: {hashtags}\n"
-)
-
-
-def _resolve_social_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
-    """Fetch a social-media prompt via UnifiedPromptManager with inline
-    fallback. Mirrors the standard resolve-then-fallback prompt pattern per
-    ``feedback_prompts_must_be_db_configurable``.
-    """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(key, **kwargs)
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[social_poster] prompt_manager lookup for %r failed (%s) — "
-            "using inline fallback",
-            key, exc,
-        )
-        return fallback.format(**kwargs)
+    return get_prompt_manager().get_prompt(key, **kwargs)
 
 
 def _post_url_for(slug: str, *, platform: str, site_config: SiteConfig) -> str:
@@ -224,7 +173,6 @@ def _build_twitter_prompt(
     char_limit = _twitter_char_limit(site_config=_sc)
     return _resolve_social_prompt(
         "social.twitter_promote",
-        fallback=_TWITTER_PROMPT_FALLBACK,
         company_name=_sc.get("company_name", ""),
         char_limit=char_limit,
         # Slugged post URLs run ~90 chars — a third of the tweet budget — and
@@ -260,7 +208,6 @@ def _build_linkedin_prompt(
     char_limit = _linkedin_char_limit(site_config=_sc)
     return _resolve_social_prompt(
         "social.linkedin_promote",
-        fallback=_LINKEDIN_PROMPT_FALLBACK,
         company_name=_sc.get("company_name", ""),
         char_limit=char_limit,
         # Same prose-budget arithmetic as the twitter prompt — see there.

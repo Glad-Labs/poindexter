@@ -41,18 +41,6 @@ class TestTwoPassRevisePrompt:
     def test_key_present_in_registry(self, pm: UnifiedPromptManager):
         assert "atoms.two_pass_writer.revise_prompt" in pm.prompts
 
-    def test_render_matches_inline_fallback(self, pm: UnifiedPromptManager):
-        from poindexter.modules.content.atoms.two_pass_writer import _REVISE_PROMPT_FALLBACK
-
-        kwargs = dict(
-            draft="draft body with [EXTERNAL_NEEDED: timestamp]",
-            aug_block="[EXTERNAL_NEEDED: timestamp] → 2026-05-12T17:00Z",
-        )
-        rendered_yaml = pm.get_prompt(
-            "atoms.two_pass_writer.revise_prompt", **kwargs,
-        )
-        rendered_inline = _REVISE_PROMPT_FALLBACK.format(**kwargs)
-        assert rendered_yaml == rendered_inline
 
     def test_render_preserves_marker_syntax(self, pm: UnifiedPromptManager):
         rendered = pm.get_prompt(
@@ -104,19 +92,6 @@ class TestTwoPassExpandPrompt:
     def test_key_present_in_registry(self, pm: UnifiedPromptManager):
         assert "atoms.two_pass_writer.expand_prompt" in pm.prompts
 
-    def test_render_matches_inline_fallback(self, pm: UnifiedPromptManager):
-        from poindexter.modules.content.atoms.two_pass_writer import _EXPAND_PROMPT_FALLBACK
-
-        kwargs = dict(
-            draft="A thin first draft.",
-            target_length=2500,
-            word_count=420,
-        )
-        rendered_yaml = pm.get_prompt(
-            "atoms.two_pass_writer.expand_prompt", **kwargs,
-        )
-        rendered_inline = _EXPAND_PROMPT_FALLBACK.format(**kwargs)
-        assert rendered_yaml == rendered_inline
 
     def test_renders_target_and_current_length(self, pm: UnifiedPromptManager):
         rendered = pm.get_prompt(

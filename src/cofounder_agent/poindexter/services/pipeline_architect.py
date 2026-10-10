@@ -137,120 +137,18 @@ _PROMPT_KEY = "atoms.pipeline_architect.system_prompt"
 def _resolve_system_prompt(site_config: SiteConfig | None) -> str:
     """Return the fully-rendered architect system prompt.
 
-    The template carries the operator brand as a ``{site_name}`` placeholder
-    (alongside escaped ``{{ }}`` JSON-schema literals). Both are rendered here
-    in a SINGLE ``str.format`` pass — registry-up through ``get_prompt``'s
-    format pass, registry-down through the inline fallback's own ``.format`` —
-    so the caller receives ready-to-use text and MUST NOT format it again (a
-    second pass would choke on the now-single JSON braces). This is why the
-    architect renders here rather than mirroring ``narrate_bundle``'s
-    render-then-caller-reformats pattern: that prompt is brace-free, the
-    architect's JSON schema is not.
-
-    Threading ``site_name``/``site_url`` into ``get_prompt`` is what makes the
-    SKILL.md copy resolvable at all — the previous no-kwargs call raised
-    ``KeyError`` on the required ``{site_name}`` var and silently fell back to
-    the inline constant on every call (so the SKILL.md prompt was dead code).
+    The template carries ``{site_name}``/``{site_url}`` alongside escaped
+    ``{{ }}`` JSON-schema literals; ``get_prompt`` renders both in a SINGLE
+    ``str.format`` pass, so the caller MUST NOT format the result again (a
+    second pass would choke on the now-single JSON braces). A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
     """
     site_name = (site_config.get("site_name") if site_config else "") or ""
     site_url = (site_config.get("site_url") if site_config else "") or ""
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
-            _PROMPT_KEY, site_name=site_name, site_url=site_url,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[pipeline_architect] prompt_manager lookup for %r failed (%s) — "
-            "using inline fallback",
-            _PROMPT_KEY, exc,
-        )
-        return _ARCHITECT_SYSTEM_PROMPT_FALLBACK.format(
-            site_name=site_name, site_url=site_url,
-        )
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-
-# Inline fallback for when the prompt registry is unreachable. The {site_name}
-# placeholder is rendered from the run-bound site_config by
-# _resolve_system_prompt (single .format pass); the JSON-schema braces are
-# escaped as {{ / }} so that same pass leaves them as literal single braces.
-# Keep this byte-identical to the SKILL.md default
-# (skills/content/atoms/SKILL.md :: atoms.pipeline_architect.system_prompt) —
-# test_prompt_fallback_drift renders both and asserts they match.
-_ARCHITECT_SYSTEM_PROMPT_FALLBACK = """\
-You are the {site_name} pipeline architect. Given an INTENT (high-level
-request) and an ATOM CATALOG (one bullet line per atom, with PURPOSE
-/ INPUTS / OUTPUTS / REQUIRES / PRODUCES blocks), produce a JSON
-object describing a LangGraph pipeline that satisfies the intent.
-
-CATALOG FORMAT:
-Each atom is a bullet line followed by indented blocks. The header
-line shape is: name vN | type | tier=X | cost=Y | flags. The blocks
-that follow tell you what to chain:
-  PURPOSE: one sentence explaining what the atom does.
-  INPUTS: name:type(R|O), comma-separated. R=required, O=optional.
-  OUTPUTS: name:type, comma-separated. These land in shared state.
-  REQUIRES: state keys this atom needs upstream — chain accordingly.
-  PRODUCES: state keys this atom adds — feeds downstream atoms.
-  FALLBACK: tier resolution chain (cheap_critic -> budget_critic -> ...).
-
-HARD RULES:
-
-1. Use atom names exactly as they appear in the ATOM CATALOG. Names
-   are namespaced — atoms.* are native composable atoms, stage.* are
-   legacy stages surfaced as virtual atoms. If the closest name in
-   the catalog has a different prefix, use the catalog form. Write the
-   NAME only: the " v1.0.0" after it in the catalog header is the
-   atom's version, not part of its name.
-2. Build the graph as a DAG — every edge moves the pipeline forward
-   toward END.
-3. Every non-terminal node has at least one outgoing edge.
-4. Terminal edges use the literal string "END" as the 'to' value.
-5. The 'entry' field names the first node to run.
-6. Output one valid JSON object matching the schema. The first
-   character is `{{` and the last character is `}}`.
-
-JSON SCHEMA:
-
-{{
-  "name": "<short_snake_slug>",
-  "description": "<one-sentence purpose>",
-  "entry": "<node_id_of_entry>",
-  "nodes": [
-    {{"id": "<unique_node_id>", "atom": "<atom_name_from_catalog>",
-     "config": {{<optional state seed values for this node>}}}}
-  ],
-  "edges": [
-    {{"from": "<node_id>", "to": "<node_id_or_'END'>"}}
-  ]
-}}
-
-COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
-
-- An atom whose REQUIRES lists key K must be downstream of an atom
-  whose PRODUCES lists K (or of an upstream stage that seeds K).
-- config values are LITERALS only — there is NO template substitution.
-  Never write placeholders like ${{task_id}}. Run-time identifiers
-  (task_id, post_id, the operator's target) arrive on the pipeline
-  state automatically; leave them OUT of config.
-- Multiple edges from the same source create a parallel fan-out —
-  every successor runs concurrently. Use this for parallel critic
-  reviews or independent media generation.
-- An atom marked "parallelizable" is safe to run as a sibling fan-out.
-- Approval gates (atoms.approval_gate) set
-  _halt=True and pause the pipeline; the operator approves to resume.
-  Place these AFTER the artifact you want reviewed has been produced.
-- qa.aggregate must follow the qa.* rail atoms such as qa.critic (it
-  folds state.qa_rail_reviews into a single verdict).
-- Prefer linear graphs unless the intent calls for parallelism.
-- For dev_diary content: stage.verify_task -> atoms.narrate_bundle
-  -> stage.finalize_task is the canonical 3-step pattern.
-
-If the spec validator returns errors on a previous attempt, every
-error message starts with "FIX:" followed by exactly what to change.
-On retry, apply each FIX literally — keep the rest of the prior
-spec intact.
-"""
+    return get_prompt_manager().get_prompt(
+        _PROMPT_KEY, site_name=site_name, site_url=site_url,
+    )
 
 
 # ---------------------------------------------------------------------------

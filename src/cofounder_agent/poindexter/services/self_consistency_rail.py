@@ -71,13 +71,6 @@ _DEFAULT_TEMPERATURE = 0.7
 _DEFAULT_EMBED_MODEL = "nomic-embed-text"
 """Bootstrap fallback only. Production reads ``app_settings.embed_model`` —
 the same key the rest of the embedding stack uses."""
-_DEFAULT_SUMMARY_PROMPT = (
-    "Summarize the following article in two sentences. Stay strictly "
-    "grounded in the article — do not introduce facts that aren't "
-    "explicitly stated. Output only the summary, no preamble.\n\n"
-    "Article topic: {topic}\n\n"
-    "Article:\n{content}\n\nSummary:"
-)
 """Inline bootstrap fallback — used only when the
 :class:`UnifiedPromptManager` is unavailable. Production reads come from
 ``qa.self_consistency.summarize`` via Langfuse → YAML; this constant
@@ -87,22 +80,15 @@ _SUMMARY_PROMPT_KEY = "qa.self_consistency.summarize"
 
 
 def _resolve_summary_prompt(*, topic: str, content: str) -> str:
-    """Fetch the summary prompt via UnifiedPromptManager, fall back to
-    the inline constant if the manager isn't reachable. Mirrors the standard
-    resolve-then-fallback prompt pattern so operator-edited prompts in Langfuse
-    win without a restart."""
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
-            _SUMMARY_PROMPT_KEY, topic=topic, content=content,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[self_consistency] prompt_manager lookup for %r failed "
-            "(%s) — using inline fallback",
-            _SUMMARY_PROMPT_KEY, exc,
-        )
-        return _DEFAULT_SUMMARY_PROMPT.format(topic=topic, content=content)
+    """The self-consistency summary prompt from the SKILL.md pack.
+
+    A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
+    """
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt(
+        _SUMMARY_PROMPT_KEY, topic=topic, content=content,
+    )
 
 
 def is_enabled(site_config: Any) -> bool:

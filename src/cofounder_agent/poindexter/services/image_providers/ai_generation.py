@@ -176,13 +176,10 @@ async def _build_image_gen_prompt(
         f"stylistic or abstract scene related to {topic[:50]}, cinematic lighting, "
         f"4k, detailed, objects and environment only, unpopulated"
     )
-    instruction = (
-        f"Write an image generation prompt for a blog featured "
-        f"image about: {topic[:80]}\n"
-        f"Requirements: stylistic or abstract scene, cinematic lighting. "
-        f"Depict objects, technology, landscapes, or abstract concepts "
-        f"ONLY — absolutely no people, no humans, no faces, no hands. "
-        f"1 sentence only. Output ONLY the prompt."
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    instruction = get_prompt_manager().get_prompt(
+        "image.ai_generation_prompt", topic=topic[:80],
     )
 
     pool = getattr(site_config, "_pool", None) if site_config is not None else None

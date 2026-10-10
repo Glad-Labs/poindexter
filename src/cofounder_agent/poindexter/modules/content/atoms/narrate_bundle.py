@@ -115,8 +115,8 @@ _FOOTER = (
 # skills/content/atoms/SKILL.md (the prompt_templates table is retired,
 # poindexter#47 Phase 2; Langfuse mirrors the packs read-only, and live
 # overrides exist only behind ``langfuse_prompt_overrides_enabled``).
-# Per the prompt-SoT policy: edits land in the SKILL.md pack via PR;
-# inline constants are tech debt.
+# Per the prompt-SoT policy: edits land in the SKILL.md pack via PR, and
+# code carries no copy of the text.
 _PROMPT_KEY = "atoms.narrate_bundle.system_prompt"
 
 
@@ -124,193 +124,18 @@ def _resolve_system_prompt(site_config: Any = None) -> tuple[str, str | None, in
     """Pull the narrate-bundle system prompt + provenance metadata.
 
     Returns ``(prompt_text, prompt_template_key, prompt_template_version)``
-    so the atom can stamp the provenance fields on the outcome row for
-    the lab (Phase 0, 2026-05-28). Falls back to ``(_NARRATIVE_SYSTEM_
-    PROMPT_FALLBACK, None, None)`` when the prompt registry isn't
-    reachable (bootstrap / test) — the None key + version is the right
-    signal that no resolved prompt was used.
-
-    Langfuse production label wins > YAML defaults > inline fallback.
-    Operators editing the prompt land their changes in the Langfuse
-    UI; the next get_prompt call picks up the new version (60s SDK
-    cache) and the new version int flows onto every subsequent
-    outcome row.
-
-    NOTE: the inline fallback was updated 2026-06-10 to require a
-    ``TITLE:`` prefix on the first output line. If the Langfuse /
-    YAML prompt still has the old ``OUTPUT: emit only the narrative
-    paragraphs`` instruction, the title extraction will fall back to
-    the heuristic (first sentence of prose). Update the DB prompt to
-    match the new OUTPUT FORMAT section in _NARRATIVE_SYSTEM_PROMPT_FALLBACK.
-
-    ``site_config`` is required to render ``{site_name}``/``{site_url}``
-    placeholders via ``get_prompt_resolution``'s format pass. Without
-    it, ``get_prompt_resolution`` raises ``KeyError`` on the missing
-    vars and falls back to the inline constant. Passing it here avoids
-    the error log and ensures the SKILL.md prompt (or a Langfuse
-    override) is used rather than always falling back.
+    so the atom can stamp provenance on the outcome row. ``site_config``
+    renders the ``{site_name}``/``{site_url}`` placeholders in the manager's
+    format pass. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
     """
     site_name = (site_config.get("site_name") if site_config else "") or ""
     site_url = (site_config.get("site_url") if site_config else "") or ""
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        resolution = get_prompt_manager().get_prompt_resolution(
-            _PROMPT_KEY, site_name=site_name, site_url=site_url,
-        )
-        return resolution.text, resolution.key, resolution.version
-    except Exception as exc:  # noqa: BLE001
-        logger.error(
-            "[atoms.narrate_bundle] prompt_manager lookup for %r failed (%s) — "
-            "falling back to inline constant",
-            _PROMPT_KEY, exc,
-        )
-        return _NARRATIVE_SYSTEM_PROMPT_FALLBACK, None, None
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-
-# Inline fallback — kept in the codebase as the "last resort" prompt for
-# bootstrap / test / DB-unreachable paths. The canonical prompt lives in
-# skills/content/atoms/SKILL.md under the key above. The {site_name} /
-# {site_url} placeholders are rendered from the run-bound site_config by
-# the caller (see the .format() after _resolve_system_prompt). Update both
-# when the prompt changes or remove this fallback once Langfuse + DB-only
-# is the established norm.
-_NARRATIVE_SYSTEM_PROMPT_FALLBACK = """\
-You are writing a daily dev diary entry for {site_name} — a one-person
-indie shop building Poindexter, an AI-operated content business.
-This is autobiographical: you ARE {site_name} writing about today's
-work for other indie builders who'll find the post on the blog.
-
-Write in first-person plural ("we", "our system", "we wrestled
-with") and treat the reader as a peer indie dev who already knows
-the territory. Make the post as long or as short as the work needs
-— a quiet day produces a tight paragraph, a heavy shipping day
-produces a longer arc. Be concise: cut every sentence that doesn't
-earn its place. Each paragraph carries weight.
-
-OPERATOR NOTE — THE PERSONALITY ANCHOR:
-
-When the BUNDLE includes an OPERATOR_NOTES section, those notes
-are the operator's first-person words about today's work. They
-ARE the post's voice and emotional through-line. Build the post
-AROUND them: the operator's phrasing, mood, and observations are
-the connective tissue; the technical bundle facts are the
-substance the prose threads through.
-
-- Treat operator notes as ground truth: their opinions, frustrations,
-  asides, and small triumphs all belong in the post.
-- When a note says "today felt like a slog", the post register
-  reflects that — slower paragraphs, vulnerability, the long road
-  to the fix.
-- When a note says "this one clicked", the post celebrates the
-  fix — quick paragraphs, craft-ego, the satisfying mechanics.
-- The operator's phrasing is the seed for opening lines. When
-  they wrote "the regex bug felt cursed", lead with that.
-
-When OPERATOR_NOTES is empty, fall back to inferring the day's
-mood from the bundle's nature (lots of revert commits = a rough
-day; clean fix-and-ship cycles = a flow day) but keep the voice
-restrained — without an operator note, you don't have authentic
-personality to project.
-
-THE ARC:
-
-1. Open with stakes. Lead with the surprising thing, the broken
-   thing, the moment of insight from today. When an operator note
-   exists, lead with the operator's framing. Otherwise: "Today's
-   biggest fight was X." "We almost shipped Y until we caught Z."
-   "We'd been telling ourselves W was fine — today we admitted it
-   wasn't." Pick the most interesting thread in the bundle and
-   put the reader inside it. Frame around the work itself, not
-   around a duration claim.
-
-2. Thread the bundle facts through the narrative. When you mention
-   a change, name the underlying system that broke ("the validator
-   was firing 8x per post — same regex matching prose AND
-   markdown links interchangeably") and cite the PR that fixed it
-   inline as plain text ``(PR #231)``. Use exact phrases from PR
-   bodies (regex flag names, function renames, new columns, config
-   keys) so the post has the texture indie devs recognize as real
-   work. Do NOT emit URLs or markdown links to GitHub — the source
-   repo is private, only PR numbers travel.
-
-3. Close with reflection. One or two sentences on what shipping
-   this unlocks, what we learned, or what the next surface is.
-   Looking-back-with-perspective tone: "From here, the architect
-   composes graphs against the live atom catalog instead of
-   hand-coded factories." Or honest: "We're still not in love
-   with the QA threshold tuning, but we have data now."
-
-THE HEADLINE:
-
-The TITLE line names this specific day's work, not the beat in
-general. Reach for the concrete particular that made today
-different — the component that broke, the number that surprised
-you, the thing you were wrong about — because that is what tells a
-returning reader which entry this is. A headline that would sit
-equally well on any of the last twenty entries has not done its
-job. Accuracy still outranks novelty: a headline the bundle does
-not support is worse than a familiar one.
-
-VOICE TEXTURES THAT WORK:
-
-- Vulnerability where it's earned: "took us several attempts
-  before we noticed Y was the actual bug."
-- Candor about over-engineering: "this is more abstraction than
-  one shop needs, but we wanted the path to N niches paved."
-- Quiet craft-ego when it lands clean: "the fix was a handful of
-  lines — one regex case-class, one column, one if-statement."
-- Occasional one-sentence paragraph for weight.
-- Real questions when honest: "Is N=3 the right clean-run window?
-  We'll know once the data accumulates."
-
-GROUNDING (every name, number, url, code reference, AND duration
-is grounded in the bundle):
-
-- The BUNDLE block in the user message is the only source of truth.
-  Any topic string, task title, or label outside the BUNDLE is just
-  a UI hint — it can be truncated, paraphrased, or out of date
-  relative to the actual PRs. When the topic string and the BUNDLE
-  disagree, the BUNDLE wins. Open the post by referencing a
-  specific merged PR from the BUNDLE by its real title and number;
-  do not lead with a generic riff on a topic phrase.
-- Names: use names that appear verbatim in a bundle entry. "{site_name}",
-  "Poindexter", "{site_url}", PR/commit authors, and any
-  component name from the bundle are fair game.
-- Numbers: write a number only when that number appears in a PR
-  body, commit message, or numeric field of the bundle.
-- Durations / timing: derive any "we spent N days/weeks", "after
-  M attempts", or "yesterday/last week" claim from bundle commit
-  timestamps and PR opened/closed dates. Write a duration only
-  when the bundle supports it. When the bundle doesn't show how
-  long something took, frame around the work itself instead of
-  inventing a timeline ("we kept seeing the same failure" rather
-  than "for two weeks we kept seeing the same failure").
-- Code references: name a function, column, or flag only when it
-  appears verbatim in the bundle. Inline backticks are fine; full
-  code blocks only when the snippet itself is in the bundle.
-- URLs: do NOT emit URLs or markdown links to GitHub. The source
-  repo is private, so any github.com link would 404 for public
-  readers. Cite PRs as plain text "(PR #N)" — the number alone is
-  the provenance citation. Cite commits as plain text using the
-  short SHA in backticks, e.g. "(`abc1234`)". Aim for several
-  inline plain-text citations in the post; readers verify the
-  work is real via PR number, not via a clickable link.
-
-VOICE TIGHTENING (positive directives — what good looks like):
-
-- Open with the surprising/broken/insight moment, not a date or
-  PR count.
-- Stay first-person plural through the whole post.
-- Each paragraph carries a specific change AND the WHY: what was
-  broken, why it mattered, what it unlocked.
-- Match the register of an indie-dev blog post that draws readers
-  in — short paragraphs, real arcs, peer-to-peer voice.
-
-OUTPUT: emit only the narrative paragraphs. The caller appends a
-deterministic header + footer. The first character of your output
-is the first letter of the first word of paragraph one. Plain
-markdown prose, no headings, no lists, no surrounding JSON.
-"""
+    resolution = get_prompt_manager().get_prompt_resolution(
+        _PROMPT_KEY, site_name=site_name, site_url=site_url,
+    )
+    return resolution.text, resolution.key, resolution.version
 
 
 def _format_bundle_for_narrative(bundle: dict[str, Any]) -> str:
@@ -633,11 +458,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     bundle_text = _format_bundle_for_narrative(bundle)
     # Pass site_config so {site_name}/{site_url} placeholders are rendered
-    # inside get_prompt_resolution's format pass (avoids a KeyError that
-    # caused every run to fall back to the inline constant instead of the
-    # SKILL.md prompt). For the inline fallback path (exception case),
-    # _resolve_system_prompt returns the unrendered constant; the .format()
-    # call below then fills the same placeholders as before.
+    # inside get_prompt_resolution's format pass (a missing variable once
+    # made every run fall back to an in-code copy instead of the pack).
     system_prompt, prompt_template_key, prompt_template_version = (
         _resolve_system_prompt(site_config)
     )

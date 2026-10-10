@@ -72,11 +72,11 @@ _DEFAULT_VISION_MODEL = ""
 # one-word answer (mirrors image_captioner's _DEFAULT_GEN_MAX_TOKENS note).
 _VISION_GEN_MAX_TOKENS = 1024
 
-_HUMAN_PROMPT = (
-    "Does this video frame contain a PHOTOREALISTIC human face, hands, or body? "
-    "Stylized illustrations, silhouettes, and cartoon figures do NOT count. "
-    "Answer with one word: yes or no."
-)
+
+def _human_detect_prompt() -> str:
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager().get_prompt("qa.media.frame_human_detect")
 
 
 ATOM_META = AtomMeta(
@@ -276,7 +276,8 @@ async def _detect_human_in_frame(
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": _HUMAN_PROMPT},
+                {"type": "text", "text": _human_detect_prompt(
+                )},
                 {
                     "type": "image_url",
                     "image_url": {"url": f"data:image/png;base64,{image_b64}"},

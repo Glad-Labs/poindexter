@@ -96,21 +96,13 @@ _DEFAULT_THRESHOLDS = {
 # judges.
 _LAYER2_VISION_MAX_TOKENS = 1024
 
-_TOPIC_MATCH_PROMPT = (
-    "You are grading whether a video still belongs in an article titled "
-    "{title!r}. Consider subject, style, and on-topic-ness. Reply with ONLY a "
-    'JSON object: {{"score": <0-100 integer>}}. 100 = perfectly on-topic, '
-    "0 = unrelated."
-)
 
-_FAITHFULNESS_PROMPT = (
-    "Compare a podcast transcript against the source article it was generated "
-    "from. Does the episode faithfully represent the article's key claims "
-    "(no fabrication, no major omission, no contradiction)?\n\n"
-    "SOURCE ARTICLE:\n{source}\n\nEPISODE TRANSCRIPT:\n{transcript}\n\n"
-    'Reply with ONLY JSON: {{"score": <0-100 integer>, "reason": "<one sentence>"}}. '
-    "100 = fully faithful, 0 = unrelated or fabricated."
-)
+def _get_prompt_manager():
+    """The prompt registry (SKILL.md packs). Imported lazily: the module is
+    also loaded by tooling that never renders a prompt."""
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    return get_prompt_manager()
 
 
 async def _run_argv(argv: list[str], *, timeout: float = 30.0) -> tuple[int, str, str]:
@@ -335,7 +327,9 @@ async def _score_video_topic_match(
     # OpenAI-multimodal message; LiteLLM translates image_url data URIs into
     # Ollama's native images array (same shape shot_vision_qa proved out).
     content: list[dict[str, Any]] = [
-        {"type": "text", "text": _TOPIC_MATCH_PROMPT.format(title=title or "this topic")},
+        {"type": "text", "text": _get_prompt_manager().get_prompt(
+            "qa.media.video_topic_match", title=title or "this topic",
+        )},
     ]
     for b64 in frames_b64:
         content.append({
@@ -635,7 +629,9 @@ async def _score_podcast_faithfulness(
     if not transcript:
         return None, "", "empty_transcript"
 
-    prompt = _FAITHFULNESS_PROMPT.format(source=source, transcript=transcript)
+    prompt = _get_prompt_manager().get_prompt(
+        "qa.media.podcast_faithfulness", source=source, transcript=transcript,
+    )
     pool = getattr(db, "pool", db)
     try:
         completion = await dispatch_complete(

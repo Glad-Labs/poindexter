@@ -25,6 +25,12 @@ metadata:
     - key: image.caption_alt_text
       output_format: text
       description: 'Vision alt-text instruction — describe only what is actually visible in the image, one factual sentence under {budget} characters. Used by services/image_captioner.py (the caption_images stage + the alt-text backfill script).'
+    - key: image.ai_generation_prompt
+      output_format: text
+      description: 'Writes a one-sentence image-generation prompt for a featured image (image_providers.ai_generation._build_image_gen_prompt). Placeholder {topic}.'
+    - key: image.pexels_query
+      output_format: text
+      description: 'Turns a blog topic into a 3-5 word concept-level Pexels search query (image_providers.pexels.build_semantic_pexels_query). Placeholder {topic}.'
 ---
 
 # Image generation skill
@@ -117,4 +123,35 @@ Output ONLY valid JSON (no markdown, no explanation):
 
 ```text
 Write alt text for this image. Describe ONLY what is actually visible — factual, concise, one sentence, under {budget} characters. Do NOT begin with 'image of' or 'photo of'. Do NOT invent details that aren't visible.
+```
+
+## image.ai_generation_prompt
+
+```text
+Write an image generation prompt for a blog featured image about: {topic}
+Requirements: stylistic or abstract scene, cinematic lighting. Depict objects, technology, landscapes, or abstract concepts ONLY — absolutely no people, no humans, no faces, no hands. 1 sentence only. Output ONLY the prompt.
+```
+
+## image.pexels_query
+
+```text
+Convert this blog topic into a 3-5 word Pexels stock photo search query that represents the CONCEPT or ABSTRACT IDEA, NOT the literal words. Avoid brand names, product names, and technical jargon — Pexels doesn't have photos of software.
+
+Focus on what the reader cares about: the work being done, the problem being solved, the emotion involved, or the industry context.
+
+Examples:
+- Topic: 'Postgres row-level security for multi-tenant SaaS'
+  Query: secure database architecture
+- Topic: 'When to choose DuckDB over Postgres for analytics'
+  Query: data analytics dashboard
+- Topic: 'Building a FastAPI background task queue'
+  Query: server room infrastructure
+- Topic: 'Why local LLMs beat cloud APIs for indie hackers'
+  Query: modern developer workspace
+- Topic: 'Kubernetes pod lifecycle debugging'
+  Query: data center network cables
+
+Topic: {topic}
+
+Respond with ONLY the search query (3-5 words, no quotes, no explanation):
 ```

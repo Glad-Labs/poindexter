@@ -95,105 +95,35 @@ def _resolve_revise_prompt(
 ) -> tuple[str, str | None, int | None]:
     """Pull the TWO_PASS revise prompt + provenance metadata.
 
-    Returns ``(prompt_text, prompt_template_key, prompt_template_version)``.
-    Provenance feeds the lab's ``capability_outcomes.prompt_template_*``
-    columns (Phase 0, 2026-05-28); ``(text, None, None)`` on the inline
-    fallback path so the lab can see "no resolved prompt — fallback
-    fired" instead of false-attributing the run to the key.
-
-    Langfuse > YAML defaults > inline fallback. The inline constant only
-    fires when the prompt registry hasn't been initialized (bootstrap /
-    test paths). Production reads from YAML at minimum.
+    Returns ``(prompt_text, prompt_template_key, prompt_template_version)``;
+    provenance feeds the lab's ``capability_outcomes.prompt_template_*``
+    columns. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09).
     """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        resolution = get_prompt_manager().get_prompt_resolution(
-            _REVISE_PROMPT_KEY, draft=draft, aug_block=aug_block,
-        )
-        return resolution.text, resolution.key, resolution.version
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[writer_rag_modes.two_pass] prompt_manager lookup for %r "
-            "failed (%s) — using inline fallback",
-            _REVISE_PROMPT_KEY, exc,
-        )
-        return (
-            _REVISE_PROMPT_FALLBACK.format(draft=draft, aug_block=aug_block),
-            None,
-            None,
-        )
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    resolution = get_prompt_manager().get_prompt_resolution(
+        _REVISE_PROMPT_KEY, draft=draft, aug_block=aug_block,
+    )
+    return resolution.text, resolution.key, resolution.version
 
 
-# Inline fallback — last-resort for bootstrap / test / registry-unreachable
-# paths. Canonical prompt lives in prompts/writer_rag_modes.yaml.
-_REVISE_PROMPT_FALLBACK = """\
-Revise the following draft. For each [EXTERNAL_NEEDED: ...] marker, substitute
-the corresponding external fact below and link it inline to its source URL.
-Leave all other content as-is.
-
-Return the COMPLETE revised post exactly once. Do not repeat, duplicate, or
-append a second copy of any section, and do not pad the length — the revision
-should be about as long as the original and end on a complete sentence.
-
-If revision exposes a new claim that needs outside support, mark it
-[EXTERNAL_NEEDED: ...] again so the next pass can fill it.
-
-Original draft:
-{draft}
-
-External facts:
-{aug_block}
-"""
-
-
-# Prompt key + inline fallback for the keep-best expansion pass (length
-# enforcement). Same resolution chain as the revise prompt: Langfuse > YAML
-# (SKILL.md) > inline fallback. Canonical default lives in
-# skills/content/two-pass-writer/SKILL.md. Keep this text byte-identical to
-# that section — the snapshot test pins registry == inline.
+# Prompt key for the keep-best expansion pass (length enforcement). The text
+# lives in skills/content/two-pass-writer/SKILL.md.
 _EXPAND_PROMPT_KEY = "atoms.two_pass_writer.expand_prompt"
-
-_EXPAND_PROMPT_FALLBACK = """\
-The draft below is about {word_count} words, but this post should be closer to
-{target_length} words. Expand it with genuine added substance — more concrete
-detail, worked examples, and reasoning grounded in the existing content. Do NOT
-pad, repeat, restate points already made, or add filler to reach a number; if a
-section is already complete, leave it untouched.
-
-Preserve every existing fact, link, heading, and the original voice. Return the
-COMPLETE expanded post once, in Markdown, ending on a complete sentence — no
-preamble and no notes about what you changed.
-
-Draft:
-{draft}
-"""
 
 
 def _resolve_expand_prompt(
     *, draft: str, target_length: int, word_count: int,
 ) -> str:
-    """Resolve the expansion prompt (Langfuse > SKILL.md > inline fallback).
+    """The keep-best expansion prompt from the SKILL.md pack. A missing key raises: prompts live only in the SKILL.md packs (no in-code copy since 2026-10-09)."""
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-    Mirrors :func:`_resolve_revise_prompt`. The inline fallback only fires when
-    the prompt registry is unreachable (bootstrap / test paths); production
-    reads from the SKILL.md default at minimum.
-    """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(
-            _EXPAND_PROMPT_KEY,
-            draft=draft,
-            target_length=target_length,
-            word_count=word_count,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "[two_pass_writer] prompt_manager lookup for %r failed (%s) — "
-            "using inline fallback", _EXPAND_PROMPT_KEY, exc,
-        )
-        return _EXPAND_PROMPT_FALLBACK.format(
-            draft=draft, target_length=target_length, word_count=word_count,
-        )
+    return get_prompt_manager().get_prompt(
+        _EXPAND_PROMPT_KEY,
+        draft=draft,
+        target_length=target_length,
+        word_count=word_count,
+    )
 
 
 _NEED_PATTERN = re.compile(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]")

@@ -36,7 +36,6 @@ def test_social_twitter_resolver_uses_prompt_manager():
         mock_pm.return_value.get_prompt.return_value = "PM tweet"
         result = social_poster._resolve_social_prompt(
             "social.twitter_promote",
-            fallback=social_poster._TWITTER_PROMPT_FALLBACK,
             company_name="Glad Labs",
             char_limit=280,
             title="t",
@@ -48,64 +47,15 @@ def test_social_twitter_resolver_uses_prompt_manager():
 
 
 @pytest.mark.unit
-def test_social_twitter_resolver_falls_back_on_pm_failure():
-    from poindexter.services import social_poster
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = social_poster._resolve_social_prompt(
-            "social.twitter_promote",
-            fallback=social_poster._TWITTER_PROMPT_FALLBACK,
-            company_name="Glad Labs",
-            char_limit=280,
-            url_chars=27,
-            prose_budget=252,
-            title="Title",
-            excerpt="Excerpt",
-            post_url="https://gladlabs.io/posts/x",
-            hashtags="#a #b",
-        )
-    assert "Glad Labs" in result
-    assert "280 characters" in result
-    assert "Title" in result
-
-
-@pytest.mark.unit
-def test_social_linkedin_resolver_falls_back_on_pm_failure():
-    from poindexter.services import social_poster
-
-    with patch(
-        "poindexter.services.prompt_manager.get_prompt_manager",
-        side_effect=RuntimeError("pm broken"),
-    ):
-        result = social_poster._resolve_social_prompt(
-            "social.linkedin_promote",
-            fallback=social_poster._LINKEDIN_PROMPT_FALLBACK,
-            company_name="Glad Labs",
-            char_limit=3000,
-            url_chars=27,
-            prose_budget=2972,
-            title="Title",
-            excerpt="Excerpt",
-            post_url="https://gladlabs.io/posts/x",
-            hashtags="#a #b",
-        )
-    assert "Glad Labs" in result
-    assert "LinkedIn" in result
-    assert "3000 characters" in result
-
-
-@pytest.mark.unit
-def test_collapse_summary_prompt_constant_has_required_placeholders():
-    """The inline summary prompt in the collapse handler must contain the
-    three format placeholders used by build_summary_text_via_llm."""
+def test_collapse_summary_prompt_has_required_placeholders():
+    """The pack's summary template carries the three placeholders
+    build_summary_text_via_llm fills (there is no in-code copy)."""
     from poindexter.services.integrations.handlers.retention_embeddings_collapse import (
-        _DEFAULT_SUMMARY_PROMPT,
+        _resolve_summary_prompt_template,
     )
 
-    assert "{n}" in _DEFAULT_SUMMARY_PROMPT
-    assert "{source_table}" in _DEFAULT_SUMMARY_PROMPT
-    assert "{joined}" in _DEFAULT_SUMMARY_PROMPT
-    assert "compressing a cluster of older memories" in _DEFAULT_SUMMARY_PROMPT
+    template = _resolve_summary_prompt_template()
+    assert "{n}" in template
+    assert "{source_table}" in template
+    assert "{joined}" in template
+    assert "compressing a cluster of older memories" in template
