@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.154.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.154.0...v0.154.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **qa:** judges see evidence, not writer instructions; tolerant JSON parsing ([#4347](https://github.com/Glad-Labs/glad-labs-stack/issues/4347)) ([e7dd5cc](https://github.com/Glad-Labs/glad-labs-stack/commit/e7dd5cc1765cd6a663e658894a33bc3aa7c6a70a))
+
+
+### Code Refactoring
+
+* **prompts:** prompts live only in SKILL.md packs, no in-code copies ([#4348](https://github.com/Glad-Labs/glad-labs-stack/issues/4348)) ([7f5a5b0](https://github.com/Glad-Labs/glad-labs-stack/commit/7f5a5b012823acf4e6680259ee5702576c2dadfc))
+
 ## [0.154.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.153.1...v0.154.0) (2026-10-09)
 
 
