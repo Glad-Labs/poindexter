@@ -50,7 +50,7 @@ added and `--severity` and `--ignore-unfixed` removed.
 GitHub's own list:
 
 ```bash
-gh api "repos/Glad-Labs/glad-labs-stack/dependabot/alerts?state=open&per_page=100" --paginate --jq '.[] | "\(.number) \(.security_advisory.severity) \(.dependency.package.name) \(.dependency.manifest_path) \(.dependency.scope)"'
+gh api "repos/Glad-Labs/poindexter/dependabot/alerts?state=open&per_page=100" --paginate --jq '.[] | "\(.number) \(.security_advisory.severity) \(.dependency.package.name) \(.dependency.manifest_path) \(.dependency.scope)"'
 ```
 
 Triage by package, not by alert. One package can carry ten alerts (PyJWT did),

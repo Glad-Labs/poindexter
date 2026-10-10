@@ -33,11 +33,11 @@ def _ops_dir() -> Path:
 sys.path.insert(0, str(_ops_dir()))
 import _common as c  # noqa: E402
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 WT = "/home/op/.poindexter/worktrees/claude-md-sync-2026-08-08-0230"
 BRANCH = "auto/claude-md-sync-2026-08-08-0230"
-CREATED_URL = "https://github.com/Glad-Labs/glad-labs-stack/pull/9999"
-EXISTING_URL = "https://github.com/Glad-Labs/glad-labs-stack/pull/3126"
+CREATED_URL = "https://github.com/Glad-Labs/poindexter/pull/9999"
+EXISTING_URL = "https://github.com/Glad-Labs/poindexter/pull/3126"
 LOG = logging.getLogger("test-ops-autoland")
 
 
