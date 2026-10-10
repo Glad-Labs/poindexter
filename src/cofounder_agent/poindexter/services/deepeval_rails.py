@@ -210,8 +210,6 @@ def _build_dispatcher_judge_model(
     except ImportError:
         return None
 
-    import json as _json
-    import re as _re
 
     from poindexter.services.llm_providers.dispatcher import dispatch_complete
     from poindexter.services.llm_providers.thinking_models import judge_json_mode_supported
@@ -306,11 +304,13 @@ def _build_dispatcher_judge_model(
                 )
             if schema is None:
                 return text
-            cleaned = text
-            fence = _re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, _re.DOTALL)
-            if fence:
-                cleaned = fence.group(1)
-            return schema.model_validate(_json.loads(cleaned))
+            # Tolerant: a judge may fence the object or put prose around it.
+            from poindexter.utils.json_extract import extract_json_object
+
+            obj = extract_json_object(text)
+            if obj is None:
+                raise ValueError(f"judge {judge_model} returned no JSON object")
+            return schema.model_validate(obj)
 
         def generate(self, prompt: str, schema: Any = None) -> Any:
             raise RuntimeError(

@@ -1633,6 +1633,51 @@ field on the `qa_rail_degraded` finding, not the fire count — and measure rail
 presence per PASS (`audit_log.details->'reviews'`), because an advisory rail
 that never ran leaves no trace in the score it was supposed to inform.
 
+### What a judge is shown, and why it must not depend on the model (2026-10-09)
+
+The research corpus is written for the writer. Some of its sections are
+instructions rather than evidence: `EXISTING POSTS ON OUR SITE (link to
+these where relevant)`, `CITATION GUIDANCE`, and `RELATED POSTS WE'VE
+PUBLISHED`. A judge given them reads them as requirements. Qwen3.6-35B,
+trialled as the 3090 judge, rejected three approved drafts because their
+internal links were "not in the provided list" (it is a 5-post sample; the
+links come from the full catalogue) and because the drafts did not cite the
+suggested posts. `research_service.judge_evidence` now removes those sections
+before the critic, DeepEval faithfulness and Ragas see the corpus. It keys on
+the same header constants the renderers use, so a reworded header cannot
+silently fall out of the filter.
+
+The critic's SOURCES block was also capped at a literal 4,000 characters,
+which cut the corpus before its later sources, so a judge read a cited source
+as "not in SOURCES". It is now `qa_review_sources_max_chars` (12,000). The cut
+marker tells the judge that absence below it is not evidence.
+
+`qa.review` gained a "What is not evidence of fabrication" section:
+
+- internal links;
+- anything SOURCES names, even when the judge believes it does not exist
+  yet (the same trial called SPEC CPU2026, the Core Ultra 9 285K and the
+  RTX 5090 "non-existent");
+- one sentence of advice to the reader.
+
+That last exception is deliberately narrow. Its first wording let 2–3 of 8
+"deliberation" fakes through in the critic bakeoff, against 3–5 of 8 on main.
+The narrowed wording scored balanced accuracy 0.75–0.83 (main, same session:
+0.67–0.81), mostly by passing more good posts.
+
+These changes did not make Qwen3.6 a usable critic. It still rejected 8 of 8
+approved drafts on its own beliefs about what exists. A judge whose priors
+override its sources needs a different model, not a better prompt. Treat the
+bakeoff (`poindexter model-eval run --slot critic`) together with a run of
+the real rails on recent approved drafts with their research as the gate for
+any judge change. The bakeoff alone never sees news newer than the model.
+
+Model output is parsed with `utils.json_extract.extract_json_object` rather
+than `json.loads`. Some models fence the object or add a sentence around it,
+including models that honour JSON mode for one request shape and not
+another. The topic-scope verdicts, internal-RAG distillation, self-claim
+grounding and DeepEval's judge wrapper were strict until 2026-10-09.
+
 ### Rewrite loop (legacy — removed in atom-cutover #355)
 
 > **Retired stage — live path has a bounded rescue cycle instead.** The

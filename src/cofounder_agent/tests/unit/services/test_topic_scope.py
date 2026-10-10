@@ -373,3 +373,16 @@ async def test_preview_returns_why_candidates_are_unjudged(monkeypatch):
     rows, errors = await svc.preview_scope(niche_id=niche.id)
     assert rows == [{"pool": "external", "title": "a", "verdict": "unjudged"}]
     assert errors == ["ConnectError: no route"]
+
+
+@pytest.mark.parametrize("raw", [
+    '```json\n{"i1": true, "i2": false}\n```',
+    'Verdicts:\n{"i1": true, "i2": false}',
+])
+def test_verdicts_tolerate_fenced_or_wrapped_json(raw):
+    assert topic_scope._parse_verdicts(raw, {"i1", "i2"}) == {"i1": True, "i2": False}
+
+
+def test_a_reply_with_no_object_is_an_error_not_an_empty_verdict():
+    with pytest.raises(ValueError):
+        topic_scope._parse_verdicts("I cannot judge these.", {"i1"})

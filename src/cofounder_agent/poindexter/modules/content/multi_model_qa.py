@@ -1573,13 +1573,31 @@ class MultiModelQA:
         import time
 
         try:
-            # Build the sources block if the caller passed a research corpus.
-            # Cap it at 4000 chars so it doesn't dwarf the content in the prompt.
+            # Build the sources block if the caller passed a research corpus,
+            # capped by qa_review_sources_max_chars. The cap was a literal 4000
+            # until 2026-10-09, which cut the corpus before its later sources:
+            # a judge then reads a cited source as "not in SOURCES", and it
+            # cannot tell absent from cut off. 12000 chars (~3K tokens) still
+            # fits the 16384-token review window beside a whole draft.
             sources_block = ""
+            # Evidence only: the writer-only sections (posts to link, citation
+            # guidance) read as requirements to a judge — research_service.judge_evidence.
+            from poindexter.services.research_service import judge_evidence
+
+            research_sources = judge_evidence(research_sources)
             if research_sources:
                 trimmed = research_sources.strip()
-                if len(trimmed) > 4000:
-                    trimmed = trimmed[:4000] + "\n\n[...truncated for prompt length...]"
+                sources_cap = (
+                    self._platform.config.get_int("qa_review_sources_max_chars", 12000)
+                    if self._platform else 12000
+                )
+                if len(trimmed) > sources_cap:
+                    trimmed = (
+                        trimmed[:sources_cap]
+                        + "\n\n[...SOURCES truncated for prompt length: a claim may be "
+                        "backed by a source cut off here, so absence below this line "
+                        "is not evidence of fabrication...]"
+                    )
                 sources_block = (
                     f"---SOURCES (research corpus the writer consulted)---\n"
                     f"{trimmed}\n"
@@ -2071,6 +2089,9 @@ class MultiModelQA:
         ``None`` when the rail is disabled or there is no research
         corpus to ground against — the metric cannot run without context.
         """
+        from poindexter.services.research_service import judge_evidence
+
+        research_sources = judge_evidence(research_sources)
         try:
             from poindexter.services import deepeval_rails
         except ImportError as exc:
@@ -2270,6 +2291,9 @@ class MultiModelQA:
         - Ragas itself errors (judge unreachable, etc — surfaced as a
           qa_reviewer_failure)
         """
+        from poindexter.services.research_service import judge_evidence
+
+        research_sources = judge_evidence(research_sources)
         try:
             from poindexter.services import ragas_eval
         except ImportError as exc:

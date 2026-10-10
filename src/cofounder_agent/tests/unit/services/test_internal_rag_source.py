@@ -941,3 +941,24 @@ async def test_recording_a_verdict_never_raises():
 
     src = InternalRagSource(_Boom(), site_config=SiteConfig())
     await src._record_not_storyworthy("n", kind="k", ref="r", reason="x")
+
+
+@pytest.mark.parametrize("raw", [
+    '```json\n{"topic": "T", "angle": "A"}\n```',
+    'Here is the result:\n{"topic": "T", "angle": "A"}\nHope that helps.',
+])
+async def test_distill_tolerates_fenced_or_wrapped_json(monkeypatch, raw):
+    """Any model, not only one that obeys JSON mode exactly: a cloud model or
+    a newer local one fences the object or adds a sentence (2026-10-09)."""
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.prompt_manager as pm
+    import poindexter.services.topic_ranking as tr
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "m")
+    monkeypatch.setattr(tr, "_ollama_chat_json", AsyncMock(return_value=raw))
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) == ("T", "A")

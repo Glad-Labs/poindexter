@@ -500,12 +500,14 @@ class InternalRagSource:
                 "skipping candidate", model,
             )
             return None
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as e:
+        # Tolerant: a model may fence the object or put a sentence around it.
+        from poindexter.utils.json_extract import extract_json_object
+
+        parsed = extract_json_object(raw)
+        if parsed is None:
             logger.warning(
-                "[internal_rag] distill response not valid JSON (model=%s): "
-                "%s — skipping candidate", model, e,
+                "[internal_rag] distill response holds no JSON object "
+                "(model=%s): %r — skipping candidate", model, raw[:120],
             )
             return None
         # Distiller judged the snippets a non-story (routine ops status,

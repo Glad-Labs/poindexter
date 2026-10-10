@@ -946,3 +946,59 @@ class TestFindReferencesPartialMatch:
         # monitoring is a full substring → hits the substring branch (3 refs)
         urls = [r["url"] for r in refs]
         assert len(urls) >= 1
+
+
+# --- judge_evidence: the corpus a QA judge sees (2026-10-09) -------------------
+
+
+def _render() -> str:
+    from poindexter.services import research_service as rs
+
+    return "\n\n".join([
+        "Source article: https://example.com/a — the caller's attachment",
+        rs.REFERENCE_LINKS_HEADER + "\n- [Ollama docs](https://ollama.com/docs)",
+        rs.INTERNAL_LINKS_HEADER + "\n- [Best GPUs](/posts/best-gpus-1234)\n- [VRAM](/posts/vram-5678)",
+        rs.WEB_SOURCES_HEADER + "\n- [Olympus](https://chipsandcheese.com/p/olympus): 10-wide core"
+        "\n  Source text: SPEC CPU2026 results show a 9% lead.\n\nSecond paragraph of source text.",
+        rs.RESEARCH_RENDER_SENTINEL + "\n- Link to the reference URLs above\n- Use format: [Tool Name](url)",
+        rs.RELATED_POSTS_HEADER + "\n1. [Fighting VRAM collisions] -- excerpt (/posts/fighting-vram-1)",
+    ])
+
+
+def test_judges_get_the_evidence_without_the_writer_only_sections():
+    from poindexter.services.research_service import judge_evidence
+
+    out = judge_evidence(_render())
+    # Evidence stays, verbatim, including blank lines inside a source's text.
+    assert "Source article: https://example.com/a" in out
+    assert "https://ollama.com/docs" in out
+    assert "SPEC CPU2026 results show a 9% lead." in out
+    assert "Second paragraph of source text." in out
+    # Instructions to the writer go: a judge read them as requirements and
+    # rejected drafts whose internal links were not in the 5-post sample.
+    assert "/posts/best-gpus-1234" not in out
+    assert "EXISTING POSTS" not in out
+    assert "CITATION GUIDANCE" not in out
+    assert "Use format" not in out
+    assert "RELATED POSTS" not in out and "fighting-vram-1" not in out
+
+
+def test_judge_evidence_is_safe_on_empty_and_unstructured_input():
+    from poindexter.services.research_service import judge_evidence
+
+    assert judge_evidence(None) == ""
+    assert judge_evidence("") == ""
+    assert judge_evidence("Plain notes the caller attached.") == "Plain notes the caller attached."
+
+
+def test_the_renderers_use_the_headers_judge_evidence_keys_on():
+    """The section headers are written through the shared constants, so a
+    reworded header cannot silently stop being filtered."""
+    import inspect
+
+    from poindexter.services import research_context, research_service
+
+    src = inspect.getsource(research_service.ResearchService.build_context)
+    assert "REFERENCE_LINKS_HEADER" in src and "INTERNAL_LINKS_HEADER" in src
+    assert "WEB_SOURCES_HEADER" in src and "RESEARCH_RENDER_SENTINEL" in src
+    assert "RELATED_POSTS_HEADER" in inspect.getsource(research_context)

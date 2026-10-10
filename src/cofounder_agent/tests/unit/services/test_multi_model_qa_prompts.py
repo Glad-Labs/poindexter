@@ -206,6 +206,24 @@ specific article. For each factual claim:
 When the SOURCES block is absent, evaluate from your training
 knowledge using the cutoff rubric above.
 
+WHAT IS NOT EVIDENCE OF FABRICATION:
+
+  - A link to one of our own posts (a /posts/... URL). The site adds
+    these after drafting, from the full catalogue of published posts,
+    so they will not all appear in SOURCES. Never reject or lower the
+    score because of an internal link.
+  - A product, version, benchmark or event that SOURCES names, even when
+    you believe it does not exist or has not been released yet. Today's
+    date is later than your training data, and SOURCES is the record.
+    A claim SOURCES supports is grounded, whatever your knowledge says.
+  - One sentence of advice to the reader inside the article ("Ignore
+    the strikethrough", "Confirm the price at checkout"). That is
+    finished prose. This exception is narrow. Text that reasons about
+    the article itself is still a drafting scaffold and an automatic
+    reject: revision notes, a reviewer's or writer's deliberation ("The
+    draft needs...", "I should check...", "Let me restructure..."), an
+    outline of sections still to write.
+
 Output one JSON object. The first character is `{` and the last
 character is `}`:
 {"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "concise — name what's strong and what needs revision"}

@@ -24,7 +24,6 @@ let everything through would hide that the filter is off. Both are loud.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -111,9 +110,12 @@ def _parse_verdicts(raw: str, ids: set[str] | None = None) -> dict[str, bool]:
     With ``ids``, a key that wraps an id in its candidate line resolves to it
     (:func:`_key_to_id`).
     """
-    blob = json.loads(raw)
+    # Tolerant: a model may fence the object or put a sentence around it.
+    from poindexter.utils.json_extract import extract_json_object
+
+    blob = extract_json_object(raw)
     if not isinstance(blob, dict):
-        raise ValueError(f"expected a JSON object, got {type(blob).__name__}")
+        raise ValueError("no JSON object in the scope verdicts")
     verdicts: dict[str, bool] = {}
     for key, value in blob.items():
         item_id = _key_to_id(key, ids)

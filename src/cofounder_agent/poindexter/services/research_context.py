@@ -208,10 +208,9 @@ async def build_rag_context(
         if not resolved:
             return None
 
-        lines: list[str] = [
-            "RELATED POSTS WE'VE PUBLISHED "
-            "(reference for internal linking, avoid repeating same angles):",
-        ]
+        from poindexter.services.research_service import RELATED_POSTS_HEADER
+
+        lines: list[str] = [RELATED_POSTS_HEADER]
         for i, r in enumerate(resolved, 1):
             excerpt_short = (
                 (r["excerpt"][:120] + "...")

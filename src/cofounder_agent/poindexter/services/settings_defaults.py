@@ -1816,6 +1816,11 @@ DEFAULTS: dict[str, str] = {
     # sources + output; longer content is cut at a paragraph boundary with
     # an explicit excerpt marker the qa.review prompt explains.
     'qa_review_content_max_chars': '24000',
+    # The research corpus shown to the critic beside the draft (2026-10-09).
+    # Was a literal 4000, which cut later sources off, so the judge read a cited
+    # source as "not in SOURCES". 12000 chars (~3K tokens) fits the 16384-token
+    # review window beside a whole draft.
+    'qa_review_sources_max_chars': '12000',
     # Judge-call timeouts (poindexter#985 follow-ups). A 31B judge under GPU
     # contention needs wall-clock headroom to wait out the gpu.lock queue — a
     # too-short timeout turns an infra wait into an ABSENT rail, and
@@ -6479,6 +6484,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'model_eval_critic_good_posts': {'owner': 'model_eval', 'value_type': 'integer'},
     'model_eval_critic_min_good_approve': {'owner': 'model_eval', 'value_type': 'float'},
     'qa_review_content_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_review_sources_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'quality_model_watch_keys': {'owner': 'reload_site_config', 'value_type': 'string'},
     'model_eval_reranker_candidates_per_case': {'owner': 'model_eval', 'value_type': 'integer'},
     'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'string'},

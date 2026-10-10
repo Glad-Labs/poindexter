@@ -37,7 +37,6 @@ published posts (from 14 of 20 before extraction and retrieval were tightened).
 from __future__ import annotations
 
 import difflib
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -433,7 +432,11 @@ async def judge_claim(
         )
     try:
         raw = await _ollama_chat_json(prompt, model=model, pool=pool, site_config=site_config)
-        parsed = json.loads(raw or "")
+        from poindexter.utils.json_extract import extract_json_object
+
+        parsed = extract_json_object(raw or "")
+        if parsed is None:
+            raise ValueError("no JSON object in the judge's reply")
         verdict = str(parsed.get("verdict") or "").strip().lower()
         if verdict not in ("supported", "contradicted", "no_evidence", "vague"):
             raise ValueError(f"unknown verdict {verdict!r}")

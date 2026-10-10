@@ -36,6 +36,48 @@ logger = get_logger(__name__)
 # in ``build_context`` below.
 RESEARCH_RENDER_SENTINEL = "CITATION GUIDANCE:"
 
+# Section headers of the research render. The writer and the QA judges read the
+# same corpus, but some sections are addressed to the writer only: which of our
+# posts to link and how to cite. They are not evidence about the topic. A judge
+# given them reads them as requirements: on 2026-10-09 a critic rejected three
+# approved drafts for internal links "not in the provided list" (the list is a
+# 5-post sample, the links come from the full catalogue) and for not citing the
+# suggested posts. ``judge_evidence`` removes them.
+REFERENCE_LINKS_HEADER = "VERIFIED REFERENCE LINKS (use these as citations):"
+INTERNAL_LINKS_HEADER = "EXISTING POSTS ON OUR SITE (link to these where relevant):"
+WEB_SOURCES_HEADER = "RECENT WEB SOURCES (cite if relevant):"
+RELATED_POSTS_HEADER = (
+    "RELATED POSTS WE'VE PUBLISHED "
+    "(reference for internal linking, avoid repeating same angles):"
+)
+_WRITER_ONLY_HEADERS = frozenset(
+    {INTERNAL_LINKS_HEADER, RESEARCH_RENDER_SENTINEL, RELATED_POSTS_HEADER}
+)
+_SECTION_HEADERS = _WRITER_ONLY_HEADERS | {REFERENCE_LINKS_HEADER, WEB_SOURCES_HEADER}
+
+
+def judge_evidence(research: str | None) -> str:
+    """The research corpus as evidence for a judge: writer-only sections removed.
+
+    A writer-only section runs from its header to the next blank line or
+    section header; none of them contain blank lines. Everything else (web
+    sources with their page text, reference links, a caller's attached source
+    article) is kept verbatim.
+    """
+    kept: list[str] = []
+    skipping = False
+    for line in (research or "").splitlines():
+        stripped = line.strip()
+        if stripped in _SECTION_HEADERS:
+            skipping = stripped in _WRITER_ONLY_HEADERS
+            if skipping:
+                continue
+        elif skipping and not stripped:
+            skipping = False
+        if not skipping:
+            kept.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+
 # Verified reference links — official documentation that won't go stale.
 # These are real URLs to real documentation. NO fabricated links.
 #
@@ -222,7 +264,7 @@ class ResearchService:
         # 1. Find matching known references
         refs = self._find_references(topic)
         if refs:
-            ref_lines = ["VERIFIED REFERENCE LINKS (use these as citations):"]
+            ref_lines = [REFERENCE_LINKS_HEADER]
             for ref in refs:
                 ref_lines.append(f"- [{ref['title']}]({ref['url']})")
             sections.append("\n".join(ref_lines))
@@ -230,7 +272,7 @@ class ResearchService:
         # 2. Find existing published posts for internal linking
         internal = await self._find_internal_links(topic)
         if internal:
-            int_lines = ["EXISTING POSTS ON OUR SITE (link to these where relevant):"]
+            int_lines = [INTERNAL_LINKS_HEADER]
             for post in internal:
                 int_lines.append(f"- [{post['title']}](/posts/{post['slug']})")
             sections.append("\n".join(int_lines))
@@ -302,7 +344,7 @@ class ResearchService:
                 )
 
             if ranked:
-                web_lines = ["RECENT WEB SOURCES (cite if relevant):"]
+                web_lines = [WEB_SOURCES_HEADER]
                 for source in ranked:
                     web_lines.append(
                         f"- [{source.title}]({source.url}): {source.snippet[:100]}"
