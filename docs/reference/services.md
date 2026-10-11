@@ -71,7 +71,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `chat_approvals.py` | Chat approval cards — queue, one-shot resolve, execute (poindexter#949). |
 | `chat_conversation_store.py` | Conversation store for the Cofounder chat surface (poindexter#947). |
 | `chat_plans.py` | Architect plan cards — create, one-shot run (poindexter#950). |
-| `chat_prompts.py` | Cofounder chat-agent system prompt with a drift-guarded inline fallback. |
+| `chat_prompts.py` | Cofounder chat-agent system prompt, resolved from ``skills/chat/agent/SKILL.md``. |
 | `chat_tools.py` | Chat tool registry — the Cofounder agent's curated capability catalog. |
 | `chat_watch.py` | Slim watched-run progress read for the Cofounder rail (poindexter#949). |
 | `citation_verifier.py` | Citation verifier — Phase 6 / GH#54. |

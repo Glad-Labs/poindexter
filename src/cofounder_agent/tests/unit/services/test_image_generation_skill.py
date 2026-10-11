@@ -21,7 +21,6 @@ from poindexter.services.prompt_manager import UnifiedPromptManager
 _IMAGE_KEYS = (
     "image.featured_image",
     "image.inline_illustration",
-    "image.search_queries",
     "image.decision",
     "image.caption_alt_text",
 )
@@ -64,9 +63,6 @@ def test_image_templates_carry_placeholders() -> None:
         assert "never photoreal" not in pm.prompts[key]["template"].lower() or "{" in pm.prompts[key]["template"]
     assert "{topic}" not in inline
     assert "{style}" in inline
-
-    queries = pm.prompts["image.search_queries"]["template"]
-    assert "image search queries as JSON array for the topic: {topic}" in queries
 
     decision = pm.prompts["image.decision"]["template"]
     assert "image director for a {category} content site" in decision

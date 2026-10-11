@@ -21,8 +21,6 @@ import pytest
 from poindexter.services.prompt_manager import UnifiedPromptManager
 
 _SOCIAL_KEYS = (
-    "social.research_trends",
-    "social.create_post",
     "social.twitter_promote",
     "social.linkedin_promote",
 )
@@ -30,7 +28,7 @@ _SOCIAL_KEYS = (
 
 @pytest.mark.unit
 def test_social_keys_resolve_from_skill() -> None:
-    """All four social keys must load from skills/content/social-media/SKILL.md."""
+    """All social keys must load from skills/content/social-media/SKILL.md."""
     pm = UnifiedPromptManager()
     for key in _SOCIAL_KEYS:
         assert key in pm.prompts, f"{key} did not load from the social-media skill"
@@ -44,15 +42,6 @@ def test_social_templates_carry_expected_placeholders() -> None:
     Guards against silent drift during the YAML->SKILL.md migration.
     """
     pm = UnifiedPromptManager()
-
-    trends = pm.prompts["social.research_trends"]["template"]
-    assert "{topic}" in trends
-    assert "trends (list)" in trends
-
-    create = pm.prompts["social.create_post"]["template"]
-    assert "{platform}" in create
-    assert "{topic}" in create
-    assert "call_to_action" in create
 
     twitter = pm.prompts["social.twitter_promote"]["template"]
     for placeholder in (

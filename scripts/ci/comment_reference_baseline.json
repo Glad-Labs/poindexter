@@ -197,9 +197,6 @@
     "src/cofounder_agent/tests/unit/services/test_content_validator.py": {
       "Component.tsx": 1
     },
-    "src/cofounder_agent/tests/unit/services/test_deterministic_compositor_prompt.py": {
-      "services/writer_rag_modes/deterministic_compositor.py": 2
-    },
     "src/cofounder_agent/tests/unit/services/test_dev_diary_niche.py": {
       "0134_seed_dev_diary_niche.py": 1
     },

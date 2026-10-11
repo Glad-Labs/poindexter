@@ -16,9 +16,6 @@ metadata:
     - key: image.inline_illustration
       output_format: text
       description: 'Generate an inline section-illustration prompt in a chosen art style'
-    - key: image.search_queries
-      output_format: json
-      description: 'Generate stock-image search queries for a topic'
     - key: image.decision
       output_format: json
       description: 'Image-director reasoning prompt — picks which sections get visuals, image_gen vs pexels, style, and prompt/query for each, plus one featured hero image'
@@ -68,12 +65,6 @@ Art style: {style}
 Depict a specific, concrete scene for the section subject, rendered fully in the "{style}" art style — commit to that style's medium and palette rather than a generic tech render or screenshot. {people_sentence} No text or words. Vary the composition so it doesn't look like every other section image.
 
 Output ONLY the image prompt, 1 sentence, nothing else.
-```
-
-## image.search_queries
-
-```text
-Generate 3 image search queries as JSON array for the topic: {topic}
 ```
 
 ## image.decision

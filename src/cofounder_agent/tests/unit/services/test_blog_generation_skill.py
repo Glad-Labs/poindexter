@@ -32,10 +32,8 @@ from tests.unit._nonempty import nonempty
 
 _BLOG_KEYS = (
     "blog_generation.initial_draft",
-    "blog_generation.seo_and_social",
     "blog_generation.iterative_refinement",
     "blog_generation.blog_system_prompt",
-    "blog_generation.blog_generation_request",
 )
 
 # Each key's required str.format() placeholders — the pipeline supplies
@@ -50,18 +48,12 @@ _REQUIRED_PLACEHOLDERS = {
         "{target_length}",
         "{research_context}",
     ),
-    "blog_generation.seo_and_social": ("{topic}",),
     "blog_generation.iterative_refinement": ("{content}", "{feedback}"),
     "blog_generation.blog_system_prompt": (
         "{style}",
         "{target_audience}",
         "{domain}",
         "{tone}",
-    ),
-    "blog_generation.blog_generation_request": (
-        "{topic}",
-        "{style}",
-        "{target_length}",
     ),
 }
 

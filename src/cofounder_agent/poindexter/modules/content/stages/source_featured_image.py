@@ -972,32 +972,13 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
 
     Resolution order: Langfuse production override → ``image-generation`` skill
     YAML default. Operators tune the wording live (Langfuse, no restart) or via
-    the skill — that's the "db/skill configurable" seam. Falls back to a
-    deterministic, de-funnelled instruction if the prompt manager is
-    unavailable (tests / bootstrap) or the key is missing, so a missing prompt
-    never hard-fails the image stage. #image-zimage-and-variety.
+    the skill — that's the "db/skill configurable" seam. A missing key raises;
+    the caller (``_try_image_gen_featured``) catches it and the next featured-
+    image provider runs. There is no in-code copy (2026-10-10).
     """
-    try:
-        from poindexter.services.prompt_manager import get_prompt_manager
+    from poindexter.services.prompt_manager import get_prompt_manager
 
-        return get_prompt_manager().get_prompt(key, **kwargs)
-    except Exception as exc:  # noqa: BLE001 — prompt resolution is best-effort
-        logger.debug(
-            "[IMAGE] prompt %s resolution failed (%s); using fallback", key, exc,
-        )
-        style = kwargs.get("style", "")
-        style_tags = kwargs.get("style_tags", "")
-        subject = (
-            kwargs.get("subject") or kwargs.get("topic") or kwargs.get("search_query") or ""
-        )
-        return (
-            f"Write a Stable Diffusion XL image prompt for a {style} illustration "
-            f"depicting a concrete, specific scene about: {subject}. {style_tags}. "
-            "Commit to the named art style. "
-            f"{kwargs.get('people_sentence', '')} "
-            "No text or lettering. "
-            "1-2 sentences. Output ONLY the prompt."
-        )
+    return get_prompt_manager().get_prompt(key, **kwargs)
 
 
 def _select_style_lru(

@@ -11,12 +11,6 @@ license: Apache-2.0
 metadata:
   category: content_qa
   prompts:
-    - key: qa.content_review
-      output_format: json
-      description: 'Default prompt — basic content quality review; production-quality prompt packs ship as a premium add-on'
-    - key: qa.self_critique
-      output_format: json
-      description: 'Default prompt — basic self-critique; production-quality prompt packs ship as a premium add-on'
     - key: qa.topic_delivery
       output_format: json
       description: 'QA gate — does the body deliver on the topic the title promises (numeric, named entity, format, thesis checks)'
@@ -35,9 +29,6 @@ metadata:
     - key: qa.review
       output_format: json
       description: 'QA gate — overall publication-readiness review (the third LLM critic; aggregates style/logic/coherence)'
-    - key: qa.aggregate_rewrite
-      output_format: text
-      description: 'QA rewrite — feed every flagged issue (validator + LLM critics + consistency) into a single targeted rewrite, minimum changes, same structure'
     - key: qa.self_review.contradictions_review
       output_format: text
       description: "Writer-self-review pass — model reads its own draft and identifies cross-section contradictions before QA. Output: a numbered list of 'SECTION X conflicts with SECTION Y' lines, or exactly PASS when none found."
@@ -47,9 +38,6 @@ metadata:
     - key: qa.self_consistency.summarize
       output_format: text
       description: "Self-consistency rail — produces a short article summary grounded strictly in the article body. Sampled N times at temperature>0; pairwise cosine similarity of the resulting summaries drives the rail's verdict."
-    - key: qa.quality_evaluation_llm_rubric
-      output_format: json
-      description: 'LLM-based quality scoring — 7 dimensions (clarity, accuracy, completeness, relevance, seo_quality, readability, engagement) on 0-10 each. Replaces the inline f-string in quality_service.UnifiedQualityService when llm_client is wired.'
     - key: qa.vision_image_relevance
       output_format: json
       description: "Vision-QA: per-image relevance scoring. A vision-capable Ollama model rates each inline image 0-100 on how well it represents the article's subject, and separately estimates what share of the frame rendered text covers (always a defect — the generator is told to draw none). Used by MultiModelQA._check_image_relevance, which subtracts a proportional text penalty. Migrated from inline string 2026-05-28; text_coverage added 2026-09-23."
@@ -93,20 +81,6 @@ and the two vision-QA prompts. The architect routes on the `description` above;
 wins over the bodies below).
 
 Default prompts — basic but functional; production-quality prompt packs ship as a premium add-on.
-
-## qa.content_review
-
-```text
-Review this content for quality. Return JSON with keys: score (1-10), issues (list), suggestions (list).
-Content: {content}
-```
-
-## qa.self_critique
-
-```text
-Self-critique this content. Return JSON with keys: strengths (list), weaknesses (list), improvements (list).
-Content: {content}
-```
 
 ## qa.topic_delivery
 
@@ -388,42 +362,6 @@ character is `}}`:
 {{"approved": true/false, "quality_score": NUMBER 0-100, "feedback": "concise — name what's strong and what needs revision"}}
 ```
 
-## qa.aggregate_rewrite
-
-```text
-You are revising your own draft to fix
-EVERY issue a team of editors identified. Do NOT rewrite the entire
-article. Do NOT add new sections. Only fix the specific problems
-listed below, making the minimum changes needed to resolve each one.
-
-Keep the same structure, same headings, same code examples where they
-aren't affected by the issues, same length (within 10%).
-
-TITLE: {title}
-
-ISSUES TO FIX (from programmatic validator + LLM critics + consistency checker):
-{issues_to_fix}
-
-How to interpret:
-- "[critical]" means the issue will block publishing if not fixed. Top priority.
-- "[warning]" means it will drag the score down but won't veto. Fix these too.
-- "Contradictions:" lines mean sections disagree with each other — rewrite the
-  weaker or later one to align with the stronger or earlier one.
-- "Fabricated" or "Impossible" lines mean the draft made up a person, statistic,
-  quote, or company claim. Remove the fabrication entirely; do NOT replace it
-  with another made-up fact — either soften to a general statement or cut.
-- "Generic section title" means replace the heading with a creative, benefit-
-  focused alternative (never "Introduction", "Conclusion", "Summary", etc.).
-- "Filler intro" means rewrite the first paragraph with a concrete hook, not
-  "In this post..." or "In today's fast-paced world...".
-
-ORIGINAL DRAFT:
-{content}
-
-Return ONLY the revised article text. Do not include meta-commentary,
-notes about what you changed, or markdown code fences around the output.
-```
-
 ## qa.self_review.contradictions_review
 
 ```text
@@ -465,20 +403,6 @@ Article:
 {content}
 
 Summary:
-```
-
-## qa.quality_evaluation_llm_rubric
-
-```text
-You are a content quality evaluator. Score the following content on 7 dimensions, each from 0 to 10 (integers only). Respond ONLY with a JSON object — no markdown, no explanation.
-
-Topic: {topic}
-
-Content:
-{content_excerpt}
-
-Return JSON with these keys:
-{{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, "seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", "suggestions": ["suggestion1", "suggestion2"]}}
 ```
 
 ## qa.vision_image_relevance

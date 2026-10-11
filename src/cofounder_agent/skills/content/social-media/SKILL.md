@@ -11,12 +11,6 @@ license: Apache-2.0
 metadata:
   category: social_media
   prompts:
-    - key: social.research_trends
-      output_format: json
-      description: 'Default prompt — basic but functional; production-quality prompt packs ship as a premium add-on.'
-    - key: social.create_post
-      output_format: json
-      description: 'Default prompt — basic but functional; production-quality prompt packs ship as a premium add-on.'
     - key: social.twitter_promote
       output_format: text
       description: 'Single-tweet promo for a published blog post. Char-limited (caller supplies the limit so this template works across X / Mastodon).'
@@ -39,20 +33,6 @@ so the same template stays vendor-agnostic). The architect routes on the
 (Langfuse override still wins over the bodies below).
 
 Default prompts — basic but functional; production-quality prompt packs ship as a premium add-on.
-
-## social.research_trends
-
-```text
-Research current social media trends for: {topic}
-Return JSON with keys: trends (list), hashtags (list), angles (list).
-```
-
-## social.create_post
-
-```text
-Create a social media post for {platform} about: {topic}
-Return JSON with keys: text, hashtags (list), call_to_action.
-```
 
 ## social.twitter_promote
 

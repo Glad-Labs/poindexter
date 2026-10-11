@@ -1054,7 +1054,9 @@ Files:
 
 - `skills/content/blog-generation/SKILL.md` (migrated from
   `prompts/blog_generation.yaml`, #528)
-- `src/cofounder_agent/skills/content/writer/SKILL.md`
+- `src/cofounder_agent/skills/content/two-pass-writer/SKILL.md` (the writer
+  canonical_blog runs; the old `content/writer` pack was removed 2026-10-10 with
+  its dead `narrative.system` and `task.creative_blog_generation` prompts)
 - `src/cofounder_agent/poindexter/modules/content/ai_content_generator.py:248-327`
   (`_load_prompts_for_generation` — fetches templates via
   `prompt_manager.get_prompt(...)`)

@@ -20,11 +20,6 @@ from tests.unit._nonempty import nonempty
 # (key, required placeholders) — byte-fidelity guard against silent drift.
 _SEO_KEYS = (
     ("seo.generate_title", ("{topic}", "{content}", "{primary_keyword}")),
-    ("seo.generate_meta_description", ("{topic}",)),
-    ("seo.extract_keywords", ("{content}",)),
-    ("seo.generate_excerpt", ("{content}",)),
-    ("seo.match_category", ("{categories}", "{topic}")),
-    ("seo.extract_tags", ("{content}",)),
 )
 
 

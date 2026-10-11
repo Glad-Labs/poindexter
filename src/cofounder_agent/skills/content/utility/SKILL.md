@@ -9,15 +9,6 @@ license: Apache-2.0
 metadata:
   category: utility
   prompts:
-    - key: system.content_writer
-      output_format: markdown
-      description: 'Default writer-persona system prompt — basic but functional; production-quality prompt packs ship as a premium add-on'
-    - key: task.content_summarization
-      output_format: text
-      description: 'Summarize content concisely — basic but functional; production-quality prompt packs ship as a premium add-on'
-    - key: task.utility_json_conversion
-      output_format: json
-      description: 'Convert free-form content into structured JSON — basic but functional; production-quality prompt packs ship as a premium add-on'
     - key: task.affiliate_derive_keywords
       output_format: json
       description: 'Derive a short display name + keyword aliases for an affiliate-catalog product from its long marketing title + description -> {display_text, keywords} JSON. Used by `poindexter affiliate import-csv`.'
@@ -31,26 +22,6 @@ template by `key` (a Langfuse production-label override still wins over
 the bodies below).
 
 Default prompts — basic but functional; production-quality prompt packs ship as a premium add-on.
-
-## system.content_writer
-
-```text
-You are a content writer. Write in a {style} style for {target_audience}.
-Domain: {domain}. Tone: {tone}. Target length: ~{target_length} words.
-Format output as clean Markdown with proper headings.
-```
-
-## task.content_summarization
-
-```text
-Summarize this content concisely: {content}
-```
-
-## task.utility_json_conversion
-
-```text
-Convert this content to structured JSON: {content}
-```
 
 ## task.affiliate_derive_keywords
 

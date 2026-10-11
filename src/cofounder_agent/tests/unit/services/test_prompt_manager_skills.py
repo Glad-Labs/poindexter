@@ -16,14 +16,13 @@ from __future__ import annotations
 from poindexter.services.prompt_manager import UnifiedPromptManager
 
 _RESEARCH_KEYS = (
-    "research.analyze_search_results",
     "topic.ranking",
     "research.distill_topic_angle",
 )
 
 
 def test_research_keys_resolve_from_skill() -> None:
-    """All three research keys must load from skills/research/SKILL.md."""
+    """The research keys must load from skills/content/research/SKILL.md."""
     pm = UnifiedPromptManager()
     for key in _RESEARCH_KEYS:
         assert key in pm.prompts, f"{key} did not load from the research skill"
@@ -37,10 +36,6 @@ def test_research_templates_match_migrated_yaml() -> None:
     snapshots are the exact bodies from the old prompts/research.yaml.
     """
     pm = UnifiedPromptManager()
-
-    analyze = pm.prompts["research.analyze_search_results"]["template"]
-    assert "Analyze these search results and return JSON" in analyze
-    assert "{search_results}" in analyze
 
     ranking = pm.prompts["topic.ranking"]["template"]
     assert "scoring topic candidates" in ranking

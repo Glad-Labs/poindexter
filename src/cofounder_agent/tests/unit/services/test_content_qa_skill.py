@@ -22,16 +22,12 @@ from tests.unit._nonempty import nonempty
 # template must still contain after migration. Guards against silent
 # truncation of the long QA templates.
 _CONTENT_QA_KEYS: dict[str, tuple[str, ...]] = {
-    "qa.content_review": ("{content}",),
-    "qa.self_critique": ("{content}",),
     "qa.topic_delivery": ("{topic}", "{opening}"),
     "qa.consistency": ("{content}",),
     "qa.review": ("{current_date}", "{title}", "{topic}", "{sources_block}", "{content}"),
-    "qa.aggregate_rewrite": ("{title}", "{issues_to_fix}", "{content}"),
     "qa.self_review.contradictions_review": ("{title}", "{topic}", "{draft}"),
     "qa.self_review.contradictions_revise": ("{review_text}", "{draft}"),
     "qa.self_consistency.summarize": ("{topic}", "{content}"),
-    "qa.quality_evaluation_llm_rubric": ("{topic}", "{content_excerpt}"),
     "qa.vision_image_relevance": ("{title}", "{topic}", "{content_snippet}"),
     "qa.vision_preview_screenshot": ("{title}", "{topic}", "{tile_count}", "{tile_guide}", "{page_facts}"),
 }

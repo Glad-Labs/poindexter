@@ -324,7 +324,7 @@ class TestMultiModelQaPromptSnapshots:
     def test_review_forbids_prescribing_invented_material(
         self, pm: UnifiedPromptManager
     ):
-        """The critic's feedback feeds qa.aggregate_rewrite, so demands for
+        """The critic's feedback feeds the qa.rewrite revision pass, so demands for
         material not on the page or in SOURCES (anecdotes, expert quotes,
         case studies) push the reviser toward fabrication. The 2026-07 FP
         audit caught the critic doing exactly this on soft vetoes. Guards

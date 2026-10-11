@@ -254,3 +254,43 @@ def test_no_new_prompt_text_in_the_package():
         "prompt text in code — move it to a SKILL.md pack and resolve it with "
         f"get_prompt(): {offenders}"
     )
+
+
+def _string_literals_in_package() -> set[str]:
+    """Every non-docstring string literal in the package. A prompt key passed
+    through a helper (``run_seo_llm(prompt_key="atoms.seo.generate_title")``)
+    is still an exact literal at its call site."""
+    found: set[str] = set()
+    for path in _PKG.rglob("*.py"):
+        if "migrations" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docstrings = {
+            id(n.body[0].value) for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and n.body and isinstance(n.body[0], ast.Expr)
+            and isinstance(n.body[0].value, ast.Constant)
+        }
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings:
+                found.add(n.value)
+    return found
+
+
+@pytest.mark.unit
+def test_every_pack_prompt_is_used_by_the_package():
+    """The reverse of the key check: a pack prompt no code asks for is dead text.
+
+    On 2026-10-10, 25 of 93 pack prompts had no caller. Each lost its last one in
+    a cleanup (the workflow_executor and task_executor deletions, the writer-mode
+    cull, the atom cutover) that left its pack entry behind. They were still
+    mirrored to Langfuse and shipped in poindexter-pro.
+    """
+    registered = set(UnifiedPromptManager().prompts)
+    used = _string_literals_in_package() | set(_requested_keys())
+    dead = sorted(registered - used)
+    assert len(registered) >= 40, f"only {len(registered)} pack prompts loaded — loader broke?"
+    assert not dead, (
+        f"pack prompts that no code requests: {dead}. Delete them from their "
+        "SKILL.md, or wire the code that should use them."
+    )

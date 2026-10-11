@@ -47,32 +47,10 @@ class TestInitialization:
     def test_known_prompt_keys_present(self, pm: UnifiedPromptManager):
         expected_keys = [
             "blog_generation.initial_draft",
-            "blog_generation.seo_and_social",
             "blog_generation.iterative_refinement",
             "blog_generation.blog_system_prompt",
-            "blog_generation.blog_generation_request",
-            "qa.content_review",
-            "qa.self_critique",
             "seo.generate_title",
-            "seo.generate_meta_description",
-            "seo.extract_keywords",
-            "seo.generate_excerpt",
-            "seo.match_category",
-            "seo.extract_tags",
-            "research.analyze_search_results",
-            "social.research_trends",
-            "social.create_post",
             "image.featured_image",
-            "image.search_queries",
-            "system.content_writer",
-            "task.creative_blog_generation",
-            "task.qa_content_evaluation",
-            "task.business_financial_impact",
-            "task.business_market_analysis",
-            "task.business_performance_analysis",
-            "task.automation_email_campaign",
-            "task.content_summarization",
-            "task.utility_json_conversion",
         ]
         for key in expected_keys:
             assert key in pm.prompts, f"Expected prompt key missing: {key}"
@@ -115,21 +93,21 @@ class TestGetPrompt:
         assert "Machine Learning" in result
         assert "1500" in result
 
-    def test_qa_content_review_substitutes_vars(self, pm: UnifiedPromptManager):
+    def test_qa_review_substitutes_vars(self, pm: UnifiedPromptManager):
         result = pm.get_prompt(
-            "qa.content_review",
+            "qa.review",
+            title="T", topic="X", current_date="2026-10-10", sources_block="",
             content="This blog post discusses return on investment...",
         )
         assert "return on investment" in result
 
     def test_returns_string(self, pm: UnifiedPromptManager):
-        result = pm.get_prompt("seo.generate_excerpt", content="Some content here")
+        result = pm.get_prompt(
+            "seo.generate_title", topic="Some topic", primary_keyword="k", content="Body",
+        )
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_image_search_queries_formats_topic(self, pm: UnifiedPromptManager):
-        result = pm.get_prompt("image.search_queries", topic="AI in Healthcare")
-        assert "AI in Healthcare" in result
 
     def test_blog_system_prompt_formats_vars(self, pm: UnifiedPromptManager):
         result = pm.get_prompt(
@@ -196,7 +174,7 @@ class TestGetMetadata:
         assert isinstance(meta.version, PromptVersion)
 
     def test_description_nonempty(self, pm: UnifiedPromptManager):
-        meta = pm.get_metadata("qa.content_review")
+        meta = pm.get_metadata("qa.review")
         assert len(meta.description) > 0
 
     def test_unknown_key_raises_key_error(self, pm: UnifiedPromptManager):

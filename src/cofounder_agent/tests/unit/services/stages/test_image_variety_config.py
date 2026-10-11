@@ -19,7 +19,6 @@ from poindexter.modules.content.atoms._image_helpers import (
 )
 from poindexter.modules.content.stages.source_featured_image import (
     _load_recent_published_styles,
-    _resolve_image_prompt,
 )
 from poindexter.services.site_config import SiteConfig
 
@@ -57,22 +56,6 @@ def test_load_inline_styles_reads_setting_json():
 def test_load_inline_styles_bad_json_falls_back():
     sc = SiteConfig(initial_config={"inline_image_styles": "{not valid json"})
     assert _load_inline_styles(sc) == INLINE_STYLES
-
-
-@pytest.mark.unit
-def test_resolve_featured_prompt_fallback_is_defunnelled():
-    """A missing key forces the deterministic fallback, which must be style-aware
-    and free of the old 'evoke the FEELING / do not depict literally' funnel."""
-    out = _resolve_image_prompt(
-        "image.__does_not_exist__",
-        topic="GPU thermals",
-        style="low-poly 3D render",
-        style_tags="faceted surfaces",
-    )
-    assert "low-poly 3D render" in out
-    assert "GPU thermals" in out
-    assert "feeling" not in out.lower()
-    assert "do not depict" not in out.lower()
 
 
 @pytest.mark.unit

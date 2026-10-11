@@ -14,17 +14,11 @@ metadata:
     - key: blog_generation.initial_draft
       output_format: markdown
       description: 'Default prompt — production-quality prompt packs ship as a premium add-on'
-    - key: blog_generation.seo_and_social
-      output_format: json
-      description: 'Default prompt — production-quality prompt packs ship as a premium add-on'
     - key: blog_generation.iterative_refinement
       output_format: markdown
       description: 'Default prompt — production-quality prompt packs ship as a premium add-on'
     - key: blog_generation.blog_system_prompt
       output_format: markdown
-      description: 'Default prompt — production-quality prompt packs ship as a premium add-on'
-    - key: blog_generation.blog_generation_request
-      output_format: text
       description: 'Default prompt — production-quality prompt packs ship as a premium add-on'
 ---
 
@@ -95,13 +89,6 @@ SELF-CHECK before returning:
 - Are section dividers proper ``## …`` H2 markdown headings (not ``**bold text**`` standalone lines)? If you used bold-text fake headings, convert each one to a real ``## …`` heading.
 ```
 
-## blog_generation.seo_and_social
-
-```text
-Generate SEO metadata for this blog post as JSON with keys: title, meta_description, keywords, og_title, og_description.
-Blog topic: {topic}
-```
-
 ## blog_generation.iterative_refinement
 
 ```text
@@ -139,10 +126,4 @@ Avoid LLM-tell vocabulary and structures: never use "delve", "testament",
 [several things]", "In conclusion", "In summary". Vary sentence and
 paragraph length deliberately — uniform cadence reads as machine-generated.
 Take a position rather than waffling with both-sides framing.
-```
-
-## blog_generation.blog_generation_request
-
-```text
-Generate a blog post. Topic: {topic}. Style: {style}. Length: {target_length} words.
 ```

@@ -11,21 +11,6 @@ metadata:
     - key: seo.generate_title
       output_format: json
       description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
-    - key: seo.generate_meta_description
-      output_format: text
-      description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
-    - key: seo.extract_keywords
-      output_format: text
-      description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
-    - key: seo.generate_excerpt
-      output_format: text
-      description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
-    - key: seo.match_category
-      output_format: text
-      description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
-    - key: seo.extract_tags
-      output_format: text
-      description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
 ---
 
 # SEO metadata skill
@@ -78,34 +63,4 @@ TOPIC (assignment label — context only): {topic}
 
 ARTICLE:
 {content}
-```
-
-## seo.generate_meta_description
-
-```text
-Generate a meta description (150-160 chars) for: {topic}
-```
-
-## seo.extract_keywords
-
-```text
-Extract 5-10 SEO keywords from this content: {content}
-```
-
-## seo.generate_excerpt
-
-```text
-Generate a 2-3 sentence excerpt for: {content}
-```
-
-## seo.match_category
-
-```text
-Match this content to the best category from: {categories}. Content topic: {topic}
-```
-
-## seo.extract_tags
-
-```text
-Extract relevant tags for this content: {content}
 ```

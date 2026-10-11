@@ -10,9 +10,6 @@ license: Apache-2.0
 metadata:
   category: research
   prompts:
-    - key: research.analyze_search_results
-      output_format: json
-      description: 'Analyze search results -> summary, key_points, sources'
     - key: topic.ranking
       output_format: json
       description: "Rank shortlisted topic candidates against the operator's weighted niche goals"
@@ -31,13 +28,6 @@ The architect routes on the `description` above; `UnifiedPromptManager` resolves
 each template by `key` (Langfuse override still wins over the bodies below).
 
 Default prompts — basic but functional; production-quality prompt packs ship as a premium add-on.
-
-## research.analyze_search_results
-
-```text
-Analyze these search results and return JSON with keys: summary, key_points (list), sources (list).
-Search results: {search_results}
-```
 
 ## topic.ranking
 
