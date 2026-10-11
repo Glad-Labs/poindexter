@@ -482,25 +482,29 @@ async def embeddings_collapse(
     summary_provider = str(config.get("summary_provider") or "ollama").strip().lower()
     summary_timeout_s = int(config.get("summary_timeout_s") or 60)
 
-    # Model is read from config JSONB; operators set it via
-    # `poindexter retention config set <name> summary_model=<model>`.
+    # Model: the policy's own ``summary_model`` (set it with
+    # `poindexter retention config set <name> summary_model=<model>`, so two
+    # policies can collapse at different sizes), else the operator's memory
+    # summarizer, ``memory_compression_summary_model`` (the setting
+    # ``retention_summarize_to_table`` reads). No model name is written in code:
+    # a literal ``phi4:14b`` default here kept this job on phi4 after the memory
+    # summarizer moved to the resident 3090 judge (2026-10-09). With neither set,
+    # the summary falls back to the joined-preview heuristic, loudly.
     #
-    # There is deliberately NO app_setting here. `embedding_collapse_summary_model`
-    # was retired 2026-06-24 when the standalone collapse job folded into this
-    # retention handler — it is absent from both `settings_defaults.DEFAULTS` and
-    # `0000_baseline.seeds.sql`, so nothing re-seeds it, but installs provisioned
-    # before that date still carry an orphan row that reads as live config and
-    # is not. Do not "restore" it: the per-policy JSONB is the seam, so two
-    # policies can collapse at different model sizes. The default below matches
-    # the value that key used to hold, so behaviour was unchanged at the fold.
-    #
-    # Its sibling is NOT symmetric, despite the matching name:
-    # `memory_compression_summary_model` IS live, baseline-seeded, and read from
-    # app_settings by `retention_summarize_to_table` (which fails loud when it is
-    # empty). Changing one path does not change the other.
+    # ``embedding_collapse_summary_model`` was retired 2026-06-24 when the
+    # standalone collapse job folded into this handler; installs provisioned
+    # before then may still carry an orphan row. It is not read; do not restore it.
     summary_model = str(
-        config.get("summary_model") or "phi4:14b"
+        config.get("summary_model")
+        or (site_config.get("memory_compression_summary_model", "") if site_config else "")
+        or ""
     ).strip()
+    if summary_provider == "ollama" and not summary_model:
+        logger.error(
+            "[retention.embeddings_collapse] no summary model: set the policy's "
+            "summary_model or app_settings.memory_compression_summary_model — "
+            "summaries fall back to the joined-preview heuristic",
+        )
 
     # Per-policy-row prompt override; None → the SKILL.md catalog default
     # (memory.collapse_old_embeddings.summary) resolved downstream.

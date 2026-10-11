@@ -519,3 +519,47 @@ class TestSummaryViaLLMDispatch:
             )
 
         assert out is None
+
+
+@pytest.mark.asyncio
+async def test_summary_model_falls_back_to_the_memory_summarizer_setting(monkeypatch):
+    """No model name lives in code (2026-10-09: a literal ``phi4:14b`` default
+    kept this job on phi4 after the memory summarizer moved). A policy without
+    ``summary_model`` uses ``memory_compression_summary_model``."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as mod
+
+    low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
+    pool = FakePool(candidate_rows=low)
+    row = _make_row(source_table="claude_sessions", cluster_size=2, summary_provider="ollama")
+    sc = SimpleNamespace(get=lambda k, d="": {"memory_compression_summary_model": "ollama/judge"}.get(k, d))
+    llm_mock = AsyncMock(return_value="an llm summary")
+    monkeypatch.setattr(mod, "build_summary_text_via_llm", llm_mock)
+
+    await mod.embeddings_collapse(None, site_config=sc, row=row, pool=pool)
+
+    assert llm_mock.await_count >= 1
+    assert all(c.kwargs["model"] == "ollama/judge" for c in llm_mock.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_no_model_anywhere_uses_the_heuristic_and_logs_an_error(monkeypatch, caplog):
+    import logging
+    from unittest.mock import AsyncMock
+
+    from poindexter.services.integrations.handlers import retention_embeddings_collapse as mod
+
+    low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
+    pool = FakePool(candidate_rows=low)
+    row = _make_row(source_table="claude_sessions", cluster_size=2, summary_provider="ollama")
+    llm_mock = AsyncMock(return_value="an llm summary")
+    monkeypatch.setattr(mod, "build_summary_text_via_llm", llm_mock)
+
+    with caplog.at_level(logging.ERROR):
+        result = await mod.embeddings_collapse(None, site_config=None, row=row, pool=pool)
+
+    llm_mock.assert_not_awaited()
+    assert result["summarized"] >= 1  # the heuristic still summarizes
+    assert any("no summary model" in r.getMessage() for r in caplog.records)
