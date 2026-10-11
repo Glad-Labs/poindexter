@@ -427,7 +427,7 @@ async def test_evaluate_video_pass_writes_0_100_composite(monkeypatch) -> None:
 
 
 async def test_topic_match_scores_and_uses_thinking_safe_budget(monkeypatch) -> None:
-    """One dispatch call over N frames → 0-100 score; budget >= 1024 (#2224)."""
+    """N frames → 0-100 score; per-call budget >= 1024 (#2224)."""
     async def _fake_frame(file_path, at_s):
         return b"\x89PNG-fake"
     monkeypatch.setattr(media_quality_service, "_extract_frame_at", _fake_frame)
@@ -477,6 +477,152 @@ async def test_topic_match_fail_soft_on_dispatch_raise(monkeypatch) -> None:
     assert await media_quality_service._score_video_topic_match(
         _DBStub(), "/v.mp4", "t", sc,
     ) is None
+
+
+def _shot(idx, source, dur, score=92.0, outcome="accepted"):
+    return {"shot_idx": idx, "source": source, "duration_s": dur,
+            "qa_score": score, "outcome": outcome}
+
+
+class _SQLCapture(_DBStub):
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.sql: list[str] = []
+
+    async def fetch(self, sql, *_a, **_k):
+        self.sql.append(sql)
+        return self._fetch_rows
+
+
+async def test_aggregate_matches_rows_stamped_with_the_task_id():
+    """The renderer stamps details.post_id with the TASK id; match it too.
+
+    Matching the post id alone found no rows for any video, so shot_fidelity
+    was never measured and shot_coverage always read 0.
+    """
+    db = _SQLCapture(fetch_rows=[_shot(0, "pexels", 6.0)])
+    await media_quality_service._aggregate_shot_qa_scores(db, "post-1")
+    assert "pipeline_task_id" in db.sql[0]
+
+
+async def test_aggregate_folds_only_the_render_that_made_this_file():
+    """Long video + Short share a task; the file's duration picks its render."""
+    long_render = [_shot(i, "pexels", 8.0, score=90.0) for i in range(20)]  # 160 s
+    short_render = [_shot(i, "pexels", 6.0, score=40.0) for i in range(5)]  # 30 s
+    db = _DBStub(fetch_rows=long_render + short_render)
+
+    short = await media_quality_service._aggregate_shot_qa_scores(db, "p", 34.0)
+    assert short["total"] == 5
+    assert short["shot_fidelity"] == 40.0
+
+    long = await media_quality_service._aggregate_shot_qa_scores(db, "p", 168.0)
+    assert long["total"] == 20
+    assert long["shot_fidelity"] == 90.0
+
+
+def test_render_groups_split_where_shot_idx_restarts():
+    rows = [_shot(0, "a", 1), _shot(1, "a", 1), _shot(0, "a", 1), _shot(1, "a", 1)]
+    groups = media_quality_service._split_render_groups(rows)
+    assert [len(g) for g in groups] == [2, 2]
+
+
+def test_pick_render_group_tie_goes_to_latest():
+    a = [_shot(0, "x", 10.0)]
+    b = [_shot(0, "y", 10.0)]
+    assert media_quality_service._pick_render_group([a, b], 10.0) is b
+    assert media_quality_service._pick_render_group([a, b], None) is b
+
+
+def test_topic_timestamps_skip_presenter_card_and_holdover():
+    shots = [
+        _shot(0, "presenter", 4.0),
+        _shot(1, "pexels", 6.0),                                # mid 7.0
+        _shot(2, "image_kenburns", 4.0, outcome="card"),
+        _shot(3, "pexels", 4.0, outcome="fallback_holdover"),
+        _shot(4, "generative", 10.0),                           # mid 23.0
+        _shot(5, "presenter", 4.0),
+    ]
+    ts = media_quality_service._topic_match_timestamps(
+        shots, 40.0, 5, _SC({"media.video.topic_match_skip_sources": "presenter"}),
+    )
+    assert ts == [7.0, 23.0]
+
+
+def test_topic_timestamps_space_samples_across_the_video():
+    shots = [_shot(i, "pexels", 10.0) for i in range(9)]  # mids 5, 15, ..., 85
+    ts = media_quality_service._topic_match_timestamps(shots, 90.0, 3, _SC({}))
+    assert ts == [5.0, 45.0, 85.0]
+
+
+def test_topic_timestamps_scale_onto_a_shorter_file():
+    """Cross-fades make the file shorter than the shot sum; stay inside it."""
+    shots = [_shot(0, "pexels", 10.0), _shot(1, "pexels", 10.0)]
+    ts = media_quality_service._topic_match_timestamps(shots, 10.0, 2, _SC({}))
+    assert ts == [2.5, 7.5]
+
+
+def test_topic_timestamps_fallback_avoids_the_end_card():
+    """No shot rows: even samples over the runtime minus the end card."""
+    ts = media_quality_service._topic_match_timestamps(
+        None, 48.0, 3, _SC({"video_endcard_max_seconds": "8"}),
+    )
+    assert ts == [10.0, 20.0, 30.0]
+
+
+def test_topic_timestamps_all_presenter_falls_back_to_even_sampling():
+    shots = [_shot(0, "presenter", 10.0), _shot(1, "presenter", 10.0)]
+    ts = media_quality_service._topic_match_timestamps(
+        shots, 20.0, 1, _SC({"video_endcard_max_seconds": "0"}),
+    )
+    assert ts == [10.0]
+
+
+async def test_topic_match_scores_each_frame_alone_and_takes_the_median(
+    monkeypatch,
+) -> None:
+    """One call per frame at temperature 0; one off-topic frame can't sink it."""
+    async def _fake_frame(file_path, at_s):
+        return b"png"
+    monkeypatch.setattr(media_quality_service, "_extract_frame_at", _fake_frame)
+    replies = iter(['{"score": 10}', '{"score": 80}', '{"score": 85}'])
+    dispatch = AsyncMock(
+        side_effect=lambda *a, **k: SimpleNamespace(text=next(replies)),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "dispatch_complete", dispatch, raising=False,
+    )
+    shots = [_shot(i, "pexels", 10.0) for i in range(3)]
+    score = await media_quality_service._score_video_topic_match(
+        _DBStub(), "/v.mp4", "t",
+        _SC({"media.video.topic_match_model": "m", "media.video.topic_match_frames": "3"}),
+        shots=shots, duration=30.0,
+    )
+    assert score == 80.0
+    assert dispatch.await_count == 3
+    for call in dispatch.await_args_list:
+        msg_content = call.args[1][0]["content"]
+        assert sum(1 for c in msg_content if c["type"] == "image_url") == 1
+        assert call.kwargs["temperature"] == 0.0
+        assert call.kwargs["think"] is False
+        assert call.kwargs["response_format"] == {"type": "json_object"}
+
+
+async def test_topic_match_skips_unparseable_frames(monkeypatch) -> None:
+    async def _fake_frame(file_path, at_s):
+        return b"png"
+    monkeypatch.setattr(media_quality_service, "_extract_frame_at", _fake_frame)
+    replies = iter(["no json here", '{"score": 70}'])
+    monkeypatch.setattr(
+        media_quality_service, "dispatch_complete",
+        AsyncMock(side_effect=lambda *a, **k: SimpleNamespace(text=next(replies))),
+        raising=False,
+    )
+    score = await media_quality_service._score_video_topic_match(
+        _DBStub(), "/v.mp4", "t",
+        _SC({"media.video.topic_match_model": "m", "media.video.topic_match_frames": "2"}),
+        shots=[_shot(0, "pexels", 5.0), _shot(1, "pexels", 5.0)], duration=10.0,
+    )
+    assert score == 70.0
 
 
 # ---------------------------------------------------------------------------

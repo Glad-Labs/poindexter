@@ -240,3 +240,59 @@ degrade to Layer-1-only rather than break).
 - `emit_finding` — the advisory-finding convention.
 - `media_quality_service._probe_duration` / `_run_argv` — existing ffprobe/argv
   helpers.
+
+## Amendment 2026-10-11: what shipped differs from Signals A and B above
+
+**Signal A never measured anything until this fix.** The shot-list renderer
+stamps `details.post_id` with the _pipeline task_ id, because the post does not
+exist at render time. The `details->>'post_id' = $1` query above was given the
+post id, so it matched no row for any video: `shot_fidelity` was `None` and
+`shot_coverage` `0.0` on every render. The query now also matches the post's
+`metadata->>'pipeline_task_id'`. It also folds only the render group that
+produced the file being graded. Each render restarts `shot_idx` at 0, and the
+file's probed duration picks the group, so a task's long video and Short no
+longer pool their shots.
+
+**Signal B is a median of per-frame scores, not one multi-frame call.** Fixed
+fractions of the runtime often landed on the presenter avatar or the end card.
+The Open-Weight Models Short (44 s) was sampled at 11, 22 and 33 s. Two of those
+frames fall inside presenter shots (21.5–25.8 s and 32.5–36.2 s), so it scored
+25 against a long video that scored 75. A call that sees every frame at once
+lets frames like these drag the score down. Now each of up to `topic_match_frames`
+(default 5) frames gets its own call:
+
+- Frames sit at the midpoints of evenly spaced _content_ shots. Shots whose
+  source is in `media.video.topic_match_skip_sources` (default `presenter`) are
+  skipped, as are title cards and holdovers.
+- Each call runs at temperature 0 with `think=False` and JSON-constrained output.
+- `topic_match` is the median of the per-frame scores.
+- With no shot rows, frames are spaced evenly over the runtime minus
+  `video_endcard_max_seconds`.
+
+**The judge prompt has a rubric, and the threshold matches it.** The original
+prompt said "consider subject, style, and on-topic-ness" and gave no scale.
+Each judge setup made up its own. On the Open-Weight Models frames, gemma-4
+scored a median of 85 with thinking on and 5 with thinking off. Two more
+problems came with it:
+
+- Every frame carries burned-in narration subtitles, and a judge that reads
+  them calls any frame on-topic.
+- With thinking on, the judge spent hundreds of tokens per frame (353 on the
+  one frame checked by hand).
+
+`qa.media.video_topic_match` now tells the judge to ignore subtitle text and
+scores against four bands: the specific subject, the broader field, generic
+imagery, and a different subject. With the rubric, the same 5 frames scored a
+median of 65 (gemma, thinking off), 75 (gemma, thinking on) and 65 (qwen3-vl on
+the 3090). The unrelated-title control scored 0, 10 and 30.
+
+Re-scoring the six pending videos on 2026-10-11 (gemma, thinking off):
+
+- Two runs agreed exactly on five of the six. The sixth moved 30 → 40.
+- The SSD deal post, whose shots show the drive itself, scored 65 and 85.
+- The B-roll-heavy videos scored 30–48. The old method had rated two of them 100.
+- Every unrelated-title control scored 0–2.5.
+
+`media.video.topic_match_min` moved from 50 to 30, the rubric's floor for
+generic imagery. A mostly-B-roll video is not a mismatch. At 50 it raised
+`video_topic_mismatch`, which has no delivery policy and so routes loud.

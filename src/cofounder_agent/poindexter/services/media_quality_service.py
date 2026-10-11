@@ -67,6 +67,7 @@ import logging
 import os
 import re
 import shutil
+import statistics
 import tempfile
 from typing import Any
 
@@ -197,37 +198,117 @@ async def _probe_silence_ratio(file_path: str, duration: float) -> float | None:
 # from the shot-fidelity mean but still count toward coverage's denominator.
 _SHOT_EXCLUDE_OUTCOMES = frozenset({"unscored", "skipped_reused"})
 
+# Outcomes whose frames are not topic footage: a title card is text, and a
+# holdover re-shows the previous shot's last frame. Never sampled for
+# topic-match (the presenter is excluded by setting, since it is a source).
+_TOPIC_MATCH_SKIP_OUTCOMES = frozenset({"card", "fallback_holdover"})
 
-async def _aggregate_shot_qa_scores(db: Any, post_id: str) -> dict[str, Any]:
-    """Aggregate per-shot vision QA scores for a post into a fidelity signal.
+
+def _split_render_groups(rows: list[Any]) -> list[list[Any]]:
+    """Split ordered shot rows into one list per render.
+
+    One task renders several times (the long video, the Short, and any
+    re-render), and every render restarts ``shot_idx`` at 0. Rows arrive in
+    insert order, so a ``shot_idx`` that does not climb starts a new render.
+    Rows without a ``shot_idx`` stay in the current group.
+    """
+    groups: list[list[Any]] = []
+    prev: int | None = None
+    for r in rows:
+        idx = r.get("shot_idx") if hasattr(r, "get") else r["shot_idx"]
+        try:
+            idx = int(idx) if idx is not None else None
+        except (TypeError, ValueError):
+            idx = None
+        if not groups or (idx is not None and prev is not None and idx <= prev):
+            groups.append([])
+        groups[-1].append(r)
+        if idx is not None:
+            prev = idx
+    return groups
+
+
+def _row_duration(r: Any) -> float:
+    try:
+        return max(0.0, float(r.get("duration_s") or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _pick_render_group(
+    groups: list[list[Any]], duration: float | None,
+) -> list[Any]:
+    """The render group that produced THIS file.
+
+    The file's probed duration picks it: the group whose summed shot duration
+    is closest to the file's (a Short is ~30 s, the long video minutes, so the
+    two never get confused). Ties, and an unknown duration, go to the latest
+    render. Empty when there are no groups.
+    """
+    if not groups:
+        return []
+    if not duration or duration <= 0:
+        return groups[-1]
+    best_i = 0
+    best_gap = float("inf")
+    for i, g in enumerate(groups):
+        gap = abs(sum(_row_duration(r) for r in g) - duration)
+        if gap <= best_gap:  # <= so a tie goes to the later render
+            best_i, best_gap = i, gap
+    return groups[best_i]
+
+
+async def _aggregate_shot_qa_scores(
+    db: Any, post_id: str, duration: float | None = None,
+) -> dict[str, Any]:
+    """Aggregate per-shot vision QA scores for a post's video into a fidelity signal.
 
     Reads the ``video_shot_rendered`` audit rows the shot-list renderer
-    already emits (one per shot, carrying ``qa_score`` 0-100 + ``qa_outcome``)
-    and folds them into:
+    already emits (one per shot, carrying ``qa_score`` 0-100 + ``qa_outcome``).
+    The renderer stamps ``details.post_id`` with the PIPELINE TASK id (the post
+    does not exist yet at render time), so rows are matched on the post's
+    ``metadata->>'pipeline_task_id'`` as well as the post id itself. Matching
+    the post id alone found no rows for any video, so ``shot_fidelity`` was
+    never measured and ``shot_coverage`` always read 0.
+
+    Only the render group that produced this file is folded (see
+    ``_pick_render_group``), so the long video and the Short of one task no
+    longer pool their shots. Returns:
 
     - ``shot_fidelity`` — mean of the scored shots' ``qa_score`` (0-100), or
       ``None`` when no shot carried a usable score (all reused/unscored).
     - ``shot_coverage`` — fraction of shots that were actually scored
       (``scored / total``), a confidence weight on the fidelity number.
     - ``scored`` / ``total`` — the raw counts behind those ratios.
+    - ``shots`` — the chosen group's rows, in render order, for topic-match.
 
     This is the zero-new-LLM-cost half of Layer 2: the vision scoring already
     happened at render time, so we only re-read audit rows here.
     """
     rows = await db.fetch(
         """
-        SELECT (details->>'qa_score')::float AS qa_score,
-               details->>'qa_outcome'        AS outcome
+        SELECT (details->>'qa_score')::float     AS qa_score,
+               details->>'qa_outcome'            AS outcome,
+               (details->>'shot_idx')::int       AS shot_idx,
+               details->>'source'                AS source,
+               (details->>'duration_s')::float   AS duration_s
         FROM audit_log
         WHERE event_type = 'video_shot_rendered'
-          AND details->>'post_id' = $1
+          AND COALESCE((details->>'success')::boolean, true)
+          AND details->>'post_id' IN (
+              $1,
+              (SELECT metadata->>'pipeline_task_id' FROM posts
+                WHERE id::text = $1)
+          )
+        ORDER BY timestamp, id
         """,
         post_id,
     )
-    total = len(rows)
+    group = _pick_render_group(_split_render_groups(list(rows)), duration)
+    total = len(group)
     scored_vals = [
         r["qa_score"]
-        for r in rows
+        for r in group
         if r["qa_score"] is not None
         and (r["outcome"] or "") not in _SHOT_EXCLUDE_OUTCOMES
     ]
@@ -239,6 +320,7 @@ async def _aggregate_shot_qa_scores(db: Any, post_id: str) -> dict[str, Any]:
         "shot_coverage": coverage,
         "scored": scored,
         "total": total,
+        "shots": group,
     }
 
 
@@ -290,66 +372,92 @@ def _resolve_topic_match_model(site_config: Any) -> str:
     return (site_config.get("qa_vision_model", "") or "").strip()
 
 
-async def _score_video_topic_match(
-    db: Any, file_path: str, title: str, site_config: Any,
-) -> float | None:
-    """Sample N frames from the composed video and vision-score topic match.
+def _topic_match_timestamps(
+    shots: list[Any] | None, duration: float, n: int, site_config: Any,
+) -> list[float]:
+    """Where to grab the N topic-match frames, in seconds.
 
-    One ``dispatch_complete`` call carrying all N frames → one 0-100 score
-    (does the footage actually belong in an article with this title?).
-    Returns None (fail-soft) on: no model, no duration, no extractable frame,
-    dispatch error, or unparseable response. Never raises.
+    With the render's shot rows: the midpoint of up to N content shots, spaced
+    evenly through the video. Presenter shots (``topic_match_skip_sources``),
+    title cards and holdovers are skipped. A presenter frame is the same
+    avatar in every video, and a card is text, so neither says whether the
+    footage fits the title. A midpoint also stays clear of the cross-fades at
+    each shot's edges.
+
+    Without shot rows (an older render, or a lookup miss): N even interior
+    timestamps over the video minus its end card, whose length is the
+    ``video_endcard_max_seconds`` the renderer caps it at.
     """
-    model = _resolve_topic_match_model(site_config)
-    if not model:
-        return None
-    try:
-        n = int(site_config.get("media.video.topic_match_frames", "3") or "3")
-    except (TypeError, ValueError):
-        n = 3
-    n = max(1, n)
+    raw_skip = site_config.get("media.video.topic_match_skip_sources", "presenter")
+    skip_sources = {
+        s.strip().lower() for s in str(raw_skip or "").split(",") if s.strip()
+    }
 
-    duration = await _probe_duration(file_path)
-    if not duration or duration <= 0:
-        return None
+    if shots:
+        total = sum(_row_duration(r) for r in shots)
+        # Shot rows sum to the pre-transition length; scale onto the file so
+        # cross-fade overlap can't push a late midpoint past the end.
+        scale = min(1.0, duration / total) if total > 0 else 1.0
+        content: list[float] = []
+        t = 0.0
+        for r in shots:
+            d = _row_duration(r)
+            source = str(r.get("source") or "").strip().lower()
+            outcome = str(r.get("outcome") or "").strip().lower()
+            if (
+                d > 0
+                and source not in skip_sources
+                and outcome not in _TOPIC_MATCH_SKIP_OUTCOMES
+            ):
+                content.append((t + d / 2.0) * scale)
+            t += d
+        if content:
+            if len(content) <= n:
+                return content
+            if n == 1:
+                return [content[len(content) // 2]]
+            step = (len(content) - 1) / (n - 1)
+            return [content[round(i * step)] for i in range(n)]
+        # Every shot was a presenter/card: nothing on-topic to sample, so
+        # fall through to even sampling rather than scoring the avatar.
 
-    # Even interior timestamps: duration*i/(n+1) for i in 1..n (skips the
-    # black first/last frames a boundary sample would catch).
-    frames_b64: list[str] = []
-    for i in range(1, n + 1):
-        at_s = duration * i / (n + 1)
-        png = await _extract_frame_at(file_path, at_s)
-        if png:
-            frames_b64.append(base64.b64encode(png).decode("ascii"))
-    if not frames_b64:
-        return None
+    tail = _cfg_float(site_config, "video_endcard_max_seconds", 0.0)
+    span = duration - tail if duration - tail > 0 else duration
+    return [span * i / (n + 1) for i in range(1, n + 1)]
 
+
+async def _score_one_topic_frame(
+    pool: Any, model: str, prompt: str, png: bytes,
+) -> float | None:
+    """One vision call over one frame → 0-100, or None on any failure."""
+    b64 = base64.b64encode(png).decode("ascii")
     # OpenAI-multimodal message; LiteLLM translates image_url data URIs into
     # Ollama's native images array (same shape shot_vision_qa proved out).
-    content: list[dict[str, Any]] = [
-        {"type": "text", "text": _get_prompt_manager().get_prompt(
-            "qa.media.video_topic_match", title=title or "this topic",
-        )},
-    ]
-    for b64 in frames_b64:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{b64}"},
-        })
-    messages = [{"role": "user", "content": content}]
-
-    pool = getattr(db, "pool", db)
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ],
+    }]
     try:
         completion = await dispatch_complete(
             pool, messages, model,
             tier="standard", phase="media_qa_topic_match",
-            temperature=0.2, max_tokens=_LAYER2_VISION_MAX_TOKENS, timeout_s=150.0,
+            temperature=0.0, max_tokens=_LAYER2_VISION_MAX_TOKENS, timeout_s=150.0,
+            # The answer is one number. A thinking-capable judge (gemma-4,
+            # qwen3.6) otherwise reasons first: gemma spent 353 tokens to
+            # reach the same {"score": 100} it gives in 14 with think off.
+            # JSON-constrained decoding keeps any model to the object.
+            think=False, response_format={"type": "json_object"},
         )
         text = (getattr(completion, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001 — fail-soft
-        logger.warning("[media_quality] topic-match dispatch failed: %s", exc)
+        logger.warning(
+            "[media_quality] topic-match dispatch failed: %s",
+            describe_exception(exc),
+        )
         return None
-
     match = re.search(r'"score"\s*:\s*([\d.]+)', text)
     if not match:
         return None
@@ -357,6 +465,66 @@ async def _score_video_topic_match(
         return max(0.0, min(100.0, float(match.group(1))))
     except (TypeError, ValueError):
         return None
+
+
+async def _score_video_topic_match(
+    db: Any,
+    file_path: str,
+    title: str,
+    site_config: Any,
+    *,
+    shots: list[Any] | None = None,
+    duration: float | None = None,
+) -> float | None:
+    """Vision-score whether the composed video's footage fits the title.
+
+    Grabs up to N frames (``media.video.topic_match_frames``) at the midpoints
+    of the video's content shots (see ``_topic_match_timestamps``), scores
+    each frame in its OWN call at temperature 0, and returns the median.
+
+    It used to send three frames at fixed fractions of the runtime in one
+    call. Those fractions often landed on the presenter or the end card: two
+    of the Open-Weight Models Short's three frames were the avatar, and it
+    scored 25 beside its long video's 75. Separate calls and a median let
+    one off-topic frame cost one vote instead of the verdict.
+
+    Returns None (fail-soft) on: no model, no duration, no extractable frame,
+    or no frame that scored. Never raises.
+    """
+    model = _resolve_topic_match_model(site_config)
+    if not model:
+        return None
+    try:
+        n = int(site_config.get("media.video.topic_match_frames", "5") or "5")
+    except (TypeError, ValueError):
+        n = 5
+    n = max(1, n)
+
+    if duration is None:
+        duration = await _probe_duration(file_path)
+    if not duration or duration <= 0:
+        return None
+
+    prompt = _get_prompt_manager().get_prompt(
+        "qa.media.video_topic_match", title=title or "this topic",
+    )
+    pool = getattr(db, "pool", db)
+    scores: list[float] = []
+    for at_s in _topic_match_timestamps(shots, duration, n, site_config):
+        png = await _extract_frame_at(file_path, at_s)
+        if not png:
+            continue
+        score = await _score_one_topic_frame(pool, model, prompt, png)
+        if score is not None:
+            scores.append(score)
+    if not scores:
+        return None
+    logger.info(
+        "[media_quality] topic-match %s: per-frame %s → median %.0f",
+        os.path.basename(file_path), [round(s) for s in scores],
+        statistics.median(scores),
+    )
+    return float(statistics.median(scores))
 
 
 def _file_size(file_path: str) -> int | None:
@@ -426,8 +594,8 @@ async def _run_video_layer2(
     Two signals compose into the 0-100 score:
     - **shot-fidelity** — the mean of the per-shot vision scores the renderer
       already emitted (zero marginal cost; re-read from audit rows).
-    - **topic-match** — one vision call over N sampled frames scoring whether
-      the composed footage actually belongs in an article with this title.
+    - **topic-match** — the median of per-frame vision scores over N content
+      shots, scoring whether the composed footage belongs with this title.
 
     The composite is the mean of whichever signals are *available*, so a
     missing signal degrades gracefully. Returns ``{"layer2_status",
@@ -441,13 +609,15 @@ async def _run_video_layer2(
 
     signals: dict[str, Any] = {}
     try:
-        agg = await _aggregate_shot_qa_scores(db, post_id)
+        duration = await _probe_duration(file_path)
+        agg = await _aggregate_shot_qa_scores(db, post_id, duration)
         signals["shot_fidelity"] = agg["shot_fidelity"]
         signals["shot_coverage"] = agg["shot_coverage"]
 
         title = await _fetch_post_title(db, post_id)
         topic_match = await _score_video_topic_match(
             db, file_path, title, site_config,
+            shots=agg.get("shots"), duration=duration,
         )
         signals["topic_match"] = topic_match
 
@@ -462,7 +632,7 @@ async def _run_video_layer2(
 
         # Advisory findings (post-compose, so a missing signal never fires one).
         fid_min = _cfg_float(site_config, "media.video.shot_fidelity_min", 60.0)
-        tm_min = _cfg_float(site_config, "media.video.topic_match_min", 50.0)
+        tm_min = _cfg_float(site_config, "media.video.topic_match_min", 30.0)
         if agg["shot_fidelity"] is not None and agg["shot_fidelity"] < fid_min:
             emit_finding(
                 source="media_quality",

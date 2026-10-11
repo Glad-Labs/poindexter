@@ -102,8 +102,9 @@ def test_media_layer2_defaults_seeded():
     from poindexter.services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["media.layer2.enabled"] == "true"
-    assert DEFAULTS["media.video.topic_match_frames"] == "3"
-    assert DEFAULTS["media.video.topic_match_min"] == "50"
+    assert DEFAULTS["media.video.topic_match_frames"] == "5"
+    assert DEFAULTS["media.video.topic_match_skip_sources"] == "presenter"
+    assert DEFAULTS["media.video.topic_match_min"] == "30"
     assert DEFAULTS["media.video.shot_fidelity_min"] == "60"
     assert DEFAULTS["media.podcast.faithfulness_min"] == "60"
     assert DEFAULTS["media.video.topic_match_model"] == ""

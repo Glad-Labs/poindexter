@@ -61,7 +61,7 @@ metadata:
       description: 'Vision judge for the featured-image fan-out (Phase 1): scores ONE candidate image 0-100 against the featured-image brief on adherence, composition, brand fit, artifact-freedom, and absence of legible text. Used by services.image_fanout._score_candidate; highest score across candidates ships.'
     - key: qa.media.video_topic_match
       output_format: json
-      description: 'Vision judge for the composed video (media_quality_service._score_video_topic_match): do the sampled stills belong in an article with this title? JSON {score 0-100}.'
+      description: 'Vision judge for the composed video (media_quality_service._score_video_topic_match): scores ONE content-shot still 0-100 against the title on a four-band rubric, ignoring burned-in subtitles; the service takes the median over frames. JSON {score 0-100}.'
     - key: qa.media.podcast_faithfulness
       output_format: json
       description: 'Gate-2 Layer-2 podcast judge (media_quality_service._score_podcast_faithfulness): does the Whisper transcript faithfully represent the source article? JSON {score 0-100, reason}.'
@@ -650,7 +650,17 @@ Return ONLY a JSON object, no other text:
 ## qa.media.video_topic_match
 
 ```text
-You are grading whether a video still belongs in an article titled "{title}". Consider subject, style, and on-topic-ness. Reply with ONLY a JSON object: {{"score": <0-100 integer>}}. 100 = perfectly on-topic, 0 = unrelated.
+You are judging one still frame from a video made for an article titled "{title}".
+
+Judge the imagery only. Any subtitle or caption text burned into the frame is the narration, which is on every frame, so it says nothing about the picture. Read the picture: what does it show?
+
+Score how well the picture fits the article's subject:
+- 90-100: it shows the article's specific subject (the named product, hardware, company, data, or the exact thing the title describes).
+- 60-89: it shows the article's broader field, the kind of footage that would be a natural illustration for it.
+- 30-59: generic imagery that could sit in almost any video (people at desks, abstract shapes, everyday objects) with a loose link at most.
+- 0-29: it shows a different subject that would confuse a viewer of this article.
+
+Reply with ONLY a JSON object: {{"score": <0-100 integer>}}
 ```
 
 ## qa.media.podcast_faithfulness

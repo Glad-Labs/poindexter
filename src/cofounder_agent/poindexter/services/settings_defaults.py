@@ -3978,10 +3978,19 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # qa_vision_model at read time (empty = "not separately configured"; a
     # still-empty qa_vision_model then skips the signal, per no-silent-defaults).
     'media.video.topic_match_model': '',
-    # Frames sampled from the composed video for the topic-match check.
-    'media.video.topic_match_frames': '3',
+    # Frames scored for the topic-match check: one vision call per frame, at
+    # the midpoint of an evenly spaced content shot, folded by median.
+    'media.video.topic_match_frames': '5',
+    # Shot sources (CSV) never sampled for topic-match. A presenter shot is the
+    # same avatar in every video, so a frame of it says nothing about whether
+    # the footage fits THIS title.
+    'media.video.topic_match_skip_sources': 'presenter',
     # Below this 0-100 topic-match score → advisory ``video_topic_mismatch``.
-    'media.video.topic_match_min': '50',
+    # 30 is the floor of the judge rubric's "generic imagery" band
+    # (qa.media.video_topic_match): below it the median frame shows a
+    # different subject. Generic B-roll (30-59) is not a mismatch; at the old
+    # 50 every B-roll-heavy video would raise one.
+    'media.video.topic_match_min': '30',
     # Below this mean rendered-shot vision score → advisory
     # ``video_shot_fidelity_low`` (matches video_shot_qa_threshold).
     'media.video.shot_fidelity_min': '60',
@@ -7261,6 +7270,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.video.topic_match_frames': {'owner': 'media_quality_service', 'value_type': 'integer'},
     'media.video.topic_match_min': {'owner': 'media_quality_service', 'value_type': 'integer'},
     'media.video.topic_match_model': {'owner': 'media_quality_service'},
+    'media.video.topic_match_skip_sources': {'owner': 'media_quality_service', 'value_type': 'string'},
     'media_distribute_max_per_cycle': {'owner': 'media_distribute', 'value_type': 'integer'},
     'video_r2_mirror_enabled': {'owner': 'video_r2_mirror', 'value_type': 'boolean'},
     'video_r2_mirror_recheck_hours': {'owner': 'video_r2_mirror', 'value_type': 'integer'},
