@@ -15,7 +15,7 @@ against the live corpus rather than guessed:
    [Which title actually ships](#which-title-actually-ships-the-precedence-fix-2026-08-15)
    first if you are wondering why a title change had no visible effect.
 
-Shipped in Glad-Labs/glad-labs-stack#3209 (variety guidance), #3213 (duplicate
+Shipped in Glad-Labs/poindexter#3209 (variety guidance), #3213 (duplicate
 detection), #3217 (publish precedence).
 
 ## The measurement that motivated it

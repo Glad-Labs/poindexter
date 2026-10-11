@@ -162,7 +162,7 @@
 #      `sudo -n systemctl` (docker-watchdog precedent — the operator user
 #      needs passwordless sudo; see the unit header). Hosts without the unit
 #      installed skip this step; --no-restart leaves the unit alone too.
-#   8b. host daemons (Glad-Labs/glad-labs-stack#4188): the other long-running
+#   8b. host daemons (Glad-Labs/poindexter#4188): the other long-running
 #      host systemd services that run code out of THIS clone (gpu-scraper,
 #      recovery agent) read it once, at start, so the clone alone only updates
 #      their files. HOST_DAEMON_MAP maps each file a daemon loads at start to
