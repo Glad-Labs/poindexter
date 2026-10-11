@@ -67,6 +67,61 @@ class TestChatterboxTTSProvider:
         extra = m.await_args.kwargs["extra_body"]
         assert "truncation_max_rate_ratio" not in extra and "truncation_retries" not in extra
 
+    async def test_max_internal_silence_is_forwarded_when_set(self, tmp_path):
+        """Including 0, which is how an operator turns the clamp off."""
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+        for value, expected in (("0.55", 0.55), ("0", 0.0)):
+            with patch(
+                "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+                new=AsyncMock(return_value=b"X"),
+            ) as m:
+                await ChatterboxTTSProvider().synthesize(
+                    "hi", tmp_path / "x.mp3",
+                    config={"max_internal_silence_seconds": value},
+                )
+            assert m.await_args.kwargs["extra_body"]["max_internal_silence_seconds"] == expected
+
+    async def test_max_internal_silence_is_omitted_when_unset(self, tmp_path):
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"X"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "hi", tmp_path / "x.mp3", config={"max_internal_silence_seconds": ""},
+            )
+        assert "max_internal_silence_seconds" not in m.await_args.kwargs["extra_body"]
+
+    async def test_name_case_settings_are_forwarded(self, tmp_path):
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+        cases = [
+            ("fold_name_case", "false", False),
+            ("keep_case_words", "August, Polish ,", ["August", "Polish"]),
+            # A lone comma is "no exceptions": an empty list, not "unset".
+            ("keep_case_words", ",", []),
+        ]
+        for key, raw, expected in cases:
+            with patch(
+                "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+                new=AsyncMock(return_value=b"X"),
+            ) as m:
+                await ChatterboxTTSProvider().synthesize(
+                    "hi", tmp_path / "x.mp3", config={key: raw},
+                )
+            assert m.await_args.kwargs["extra_body"][key] == expected, (key, raw)
+
+    async def test_name_case_settings_are_omitted_when_unset(self, tmp_path):
+        from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
+        with patch(
+            "poindexter.services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"X"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "hi", tmp_path / "x.mp3", config={"fold_name_case": "", "keep_case_words": ""},
+            )
+        extra = m.await_args.kwargs["extra_body"]
+        assert "fold_name_case" not in extra and "keep_case_words" not in extra
+
     async def test_bad_float_falls_back_to_default(self, tmp_path):
         from poindexter.services.tts_providers.chatterbox import ChatterboxTTSProvider
         with patch(

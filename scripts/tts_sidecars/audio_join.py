@@ -64,6 +64,85 @@ def trim_edge_silence(
     return wav[start:end]
 
 
+# Internal-pause detection works on 10ms frames, not samples: speech crosses
+# zero constantly, so per-sample amplitude would call every zero crossing
+# "silence". -40 dB below the chunk's own peak is quieter than a breath, so a
+# breath inside a long pause splits it rather than being cut.
+_PAUSE_FRAME_MS = 10.0
+_PAUSE_FLOOR_DB = -40.0
+# The splice is between two near-silent stretches, so it is inaudible anyway;
+# a short crossfade guarantees no step at the join.
+_SPLICE_FADE_MS = 10.0
+
+
+def clamp_internal_silence(
+    wav: np.ndarray,
+    sample_rate: int,
+    *,
+    max_seconds: float,
+    floor_db: float = _PAUSE_FLOOR_DB,
+    frame_ms: float = _PAUSE_FRAME_MS,
+) -> np.ndarray:
+    """Shorten every pause INSIDE ``wav`` that runs past ``max_seconds``.
+
+    Chatterbox now and then generates seconds of dead air in the middle of a
+    chunk: after a sentence it has finished, or partway through a product name
+    or a number. Rendering the same text three times put the pause after "per
+    gigabyte." at 0.86s, 3.33s and 0.85s, so the gap is a per-generation
+    lottery and no text rewrite reaches it. ``join_segments`` already makes the
+    seams BETWEEN chunks deterministic; this does the same inside one.
+
+    An over-long pause keeps its first and last ``max_seconds / 2``, so the
+    natural decay of the word before it and the onset of the word after it are
+    untouched; only the dead middle goes. Pauses at or under the cap, and the
+    chunk's leading/trailing silence (``trim_edge_silence``'s job), are left
+    alone. ``max_seconds <= 0`` disables the clamp.
+    """
+    if max_seconds <= 0 or wav.size == 0:
+        return wav
+    hop = max(1, int(sample_rate * frame_ms / 1000.0))
+    n = wav.size // hop
+    if n < 3:
+        return wav
+    peak = float(np.max(np.abs(wav)))
+    if peak <= 0.0:
+        return wav
+    frames = wav[: n * hop].reshape(n, hop)
+    rms = np.sqrt(np.mean(frames.astype(np.float64) ** 2, axis=1))
+    quiet = rms < peak * (10.0 ** (floor_db / 20.0))
+
+    # Silent runs as [start, end) frame indices.
+    edges = np.diff(np.concatenate(([0], quiet.astype(np.int8), [0])))
+    starts = np.flatnonzero(edges == 1)
+    ends = np.flatnonzero(edges == -1)
+
+    keep_half = int(sample_rate * max_seconds / 2.0)
+    fade = max(1, int(sample_rate * _SPLICE_FADE_MS / 1000.0))
+    pieces: list[np.ndarray] = []
+    cursor = 0
+    for s, e in zip(starts, ends, strict=True):
+        if s == 0 or e >= n:
+            continue  # edge silence: not a pause between words
+        a, b = int(s) * hop, int(e) * hop
+        if b - a <= 2 * keep_half:
+            continue
+        head_end = a + keep_half
+        tail_start = b - keep_half
+        pieces.append(wav[cursor:head_end])
+        f = min(fade, keep_half)
+        if f > 0 and pieces[-1].size >= f:
+            ramp = np.linspace(1.0, 0.0, f, dtype=np.float32)
+            mixed = pieces[-1][-f:] * ramp + wav[tail_start:tail_start + f] * ramp[::-1]
+            pieces[-1] = np.concatenate([pieces[-1][:-f], mixed])
+            cursor = tail_start + f
+        else:
+            cursor = tail_start
+    if not pieces:
+        return wav
+    pieces.append(wav[cursor:])
+    return np.concatenate(pieces).astype(np.float32)
+
+
 def join_segments(
     segments: list[np.ndarray],
     sample_rate: int,
@@ -104,4 +183,4 @@ def join_segments(
     return np.concatenate(out).astype(np.float32)
 
 
-__all__ = ["join_segments", "trim_edge_silence"]
+__all__ = ["clamp_internal_silence", "join_segments", "trim_edge_silence"]

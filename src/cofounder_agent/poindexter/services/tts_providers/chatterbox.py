@@ -122,6 +122,24 @@ class ChatterboxTTSProvider:
             )
         if str(cfg.get("truncation_retries") or "").strip():
             extra_body["truncation_retries"] = int(_as_float(cfg.get("truncation_retries"), 2))
+        # Longest pause the sidecar keeps INSIDE a generated chunk
+        # (audio_join.clamp_internal_silence); 0 turns the clamp off. Same
+        # forward-only-when-set contract, so an unset key leaves the sidecar's
+        # own default in charge.
+        if str(cfg.get("max_internal_silence_seconds") or "").strip():
+            extra_body["max_internal_silence_seconds"] = _as_float(
+                cfg.get("max_internal_silence_seconds"), 0.55,
+            )
+        # Mid-sentence name casing (scripts/tts_sidecars/text_casing.py): the
+        # engine pauses before a capital it must read letter by letter. The
+        # keep list is CSV here and a list on the wire; an empty string means
+        # "unset" (sidecar default list), so an operator who wants NO
+        # exceptions sets a single comma.
+        if str(cfg.get("fold_name_case") or "").strip():
+            extra_body["fold_name_case"] = _as_bool(cfg.get("fold_name_case"), True)
+        keep_raw = str(cfg.get("keep_case_words") or "")
+        if keep_raw.strip():
+            extra_body["keep_case_words"] = [w.strip() for w in keep_raw.split(",") if w.strip()]
 
         # remux_bitrate / loudnorm_* are forwarded ONLY when the caller
         # (podcast_service._generate_with_chatterbox) actually configured

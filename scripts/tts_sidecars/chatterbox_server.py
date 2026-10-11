@@ -45,9 +45,10 @@ from typing import Any
 import numpy as np
 import soundfile as sf
 from _voice_paths import contained_voice_path, voice_roots  # noqa: E402
-from audio_join import join_segments, trim_edge_silence
+from audio_join import clamp_internal_silence, join_segments, trim_edge_silence
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
+from text_casing import DEFAULT_KEEP_CASE, fold_name_case
 from text_chunking import chunk_text
 from truncation_guard import (
     DEFAULT_MAX_RATE_RATIO,
@@ -114,6 +115,22 @@ _nvml_error: str | None = None
 # old 0.25 was never the real boundary (tails swamped it), so keeping 0.25 after
 # trimming would just swap dead air for an unnaturally clipped seam.
 _GAP_SECONDS = float(os.environ.get("CHATTERBOX_GAP_SECONDS", "0.40") or 0.40)
+
+# Longest pause allowed INSIDE one generated chunk (audio_join.clamp_internal_silence).
+# The seams are fixed by _GAP_SECONDS; this is the same rule for the model's own
+# pauses, which run from 0.3s to 3.3s at the same spot on different takes.
+# 0.55 sits just above the median natural sentence pause (0.46s) and the seam, so
+# ordinary pauses keep their variation and only the dead air is shortened. 0 disables.
+_MAX_INTERNAL_SILENCE_SECONDS = float(
+    os.environ.get("CHATTERBOX_MAX_INTERNAL_SILENCE_SECONDS", "0.55") or 0.55
+)
+
+# Lowercase mid-sentence names before tokenizing (text_casing.py): the model's
+# vocabulary has no multi-letter capital pieces, and it pauses before a name it
+# has to read one capital at a time. Per-request field wins; 0/false disables.
+_FOLD_NAME_CASE = os.environ.get("CHATTERBOX_FOLD_NAME_CASE", "1").strip().lower() not in (
+    "0", "false", "no", "off",
+)
 
 # Optional voice reference. Chatterbox has ONE built-in default voice and clones
 # any other voice zero-shot from a short reference clip (audio_prompt_path). Pin
@@ -333,6 +350,14 @@ class SpeechRequest(BaseModel):
     # the ACTUAL boundary length rather than a floor under the model's own tails.
     gap_seconds: float | None = None
     trim_chunk_silence: bool = True
+    # Longest pause kept inside a chunk. None => CHATTERBOX_MAX_INTERNAL_SILENCE_SECONDS.
+    # 0 disables (the model's pauses ship as generated).
+    max_internal_silence_seconds: float | None = None
+    # Lowercase mid-sentence names (text_casing.py). None => CHATTERBOX_FOLD_NAME_CASE.
+    fold_name_case: bool | None = None
+    # Words whose capital changes the word ("August"), never folded.
+    # None => text_casing.DEFAULT_KEEP_CASE.
+    keep_case_words: list[str] | None = None
     # Early-stop guard (truncation_guard.py): a chunk whose speaking rate is more
     # than this multiple of the request's median lost text, and is re-generated
     # sentence by sentence up to ``truncation_retries`` times. 0 disables either.
@@ -643,16 +668,35 @@ def _synthesize(req: SpeechRequest, voice_ref: str | None) -> Response:
     model = _get_model()
     sample_rate = int(model.sr)
 
+    max_silence = (
+        _MAX_INTERNAL_SILENCE_SECONDS
+        if req.max_internal_silence_seconds is None
+        else req.max_internal_silence_seconds
+    )
+    clamped_samples = 0
+
     # voice_ref was resolved and existence-checked by the caller, before the
     # model load — per-request ref > env default > built-in voice (None).
     def generate(text: str) -> np.ndarray:
+        nonlocal clamped_samples
         # generate(text, audio_prompt_path=, exaggeration=, cfg_weight=) -> torch
         # tensor [1, N] at model.sr. audio_prompt_path=None => default voice.
         wav = model.generate(text, audio_prompt_path=voice_ref,
                              exaggeration=req.exaggeration, cfg_weight=req.cfg_weight)
-        return wav.squeeze(0).detach().cpu().numpy().astype(np.float32)
+        wav = wav.squeeze(0).detach().cpu().numpy().astype(np.float32)
+        # Clamped here, before the truncation guard measures the chunk: a long
+        # dead-air pause pads a chunk's duration and can hide an early stop.
+        out = clamp_internal_silence(wav, sample_rate, max_seconds=max_silence)
+        clamped_samples += wav.size - out.size
+        return out
 
-    chunks = chunk_text(req.input)
+    text = req.input
+    folded = 0
+    fold = _FOLD_NAME_CASE if req.fold_name_case is None else req.fold_name_case
+    if fold:
+        keep = DEFAULT_KEEP_CASE if req.keep_case_words is None else req.keep_case_words
+        text, folded = fold_name_case(text, keep)
+    chunks = chunk_text(text)
     segments: list[np.ndarray] = [generate(chunk) for chunk in chunks]
 
     # Each generation carries its own unpredictable leading/trailing silence, so
@@ -671,8 +715,10 @@ def _synthesize(req: SpeechRequest, voice_ref: str | None) -> Response:
         gap_seconds=gap_seconds, trim=req.trim_chunk_silence,
     )
     logger.info(
-        "joined %d chunk(s): gap=%.2fs trim=%s -> %.1fs",
-        len(chunks), gap_seconds, req.trim_chunk_silence,
+        "joined %d chunk(s): gap=%.2fs trim=%s max_pause=%.2fs (cut %.1fs) "
+        "names_folded=%d -> %.1fs",
+        len(chunks), gap_seconds, req.trim_chunk_silence, max_silence,
+        clamped_samples / max(1, sample_rate), folded,
         audio_samples.size / max(1, sample_rate),
     )
     audio = _encode(audio_samples, sample_rate, req.response_format.lower())

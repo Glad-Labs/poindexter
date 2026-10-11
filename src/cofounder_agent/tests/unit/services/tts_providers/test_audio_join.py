@@ -150,3 +150,79 @@ class TestJoinSegments:
         }
         assert sizes[0.1] < sizes[0.5] < sizes[1.0]
         assert sizes[1.0] - sizes[0.1] == pytest.approx(0.9 * SR, abs=2)
+
+
+def _speech(s: float, amp: float = 0.5) -> np.ndarray:
+    return np.full(int(SR * s), amp, dtype=np.float32)
+
+
+def _silence(s: float) -> np.ndarray:
+    return np.zeros(int(SR * s), dtype=np.float32)
+
+
+def _gaps(wav: np.ndarray, level: float = 0.1) -> list[float]:
+    """Lengths (s) of the quiet runs between loud samples."""
+    loud = np.flatnonzero(np.abs(wav) > level)
+    return [(int(b) - int(a) - 1) / SR for a, b in zip(loud[:-1], loud[1:], strict=True) if b - a > 1]
+
+
+@pytest.mark.unit
+class TestClampInternalSilence:
+    """Chatterbox generates seconds of dead air inside a chunk at random: the same
+    sentence end measured 0.86s / 3.33s / 0.85s across three takes. The clamp
+    makes pauses inside a chunk as bounded as the seams between them."""
+
+    def test_long_internal_pause_is_cut_to_the_cap(self):
+        m = _load()
+        wav = np.concatenate([_speech(1.0), _silence(3.0), _speech(1.0)])
+        out = m.clamp_internal_silence(wav, SR, max_seconds=0.55)
+        (gap,) = _gaps(out)
+        # The cap, less the 10ms splice crossfade and a frame of rounding.
+        assert 0.52 <= gap <= 0.56, f"pause was {gap:.3f}s"
+
+    def test_pauses_under_the_cap_are_untouched(self):
+        m = _load()
+        wav = np.concatenate([_speech(1.0), _silence(0.30), _speech(1.0), _silence(0.5), _speech(0.5)])
+        out = m.clamp_internal_silence(wav, SR, max_seconds=0.55)
+        assert out.size == wav.size
+
+    def test_no_speech_is_removed(self):
+        """Only quiet frames are ever cut, so every word survives."""
+        m = _load()
+        wav = np.concatenate([_speech(0.7), _silence(2.5), _speech(1.1), _silence(1.4), _speech(0.4)])
+        out = m.clamp_internal_silence(wav, SR, max_seconds=0.55)
+        assert np.count_nonzero(np.abs(out) > 0.1) == np.count_nonzero(np.abs(wav) > 0.1)
+        assert len(_gaps(out)) == 2 and max(_gaps(out)) <= 0.56
+
+    def test_edge_silence_is_left_for_trim_edge_silence(self):
+        m = _load()
+        wav = np.concatenate([_silence(2.0), _speech(1.0), _silence(2.0)])
+        out = m.clamp_internal_silence(wav, SR, max_seconds=0.55)
+        assert out.size == wav.size
+
+    def test_zero_disables(self):
+        m = _load()
+        wav = np.concatenate([_speech(1.0), _silence(3.0), _speech(1.0)])
+        assert m.clamp_internal_silence(wav, SR, max_seconds=0).size == wav.size
+
+    def test_a_breath_inside_a_pause_is_kept(self):
+        """The floor is -40 dB under the peak, quieter than a breath, so an
+        audible sound in a long pause splits it rather than being cut."""
+        m = _load()
+        wav = np.concatenate([
+            _speech(1.0), _silence(0.5), _speech(0.2, amp=0.02), _silence(0.5), _speech(1.0),
+        ])
+        out = m.clamp_internal_silence(wav, SR, max_seconds=0.55)
+        assert out.size == wav.size
+
+    def test_floor_is_relative_to_the_chunks_own_peak(self):
+        m = _load()
+        quiet = np.concatenate([_speech(1.0), _silence(3.0), _speech(1.0)]) * 0.01
+        out = m.clamp_internal_silence(quiet, SR, max_seconds=0.55)
+        assert (out.size / SR) == pytest.approx(2.55, abs=0.03)
+
+    def test_output_is_float32_and_empty_round_trips(self):
+        m = _load()
+        wav = np.concatenate([_speech(1.0), _silence(3.0), _speech(1.0)])
+        assert m.clamp_internal_silence(wav, SR, max_seconds=0.55).dtype == np.float32
+        assert m.clamp_internal_silence(np.zeros(0, dtype=np.float32), SR, max_seconds=0.55).size == 0

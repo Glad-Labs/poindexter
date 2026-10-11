@@ -656,7 +656,11 @@ def _year_to_words(n: int) -> str:
 
 # A standalone number: not glued to a letter, a currency sign, a dot/colon
 # neighbour, or a slash — those are identifiers, money, versions and ratios.
-_NUMBER_RE = re.compile(r"(?<![\w$€£.:/-])(\d+)(?:\.(\d+))?(?![\w.:/])")
+# A dot AFTER the number only marks an identifier when a digit follows it
+# ("1.2.3", "10.0.0.1"); a sentence's own full stop does not. Before
+# 2026-10-09 any trailing dot blocked the match, so the last number of a
+# sentence ("PCIe 4.0.", "then 92.") reached the engine as digits.
+_NUMBER_RE = re.compile(r"(?<![\w$€£.:/-])(\d+)(?:\.(\d+))?(?![\w:/]|\.\d)")
 _YEAR_UNIT_RE = re.compile(r"^\s*(percent|milliseconds|seconds|tokens|ms|GB|MB|TB|bytes|users|calls|posts|points?)\b", re.I)
 
 
@@ -2169,6 +2173,11 @@ class PodcastService:
             "truncation_retries": sc.get(
                 "plugin.tts_provider.chatterbox.truncation_retries", "",
             ),
+            "max_internal_silence_seconds": sc.get(
+                "plugin.tts_provider.chatterbox.max_internal_silence_seconds", "",
+            ),
+            "fold_name_case": sc.get("plugin.tts_provider.chatterbox.fold_name_case", ""),
+            "keep_case_words": sc.get("plugin.tts_provider.chatterbox.keep_case_words", ""),
             "remux_bitrate": sc.get("podcast_tts_remux_bitrate", ""),
             "loudnorm_enabled": sc.get_bool("podcast_tts_loudnorm_enabled", True),
             "loudnorm_i": sc.get("podcast_tts_loudnorm_i", ""),

@@ -2229,6 +2229,27 @@ class TestNumbersAsWordsAtTheBoundary:
         assert "12:30" in out
         assert "ten GB" in out
 
+    def test_a_number_ending_a_sentence_is_spelled_too(self):
+        """The full stop after a number read as a version separator, so the last
+        number of a sentence reached the engine as digits: "PCIe 4.0." stayed
+        "4.0." in 132 of 564 stored scripts (172 numbers), and the engine
+        hesitated at it on every render."""
+        out = _normalize_for_speech(
+            "It runs on PCIe 4.0. It scored 87, then 92. It shipped in 2019! Was it 3?",
+            site_config=_pron_sc(),
+        )
+        assert "PCIe four point zero." in out
+        assert "then ninety two." in out
+        assert "in twenty nineteen!" in out
+        assert "it three?" in out
+
+    def test_dotted_identifiers_stay_digits_at_a_sentence_end(self):
+        out = _normalize_for_speech(
+            "Pin it to 1.2.3. The host is 10.0.0.1.", site_config=_pron_sc(),
+        )
+        assert "1.2.3." in out
+        assert "10.0.0.1." in out
+
     def test_standalone_years_read_as_years(self):
         out = _normalize_for_speech("back in 1999 and again in 2026, then 2005", site_config=_pron_sc())
         assert "nineteen ninety nine" in out

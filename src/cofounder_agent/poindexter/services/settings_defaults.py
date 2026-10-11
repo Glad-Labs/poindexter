@@ -3568,6 +3568,21 @@ DEFAULTS: dict[str, str] = {
     # _retries times. Normal chunks measured 0.73-1.23x. 0 disables either.
     'plugin.tts_provider.chatterbox.truncation_max_rate_ratio': '1.5',
     'plugin.tts_provider.chatterbox.truncation_retries': '2',
+    # Longest pause kept INSIDE one generated chunk. Chatterbox now and then
+    # generates seconds of dead air mid-chunk (the same spot measured 0.86s /
+    # 3.33s / 0.85s on three takes); longer pauses keep their natural head and
+    # tail and lose the middle. 0.55 sits just above the median natural
+    # sentence pause (0.46s), so only the outliers change. 0 disables.
+    'plugin.tts_provider.chatterbox.max_internal_silence_seconds': '0.55',
+    # Lowercase mid-sentence names before Chatterbox tokenizes them. Its vocab
+    # has no multi-letter capital pieces, so "DeepSeek" is read one capital at a
+    # time and the engine pauses before it as if a sentence began: a 0.4s+
+    # pause landed before a name on 15.7% of renders, 5.3% with the fold
+    # (other boundaries 0.6-0.7% both ways). Acronyms, digit tokens and
+    # sentence starts are untouched. keep_case_words never fold, because their
+    # capital changes the word (August / august). A single "," = no exceptions.
+    'plugin.tts_provider.chatterbox.fold_name_case': 'true',
+    'plugin.tts_provider.chatterbox.keep_case_words': 'August,Polish,Job,Nice,Reading,Mobile',
     # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
     # VRAM), where a full paragraph takes minutes — well past the 120s default.
     'plugin.tts_provider.chatterbox.timeout_s': '600',
