@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.154.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.154.1...v0.154.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **media-qa:** video topic-match per content frame with a rubric; find the shot rows ([#4355](https://github.com/Glad-Labs/glad-labs-stack/issues/4355)) ([7e6577f](https://github.com/Glad-Labs/glad-labs-stack/commit/7e6577f0d35bfbe8d9b20036ed7b8b3937f0d989))
+* **retention:** no hardcoded phi4 default for the embeddings-collapse summarizer ([#4354](https://github.com/Glad-Labs/glad-labs-stack/issues/4354)) ([e7f8410](https://github.com/Glad-Labs/glad-labs-stack/commit/e7f8410e96ca4ef17a45f64adb694308f81af8dc))
+* **tts:** tighten Chatterbox narration gaps (dead air, names, sentence-final numbers) ([#4346](https://github.com/Glad-Labs/glad-labs-stack/issues/4346)) ([895f17c](https://github.com/Glad-Labs/glad-labs-stack/commit/895f17cb94a6368839d6f02fa39ca68e0e133155))
+
 ## [0.154.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.154.0...v0.154.1) (2026-10-10)
 
 
