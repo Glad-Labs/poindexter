@@ -85,6 +85,7 @@ class PromptCategory(str, Enum):
     PODCAST = "podcast"
     VOICE = "voice"
     CHAT = "chat"
+    STORY = "story"  # creative studio screenplays (poindexter#1134)
 
 
 @dataclass
@@ -154,6 +155,7 @@ class UnifiedPromptManager:
         "podcast": PromptCategory.PODCAST,
         "voice": PromptCategory.VOICE,
         "chat": PromptCategory.CHAT,
+        "story": PromptCategory.STORY,
     }
 
     def __init__(self, site_config: "SiteConfig | None" = None):

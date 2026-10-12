@@ -300,6 +300,7 @@ class TestPromptCategoryEnum:
             "PODCAST",
             "VOICE",
             "CHAT",
+            "STORY",
         }
         actual = {c.name for c in PromptCategory}
         assert expected == actual

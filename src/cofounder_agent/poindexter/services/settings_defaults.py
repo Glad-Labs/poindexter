@@ -906,6 +906,20 @@ DEFAULTS: dict[str, str] = {
         'gestures, natural blinking, lips synchronized with the speech, '
         'locked-off camera, soft key light, sharp focus'
     ),
+    # Cast shots (a screenplay line by a named character, poindexter#1138) act
+    # the line instead of reading it: expression and gesture are wanted, so
+    # they get their own S2V prompt and a quality-only negative. The
+    # 2026-10-12 Dex test used exactly these and produced natural gestures,
+    # a wave, and lip-sync on a cartoon fox.
+    'video_cast_render_prompt': (
+        '{display_name} talks in the scene, expressive face, natural head '
+        'movement and hand gestures that fit the line, lips synchronized with '
+        'the speech, consistent character design'
+    ),
+    'video_cast_negative_prompt': (
+        'static, blurred, distorted face, extra fingers, text, subtitles, '
+        'watermark, low quality, jpeg artifacts, overexposed'
+    ),
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
     # PUNISHES stillness — 静态 (static), 静止 (still), 静止不动的画面 (motionless
@@ -2985,6 +2999,41 @@ DEFAULTS: dict[str, str] = {
     # back to description; personality is read only by the screenplay writer.
     'persona.presenter.appearance': '',
     'persona.presenter.personality': '',
+    # Creative studio screenplay writer (poindexter#1136,
+    # services/screenplay.py). Model empty = the local writer resolver.
+    'story_writer_model': '',
+    'story_writer_timeout_seconds': '300',
+    # Spoken words per second, turning a target length into a word budget.
+    'story_speech_words_per_second': '2.5',
+    # Accept a screenplay whose spoken length is within these multiples of the
+    # budget; outside them the writer gets one FIX repair.
+    'story_length_min_ratio': '0.65',
+    'story_length_max_ratio': '1.75',
+    # Gaps the plan does not fill: explainer | story | dialogue | sketch, a
+    # CSV of persona slugs, and a length in seconds.
+    'story_default_format': 'explainer',
+    'story_default_cast': '',
+    'story_default_target_seconds': '90',
+    # Seconds of audio per scene the writer is asked for (target / this).
+    'story_seconds_per_scene': '40',
+    # Dialogue track (poindexter#1137, services/dialogue_audio.py). Narrator
+    # persona slug; empty = the house voice (podcast_tts_voice).
+    'story_default_narrator_persona': '',
+    # Silence between two lines in a scene, at a scene change, and for an
+    # action beat (so the shot showing the action has screen time).
+    'story_dialogue_gap_seconds': '0.35',
+    'story_scene_gap_seconds': '0.8',
+    'story_action_beat_seconds': '1.5',
+    # Screenplay director (poindexter#1138, services/screenplay_director.py).
+    # Longest non-talking shot; shortest shot (slivers merge into a neighbour);
+    # shortest still worth animating; talking-shot cap (-1 = every line by a
+    # character with a portrait is lip-synced, ~4 min of GPU each). Visuals
+    # model empty = the local writer resolver.
+    'story_max_shot_seconds': '6.0',
+    'story_min_shot_seconds': '0.8',
+    'story_min_animated_shot_seconds': '2.5',
+    'story_max_talking_shots': '-1',
+    'story_visuals_model': '',
     # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
@@ -6350,6 +6399,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_reclaim_reclear_max': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_cast_render_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_cast_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_clip_interpolation_engine': {'owner': 'video', 'value_type': 'string'},
@@ -7141,6 +7192,24 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'persona.presenter.enabled': {'owner': 'media_policy', 'value_type': 'boolean'},
     'persona.presenter.render_prompt_suffix': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.appearance': {'owner': 'media_policy', 'value_type': 'string'},
+    'story_writer_model': {'owner': 'screenplay'},
+    'story_writer_timeout_seconds': {'owner': 'screenplay', 'value_type': 'integer'},
+    'story_speech_words_per_second': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_length_min_ratio': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_length_max_ratio': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_default_format': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_default_cast': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_default_target_seconds': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_seconds_per_scene': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_default_narrator_persona': {'owner': 'dialogue_audio', 'value_type': 'string'},
+    'story_dialogue_gap_seconds': {'owner': 'dialogue_audio', 'value_type': 'float'},
+    'story_scene_gap_seconds': {'owner': 'dialogue_audio', 'value_type': 'float'},
+    'story_action_beat_seconds': {'owner': 'dialogue_audio', 'value_type': 'float'},
+    'story_max_shot_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
+    'story_min_shot_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
+    'story_min_animated_shot_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
+    'story_max_talking_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
+    'story_visuals_model': {'owner': 'screenplay_director'},
     'persona.presenter.personality': {'owner': 'media_policy', 'value_type': 'string'},
     'image_fanout_enabled': {'value_type': 'boolean'},
     'image_fanout_candidates': {'value_type': 'string'},

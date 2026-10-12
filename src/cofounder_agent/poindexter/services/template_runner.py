@@ -595,6 +595,14 @@ class PipelineState(TypedDict, total=False):
     # discipline — undeclared keys are dropped on the graph_def path, so the
     # QA result would vanish without this declaration (#674 trap).
     media_qa_result: dict
+    # Creative studio (poindexter#1134): the screenplay story.write_screenplay
+    # writes and the dialogue + director steps read. Declared for the same
+    # reason as every channel here — an undeclared key is dropped between
+    # nodes on the graph_def path.
+    screenplay: dict
+    # media.render_dialogue's measured beat timeline (start_s/end_s per line
+    # and action beat), read by media.direct_screenplay.
+    dialogue_timeline: list
     # Stage-2 audio QA result (#1193 Phase 2): qa.audio runs after
     # transcribe_narration (before the renders) and checks the raw narration
     # audio for long silences, volume levels (clipping / too quiet), and

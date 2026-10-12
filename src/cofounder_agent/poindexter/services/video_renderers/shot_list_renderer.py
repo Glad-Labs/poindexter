@@ -3126,6 +3126,13 @@ def _presenter_window_budget_s(site_config: Any) -> float | None:
     return max(1.0, chunks * length / fps - _PRESENTER_WINDOW_MARGIN_S)
 
 
+def presenter_window_budget_s(site_config: Any) -> float | None:
+    """Public read of the longest seamless talking shot (one S2V chunk by
+    default). The screenplay director plans talking shots to fit it, so the
+    renderer never has to move a cast shot's overflow onto a neighbour."""
+    return _presenter_window_budget_s(site_config)
+
+
 def _presenter_overflow_donor(position: int, sources: list[str]) -> int | None:
     """The neighbour that plays a presenter shot's overflow, or None.
 
@@ -3240,16 +3247,28 @@ def _fit_presenter_to_chunk_budget(
 
 def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str:
     """S2V render prompt: the DB template with the persona's name, then the
-    persona's own suffix, then the shot's delivery note."""
+    persona's own suffix, then the shot's delivery note.
+
+    A cast shot (a screenplay line) uses ``video_cast_render_prompt`` instead:
+    the blog presenter template asks for a still, gesture-free studio read,
+    which is the opposite of an animated character acting a line."""
     template = (
         "{display_name} speaks directly to the camera in a studio, calm and "
         "composed, nearly still, minimal head movement, relaxed shoulders, no hand "
         "gestures, natural blinking, lips synchronized with the speech, "
         "locked-off camera, soft key light, sharp focus"
     )
+    template_key = "video_presenter_render_prompt"
+    if _is_cast_shot(shot):
+        template = (
+            "{display_name} talks in the scene, expressive face, natural head "
+            "movement and hand gestures that fit the line, lips synchronized "
+            "with the speech, consistent character design"
+        )
+        template_key = "video_cast_render_prompt"
     if site_config is not None:
         try:
-            template = str(site_config.get("video_presenter_render_prompt", "") or "").strip() or template
+            template = str(site_config.get(template_key, "") or "").strip() or template
         except Exception:  # noqa: BLE001  # silent-ok: settings read must not
             # decide a render's fate; the code template stands.
             pass
@@ -3264,7 +3283,7 @@ def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str
     return ". ".join(p.rstrip(".") for p in parts) + "."
 
 
-def _presenter_negative_prompt(site_config: Any) -> dict[str, str]:
+def _presenter_negative_prompt(site_config: Any, *, cast: bool = False) -> dict[str, str]:
     """``{"negative_prompt": …}`` for the S2V render, or ``{}`` to inherit the
     shared Wan negative.
 
@@ -3274,11 +3293,16 @@ def _presenter_negative_prompt(site_config: Any) -> dict[str, str]:
     person talking to camera, whom it pushes into head-bobbing and
     exaggerated expressions (operator feedback 2026-09-17). The presenter
     reads its own negative from ``video_presenter_negative_prompt``.
+
+    A cast shot (``cast=True``) is an animated character acting a line, where
+    expression and gesture are wanted, so it reads ``video_cast_negative_prompt``
+    — quality terms only — and an empty one inherits the shared Wan negative.
     """
     if site_config is None:
         return {}
+    key = "video_cast_negative_prompt" if cast else "video_presenter_negative_prompt"
     try:
-        text = str(site_config.get("video_presenter_negative_prompt", "") or "").strip()
+        text = str(site_config.get(key, "") or "").strip()
     except Exception:  # noqa: BLE001
         # silent-ok: a settings read must not decide a render's fate; the
         # provider's shared negative applies.
@@ -3481,7 +3505,7 @@ async def _render_presenter_clip(
         extra_config={
             "audio_path": segment,
             "audio_duration_s": cut_duration,
-            **_presenter_negative_prompt(site_config),
+            **_presenter_negative_prompt(site_config, cast=_is_cast_shot(shot)),
         },
         provider_override="comfyui",
     )

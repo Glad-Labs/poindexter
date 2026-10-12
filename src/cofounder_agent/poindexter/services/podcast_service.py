@@ -2038,6 +2038,31 @@ class PodcastService:
                 post_id, exc,
             )
 
+    async def synthesize_line(
+        self, text: str, persona: Any, output_path: "Path | str",
+    ) -> str:
+        """Voice ONE dialogue line as ``persona`` (creative studio, poindexter#1137).
+
+        The persona's own engine and voice — its Kokoro ``voice_id`` or its
+        Chatterbox clone — with the full speech pass, exactly as narration is
+        rendered. ``persona=None`` speaks in the house voice
+        (``podcast_tts_voice``). There is no fallback ladder: another voice
+        would put this character's words in someone else's mouth, so a
+        failure raises and the caller decides. Returns the written path.
+        """
+        from poindexter.services.persona_service import persona_voice
+
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        voice = persona_voice(persona, self._site_config) or VOICE_FALLBACKS[0]
+        result = await self._generate_with_voice(text, voice, out, persona=persona)
+        if not result.success or not result.file_path:
+            raise RuntimeError(
+                f"line synthesis failed for {getattr(persona, 'slug', 'house voice')!r}: "
+                f"{result.error or 'no file'}",
+            )
+        return result.file_path
+
     async def _generate_with_voice(
         self, script: str, voice: str, output_path: Path, *, persona: Any = None,
     ) -> EpisodeResult:

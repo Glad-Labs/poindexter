@@ -67,12 +67,16 @@ async def test_fresh_db_seeds_expected_row_count(test_pool) -> None:
     # (every DEFAULTS key is present, asserted above, so after >= len(DEFAULTS));
     # the upper bound is a generous runaway-duplication guard with headroom for
     # ongoing growth (migrations keep adding settings — 736 as of 2026-06, prod
-    # ~888). A hard 700 cap rotted the moment the seed set grew (#1078). The
-    # exact-accounting assertion above (after - before == inserted) is what
-    # actually catches a dup-explosion bug.
-    assert len(DEFAULTS) <= int(after) <= 2000, (
+    # ~888). A hard 700 cap rotted the moment the seed set grew (#1078), and
+    # the hard 2000 that replaced it rotted the same way on 2026-10-12 (2001
+    # rows once the creative-studio story_* keys landed). So the ceiling now
+    # scales with the seed set: a duplication bug multiplies rows, which twice
+    # DEFAULTS still catches. The exact-accounting assertion above (after -
+    # before == inserted) is what catches a dup-explosion bug precisely.
+    ceiling = 2 * len(DEFAULTS)
+    assert len(DEFAULTS) <= int(after) <= ceiling, (
         f"app_settings has {after} rows after seed — outside the sane range "
-        f"[{len(DEFAULTS)}, 2000]; check for unintended duplicate inserts."
+        f"[{len(DEFAULTS)}, {ceiling}]; check for unintended duplicate inserts."
     )
 
 
