@@ -387,7 +387,7 @@ def _contains_synthetic_media(row: dict[str, Any], site_config: Any) -> bool:
         except ValueError:
             shot_list = None
     policy = resolve_media_policy(site_config, str(row.get("niche_slug") or "") or None)
-    return video_contains_synthetic_media(policy, shot_list)
+    return video_contains_synthetic_media(policy, shot_list, site_config)
 
 
 async def _dispatch_asset(

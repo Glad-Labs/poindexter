@@ -97,6 +97,13 @@ _SILHOUETTE_RE = re.compile(r"\b(silhouette|faceless)\b", re.IGNORECASE)
 # Matches the slugs ``services/demo_clips.py`` derives from tape filenames.
 _DEMO_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,99}")
 
+#: Persona slug shape — must match ``persona_service._SLUG_RE``, which a test
+#: pins. Repeated here rather than imported so the schema stays dependency-free.
+_PERSONA_SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+
+#: Hard cap on shots in one list (poindexter#1135).
+MAX_SHOTS = 120
+
 
 def scan_for_human_tokens(text: str) -> list[str]:
     """Return human-indicator nouns found in ``text``.
@@ -156,6 +163,52 @@ class Shot(BaseModel):
         description="Start/end zoom for image_kenburns shots (e.g. (1.0, 1.2))",
     )
     narration_offset_s: float = Field(..., ge=0, description="Audio offset where this shot's narration starts")
+    # Cast fields (creative studio, poindexter#1135). Optional so every frozen
+    # shot list still validates. Both hold persona slugs; the renderer looks
+    # them up as ``persona.<slug>.*`` settings, so they are constrained to the
+    # slug shape like ``demo_id``.
+    characters: list[str] = Field(
+        default_factory=list,
+        max_length=6,
+        description=(
+            "Persona slugs in frame. Their ``appearance`` text is joined into "
+            "the still's prompt in code, keeping recurring characters on-model"
+        ),
+    )
+    speaker: str | None = Field(
+        None,
+        description=(
+            "Persona slug that speaks in a ``presenter`` shot. Set: that "
+            "persona's portrait is lip-synced. Unset: the niche's persona"
+        ),
+    )
+
+    @field_validator("characters")
+    @classmethod
+    def _validate_characters_are_slugs(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for slug in value or []:
+            slug = (slug or "").strip().lower()
+            if not _PERSONA_SLUG_RE.fullmatch(slug):
+                raise ValueError(
+                    f"characters entry {slug!r} must be a persona slug "
+                    "(a-z, 0-9, '-'; e.g. 'dex')",
+                )
+            if slug not in cleaned:
+                cleaned.append(slug)
+        return cleaned
+
+    @field_validator("speaker")
+    @classmethod
+    def _validate_speaker_is_a_slug(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        slug = value.strip().lower()
+        if not _PERSONA_SLUG_RE.fullmatch(slug):
+            raise ValueError(
+                f"speaker {slug!r} must be a persona slug (a-z, 0-9, '-'; e.g. 'dex')",
+            )
+        return slug
 
     @field_validator("demo_id")
     @classmethod
@@ -301,7 +354,9 @@ class VideoShotList(BaseModel):
         description="Output aspect ratio: 16:9 long-form, 9:16 short-form",
     )
     total_duration_s: float = Field(..., gt=0, description="Sum of shot durations; matches podcast length ±1s")
-    shots: list[Shot] = Field(..., min_length=1, max_length=30)
+    # 120, not the blog director's 30: a three-minute screenplay at ~5 s a
+    # shot is ~36 shots (poindexter#1135). The blog director keeps its own cap.
+    shots: list[Shot] = Field(..., min_length=1, max_length=MAX_SHOTS)
     director_model: str = Field(..., description="LLM model that produced this shot list")
     director_prompt_version: str = Field(..., description="Prompt version (e.g. 'v1') for traceability")
     director_decided_at: datetime = Field(..., description="When the director produced this output")
@@ -333,14 +388,18 @@ class VideoShotList(BaseModel):
         # non-holdover source. Holdovers don't count toward the streak
         # (they're transitions, not content). Matches the rule in the
         # director prompt — duplicate-source streaks visually drag.
-        streak_src: str | None = None
+        # A presenter shot's streak key includes its speaker: a dialogue cuts
+        # between talking characters (shot / reverse shot), and that is a
+        # change of picture even though every shot is a ``presenter``.
+        streak_src: tuple[str, str | None] | None = None
         streak_count = 0
         for s in self.shots:
             if s.source == "holdover":
                 streak_src = None
                 streak_count = 0
                 continue
-            if s.source == streak_src:
+            key = (s.source, s.speaker if s.source == "presenter" else None)
+            if key == streak_src:
                 streak_count += 1
                 if streak_count > 2:
                     raise ValueError(
@@ -348,7 +407,7 @@ class VideoShotList(BaseModel):
                         f"at idx={s.idx} — director should diversify",
                     )
             else:
-                streak_src = s.source
+                streak_src = key
                 streak_count = 1
 
         return self

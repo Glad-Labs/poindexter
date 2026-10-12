@@ -2981,6 +2981,10 @@ DEFAULTS: dict[str, str] = {
     'persona.presenter.style_policy': 'photoreal',
     'persona.presenter.enabled': 'true',
     'persona.presenter.render_prompt_suffix': '',
+    # Character sheet (creative studio, poindexter#1135). Empty appearance falls
+    # back to description; personality is read only by the screenplay writer.
+    'persona.presenter.appearance': '',
+    'persona.presenter.personality': '',
     # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
@@ -7136,6 +7140,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'persona.presenter.style_policy': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.enabled': {'owner': 'media_policy', 'value_type': 'boolean'},
     'persona.presenter.render_prompt_suffix': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.appearance': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.personality': {'owner': 'media_policy', 'value_type': 'string'},
     'image_fanout_enabled': {'value_type': 'boolean'},
     'image_fanout_candidates': {'value_type': 'string'},
     'image_fanout_priority': {'value_type': 'string'},

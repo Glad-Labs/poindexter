@@ -382,7 +382,7 @@ def _tolerant_json_loads(body: str) -> Any:
         return parsed
 
 
-_MAX_SHOTS = 30  # Mirror VideoShotList.shots max_length — cap before validation.
+_MAX_SHOTS = 30  # The blog director's own cap; the schema allows MAX_SHOTS (120) for screenplays.
 _MAX_SHOT_DURATION_S = 30.0  # Mirror Shot.duration_s le=30 — clamp before validation.
 
 
@@ -409,7 +409,7 @@ def _reconcile_shot_list(parsed: Any) -> Any:
        creative, its length cap is bookkeeping.
     2. **Pacing** — break runs of >2 consecutive same-source non-holdover shots
        by inserting a ``holdover`` transition (a pure cross-fade, no asset).
-    3. **Count** — cap to the schema max (30 shots); the director front-loads
+    3. **Count** — cap to the blog director's max (30 shots); the director front-loads
        the hook, so dropping the tail is the least-bad truncation.
     4. **Index** — renormalize ``idx`` to a contiguous ``0..n-1`` (the renderer
        concats in idx order; the schema requires no gaps).

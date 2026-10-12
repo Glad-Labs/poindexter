@@ -427,6 +427,30 @@ def test_synthetic_media_needs_a_presenter_shot_and_a_photoreal_persona():
     assert mp.video_contains_synthetic_media(stylized, shots) is False
 
 
+def test_synthetic_media_follows_each_cast_speakers_own_persona():
+    """A cast shot (poindexter#1135) discloses by its speaker, not the niche."""
+    stylized_niche = mp.resolve_media_policy(
+        _presenter_sc(media_style_policy="stylized", **{"persona.presenter.style_policy": "stylized"}), None,
+    )
+    sc = _presenter_sc(**{
+        "persona.dex.style_policy": "stylized", "persona.dex.enabled": "true",
+        "persona.ada.style_policy": "photoreal", "persona.ada.enabled": "true",
+    })
+    cartoon = {"shots": [{"source": "presenter", "speaker": "dex"}]}
+    assert mp.video_contains_synthetic_media(stylized_niche, cartoon, sc) is False
+    mixed = {"shots": [{"source": "presenter", "speaker": "dex"}, {"source": "presenter", "speaker": "ada"}]}
+    assert mp.video_contains_synthetic_media(stylized_niche, mixed, sc) is True
+
+
+def test_synthetic_media_discloses_a_cast_shot_it_cannot_look_up():
+    stylized_niche = mp.resolve_media_policy(
+        _presenter_sc(media_style_policy="stylized", **{"persona.presenter.style_policy": "stylized"}), None,
+    )
+    cast = {"shots": [{"source": "presenter", "speaker": "dex"}]}
+    assert mp.video_contains_synthetic_media(stylized_niche, cast) is True  # no site_config
+    assert mp.video_contains_synthetic_media(stylized_niche, cast, _presenter_sc()) is True  # unknown persona
+
+
 def test_synthetic_media_accepts_model_objects_too():
     from poindexter.schemas.video_shot_list import Shot
 

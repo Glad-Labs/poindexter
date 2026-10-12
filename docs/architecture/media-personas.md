@@ -20,15 +20,17 @@ existing settings CLI / API / MCP edit it from a phone today.
 `poindexter/services/persona_service.py` adds validation, listing by prefix,
 niche resolution, voice inheritance and the portrait render.
 
-| Field (`persona.<slug>.`)                          | Meaning                                                                                   |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `display_name`, `description`                      | Who the presenter is; the description seeds the portrait prompt                           |
-| `voice_provider`, `voice_id`                       | `kokoro` or `chatterbox`; the voice id. **Empty `voice_id` inherits `podcast_tts_voice`** |
-| `voice_ref_audio_url`                              | Chatterbox clone reference (optional)                                                     |
-| `portrait_url`, `portrait_prompt`, `portrait_seed` | The canonical reference still (R2) and how to regenerate it                               |
-| `style_policy`                                     | `photoreal` or `stylized`; must agree with the niche media policy                         |
-| `enabled`                                          | A disabled persona resolves to none, never to a different one                             |
-| `render_prompt_suffix`                             | Per-persona shaping for the S2V prompt (framing, mood)                                    |
+| Field (`persona.<slug>.`)                          | Meaning                                                                                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `display_name`, `description`                      | Who the presenter is; the description seeds the portrait prompt                                                                 |
+| `voice_provider`, `voice_id`                       | `kokoro` or `chatterbox`; the voice id. **Empty `voice_id` inherits `podcast_tts_voice`**                                       |
+| `voice_ref_audio_url`                              | Chatterbox clone reference (optional)                                                                                           |
+| `portrait_url`, `portrait_prompt`, `portrait_seed` | The canonical reference still (R2) and how to regenerate it                                                                     |
+| `style_policy`                                     | `photoreal` or `stylized`; must agree with the niche media policy                                                               |
+| `enabled`                                          | A disabled persona resolves to none, never to a different one                                                                   |
+| `render_prompt_suffix`                             | Per-persona shaping for the S2V prompt (framing, mood)                                                                          |
+| `appearance`                                       | Character sheet: the canonical visual description joined into every still that shows this persona (falls back to `description`) |
+| `personality`                                      | Character sheet: how the character talks and behaves; read only by the screenplay writer                                        |
 
 **Selection:** `niche.<slug>.media.persona` → `media_default_persona` → none.
 The seeded default is `presenter` (photoreal, voice inherited), so a fresh
@@ -147,6 +149,40 @@ regenerable — a regen would cost a full render for a stochastic gain.
 (`{display_name}`), followed by the persona's `render_prompt_suffix` and the
 shot's optional delivery note.
 
+## Characters and cast shots (creative studio)
+
+A persona is also a **character** that a screenplay can cast (the creative
+studio, poindexter#1134). Two optional shot fields carry the cast:
+
+- `Shot.characters` lists the persona slugs in frame. Before rendering,
+  `services/character_prompt.py` joins each one's `appearance` in front of
+  the still's prompt (for `image_gen`, `image_kenburns` and `generative`
+  shots). The description lives once, on the persona, so it is identical in
+  every shot. Measured 2026-10-12: that plus a fixed seed kept one character
+  consistent across three styles and two scenes. An unknown or
+  description-less character is skipped with a warning, not a failed render.
+- `Shot.speaker` names who talks in a `presenter` shot (a **cast shot**). The
+  renderer lip-syncs that persona's portrait to the shot's slice of the
+  dialogue track. The blog-format presenter rules do not apply to cast shots:
+  the per-video cap (`video_presenter_shots_max`), the one-seamless-take tidy,
+  and the niche's presenter availability. A dialogue is back-to-back talking
+  shots by design, and the cast is an explicit choice by the plan. The schema's
+  pacing rule counts a presenter streak per speaker, so cutting between two
+  speakers is fine but one speaker three times running is not.
+
+`VideoShotList` holds up to 120 shots (`MAX_SHOTS`); the blog director keeps
+its own 30-shot cap.
+
+Set up a character:
+
+```bash
+poindexter personas create dex --display-name Dex --style stylized
+poindexter personas set dex appearance "a cheerful young fox engineer, orange fur, round amber goggles pushed up on his head, teal lab jacket over a black t-shirt"
+poindexter personas set dex personality "eager, curious, loves puns, explains things simply"
+poindexter personas set dex voice_id am_puck
+poindexter personas portrait dex
+```
+
 ## Rules that follow
 
 - A persona's `style_policy` must be allowed by the niche's media policy
@@ -156,7 +192,9 @@ shot's optional delivery note.
   altered/synthetic-content disclosure: `media_distribute` sets
   `status.containsSyntheticMedia` from the post's shot list + persona
   (`video_contains_synthetic_media`: a `presenter` shot with a photoreal
-  persona → true; a stylized presenter is a character, not a likeness).
+  persona → true; a stylized presenter is a character, not a likeness). A cast
+  shot is judged by its own speaker's persona; one that cannot be looked up
+  counts as photoreal, so a gap over-discloses rather than under-discloses.
   `youtube_contains_synthetic_media` = `auto` | `true` | `false` overrides
   per channel.
 - Speech-to-video cost: ~420 s and ~31.9 GB per 4.8 s chunk on a 5090

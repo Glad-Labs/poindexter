@@ -3023,6 +3023,16 @@ async def _render_one_shot(
     )
 
 
+def _is_cast_shot(shot: Shot) -> bool:
+    """A presenter shot that names its ``speaker`` (a screenplay line,
+    poindexter#1135). The niche-presenter rules — the per-video cap, the
+    one-seamless-take tidy, and the niche's presenter availability — are
+    conventions of the blog explainer format. A dialogue is back-to-back
+    talking shots by design, so cast shots are exempt from all three and
+    resolve their own persona at render time."""
+    return shot.source == _PRESENTER_SOURCE and bool(getattr(shot, "speaker", None))
+
+
 def _cap_presenter_shots(
     shots: list[Shot], max_presenter: int, *, available: bool,
 ) -> list[Shot]:
@@ -3030,11 +3040,12 @@ def _cap_presenter_shots(
     enabled persona with a portrait resolves); the rest become
     ``image_kenburns`` carrying the shot's delivery note or intent as the
     prompt — the same downgrade the hero cap applies. A negative cap keeps
-    every presenter shot. Order and other shots are preserved."""
+    every presenter shot. Order and other shots are preserved. Cast shots
+    (``_is_cast_shot``) are neither counted nor downgraded."""
     out: list[Shot] = []
     seen = 0
     for s in shots:
-        if s.source == _PRESENTER_SOURCE:
+        if s.source == _PRESENTER_SOURCE and not _is_cast_shot(s):
             seen += 1
             over = max_presenter >= 0 and seen > max_presenter
             if not available or over:
@@ -3062,6 +3073,10 @@ def _tidy_presenter_sequence(shots: list[Shot], policy: Any) -> list[Shot]:
     )
 
     if sum(1 for s in shots if s.source == _PRESENTER_SOURCE) < 2:
+        return shots
+    if any(_is_cast_shot(s) for s in shots):
+        # A screenplay's talking shots are the dialogue; "no two back to back"
+        # would cut the conversation apart.
         return shots
     dicts = [s.model_dump() for s in shots]
     notes = tidy_presenter_sequence(
@@ -3348,8 +3363,9 @@ async def _render_presenter_clip(
     heartbeat_cb: Any = None,
     narration_window: tuple[float, float] | None = None,
 ) -> ShotRenderResult:
-    """Render a talking-head clip: the niche's persona speaks this shot's
-    narration window through the ComfyUI provider's speech path.
+    """Render a talking-head clip: the shot's ``speaker`` persona (a cast
+    shot), else the niche's persona, speaks this shot's narration window
+    through the ComfyUI provider's speech path.
 
     ``narration_window`` is ``(offset_s, duration_s)`` in the REAL narration
     track — the window the assembled video will play under this shot. The
@@ -3368,16 +3384,29 @@ async def _render_presenter_clip(
     a hard failure would sink a whole video for one shot.
     """
     from poindexter.services.media_subject_policy import resolve_media_policy
-    from poindexter.services.persona_service import resolve_persona_for_niche
+    from poindexter.services.persona_service import get_persona, resolve_persona_for_niche
 
     def _fail(reason: str) -> ShotRenderResult:
         _emit_presenter_fallback_finding(shot=shot, post_id=post_id, reason=reason)
         return ShotRenderResult(idx=shot.idx, source=shot.source, success=False, error=reason)
 
-    policy = resolve_media_policy(site_config, niche_slug)
-    persona = resolve_persona_for_niche(site_config, niche_slug) if policy.presenter_available else None
-    if persona is None or not persona.has_portrait:
-        return _fail("no enabled persona with a portrait is allowed for this niche")
+    if _is_cast_shot(shot):
+        # A screenplay line: the named speaker talks, whatever the niche's
+        # presenter is. The cast is an explicit choice by the plan, so the
+        # niche's presenter availability does not gate it.
+        persona = get_persona(site_config, shot.speaker or "")
+        if persona is None or not persona.enabled:
+            return _fail(f"speaker {shot.speaker!r} is not an enabled persona")
+        if not persona.has_portrait:
+            return _fail(
+                f"speaker {shot.speaker!r} has no portrait — run "
+                f"`poindexter personas portrait {shot.speaker}`"
+            )
+    else:
+        policy = resolve_media_policy(site_config, niche_slug)
+        persona = resolve_persona_for_niche(site_config, niche_slug) if policy.presenter_available else None
+        if persona is None or not persona.has_portrait:
+            return _fail("no enabled persona with a portrait is allowed for this niche")
     if not narration_path or not os.path.exists(narration_path):
         return _fail("narration track missing — a presenter shot lip-syncs to the rendered narration")
     portrait = await _fetch_presenter_portrait(
@@ -5224,7 +5253,10 @@ async def render_shot_list(
     from poindexter.services.media_subject_policy import resolve_media_policy
 
     _presenter_policy = resolve_media_policy(site_config, niche_slug)
-    n_presenter = sum(1 for _s in capped_shots if _s.source == _PRESENTER_SOURCE)
+    n_presenter = sum(
+        1 for _s in capped_shots
+        if _s.source == _PRESENTER_SOURCE and not _is_cast_shot(_s)
+    )
     if n_presenter and not _presenter_policy.presenter_available:
         emit_finding(
             source="shot_list_renderer",
@@ -5249,6 +5281,12 @@ async def render_shot_list(
     # here it also covers lists stored before that rule (and a reviewer that
     # re-introduced either shape). Never adds a face; keeps the stored idx.
     capped_shots = _tidy_presenter_sequence(capped_shots, _presenter_policy)
+    # Recurring characters: each prompted shot's ``characters`` get their
+    # persona appearance joined into the prompt here, in code, so a cast stays
+    # on-model without the director repeating descriptions (poindexter#1135).
+    from poindexter.services.character_prompt import apply_character_sheets
+
+    capped_shots = apply_character_sheets(capped_shots, site_config)
 
     presenter_window_fn = None
     if narration_fit and audio_path and any(

@@ -21,7 +21,8 @@ fresh install keeps the narration voice it already had (no silent behaviour
 change from seeding a default persona).
 
 Consumers: ``podcast_service._select_voice`` (narration voice),
-``poindexter personas`` (CLI), and — next — the ``presenter`` shot source.
+``poindexter personas`` (CLI), the ``presenter`` shot source, and the creative
+studio's cast (``appearance`` / ``personality``, poindexter#1134).
 See ``docs/architecture/media-personas.md``.
 """
 
@@ -53,6 +54,8 @@ FIELDS: tuple[str, ...] = (
     "style_policy",
     "enabled",
     "render_prompt_suffix",
+    "appearance",
+    "personality",
 )
 VOICE_PROVIDERS: tuple[str, ...] = ("kokoro", "chatterbox")
 STYLE_POLICIES: tuple[str, ...] = ("photoreal", "stylized")
@@ -79,10 +82,22 @@ class Persona:
     style_policy: str = "photoreal"
     enabled: bool = True
     render_prompt_suffix: str = ""
+    # Character sheet (creative studio, poindexter#1135). ``appearance`` is the
+    # canonical visual description joined into every still this persona appears
+    # in, which is what keeps a recurring character on-model across shots.
+    # ``personality`` is how the character talks and behaves; only the
+    # screenplay writer reads it.
+    appearance: str = ""
+    personality: str = ""
 
     @property
     def has_portrait(self) -> bool:
         return bool(self.portrait_url)
+
+    @property
+    def visual_description(self) -> str:
+        """``appearance``, else ``description``: what this persona looks like."""
+        return (self.appearance or self.description).strip()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -158,6 +173,8 @@ def _parse(slug: str, raw: dict[str, str]) -> Persona:
         style_policy=(raw.get("style_policy") or "photoreal").strip() or "photoreal",
         enabled=(raw.get("enabled") or "true").strip().lower() not in _FALSE - {""},
         render_prompt_suffix=raw.get("render_prompt_suffix", "") or "",
+        appearance=(raw.get("appearance") or "").strip(),
+        personality=(raw.get("personality") or "").strip(),
     )
 
 
@@ -257,7 +274,7 @@ def persona_voice(persona: Persona | None, site_config: Any) -> str:
 def default_portrait_prompt(persona: Persona) -> str:
     """A portrait prompt from the persona's description and style — used
     when ``portrait_prompt`` is empty, and stored back once a render lands."""
-    who = persona.description.strip().rstrip(".") or "a friendly technology presenter"
+    who = persona.visual_description.rstrip(".") or "a friendly technology presenter"
     if persona.style_policy == "stylized":
         return (
             f"Flat vector illustration of {who}, head and shoulders centred, "

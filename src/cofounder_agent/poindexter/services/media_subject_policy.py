@@ -754,13 +754,26 @@ def tidy_presenter_sequence(
     return notes
 
 
-def video_contains_synthetic_media(policy: MediaPolicy, shot_list: Any) -> bool:
+def _shot_field(shot: Any, name: str) -> Any:
+    """A field off a shot given as a dict (stored JSON) or a ``Shot``."""
+    return shot.get(name) if isinstance(shot, dict) else getattr(shot, name, None)
+
+
+def video_contains_synthetic_media(
+    policy: MediaPolicy, shot_list: Any, site_config: Any = None,
+) -> bool:
     """Does this video show a realistic synthetic person?
 
-    True when the shot list holds a ``presenter`` shot and the niche's persona
-    is photoreal — a stylized presenter is a character, not a likeness. This
-    is what YouTube's ``status.containsSyntheticMedia`` disclosure asks about;
-    ``media_distribute`` derives the flag from it unless
+    True when the shot list holds a ``presenter`` shot whose persona is
+    photoreal — a stylized presenter is a character, not a likeness. A shot
+    with no ``speaker`` uses the niche's persona (``policy``); a cast shot
+    (``speaker`` set, poindexter#1135) uses that speaker's own persona, looked
+    up through ``site_config``. Without ``site_config`` a cast shot counts as
+    photoreal: over-disclosing costs nothing, and a missed disclosure on a
+    realistic synthetic person is the failure this check exists to prevent.
+
+    This is what YouTube's ``status.containsSyntheticMedia`` disclosure asks
+    about; ``media_distribute`` derives the flag from it unless
     ``youtube_contains_synthetic_media`` forces a value.
     """
     shots: Any = None
@@ -771,9 +784,20 @@ def video_contains_synthetic_media(policy: MediaPolicy, shot_list: Any) -> bool:
     if not shots:
         return False
     for shot in shots:
-        source = shot.get("source") if isinstance(shot, dict) else getattr(shot, "source", "")
-        if str(source or "") == "presenter":
-            return policy.presenter_style == "photoreal"
+        if str(_shot_field(shot, "source") or "") != "presenter":
+            continue
+        speaker = str(_shot_field(shot, "speaker") or "").strip()
+        if not speaker:
+            if policy.presenter_style == "photoreal":
+                return True
+            continue
+        if site_config is None:
+            return True
+        from poindexter.services.persona_service import get_persona
+
+        persona = get_persona(site_config, speaker)
+        if persona is None or persona.style_policy == "photoreal":
+            return True
     return False
 
 
