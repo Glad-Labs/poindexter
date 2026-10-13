@@ -172,6 +172,15 @@ earned-autonomy tiers vouch for an article's media, and that track record says
 nothing about a cartoon. The RSS feeds join posts, so a standalone video never
 appears in one.
 
+Once approved, `media_distribute` uploads it to YouTube in the same pass as
+any other video. The title is the screenplay's title, the description opens
+with its logline, and there is no "Read the full post" link because there is
+no post. The synthetic-media disclosure reads the shot list that
+`media.persist` kept on the asset, so a cast member drawn photoreal is
+disclosed exactly as on a post's video. The upload is stamped on the task's
+review row, and its `pipeline_distributions` row carries the task with no
+post.
+
 ## Cost
 
 Measured 2026-10-12 on the RTX 5090:
@@ -189,7 +198,5 @@ GPU time.
 
 ## Not yet
 
-- Uploading an approved standalone video to YouTube (poindexter#1140, part 2).
-  The upload pass reads its title, description and link from a post.
 - A music-bed atom.
 - Two characters lip-synced in one shot. Dialogue cuts between speakers.

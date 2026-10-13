@@ -20,7 +20,8 @@ split keeps the post dependency out of the render graph.
 state and no post is a creative-studio piece: the video IS the content, and
 no post will ever exist to resolve. Its rows carry ``metadata.standalone``
 plus the screenplay's title and logline as the asset's own title and
-description. ``media_distribute`` reads the flag to seed a task-keyed review
+description, and keep the long shot list for the upload's synthetic-media
+disclosure. ``media_distribute`` reads the flag to seed a task-keyed review
 row instead of waiting for a post.
 
 **Best-effort.** A missing render (the renders emit their own findings on
@@ -167,7 +168,16 @@ def _standalone_identity(state: dict[str, Any], post_id: str | None) -> tuple[di
         return None, "", ""
     title = str(screenplay.get("title") or "").strip()
     logline = str(screenplay.get("logline") or "").strip()
-    return {"standalone": True}, title, logline
+    meta: dict[str, Any] = {"standalone": True}
+    # The upload reads YouTube's synthetic-media disclosure off the shot list
+    # (which cast members appear as lip-synced presenters). An article's video
+    # finds it on its post; a standalone video has only its asset.
+    shots: Any = state.get("video_shot_list")
+    if shots is not None and hasattr(shots, "model_dump"):
+        shots = shots.model_dump(mode="json")
+    if isinstance(shots, dict):
+        meta["video_shot_list"] = shots
+    return meta, title, logline
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:

@@ -796,7 +796,7 @@ class _RacePool:
         self._conn = _RaceConn(self.held, self.dispatched)
 
     async def fetch(self, sql, *args):
-        if "post_id IS NULL" in sql:
+        if "dispatched_at IS NULL" not in sql:
             return []  # link pass: nothing unlinked
         return [dict(r) for r in self._approved]  # dispatch pass: both see it
 
@@ -1209,3 +1209,64 @@ async def test_a_mirror_only_cycle_does_not_rebuild_the_feed():
         )
     mirror.assert_awaited_once()
     rebuild.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_standalone_dispatch_stamps_its_task_and_records_no_post(tmp_path):
+    """An approved standalone video (poindexter#1140) is claimed and stamped
+    under its task (the approval row's subject) while its distribution row
+    carries no post — a task id in that uuid FK would fail the transaction."""
+    f = tmp_path / "cartoon.mp4"
+    f.write_bytes(b"x")
+    job = MediaDistributeJob()
+    row = {
+        "subject_id": "task-c", "post_id": None, "medium": "video",
+        "title": "Kai and Mira Explain VRAM", "content": "", "excerpt": "Two friends, one GPU.",
+        "seo_keywords": "", "slug": "", "asset_id": "asset-c", "task_id": "task-c",
+        "storage_path": str(f),
+    }
+    pool = _FakePool(unlinked=[], approved=[row])
+    disp = AsyncMock(return_value=[md._PlatformDispatchResult(
+        platform="youtube", success=True, external_id="VIDC", url="https://youtu.be/VIDC",
+    )])
+    with patch.object(md, "_dispatch_asset", disp):
+        out = await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
+    assert out.changes_made == 1
+    recheck = [c for c in pool.conn.fetchval.await_args_list if "media_approvals" in c.args[0]]
+    assert recheck and recheck[0].args[1] == "task-c"
+    calls = pool.conn.execute.await_args_list
+    stamp = next(c for c in calls if "dispatch_success" in c.args[0])
+    assert stamp.args[1] == "task-c"
+    dist = next(c for c in calls if "pipeline_distributions" in c.args[0])
+    assert dist.args[1] == "task-c"
+    assert dist.args[6] is None  # post_id
+
+
+@pytest.mark.asyncio
+async def test_standalone_payload_uses_the_assets_own_title_and_no_backlink():
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[
+        {"name": "yt", "platform": "youtube", "handler_name": "youtube", "config": {}, "metadata": {}},
+    ])
+    pool.fetchval = AsyncMock(return_value=None)
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "V", "url": "u"})
+    row = {
+        "subject_id": "task-c", "post_id": None, "title": "Kai and Mira Explain VRAM",
+        "content": "", "excerpt": "Two friends, one GPU.", "seo_keywords": "", "slug": "",
+        "storage_path": "/tmp/c.mp4", "task_id": "task-c",
+    }
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=False)
+    payload = dispatch.await_args.args[2]
+    assert payload["title"] == "Kai and Mira Explain VRAM"
+    assert payload["description"].startswith("Two friends, one GPU.")
+    assert "/posts/" not in payload["description"]
+    assert payload["post_id"] == "task-c"
+
+
+def test_approved_undispatched_sql_offers_standalone_videos():
+    sql = " ".join(md._APPROVED_UNDISPATCHED_SQL.split())
+    assert "UNION ALL" in sql
+    assert "WHERE ma.post_id IS NULL AND ma.status = 'approved'" in sql

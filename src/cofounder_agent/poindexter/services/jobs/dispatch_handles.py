@@ -62,7 +62,7 @@ _MEDIA_DISPATCH_LOCK_NS: int = 0x4D44  # "MD" — media dispatch critical sectio
 _STILL_UNDISPATCHED_SQL = """
     SELECT 1
       FROM media_approvals
-     WHERE post_id = $1::uuid
+     WHERE subject_id = $1
        AND medium = $2
        AND status = 'approved'
        AND dispatched_at IS NULL
@@ -100,6 +100,9 @@ async def claim_media_dispatch(
     A mock/degraded pool whose ``pg_try_advisory_lock`` returns ``None`` (not a
     real Postgres bool) is treated as "no lock backend — proceed", never as
     contention: only a literal ``False`` means another session holds it.
+
+    ``post_id`` is the approval row's ``subject_id``: the post, or the task of
+    a standalone video with no post (poindexter#1140).
     """
     lock_key = f"{post_id}:{medium}"
     async with pool.acquire() as conn:
@@ -118,7 +121,7 @@ async def claim_media_dispatch(
             yield False
             return
         try:
-            still = await conn.fetchval(_STILL_UNDISPATCHED_SQL, post_id, medium)
+            still = await conn.fetchval(_STILL_UNDISPATCHED_SQL, str(post_id), medium)
             if not still:
                 logger.info(
                     "[MEDIA_DISPATCH] post %s (%s) already dispatched by a "
@@ -205,7 +208,7 @@ _RECORD_DISTRIBUTION_SQL = """
 async def persist_platform_handles(
     conn: Any,
     *,
-    post_id: str,
+    post_id: str | None,
     medium: str,
     asset_id: str | None,
     task_id: str | None,

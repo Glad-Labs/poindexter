@@ -159,43 +159,86 @@ _PRUNE_ORPHAN_SQL = (
 # path. Post-#1460 the join is identity (mas.type = ma.medium); DISTINCT ON
 # (below) collapses any duplicate video assets to the one canonical render, and
 # (post_id, type) uniqueness is also schema-enforced — so a post delivers once.
+#
+# Two halves, one shape. The first is a post's media, described by its post.
+# The second is a standalone video (poindexter#1140): a creative-studio piece
+# with no post, keyed on its task, described by its own asset (the
+# screenplay's title and logline, stored by media.persist) and with no
+# article to link back to. ``subject_id`` is the approval row's key in both
+# halves (the post id, or the task id) and is what the dispatch stamps use;
+# ``post_id`` is NULL for a standalone row.
 _APPROVED_UNDISPATCHED_SQL = """
     SELECT * FROM (
-        SELECT DISTINCT ON (ma.post_id, ma.medium)
-               ma.post_id::text AS post_id,
-               ma.medium,
-               ma.created_at AS _appr_created,
-               p.title, p.content, p.excerpt, p.seo_keywords, p.slug,
-               p.video_shot_list, pt.niche_slug,
-               mas.id::text AS asset_id,
-               mas.task_id,
-               mas.storage_path
-          FROM media_approvals ma
-          JOIN posts p ON p.id = ma.post_id
-          JOIN media_assets mas
-            ON mas.post_id = ma.post_id
-           AND mas.type = ma.medium
-          -- niche lives on the task, not the post (posts has no niche_slug —
-          -- the #3767 join selected p.niche_slug and every media_distribute
-          -- cycle failed its query for three hours before anyone read the log).
-          LEFT JOIN pipeline_tasks pt
-            ON pt.task_id = mas.task_id
-         WHERE ma.status = 'approved'
-           AND ma.dispatched_at IS NULL
-           -- Never re-deliver grandfathered media: grandfathering only blesses it
-           -- 'approved' for the RSS-feed gate; it is already live, so queuing it
-           -- for upload re-detonates glad-labs-stack#1596. NULL-safe via COALESCE.
-           AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
-           AND ma.medium = ANY($1::text[])
-           AND COALESCE(mas.storage_path, '') <> ''
-         -- One asset per (post, medium): DISTINCT ON keeps the canonical render
-         -- (already on a platform > pipeline-produced > newest) so a post with
-         -- multiple matching video assets never double-uploads (#1460).
-         ORDER BY ma.post_id, ma.medium,
-                  (mas.platform_video_ids IS NOT NULL
-                   AND mas.platform_video_ids::text NOT IN ('', 'null', '{}')) DESC,
-                  (mas.source = 'pipeline') DESC,
-                  mas.created_at DESC
+        SELECT * FROM (
+            SELECT DISTINCT ON (ma.post_id, ma.medium)
+                   ma.subject_id,
+                   ma.post_id::text AS post_id,
+                   ma.medium,
+                   ma.created_at AS _appr_created,
+                   p.title, p.content, p.excerpt,
+                   p.seo_keywords::text AS seo_keywords, p.slug::text AS slug,
+                   p.video_shot_list, pt.niche_slug,
+                   mas.id::text AS asset_id,
+                   mas.task_id,
+                   mas.storage_path
+              FROM media_approvals ma
+              JOIN posts p ON p.id = ma.post_id
+              JOIN media_assets mas
+                ON mas.post_id = ma.post_id
+               AND mas.type = ma.medium
+              -- niche lives on the task, not the post (posts has no niche_slug —
+              -- the #3767 join selected p.niche_slug and every media_distribute
+              -- cycle failed its query for three hours before anyone read the log).
+              LEFT JOIN pipeline_tasks pt
+                ON pt.task_id = mas.task_id
+             WHERE ma.status = 'approved'
+               AND ma.dispatched_at IS NULL
+               -- Never re-deliver grandfathered media: grandfathering only blesses it
+               -- 'approved' for the RSS-feed gate; it is already live, so queuing it
+               -- for upload re-detonates glad-labs-stack#1596. NULL-safe via COALESCE.
+               AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
+               AND ma.medium = ANY($1::text[])
+               AND COALESCE(mas.storage_path, '') <> ''
+             -- One asset per (post, medium): DISTINCT ON keeps the canonical render
+             -- (already on a platform > pipeline-produced > newest) so a post with
+             -- multiple matching video assets never double-uploads (#1460).
+             ORDER BY ma.post_id, ma.medium,
+                      (mas.platform_video_ids IS NOT NULL
+                       AND mas.platform_video_ids::text NOT IN ('', 'null', '{}')) DESC,
+                      (mas.source = 'pipeline') DESC,
+                      mas.created_at DESC
+        ) posted
+        UNION ALL
+        SELECT * FROM (
+            SELECT DISTINCT ON (ma.task_id, ma.medium)
+                   ma.subject_id,
+                   NULL::text AS post_id,
+                   ma.medium,
+                   ma.created_at AS _appr_created,
+                   mas.title, ''::text AS content, mas.description::text AS excerpt,
+                   ''::text AS seo_keywords, ''::text AS slug,
+                   mas.metadata->'video_shot_list' AS video_shot_list, pt.niche_slug,
+                   mas.id::text AS asset_id,
+                   mas.task_id,
+                   mas.storage_path
+              FROM media_approvals ma
+              JOIN media_assets mas
+                ON mas.task_id = ma.task_id
+               AND mas.post_id IS NULL
+               AND mas.type = ma.medium
+              LEFT JOIN pipeline_tasks pt
+                ON pt.task_id = ma.task_id
+             WHERE ma.post_id IS NULL
+               AND ma.status = 'approved'
+               AND ma.dispatched_at IS NULL
+               AND COALESCE(ma.decided_by, '') NOT LIKE '%grandfather%'
+               AND ma.medium = ANY($1::text[])
+               AND COALESCE(mas.storage_path, '') <> ''
+             ORDER BY ma.task_id, ma.medium,
+                      (mas.platform_video_ids IS NOT NULL
+                       AND mas.platform_video_ids::text NOT IN ('', 'null', '{}')) DESC,
+                      mas.created_at DESC
+        ) standalone
     ) t
     ORDER BY t._appr_created ASC
     LIMIT $2
@@ -486,7 +529,8 @@ async def _dispatch_asset(
         ),
         "description": description,
         "tags": tags or None,
-        "post_id": row["post_id"],
+        # Audit linkage: the post, or a standalone video's task (#1140).
+        "post_id": _subject(row),
         "shorts": shorts,
         "contains_synthetic_media": _contains_synthetic_media(row, site_config),
     }
@@ -535,12 +579,12 @@ async def _dispatch_asset(
                 logger.info(
                     "[MEDIA_DISTRIBUTE] %s upload succeeded for post %s "
                     "(shorts=%s, external_id=%s)",
-                    platform, row["post_id"], shorts, result.get("post_id"),
+                    platform, _subject(row), shorts, result.get("post_id"),
                 )
                 await _record(True)
                 if payload.get("thumbnail_path"):
                     await _record_thumbnail_outcome(
-                        pool, task_id=task_id, post_id=row["post_id"],
+                        pool, task_id=task_id, post_id=_subject(row),
                         video_id=result.get("post_id"),
                         status=str(result.get("thumbnail") or ""),
                     )
@@ -551,7 +595,7 @@ async def _dispatch_asset(
                 error = (result or {}).get("error") if isinstance(result, dict) else result
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] %s upload failed for post %s: %s",
-                    platform, row["post_id"], error,
+                    platform, _subject(row), error,
                 )
                 await _record(False, str(error) if error else None)
         except Exception as exc:  # noqa: BLE001 — one platform must not starve others
@@ -560,7 +604,7 @@ async def _dispatch_asset(
             )
             logger.warning(
                 "[MEDIA_DISTRIBUTE] %s upload raised for post %s: %s",
-                platform, row["post_id"], describe_exception(exc),
+                platform, _subject(row), describe_exception(exc),
             )
             await _record(False, describe_exception(exc))
     return results
@@ -569,11 +613,12 @@ async def _dispatch_asset(
 async def _persist_dispatch_result(
     pool: Any,
     *,
-    post_id: str,
+    post_id: str | None,
     medium: str,
     asset_id: str | None,
     task_id: str | None,
     results: list[_PlatformDispatchResult],
+    subject_id: str | None = None,
 ) -> None:
     """Stamp the dispatch outcome AND capture each platform's external handles.
 
@@ -590,11 +635,15 @@ async def _persist_dispatch_result(
     stamp: a post's long form and its Short are two deliveries to the same
     ``(task_id, target)``, and until the row was keyed by medium the second one
     overwrote the first (migration 20260901_173133).
+
+    ``subject_id`` is the approval row's key when it differs from ``post_id``:
+    a standalone video (poindexter#1140) has no post, so its stamp is keyed on
+    its task while its distribution row carries ``post_id`` NULL.
     """
     ok = any(r.success for r in results)
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await record_dispatched(conn, post_id, medium, success=ok)
+            await record_dispatched(conn, str(subject_id or post_id), medium, success=ok)
             await persist_platform_handles(
                 conn,
                 post_id=post_id,
@@ -603,6 +652,11 @@ async def _persist_dispatch_result(
                 task_id=task_id,
                 results=results,
             )
+
+
+def _subject(row: Any) -> str:
+    """The approval row's key: the post id, or a standalone video's task id."""
+    return str(row.get("subject_id") or row.get("post_id") or "")
 
 
 def _max_per_cycle(site_config: Any) -> int:
@@ -765,6 +819,8 @@ class MediaDistributeJob:
 
         for row in drows or []:
             medium = row["medium"]
+            # The approval row's key: the post, or a standalone video's task.
+            subject = _subject(row)
             path = row.get("storage_path") or ""
             if not path or not os.path.exists(path):
                 # Durable file gone (cleaned up / never landed). Don't stamp —
@@ -772,7 +828,7 @@ class MediaDistributeJob:
                 logger.warning(
                     "[MEDIA_DISTRIBUTE] durable file missing for post %s (%s): %s "
                     "— skipping (left for reconciliation)",
-                    row["post_id"], medium, path,
+                    subject, medium, path,
                 )
                 continue
 
@@ -783,7 +839,7 @@ class MediaDistributeJob:
             # (idempotent jobs run max_instances=3, plus the multi-worker future)
             # can never both upload the same asset → duplicate video (#3370 twin).
             async with claim_media_dispatch(
-                pool, post_id=row["post_id"], medium=medium,
+                pool, post_id=subject, medium=medium,
             ) as proceed:
                 if not proceed:
                     # Contended, or already dispatched by a concurrent pass. The
@@ -796,7 +852,7 @@ class MediaDistributeJob:
                 except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
                     logger.warning(
                         "[MEDIA_DISTRIBUTE] dispatch raised for post %s (%s): %s",
-                        row["post_id"], medium, describe_exception(exc),
+                        subject, medium, describe_exception(exc),
                     )
                     results = []
                 ok = any(r.success for r in results)
@@ -808,6 +864,7 @@ class MediaDistributeJob:
                     await _persist_dispatch_result(
                         pool,
                         post_id=row["post_id"],
+                        subject_id=subject,
                         medium=medium,
                         asset_id=row.get("asset_id"),
                         task_id=row.get("task_id"),
@@ -816,7 +873,7 @@ class MediaDistributeJob:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "[MEDIA_DISTRIBUTE] record dispatch outcome failed for post %s (%s): %s",
-                        row["post_id"], medium, describe_exception(exc),
+                        subject, medium, describe_exception(exc),
                     )
                 if ok:
                     dispatched += 1
@@ -831,7 +888,7 @@ class MediaDistributeJob:
                     except Exception as exc:  # noqa: BLE001 — never fail a landed upload
                         logger.warning(
                             "[MEDIA_DISTRIBUTE] twin refresh failed for post %s (%s): %s",
-                            row["post_id"], medium, describe_exception(exc),
+                            subject, medium, describe_exception(exc),
                         )
 
         # --- Mirror pass: put the feed's enclosures in the bucket -----------

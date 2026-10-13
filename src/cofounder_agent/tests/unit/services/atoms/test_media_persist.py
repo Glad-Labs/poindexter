@@ -330,10 +330,11 @@ async def test_screenplay_run_without_a_post_is_marked_standalone(
         "pool": _FakePool(),
         "long_video_path": _write_tmp(tmp_path / "long.mp4"),
         "screenplay": {"title": "Kai and Mira Explain VRAM", "logline": "Two friends, one GPU."},
+        "video_shot_list": {"aspect": "16:9", "shots": [{"source": "presenter", "speaker": "kai"}]},
     }
     await persist_run(state)
     kw = patched_recorder.await_args.kwargs
-    assert kw["metadata"] == {"standalone": True}
+    assert kw["metadata"] == {"standalone": True, "video_shot_list": state["video_shot_list"]}
     assert kw["title"] == "Kai and Mira Explain VRAM"
     assert kw["description"] == "Two friends, one GPU."
 

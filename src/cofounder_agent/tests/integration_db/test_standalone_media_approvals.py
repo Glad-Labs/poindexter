@@ -124,3 +124,54 @@ async def test_distribute_seeds_standalone_once(test_txn):
     await mas.record_pending_standalone(test_txn, task_id, "video")
     rows = await test_txn.fetch(md._UNLINKED_SQL, list(md._TYPE_TO_MEDIUM.keys()), 500)
     assert not [r for r in rows if r["task_id"] == task_id]
+
+
+async def test_approved_standalone_video_is_offered_for_upload(test_txn):
+    """The dispatch query's standalone half: titled from the asset, no post."""
+    from poindexter.services import media_approval_service as mas
+    from poindexter.services.jobs import media_distribute as md
+
+    task_id = await _standalone_task(test_txn)
+    await mas.record_pending_standalone(test_txn, task_id, "video")
+    pending = await test_txn.fetch(
+        md._APPROVED_UNDISPATCHED_SQL, list(md._TYPE_TO_MEDIUM.values()), 500,
+    )
+    assert not [r for r in pending if r["task_id"] == task_id]
+
+    await mas.decide(test_txn, task_id, "video", approved=True, decided_by="operator:test")
+    rows = await test_txn.fetch(
+        md._APPROVED_UNDISPATCHED_SQL, list(md._TYPE_TO_MEDIUM.values()), 500,
+    )
+    row = next(r for r in rows if r["task_id"] == task_id)
+    assert row["subject_id"] == task_id
+    assert row["post_id"] is None
+    assert row["title"] == "Kai and Mira Explain VRAM"
+    assert row["excerpt"] == "Two friends, one GPU."
+    assert row["slug"] == ""
+
+    await mas.record_dispatched(test_txn, task_id, "video", success=True)
+    rows = await test_txn.fetch(
+        md._APPROVED_UNDISPATCHED_SQL, list(md._TYPE_TO_MEDIUM.values()), 500,
+    )
+    assert not [r for r in rows if r["task_id"] == task_id]
+
+
+async def test_standalone_distribution_row_carries_no_post(test_txn):
+    from poindexter.services.jobs.dispatch_handles import (
+        PlatformDispatchResult,
+        persist_platform_handles,
+    )
+
+    task_id = await _standalone_task(test_txn)
+    asset_id = await test_txn.fetchval(
+        "SELECT id::text FROM media_assets WHERE task_id = $1", task_id,
+    )
+    await persist_platform_handles(
+        test_txn, post_id=None, medium="video", asset_id=asset_id, task_id=task_id,
+        results=[PlatformDispatchResult(platform="youtube", success=True,
+                                        external_id="VIDC", url="https://youtu.be/VIDC")],
+    )
+    row = await test_txn.fetchrow(
+        "SELECT post_id, external_id FROM pipeline_distributions WHERE task_id = $1", task_id,
+    )
+    assert row["post_id"] is None and row["external_id"] == "VIDC"
