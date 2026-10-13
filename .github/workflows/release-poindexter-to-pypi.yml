@@ -121,7 +121,7 @@ jobs:
           echo "Built poindexter $version"
 
       - name: Upload dist as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v4.6.2 as of 2026-05-12
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v4.6.2 as of 2026-05-12
         with:
           name: poindexter-dist
           path: ${{ steps.src.outputs.dir }}/dist/
