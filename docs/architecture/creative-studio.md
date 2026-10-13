@@ -73,8 +73,10 @@ architect's roster afterwards:
 - **Voice.** With `story_cast_voice_engine=chatterbox`, Kokoro reads the
   sample line in the chosen voice and the clip becomes the character's
   Chatterbox clone reference, with an emotion strength from its energy
-  (`story_cast_energy_exaggeration`). That is the treatment Kai's voice won in
-  the 2026-10-13 audition. The worker writes the clip to
+  (`story_cast_energy_exaggeration`, low 0.65 / medium 0.85 / high 1.0).
+  Kai's and Mira's voices won their 2026-10-13 auditions this way, at 0.9
+  and 0.85. Animation takes a bigger delivery than a realistic talking head:
+  the louder take beat the restrained one for a cartoon. The worker writes the clip to
   `story_cast_voice_dir`, which compose mounts from `~/.poindexter/tts-voices/cast`,
   and chatterbox reads it under `story_cast_voice_ref_prefix`. The worker
   gets only that `cast/` subfolder, never `tts-voices` itself, because the

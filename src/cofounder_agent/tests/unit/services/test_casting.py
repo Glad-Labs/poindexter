@@ -384,7 +384,7 @@ class TestBuildVoice:
         assert spoken == [("Who goes there?", "kokoro", "bf_emma")]
         assert out["voice_provider"] == "chatterbox"
         assert out["voice_ref_audio_url"] == "/app/voices/cast/wren.wav"
-        assert out["voice_exaggeration"] == "0.9"
+        assert out["voice_exaggeration"] == "1.0"
         assert (tmp_path / "wren.wav").exists()
 
     @pytest.mark.asyncio

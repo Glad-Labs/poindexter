@@ -3159,7 +3159,12 @@ DEFAULTS: dict[str, str] = {
     'story_cast_voice_dir': '/home/appuser/.poindexter/cast-voices',
     'story_cast_voice_ref_prefix': '/app/voices/cast',
     # Chatterbox emotion strength for each energy casting can give a voice.
-    'story_cast_energy_exaggeration': 'low=0.5,medium=0.7,high=0.9',
+    # Cast characters are animated, and animation carries a bigger delivery
+    # than a realistic talking head: Matt picked 0.85 for Mira over 0.6 in the
+    # 2026-10-13 audition ("the over the top emotion goes better there"), and
+    # Kai's chosen voice runs at 0.9. Per-line intensity moves these by
+    # story_line_intensity_offsets, clamped to story_line_exaggeration_max.
+    'story_cast_energy_exaggeration': 'low=0.65,medium=0.85,high=1.0',
     # A new character's portrait: every frame of the piece is drawn from it.
     # {style} is the cast's art style, {appearance} the character's looks.
     'story_portrait_template': (
