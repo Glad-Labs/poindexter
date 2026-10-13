@@ -261,6 +261,24 @@ def resolve_persona_for_niche(site_config: Any, niche_slug: str | None) -> Perso
     return persona if persona.enabled else None
 
 
+def cast_roster(site_config: Any) -> str:
+    """Every enabled persona as one line, for the architect's prompt.
+
+    The architect cannot cast a character it has never heard of; this is how
+    a creative plan learns the slugs it may put in ``screenplay_cast``. A
+    persona without a portrait can still speak, but only as a voice over
+    stills, so the roster says which is which.
+    """
+    lines = []
+    for p in list_personas(site_config):
+        if not p.enabled:
+            continue
+        face = "has a portrait" if p.has_portrait else "no portrait — voice only"
+        looks = f"; looks: {p.visual_description}" if p.visual_description else ""
+        lines.append(f"- {p.slug}: {p.display_name or p.slug} ({p.style_policy}, {face}){looks}")
+    return "\n".join(lines) or "(none yet — create one with `poindexter personas create`)"
+
+
 def persona_voice(persona: Persona | None, site_config: Any) -> str:
     """The narration voice for ``persona``: its own ``voice_id``, else the
     install's ``podcast_tts_voice`` (inherit), else ``""``."""
@@ -365,6 +383,7 @@ async def render_portrait(
 
 __all__ = [
     "DEFAULT_PERSONA_SETTING",
+    "cast_roster",
     "FIELDS",
     "PERSONA_PREFIX",
     "STYLE_POLICIES",

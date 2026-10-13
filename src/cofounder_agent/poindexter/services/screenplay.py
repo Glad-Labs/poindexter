@@ -64,6 +64,8 @@ class ScreenplayRequest:
     format: str = "explainer"
     cast: tuple[str, ...] = ()
     narrator: bool = True
+    #: Persona slug that voices the narrator; "" = the dialogue step's default.
+    narrator_persona: str = ""
     target_seconds: float = 90.0
     tone: str = ""
 
@@ -101,8 +103,15 @@ def build_request(inputs: dict[str, Any], site_config: Any) -> ScreenplayRequest
     cast = _csv_or_list(inputs.get("screenplay_cast"))
     if not cast:
         cast = _csv_or_list(site_config.get("story_default_cast", ""))
+    # screenplay_narrator: "none" turns narration off; a persona slug makes
+    # that persona the narrator's voice; empty / "true" / "narrator" keeps a
+    # narrator in the default voice. (The architect writes a slug here when
+    # an intent says who narrates, so the key carries both meanings.)
     narrator_raw = str(inputs.get("screenplay_narrator", "") or "").strip().lower()
     narrator = narrator_raw not in ("none", "false", "no", "off")
+    narrator_persona = (
+        narrator_raw if narrator and narrator_raw not in ("", "true", "yes", "on", NARRATOR) else ""
+    )
     if fmt == "dialogue" and len(cast) < 2:
         raise ScreenplayError(
             "a dialogue needs at least two cast members in screenplay_cast "
@@ -130,6 +139,7 @@ def build_request(inputs: dict[str, Any], site_config: Any) -> ScreenplayRequest
         format=fmt,
         cast=tuple(cast),
         narrator=narrator,
+        narrator_persona=narrator_persona,
         target_seconds=target,
         tone=str(inputs.get("screenplay_tone") or "").strip(),
     )
@@ -489,6 +499,7 @@ async def write_screenplay(
         "format": request.format,
         "cast": list(request.cast),
         "narrator": request.narrator,
+        "narrator_persona": request.narrator_persona,
         "topic": request.topic,
         "target_seconds": request.target_seconds,
         "spoken_words": words,

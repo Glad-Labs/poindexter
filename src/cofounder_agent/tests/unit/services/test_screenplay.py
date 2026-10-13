@@ -81,6 +81,13 @@ class TestBuildRequest:
         assert req.cast == ("dex", "nova") and req.format == "dialogue"
         assert req.target_seconds == 8.0 and req.narrator is True
 
+    def test_narrator_can_name_its_persona(self):
+        assert _req(screenplay_narrator="Nova").narrator_persona == "nova"
+        assert _req(screenplay_narrator="").narrator_persona == ""
+        assert _req(screenplay_narrator="narrator").narrator_persona == ""
+        off = _req(screenplay_narrator="none")
+        assert off.narrator is False and off.narrator_persona == ""
+
     def test_list_cast_and_narrator_off(self):
         req = _req(screenplay_cast=["Dex", "nova", "dex"], screenplay_narrator="none")
         assert req.cast == ("dex", "nova") and req.narrator is False

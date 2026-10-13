@@ -144,9 +144,12 @@ async def render_dialogue(
         from poindexter.services.podcast_service import PodcastService
 
         synthesize = PodcastService(site_config=site_config).synthesize_line
+    # Narrator voice: an explicit argument, else the one the screenplay was
+    # written for (screenplay_narrator), else story_default_narrator_persona.
     narrator_slug = (
         narrator_persona if narrator_persona is not None
-        else str(site_config.get("story_default_narrator_persona", "") or "")
+        else str(screenplay.get("narrator_persona") or "")
+        or str(site_config.get("story_default_narrator_persona", "") or "")
     ).strip().lower()
     line_gap = site_config.get_float("story_dialogue_gap_seconds", 0.35)
     scene_gap = site_config.get_float("story_scene_gap_seconds", 0.8)

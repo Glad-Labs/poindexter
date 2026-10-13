@@ -130,6 +130,15 @@ class TestTimeline:
         )
         assert calls[-1][1] is None  # house voice
 
+    @pytest.mark.asyncio
+    async def test_the_screenplays_narrator_persona_is_used(self, fake_ffmpeg, tmp_path):
+        calls: list = []
+        await da.render_dialogue(
+            {**SCREENPLAY, "narrator_persona": "host"}, site_config=_sc(),
+            output_path=str(tmp_path / "d.wav"), synthesize=_synth(fake_ffmpeg, calls),
+        )
+        assert calls[-1][1] == "host"
+
 
 class TestVoices:
     def test_unknown_or_disabled_speaker_raises(self):

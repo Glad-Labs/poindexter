@@ -13,15 +13,19 @@ story.write_screenplay → media.render_dialogue → media.direct_screenplay
 ```
 
 Every step is an atom, so the architect can compose part of the chain: a
-screenplay alone, or dialogue audio without video. The node config keys below
+screenplay alone, or dialogue audio without video. Its system prompt teaches
+this order and carries a live roster of the characters it may cast
+(`persona_service.cast_roster`). Ask the console chat for "a two-minute
+cartoon where Dex explains VRAM to Nova, anime style" and it composes the
+seven steps with the cast, length and style in config. The node config keys below
 are how a plan passes its creative choices; each falls back to a
 `story_default_*` setting.
 
-| Atom                      | Reads                                                          | Writes                                                                | Node config                                                                                                                                                                                                 |
-| ------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `story.write_screenplay`  | `topic`                                                        | `screenplay`                                                          | `screenplay_format` (explainer, story, dialogue, sketch), `screenplay_cast` (persona slugs), `screenplay_target_seconds`, `screenplay_brief`, `screenplay_tone`, `screenplay_narrator` (`none` = cast only) |
-| `media.render_dialogue`   | `screenplay`                                                   | `long_narration_audio_path`, `video_long_script`, `dialogue_timeline` | `dialogue_narrator_persona`                                                                                                                                                                                 |
-| `media.direct_screenplay` | `screenplay`, `dialogue_timeline`, `long_narration_audio_path` | `video_shot_list`                                                     | `screenplay_visual_style` (art style for every still)                                                                                                                                                       |
+| Atom                      | Reads                                                          | Writes                                                                | Node config                                                                                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `story.write_screenplay`  | `topic`                                                        | `screenplay`                                                          | `screenplay_format` (explainer, story, dialogue, sketch), `screenplay_cast` (persona slugs), `screenplay_target_seconds`, `screenplay_brief`, `screenplay_tone`, `screenplay_narrator` (`none` = cast only, or the persona slug that narrates) |
+| `media.render_dialogue`   | `screenplay`                                                   | `long_narration_audio_path`, `video_long_script`, `dialogue_timeline` | `dialogue_narrator_persona`                                                                                                                                                                                                                    |
+| `media.direct_screenplay` | `screenplay`, `dialogue_timeline`, `long_narration_audio_path` | `video_shot_list`                                                     | `screenplay_visual_style` (art style for every still)                                                                                                                                                                                          |
 
 ## The cast is personas
 
@@ -120,7 +124,10 @@ GPU time.
 
 ## Not yet
 
-- Uploading standalone videos (no post) to YouTube.
+- Reviewing and publishing standalone videos (poindexter#1140). A creative
+  video with no blog post is saved by `media.persist` as a task-keyed media
+  asset. Gate-2 approval is created only for videos whose task has a post,
+  so these do not reach the approval queue or YouTube yet.
 - Reference-image conditioning for stills.
 - A music-bed atom.
 - Two characters lip-synced in one shot. Dialogue cuts between speakers.

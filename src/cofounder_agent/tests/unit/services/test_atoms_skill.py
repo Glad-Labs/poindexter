@@ -71,7 +71,7 @@ def test_brand_placeholders_render_from_site_config() -> None:
         # Sanity: the placeholder must be present before rendering.
         assert "{site_name}" in template, f"{key} should carry a {{site_name}} placeholder"
 
-        rendered = template.format(site_name=_SITE_NAME, site_url=_SITE_URL)
+        rendered = template.format(site_name=_SITE_NAME, site_url=_SITE_URL, cast_roster="- dex: Dex")
 
         assert _SITE_NAME in rendered, f"{key} must contain the rendered site_name"
         assert "{site_name}" not in rendered, f"{key} left a literal {{site_name}} marker"

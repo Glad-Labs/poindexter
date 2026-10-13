@@ -37,7 +37,8 @@ ATOM_META = AtomMeta(
         "visible actions. INPUT topic + optional node config "
         "screenplay_format (explainer|story|dialogue|sketch), screenplay_cast "
         "(persona slugs), screenplay_target_seconds, screenplay_brief, "
-        "screenplay_tone, screenplay_narrator ('none' disables narration). "
+        "screenplay_tone, screenplay_narrator ('none' = cast only, or the "
+        "persona slug that narrates). "
         "OUTPUT screenplay. USUALLY FOLLOWED BY media.render_dialogue."
     ),
     inputs=(
@@ -53,7 +54,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="screenplay_tone", type="str", required=False,
                   description="e.g. playful, earnest, deadpan"),
         FieldSpec(name="screenplay_narrator", type="str", required=False,
-                  description="'none' = cast only; otherwise a narrator may speak"),
+                  description="'none' = cast only; a persona slug = that persona narrates"),
     ),
     outputs=(
         FieldSpec(name="screenplay", type="dict",

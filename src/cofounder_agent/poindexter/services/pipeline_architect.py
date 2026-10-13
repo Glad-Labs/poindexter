@@ -144,10 +144,12 @@ def _resolve_system_prompt(site_config: SiteConfig | None) -> str:
     """
     site_name = (site_config.get("site_name") if site_config else "") or ""
     site_url = (site_config.get("site_url") if site_config else "") or ""
+    from poindexter.services.persona_service import cast_roster
     from poindexter.services.prompt_manager import get_prompt_manager
 
     return get_prompt_manager().get_prompt(
         _PROMPT_KEY, site_name=site_name, site_url=site_url,
+        cast_roster=cast_roster(site_config) if site_config is not None else "(unknown)",
     )
 
 

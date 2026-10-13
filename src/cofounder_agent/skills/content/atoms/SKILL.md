@@ -309,6 +309,26 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 - Prefer linear graphs unless the intent calls for parallelism.
 - For dev_diary content: stage.verify_task -> atoms.narrate_bundle
   -> stage.finalize_task is the canonical 3-step pattern.
+- For a creative video (cartoon, animated explainer, sketch, a story
+  with characters), use these seven steps in exactly this order:
+  story.write_screenplay -> media.render_dialogue ->
+  media.direct_screenplay -> media.transcribe_narration ->
+  media.render_long_video -> media.qa -> media.persist.
+  media.transcribe_narration comes BEFORE media.render_long_video because
+  the render burns in the captions it makes, and media.persist comes last
+  because it saves the video and puts it in the approval queue.
+  Put the creative choices in config. On story.write_screenplay:
+  screenplay_format ("sketch" for comedy, "story" for a narrative with a
+  journey, "dialogue" for characters talking a topic through, "explainer"
+  for teaching one idea), screenplay_cast (a list of character ids from
+  CHARACTERS below), screenplay_target_seconds, screenplay_brief,
+  screenplay_tone. On media.direct_screenplay: screenplay_visual_style
+  (the art style, e.g. "flat 2D cartoon, bold outlines").
+  Keep only the steps the intent asks for: a script alone is just
+  story.write_screenplay; voiced audio ends after media.render_dialogue.
+
+CHARACTERS (ids a creative plan may cast in screenplay_cast):
+{cast_roster}
 
 If the spec validator returns errors on a previous attempt, every
 error message starts with "FIX:" followed by exactly what to change.
