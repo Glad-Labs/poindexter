@@ -942,15 +942,23 @@ DEFAULTS: dict[str, str] = {
     # the line instead of reading it: expression and gesture are wanted, so
     # they get their own S2V prompt and a quality-only negative. The
     # 2026-10-12 Dex test used exactly these and produced natural gestures,
-    # a wave, and lip-sync on a cartoon fox.
+    # a wave, and lip-sync on a cartoon fox. Asking for gestures and an
+    # "expressive face" was too much on the Red Riding Hood render
+    # (2026-10-13): hands melted mid-gesture and Ruby's mouth opened far wider
+    # than the line needed. Wan reads motion words literally and the positive
+    # prompt dominates (see video_presenter_render_prompt), so the prompt now
+    # asks for a natural delivery with still hands and small mouth shapes, and
+    # the negative names what went wrong. The voice carries the emotion.
     'video_cast_render_prompt': (
-        '{display_name} talks in the scene, expressive face, natural head '
-        'movement and hand gestures that fit the line, lips synchronized with '
-        'the speech, consistent character design'
+        '{display_name} talks in the scene with a natural, lively expression, '
+        'gentle head movement, hands relaxed and still, small natural mouth '
+        'movements synchronized with the speech, consistent character design'
     ),
     'video_cast_negative_prompt': (
-        'static, blurred, distorted face, extra fingers, text, subtitles, '
-        'watermark, low quality, jpeg artifacts, overexposed'
+        'static, blurred, distorted face, hand gestures, waving hands, '
+        'deformed hands, extra fingers, fused fingers, oversized mouth, mouth '
+        'opened too wide, exaggerated expression, text, subtitles, watermark, '
+        'low quality, jpeg artifacts, overexposed'
     ),
     # Reference-conditioned stills (poindexter#1141, services/reference_frames.py).
     # Every prompted still of a screenplay video, and each cast shot's
@@ -998,10 +1006,12 @@ DEFAULTS: dict[str, str] = {
     # carries each line's expression. With it, every line drew its own frame.
     # "alone": with only the speaker's portrait as reference, the edit model
     # drew a generic human listener beside Nova (2026-10-13), which is also a
-    # second mouth for the lip-sync to pick.
+    # second mouth for the lip-sync to pick. Head and shoulders, hands out of
+    # frame: S2V animates any hand it can see, and in Red Riding Hood
+    # (2026-10-13) every visible hand turned into the shot's worst artefact.
     'story_talking_frame_template': (
-        '{style}, medium close-up of {name} alone in the frame, facing the '
-        'viewer and talking, in {setting}'
+        '{style}, head-and-shoulders close-up of {name} alone in the frame, '
+        'facing the viewer and talking, hands out of frame, in {setting}'
     ),
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and

@@ -211,9 +211,15 @@ last draw stands if none passes. On the re-directed cartoon's 20 stills it
 rejected the one with an invented man in a white coat and passed the rest,
 twice each, including reaction shots with the speaker in the background.
 
-Talking cast shots act their line. They use `video_cast_render_prompt`
-(expressive face, gestures) and a quality-only `video_cast_negative_prompt`,
-not the blog presenter's still, gesture-free studio read.
+Talking cast shots use `video_cast_render_prompt` and
+`video_cast_negative_prompt`, not the blog presenter's studio read. They
+first asked for an "expressive face" and "hand gestures". In the Red Riding
+Hood render (2026-10-13) every visible hand melted mid-gesture and the mouth
+opened far wider than the line needed. They now ask for a natural, lively
+expression with still hands and small mouth movements, and the negative
+names the failures. The talking frame (`story_talking_frame_template`) is a
+head-and-shoulders close-up with the hands out of frame, since S2V animates
+any hand it can see. The voice carries the emotion.
 
 ## One look: every frame drawn from the portraits
 

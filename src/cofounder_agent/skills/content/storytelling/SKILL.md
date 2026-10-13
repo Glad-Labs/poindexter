@@ -68,6 +68,7 @@ Every format, an explainer included, is a story about a character. Decide the sp
 - "turn": the moment the character sees it differently, and what makes it happen.
 - "payoff": how the last scene answers the first: the opening problem solved, a line called back, the character changed.
 The topic is what the character learns or runs into; the audience learns it by watching them.
+When the topic is a well-known tale, tell that tale: keep its best-known moments, lines and ending, retold in fresh words, and let its plot be the spine.
 
 PLAN THE SCENES
 - Give the piece about {scene_count} scene(s). Each scene is one step of the spine, and something is different at its end: a new understanding, a decision, a feeling.
@@ -188,7 +189,7 @@ VOICES - choose each new character's voice from this list, by id:
 
 HOW TO CAST
 - Cast the characters the story needs to be told, usually two or three and at most {max_new} new ones. A character the story only mentions, or one who never speaks, stays out of the cast and is drawn in the scenes from the screenplay.
-- For a well-known tale, cast its own characters; give each one a short first name that suits the tale.
+- For a well-known tale, cast its own characters, including every one its best-known scenes need: a character who has a famous line speaks it. Give each one a short first name that suits the tale.
 - "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear. Make the cast easy to tell apart by colour and shape.
 - "personality": how they talk and behave, in one sentence.
 - "voice": an id from the list that fits their age and temperament. Give different characters different voices.
