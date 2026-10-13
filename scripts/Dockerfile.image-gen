@@ -56,6 +56,11 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     peft \
     easyocr
 
+# nvidia-ml-py: the server counts its own VRAM with the driver (CUDA context
+# included), so a declined hard unload is trusted by the GPU scheduler instead
+# of read as a squat. Same package as the wan / rife / stable-audio images.
+RUN pip install --no-cache-dir nvidia-ml-py
+
 COPY image-gen-server.py /app/server.py
 
 # Non-root user (GPU access via group, not root)

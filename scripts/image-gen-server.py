@@ -561,6 +561,93 @@ async def read_ocr_gate_settings() -> dict[str, str]:
 HARD_UNLOAD_MIN_RESERVED_MB_KEY = "image_gen_hard_unload_min_reserved_mb"
 DEFAULT_HARD_UNLOAD_MIN_RESERVED_MB = 512
 
+# The floor when the driver counts this process (CUDA context included). An
+# idle server holds ~0.5 GB of context, and the GPU scheduler counts any reclaim
+# under its own 1 GB floor (``vram_reclaim_min_freed_gb``) as freeing nothing,
+# so an exit below this costs a cold start and buys nothing the scheduler wants.
+HARD_UNLOAD_MIN_PROCESS_MB_KEY = "image_gen_hard_unload_min_process_mb"
+DEFAULT_HARD_UNLOAD_MIN_PROCESS_MB = 1024
+
+
+async def read_hard_unload_min_process_mb() -> int:
+    """The driver-counted floor below which a hard unload declines. Best-effort."""
+    try:
+        conn = await asyncpg.connect(HOST_DB_URL, timeout=5)
+    except Exception as e:
+        logger.warning(
+            "[HARD UNLOAD] process floor read failed (DB connect): %s — using %d MB",
+            e, DEFAULT_HARD_UNLOAD_MIN_PROCESS_MB,
+        )
+        return DEFAULT_HARD_UNLOAD_MIN_PROCESS_MB
+    try:
+        raw = await conn.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            HARD_UNLOAD_MIN_PROCESS_MB_KEY,
+        )
+    except Exception as e:
+        logger.warning(
+            "[HARD UNLOAD] process floor read failed (query): %s — using %d MB",
+            e, DEFAULT_HARD_UNLOAD_MIN_PROCESS_MB,
+        )
+        return DEFAULT_HARD_UNLOAD_MIN_PROCESS_MB
+    finally:
+        await conn.close()
+    try:
+        return max(0, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return DEFAULT_HARD_UNLOAD_MIN_PROCESS_MB
+
+
+def _process_vram_mb() -> int | None:
+    """VRAM this process holds (MiB), as the driver counts it, or ``None``
+    when NVML cannot say.
+
+    The driver's count includes the CUDA context, and ``memory_reserved`` does
+    not. That gap made every image-gen decline untrusted: while ComfyUI held
+    its last clip's weights, the GPU scheduler read image-gen's honest
+    ``nothing_to_reclaim`` (reserved ~0, context ~0.5 GB) as a squat and
+    queued a restart before nearly every talking shot of a cartoon render (55
+    declines in two hours on 2026-10-13, image-gen holding 498 MiB, ComfyUI
+    24 GB). A decline that carries ``vram_process_source: "nvml"`` is trusted.
+
+    Same read as wan-server's: NVML lists only this container's processes,
+    under in-container PIDs, so ``os.getpid()`` finds this server. The first
+    failure disables it for the process and logs once.
+    """
+    if state.nvml_process_error is not None:
+        return None
+    try:
+        nvml = state.nvml_process
+        if nvml is None:
+            import pynvml
+
+            pynvml.nvmlInit()
+            nvml = pynvml
+            state.nvml_process = nvml
+        pid = os.getpid()
+        used = 0
+        for index in range(nvml.nvmlDeviceGetCount()):
+            handle = nvml.nvmlDeviceGetHandleByIndex(index)
+            for proc in nvml.nvmlDeviceGetComputeRunningProcesses(handle):
+                if proc.pid != pid:
+                    continue
+                if proc.usedGpuMemory is None:
+                    raise RuntimeError(
+                        "NVML lists this process without its memory "
+                        "(per-process accounting unavailable here)",
+                    )
+                used += int(proc.usedGpuMemory)
+        return used // 1024 // 1024
+    except Exception as exc:  # noqa: BLE001 — any NVML failure means "use torch's view"
+        state.nvml_process = None
+        state.nvml_process_error = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "NVML cannot count this process (%s). The hard-unload gate falls "
+            "back to torch's reserved pool, which cannot see a CUDA context.",
+            state.nvml_process_error,
+        )
+        return None
+
 
 async def read_hard_unload_min_reserved_mb() -> int:
     """Reserved-VRAM floor below which a hard unload is not worth the exit.
@@ -711,6 +798,10 @@ class ServerState:
         # loop, which kept requests apart as a side effect; it runs in worker
         # threads now, and two renders at once would OOM the card.
         self.gpu_lock = asyncio.Lock()
+        # NVML handle for counting this process's own VRAM, resolved on first
+        # use; the first failure is recorded and disables the read.
+        self.nvml_process: Any = None
+        self.nvml_process_error: str | None = None
 
     def mark_degraded(self, reason: str):
         self.degraded = True
@@ -1656,7 +1747,28 @@ async def unload(req: UnloadRequest | None = None):
             # measure.
             reserved_mb = torch.cuda.memory_reserved(0) // 1024 // 1024
             min_reserved_mb = await read_hard_unload_min_reserved_mb()
-            if reserved_mb < min_reserved_mb:
+            # The driver's count wins when it answers: it includes the CUDA
+            # context, so its decline needs no second opinion from the GPU
+            # scheduler (``_trusted_decline``).
+            process_mb = _process_vram_mb()
+            if process_mb is not None:
+                min_process_mb = await read_hard_unload_min_process_mb()
+                if process_mb < min_process_mb:
+                    logger.info(
+                        "[HARD UNLOAD] skipped — this process holds %d MiB per "
+                        "the driver, below the %d MiB floor, so exiting would "
+                        "return too little to be worth a cold start",
+                        process_mb, min_process_mb,
+                    )
+                    return {
+                        "status": "nothing_to_reclaim",
+                        "vram_process_mb": process_mb,
+                        "vram_process_source": "nvml",
+                        "min_process_mb": min_process_mb,
+                        "vram_reserved_mb": reserved_mb,
+                        "min_reserved_mb": min_reserved_mb,
+                    }
+            elif reserved_mb < min_reserved_mb:
                 logger.info(
                     "[HARD UNLOAD] skipped — %d MB reserved is below the %d MB "
                     "threshold, so exiting would reclaim nothing and would open "

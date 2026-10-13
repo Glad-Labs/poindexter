@@ -3311,6 +3311,10 @@ DEFAULTS: dict[str, str] = {
     # drops the tensors, allocated is 0 by construction and cannot detect the
     # multi-GB caching-allocator pool an exit would return.
     'image_gen_hard_unload_min_reserved_mb': '512',
+    # The hard-unload floor when image-gen counts itself with NVML (CUDA context
+    # included). Matches vram_reclaim_min_freed_gb: an exit returning less is
+    # what the GPU scheduler would call freeing nothing.
+    'image_gen_hard_unload_min_process_mb': '1024',
     # OCR text-leakage gate (2026-07-13): scripts/image-gen-server.py OCR-scans
     # every /generate render and retries with a fresh seed when leaked text
     # exceeds max_chars, keeping the best-scoring attempt. Deterministic
@@ -7228,6 +7232,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'image_featured_stage_overhead_seconds': {'owner': 'source_featured_image', 'value_type': 'integer'},
     'image_gen_enabled': {'owner': 'source_featured_image', 'value_type': 'boolean'},
     'image_gen_hard_unload_min_reserved_mb': {'value_type': 'integer'},
+    'image_gen_hard_unload_min_process_mb': {'value_type': 'integer'},
     'image_gen_render_attempts': {'value_type': 'integer'},
     'image_gen_retry_backoff_seconds': {'value_type': 'integer'},
     'image_gen_server_url': {'value_type': 'url'},

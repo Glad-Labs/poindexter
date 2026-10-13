@@ -20,6 +20,8 @@ import types
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 
 def _find_repo_root(start: Path) -> Path:
     for parent in start.resolve().parents:
@@ -63,6 +65,14 @@ def _load_image_gen_server():
 
 
 img_gen_server = _load_image_gen_server()
+
+
+@pytest.fixture(autouse=True)
+def _driver_count_unavailable(monkeypatch):
+    """Default every test to the torch-only path: a host with pynvml and a GPU
+    would otherwise count the pytest process (0 MiB) and decline every exit.
+    The NVML tests below opt back in by patching ``_process_vram_mb``."""
+    monkeypatch.setattr(img_gen_server, "_process_vram_mb", lambda: None)
 
 
 def test_soft_unload_does_not_exit_process():
@@ -355,3 +365,69 @@ def test_counter_is_released_even_when_generation_raises():
         assert img_gen_server.state.inflight == 0
 
     asyncio.run(body())
+
+
+# ---------------------------------------------------------------------------
+# Driver-counted gate (2026-10-13). A decline measured with NVML carries
+# ``vram_process_source: "nvml"``, which the GPU scheduler trusts; a
+# torch-measured one it reads as a possible squat and answers with a restart.
+# ---------------------------------------------------------------------------
+
+
+def _patch_process(mb, floor=1024):
+    return (
+        patch.object(img_gen_server, "_process_vram_mb", lambda: mb),
+        patch.object(
+            img_gen_server, "read_hard_unload_min_process_mb",
+            new=_async_return(floor),
+        ),
+    )
+
+
+def test_idle_context_declines_with_the_drivers_count():
+    """An idle server holds ~0.5 GB of CUDA context and reserved ~0. It must
+    stay up and say so in the driver's terms, which the scheduler trusts."""
+    async def body():
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.pipeline = None
+        reserved, threshold = _patch_reserved(0)
+        proc, floor = _patch_process(498)
+        with reserved, threshold, proc, floor, patch.object(os, "_exit") as mock_exit:
+            result = await img_gen_server.unload(img_gen_server.UnloadRequest(hard=True))
+        mock_exit.assert_not_called()
+        assert result["status"] == "nothing_to_reclaim"
+        assert result["vram_process_source"] == "nvml"
+        assert result["vram_process_mb"] == 498
+        assert result["min_process_mb"] == 1024
+
+    asyncio.run(body())
+
+
+def test_driver_count_wins_over_reserved_when_it_answers():
+    """A context the reserved pool cannot see still counts: over the floor per
+    the driver, the server exits even with nothing reserved."""
+    async def body():
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.pipeline = None
+        reserved, threshold = _patch_reserved(0)
+        proc, floor = _patch_process(6000)
+        with reserved, threshold, proc, floor, patch.object(os, "_exit") as mock_exit:
+            await img_gen_server.unload(img_gen_server.UnloadRequest(hard=True))
+        mock_exit.assert_called_once_with(0)
+
+    asyncio.run(body())
+
+
+def test_scheduler_trusts_the_nvml_decline():
+    """The contract the change exists for, read by the real scheduler code."""
+    from poindexter.services.gpu_scheduler import GPUScheduler
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"status": "nothing_to_reclaim", "vram_process_mb": 498,
+                    "vram_process_source": "nvml", "min_process_mb": 1024}
+
+    assert GPUScheduler._trusted_decline(_Resp()) is not None
