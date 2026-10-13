@@ -181,7 +181,7 @@ CHARACTERS WHO ALREADY EXIST - reuse one when the request names them or when the
 
 MUST BE IN THE CAST: {required}
 
-ART STYLE ASKED FOR: {style_hint}
+ART STYLE: {style_hint}
 
 VOICES - choose each new character's voice from this list, by id:
 {voice_catalog}
@@ -194,7 +194,7 @@ HOW TO CAST
 - "voice": an id from the list that fits their age and temperament. Give different characters different voices.
 - "energy": "low" for calm or dry characters, "medium" for most, "high" for lively, excitable or loud ones.
 - "sample_line": one or two sentences the character might say, in their voice, used to set up their voice.
-- "style": the art style for every picture of the piece, as a short phrase a painter would follow, in your own words. Use the style asked for when there is one; otherwise choose one that suits the story.
+- "style": the ART STYLE above written out as one short phrase a painter would follow. Keep everything it says and add the concrete details it implies: line, colour, texture, lighting. Design every character to look at home in it.
 - "narrator": set "use" to true when the piece needs a storyteller's voice, false otherwise. A narrator is heard and never seen. Put an existing character's id in "reuse" when one fits the part; otherwise leave "reuse" empty and describe a new voice with "name", "voice", "energy" and "sample_line".
 
 OUTPUT

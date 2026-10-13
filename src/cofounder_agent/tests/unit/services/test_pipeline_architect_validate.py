@@ -145,10 +145,16 @@ def test_real_registered_atoms_validate_with_defaults():
     gate = real_get("atoms.approval_gate")
     assert gate is not None, "approval_gate atom must be registered"
     spec = {
-        "name": "gate_only",
+        "name": "gate_then_republish",
         "entry": "g",
-        "nodes": [{"id": "g", "atom": "atoms.approval_gate", "config": {"gate_name": "preview"}}],
-        "edges": [{"from": "g", "to": "END"}],
+        "nodes": [
+            {"id": "g", "atom": "atoms.approval_gate", "config": {"gate_name": "preview"}},
+            # The step the gate holds back: a gate with nothing after it is
+            # rejected on its own (_gates_that_gate_nothing).
+            {"id": "pub", "atom": "content.republish_post",
+             "config": {"post_id": "p", "post_slug": "s"}},
+        ],
+        "edges": [{"from": "g", "to": "pub"}, {"from": "pub", "to": "END"}],
     }
     ok, errors = pipeline_architect._validate_spec(spec)
     assert ok is True, errors
@@ -626,3 +632,52 @@ class TestExistingPostIsReadOnly:
         ), result.errors
         assert len(prompts) == 2
         assert "FIX node 'republish': remove it" in prompts[1]
+
+
+class TestGateThatGatesNothing:
+    """2026-10-13: the architect closed a Little Red Riding Hood plan with an
+    approval gate after media.persist, which only fills the media approval
+    queue. The video would have needed approving twice."""
+
+    @staticmethod
+    def _gates(spec):
+        atoms = {n["id"]: n["atom"] for n in spec["nodes"]}
+        return pipeline_architect._gates_that_gate_nothing(spec, atoms)
+
+    def test_a_trailing_gate_is_rejected(self):
+        spec = _spec(
+            [{"id": "persist", "atom": "media.persist"}, {"id": "gate", "atom": "atoms.approval_gate"},
+             {"id": "term", "atom": "atoms.set_task_status"}],
+            [{"from": "persist", "to": "gate"}, {"from": "gate", "to": "term"}, {"from": "term", "to": "END"}],
+        )
+        errors = self._gates(spec)
+        assert len(errors) == 1 and "'gate'" in errors[0] and "guards nothing" in errors[0]
+
+    def test_a_gate_before_the_step_it_holds_back_is_fine(self):
+        spec = _spec(
+            [{"id": "gate", "atom": "atoms.approval_gate"}, {"id": "pub", "atom": "content.republish_post"}],
+            [{"from": "gate", "to": "pub"}, {"from": "pub", "to": "END"}],
+        )
+        assert self._gates(spec) == []
+
+    def test_a_loop_edge_back_does_not_count_as_a_step_after(self):
+        spec = _spec(
+            [{"id": "draft", "atom": "content.generate_draft"}, {"id": "gate", "atom": "atoms.approval_gate"}],
+            [{"from": "draft", "to": "gate"}, {"from": "gate", "to": "draft", "branch": True, "loop": True},
+             {"from": "gate", "to": "END"}],
+        )
+        assert len(self._gates(spec)) == 1
+
+    def test_no_seeded_graph_trips_it(self):
+        from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
+        from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
+        from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
+        from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+        from poindexter.services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
+        from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
+
+        graphs = [CANONICAL_BLOG_GRAPH_DEF, DEV_DIARY_GRAPH_DEF, IMAGE_REBUILD_GRAPH_DEF,
+                  MEDIA_PIPELINE_GRAPH_DEF, PODCAST_PIPELINE_GRAPH_DEF, SEO_REFRESH_GRAPH_DEF]
+        gated = [g for g in graphs if any(n["atom"] == "atoms.approval_gate" for n in g["nodes"])]
+        assert gated, "no seeded graph has a gate; this test checks nothing"
+        assert {g.get("name"): self._gates(g) for g in gated} == {g.get("name"): [] for g in gated}

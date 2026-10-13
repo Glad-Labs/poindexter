@@ -9,8 +9,9 @@ be able to draw its own characters and scenes".
 ``story.cast_characters`` runs first in the creative chain. One LLM call
 (``story.casting``) reads the request and the existing characters, reuses
 the ones that fit, and designs the rest: a name, a role, an appearance, a
-personality, a voice from the catalog, an energy and a sample line. It also
-picks the art style when the request names none. Code checks every reply
+personality, a voice from the catalog, an energy and a sample line. A look
+the request names is written out as a phrase a painter could follow; with
+none, the niche's house style applies (``story_visual_style``). Code checks every reply
 (reused ids exist, voices come from the catalog, every new character has
 looks) and sends problems back once. Then, for each new character:
 
@@ -63,6 +64,8 @@ class CastingRequest:
     style_hint: str = ""
     # "" = casting decides, "none" = no narrator, a slug = that persona narrates.
     narrator: str = ""
+    # Whose house style applies when the request names no look.
+    niche_slug: str | None = None
 
 
 def _setting(site_config: Any, key: str) -> str:
@@ -90,6 +93,7 @@ def build_casting_request(inputs: dict[str, Any], site_config: Any) -> CastingRe
         required=tuple(s.lower() for s in _csv_or_list(inputs.get("screenplay_cast"))),
         style_hint=str(inputs.get("screenplay_visual_style") or "").strip(),
         narrator=str(inputs.get("screenplay_narrator") or "").strip().lower(),
+        niche_slug=str(inputs.get("niche_slug") or "").strip() or None,
     )
 
 
@@ -135,13 +139,14 @@ def check_cast(
     catalog: dict[str, str],
     required: tuple[str, ...],
     max_new: int,
+    style_hint: str = "",
 ) -> list[str]:
     """Hard problems with a casting reply, as FIX lines."""
     errors: list[str] = []
     chars = reply.get("characters")
     if not isinstance(chars, list) or not chars:
         return ['FIX: add a "characters" list with at least one character']
-    if not str(reply.get("style") or "").strip():
+    if not style_hint and not str(reply.get("style") or "").strip():
         errors.append('FIX: add a "style": the art style for every picture, as a short phrase')
     reused: set[str] = set()
     new = 0
@@ -332,9 +337,17 @@ async def cast_characters(
     missing = [s for s in request.required if s not in roster]
     if missing:
         raise CastingError(f"required cast {missing} are not enabled personas")
+    from poindexter.services.media_subject_policy import story_visual_style
+
+    # A look the request asked for, or the niche's house style. Never a free
+    # pick: an unasked-for piece is drawn in the company's style.
+    asked_style, asked = story_visual_style(site_config, request.niche_slug, request.style_hint)
 
     def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
-        return check_cast(reply, roster=roster, catalog=catalog, required=request.required, max_new=max_new), []
+        return check_cast(
+            reply, roster=roster, catalog=catalog, required=request.required,
+            max_new=max_new, style_hint=asked_style,
+        ), []
 
     try:
         reply, _ = await _ask_validated(
@@ -347,7 +360,7 @@ async def cast_characters(
                 "target_seconds": int(round(request.target_seconds)),
                 "roster_block": roster_text(personas),
                 "required": ", ".join(request.required) or "(nobody in particular)",
-                "style_hint": request.style_hint or "(none - choose one)",
+                "style_hint": asked_style,
                 "voice_catalog": "\n".join(f"- {k}: {v}" for k, v in catalog.items()),
                 "max_new": max_new,
             },
@@ -357,7 +370,9 @@ async def cast_characters(
     except Exception as exc:  # noqa: BLE001 — the library's own error names the FIX lines
         raise CastingError(str(exc)) from exc
 
-    style = request.style_hint or str(reply.get("style") or "").strip()
+    # A requested look comes back written out in words a painter can follow,
+    # and that phrase wins. The house style is used exactly as configured.
+    style = (str(reply.get("style") or "").strip() or asked_style) if asked else asked_style
     taken = set(roster)
     cast: list[str] = []
     new: list[dict[str, Any]] = []
@@ -403,13 +418,13 @@ async def cast_characters(
     elif not narrator_slug:
         narrator_slug = NO_NARRATOR
 
-    # Portraits. With no style asked for, the cast's existing faces anchor the
+    # Portraits. In the house style, the cast's existing faces anchor the
     # style of the new ones. A style asked for is the request's own look, which
     # a reused face drawn for another piece could pull away from, so then only
     # this run's new portraits anchor each other.
     work = Path(tempfile.mkdtemp(prefix="casting-"))
     anchors: list[str] = []
-    for slug in cast if not request.style_hint else []:
+    for slug in cast if not asked else []:
         persona = roster.get(slug)
         if persona is not None and persona.has_portrait:
             got = await _fetch(persona.portrait_url, work / f"anchor_{slug}.png")

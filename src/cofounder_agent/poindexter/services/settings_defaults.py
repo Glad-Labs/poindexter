@@ -3121,6 +3121,13 @@ DEFAULTS: dict[str, str] = {
     # request, reuses the characters that fit and designs, draws and voices
     # the rest. At most this many new characters per piece.
     'story_cast_max_new': '4',
+    # Words for the medium, not a look. A creative plan whose art style is only
+    # one of these ("a cartoon") is drawn in the niche's house style instead.
+    'story_style_medium_words': (
+        'cartoon, cartoons, cartoon style, animation, animated, animated cartoon, '
+        'animated video, animated short, animation style, video, short, short film, '
+        'illustration, illustrated, drawing, drawn, art, art style, style'
+    ),
     # Kokoro voices casting may give a new character, "id: what it sounds
     # like" separated by ";". The description is all the LLM hears of a voice.
     'story_voice_catalog': (
@@ -6589,6 +6596,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_line_exaggeration_min': {'owner': 'screenplay', 'value_type': 'float'},
     'story_line_exaggeration_max': {'owner': 'screenplay', 'value_type': 'float'},
     'story_cast_max_new': {'owner': 'casting', 'value_type': 'integer'},
+    'story_style_medium_words': {'owner': 'media_policy', 'value_type': 'string'},
     'story_voice_catalog': {'owner': 'casting', 'value_type': 'string'},
     'story_cast_voice_engine': {'owner': 'casting', 'value_type': 'string'},
     'story_cast_voice_dir': {'owner': 'casting', 'value_type': 'string'},

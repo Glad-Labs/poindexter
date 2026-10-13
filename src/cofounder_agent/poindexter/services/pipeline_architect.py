@@ -535,6 +535,53 @@ POST_WRITE_EFFECT = "post_write"
 _EXISTING_POST_ENTRY = "content.load_existing_post"
 
 
+# Atoms that only record how the run ended. A gate followed by nothing else
+# has no step that waits on the approval.
+_BOOKKEEPING_ATOMS = frozenset({"atoms.set_task_status"})
+
+
+def _gates_that_gate_nothing(
+    spec: dict[str, Any], node_atoms: dict[str, str],
+) -> list[str]:
+    """An ``atoms.approval_gate`` with no real step after it.
+
+    A gate pauses the run until someone approves, and what it guards is the
+    step after it (``content.republish_post``, ``content.evaluate_auto_publish``).
+    With nothing after it, the approval only lets the run finish. The
+    architect placed one after ``media.persist`` on 2026-10-13, so the video
+    would have been approved twice: once in the media queue that
+    ``media.persist`` fills, and again at a gate that guarded nothing. A plan
+    paused on that second gate was the confusion behind stack#4397.
+    """
+    adjacency: dict[str, list[str]] = {}
+    for e in spec.get("edges") or []:
+        if not isinstance(e, dict) or e.get("loop"):
+            continue
+        src, dst = e.get("from"), e.get("to")
+        if isinstance(src, str) and isinstance(dst, str):
+            adjacency.setdefault(src, []).append(dst)
+    errors: list[str] = []
+    for nid, atom in node_atoms.items():
+        if atom != "atoms.approval_gate":
+            continue
+        seen: set[str] = set()
+        frontier = list(adjacency.get(nid, []))
+        while frontier:
+            nxt = frontier.pop()
+            if nxt in seen or nxt == "END":
+                continue
+            seen.add(nxt)
+            frontier.extend(adjacency.get(nxt, []))
+        if not {node_atoms.get(n, "") for n in seen} - _BOOKKEEPING_ATOMS:
+            errors.append(
+                f"FIX node {nid!r}: this atoms.approval_gate guards nothing, "
+                "because no step after it acts on the approval. Remove it. A "
+                "video plan is reviewed in the approval queue media.persist "
+                "fills; a gate belongs before the step it holds back."
+            )
+    return errors
+
+
 def _post_writes_on_an_existing_post(nodes: Any) -> list[str]:
     """A composed plan that loads an existing post may not write a post.
 
@@ -810,6 +857,7 @@ def _validate_spec(
     # concurrent fan-out onto a node that declares it cannot be concurrent,
     # and a node nothing reaches. Both wedged a live plan run (2026-09-15).
     errors.extend(_unsafe_concurrency_and_orphans(spec, node_atoms))
+    errors.extend(_gates_that_gate_nothing(spec, node_atoms))
 
     return (not errors), errors
 

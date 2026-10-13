@@ -86,6 +86,11 @@ class TestCheckCast:
     def test_a_style_is_required(self):
         assert any('"style"' in e for e in _check(_reply(_new(), style="")))
 
+    def test_an_asked_for_style_covers_a_missing_one(self):
+        reply = _reply(_new(), style="")
+        assert casting.check_cast(reply, roster={}, catalog=CATALOG, required=(), max_new=4,
+                                  style_hint="ink") == []
+
     def test_a_new_narrator_needs_a_catalog_voice(self):
         errors = _check(_reply(_new(), narrator={"use": True, "reuse": "", "voice": "nope"}))
         assert any(e.startswith("FIX narrator") for e in errors)
@@ -178,7 +183,8 @@ class TestCastCharacters:
         out = await casting.cast_characters(
             casting.CastingRequest(topic="a fable"), site_config=_sc(), pool=None, settings=settings)
         assert out["screenplay_cast"] == ["dex", "wren", "old-tom"]
-        assert out["screenplay_visual_style"] == "soft watercolor"
+        # No look asked for and no house style set: the house default, not the reply's pick.
+        assert out["screenplay_visual_style"] == "flat vector illustration"
         assert out["screenplay_narrator"] == "none"
         assert out["cast_sheet"]["created"] == ["wren", "old-tom"]
         assert settings.rows["persona.wren.appearance"] == "a small girl in a red coat"
@@ -193,13 +199,39 @@ class TestCastCharacters:
         assert chat.await_args.kwargs["phase"] == "story_cast_characters"
 
     @pytest.mark.asyncio
-    async def test_an_asked_for_style_wins_and_old_faces_do_not_anchor(self, chat, studio):
-        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, _new()))]
+    async def test_an_asked_for_look_is_spelled_out_and_old_faces_do_not_anchor(self, chat, studio):
+        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, _new(), style="ink wash, loose brush lines"))]
+        out = await casting.cast_characters(
+            casting.CastingRequest(topic="t", style_hint="ink"),
+            site_config=_sc(), pool=None, settings=FakeSettings())
+        assert out["screenplay_visual_style"] == "ink wash, loose brush lines"
+        assert "ART STYLE: ink\n" in chat.await_args.args[0]
+        assert studio.drawn[0]["anchors"] == []
+
+    @pytest.mark.asyncio
+    async def test_the_asked_for_look_stands_when_the_reply_has_none(self, chat, studio):
+        chat.side_effect = [json.dumps(_reply(_new(), style=""))]
         out = await casting.cast_characters(
             casting.CastingRequest(topic="t", style_hint="ink and wash"),
             site_config=_sc(), pool=None, settings=FakeSettings())
         assert out["screenplay_visual_style"] == "ink and wash"
-        assert studio.drawn[0]["anchors"] == [] and studio.drawn[0]["style"] == "ink and wash"
+
+    @pytest.mark.asyncio
+    async def test_a_medium_word_takes_the_niche_house_style_verbatim(self, chat, studio):
+        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, _new(), style="a looser rewrite"))]
+        house = "retro-tech illustration, cyan and navy"
+        out = await casting.cast_characters(
+            casting.CastingRequest(topic="t", style_hint="A cartoon!", niche_slug="lab"),
+            site_config=_sc(**{"niche.lab.media.house_style": house}), pool=None, settings=FakeSettings())
+        assert out["screenplay_visual_style"] == house
+        assert f"ART STYLE: {house}" in chat.await_args.args[0]
+        # In the house style, the reused face anchors the new one.
+        assert [Path(a).name for a in studio.drawn[0]["anchors"]] == ["anchor_dex.png"]
+
+    @pytest.mark.asyncio
+    async def test_the_niche_comes_from_state(self):
+        req = casting.build_casting_request({"topic": "t", "niche_slug": "lab"}, _sc())
+        assert req.niche_slug == "lab"
 
     @pytest.mark.asyncio
     async def test_a_bad_reply_gets_one_repair(self, chat, studio):

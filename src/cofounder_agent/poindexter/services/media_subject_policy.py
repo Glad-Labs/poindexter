@@ -39,6 +39,7 @@ negative prompt only when ``human_subjects == none``; the base
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
@@ -335,6 +336,44 @@ def video_style_prefix(policy: MediaPolicy) -> str:
     thing the house style forbids. One prefix, shown consistently.
     """
     return policy.house_style or "flat vector illustration"
+
+
+# Words that name the medium, not a look ("make a cartoon of ..."). A creative
+# plan's style that is only one of these falls back to the house style.
+STORY_MEDIUM_WORDS_KEY = "story_style_medium_words"
+
+
+def _style_words(text: str) -> str:
+    words = re.sub(r"[^a-z0-9 ]+", " ", text.lower()).split()
+    if words and words[0] in ("a", "an", "the"):
+        words = words[1:]
+    return " ".join(words)
+
+
+def names_only_the_medium(site_config: Any, style: str) -> bool:
+    """True when ``style`` is a word for the medium itself (``story_style_medium_words``)."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    raw = site_config.get(STORY_MEDIUM_WORDS_KEY, None) if site_config is not None else None
+    csv = DEFAULTS[STORY_MEDIUM_WORDS_KEY] if raw is None else str(raw)
+    medium = {_style_words(w) for w in csv.split(",") if w.strip()}
+    return _style_words(style) in medium
+
+
+def story_visual_style(site_config: Any, niche_slug: str | None, asked: str) -> tuple[str, bool]:
+    """The art style of a creative piece: ``(style, asked_for)``.
+
+    The style the request asked for, when it names a look; otherwise the
+    niche's house style (``niche.<slug>.media.house_style``, then
+    ``media_house_style``). Matt (2026-10-13): "cartoon" is too broad, and a
+    request that names no style takes the company's. The architect writes the
+    medium itself as the style ("cartoon") even when told not to, so a style
+    that only names the medium counts as none.
+    """
+    asked = (asked or "").strip()
+    if asked and not names_only_the_medium(site_config, asked):
+        return asked, True
+    return video_style_prefix(resolve_media_policy(site_config, niche_slug)), False
 
 
 def video_style_policy(policy: MediaPolicy) -> str:

@@ -12,7 +12,10 @@ art style belong on THIS node's config, not on the writer's or director's:
     {"atom": "story.cast_characters",
      "config": {"screenplay_format": "story", "screenplay_target_seconds": 120,
                 "screenplay_brief": "...", "screenplay_cast": ["<must-have slug>"],
-                "screenplay_visual_style": "<art style, if the request names one>"}}
+                "screenplay_visual_style": "<the look the request names, if any>"}}
+
+With no look named (or only the medium, "cartoon"), the cast is drawn in the
+niche's house style.
 
 A failure raises: the writer cannot write for a cast that does not exist.
 """
@@ -38,7 +41,7 @@ ATOM_META = AtomMeta(
         "that are not in the roster. INPUT topic + optional node config "
         "screenplay_format, screenplay_target_seconds, screenplay_brief, "
         "screenplay_cast (slugs that must appear), screenplay_visual_style "
-        "(art style; empty = casting picks one), screenplay_narrator "
+        "(a look the request names; empty = the house style), screenplay_narrator "
         "('none' = no narrator, a slug = that persona narrates, empty = "
         "casting decides). OUTPUT screenplay_cast, screenplay_visual_style, "
         "screenplay_narrator, cast_sheet. USUALLY FOLLOWED BY "
@@ -55,7 +58,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="screenplay_cast", type="list[str]", required=False,
                   description="persona slugs that must be in the cast"),
         FieldSpec(name="screenplay_visual_style", type="str", required=False,
-                  description="art style for every picture; empty = casting picks"),
+                  description="a look the request names; empty = the house style"),
         FieldSpec(name="screenplay_narrator", type="str", required=False,
                   description="'none', a persona slug, or empty = casting decides"),
     ),

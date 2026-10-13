@@ -56,7 +56,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     from poindexter.services.dialogue_audio import probe_seconds
-    from poindexter.services.media_subject_policy import resolve_media_policy, video_style_prefix
+    from poindexter.services.media_subject_policy import story_visual_style
     from poindexter.services.screenplay_director import direct_screenplay
 
     site_config = state.get("site_config")
@@ -71,9 +71,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             "long_narration_audio_path — run story.write_screenplay and "
             "media.render_dialogue first",
         )
-    style = str(state.get("screenplay_visual_style") or "").strip()
-    if not style:
-        style = video_style_prefix(resolve_media_policy(site_config, state.get("niche_slug")))
+    # The look the plan asked for, else the house style; a bare medium word
+    # ("cartoon") names no look and takes the house style too.
+    style, _asked = story_visual_style(
+        site_config, state.get("niche_slug"), str(state.get("screenplay_visual_style") or ""),
+    )
     database_service = state.get("database_service")
     pool = getattr(database_service, "pool", None) if database_service else state.get("pool")
     listing = await direct_screenplay(

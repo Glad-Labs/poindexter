@@ -46,8 +46,15 @@ The Boy Who Cried Wolf" could not be asked for at all. One LLM call
 (`story.casting` in the storytelling pack) reads the request and the roster,
 reuses the personas that fit, and designs the rest: name, role, appearance,
 personality, a voice from `story_voice_catalog`, an energy and a sample line.
-It also picks the art style when the request names none, and decides on a
-narrator. Code checks the reply (reused ids exist, voices come from the
+It also decides on a narrator. The art style comes from
+`media_subject_policy.story_visual_style`, which `media.direct_screenplay`
+uses too. A look the request names ("claymation", "watercolour storybook")
+is kept, and casting writes it out as a phrase a painter could follow.
+With no look named, the piece takes the company's house style
+(`niche.<slug>.media.house_style`, then `media_house_style`). A style that
+only names the medium ("cartoon", "animated", listed in
+`story_style_medium_words`) counts as none, because the architect passes
+the medium as the style even when told not to. Code checks the reply (reused ids exist, voices come from the
 catalog, every new character has looks, at most `story_cast_max_new`) and
 sends the FIX lines back once.
 

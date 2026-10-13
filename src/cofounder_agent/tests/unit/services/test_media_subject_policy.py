@@ -563,3 +563,33 @@ def test_style_prefix_falls_back_to_one_modifier_not_a_rotation():
     off = mp.resolve_media_policy(_sc(), None)
     prefix = mp.video_style_prefix(off)
     assert prefix and prefix in mp.video_style_policy(off)
+
+
+class TestStoryVisualStyle:
+    """A creative piece is drawn in the look it asked for, else the house style.
+    The architect writes the medium itself ("cartoon") as the style, which names
+    no look (2026-10-13)."""
+
+    @staticmethod
+    def _sc(**cfg):
+        return SiteConfig(initial_config=cfg)
+
+    def test_a_named_look_is_kept(self):
+        assert mp.story_visual_style(self._sc(), "lab", "claymation") == ("claymation", True)
+
+    def test_a_medium_word_falls_back_to_the_niche_house_style(self):
+        sc = self._sc(**{"niche.lab.media.house_style": "retro-tech", "media_house_style": "global"})
+        for asked in ("cartoon", "A Cartoon.", "animated", "", "  "):
+            assert mp.story_visual_style(sc, "lab", asked) == ("retro-tech", False), asked
+
+    def test_then_the_global_house_style_then_the_default(self):
+        assert mp.story_visual_style(self._sc(media_house_style="global"), None, "cartoon") == ("global", False)
+        assert mp.story_visual_style(self._sc(), None, "") == ("flat vector illustration", False)
+
+    def test_a_look_that_mentions_the_medium_is_still_a_look(self):
+        assert mp.story_visual_style(self._sc(), None, "rubber-hose cartoon") == ("rubber-hose cartoon", True)
+
+    def test_the_medium_words_are_a_setting(self):
+        sc = self._sc(story_style_medium_words="toon")
+        assert mp.names_only_the_medium(sc, "toon") is True
+        assert mp.names_only_the_medium(sc, "cartoon") is False

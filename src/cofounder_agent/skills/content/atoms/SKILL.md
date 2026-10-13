@@ -322,7 +322,8 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   CHARACTERS, start at story.write_screenplay instead.
   media.transcribe_narration comes BEFORE media.render_long_video because
   the render burns in the captions it makes, and media.persist comes last
-  because it saves the video and puts it in the approval queue.
+  because it saves the video and puts it in the approval queue. That queue
+  is where the video is reviewed, so the chain ends at media.persist.
   Put the creative choices in config. On story.write_screenplay:
   screenplay_format ("sketch" for comedy, "story" for a narrative with a
   journey, "dialogue" for characters talking a topic through, "explainer"
@@ -337,7 +338,9 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   on media.direct_screenplay.
   screenplay_visual_style is the art style the request asks for, in its
   own words (a request for anime gets an anime style); leave it out when
-  the request names none.
+  the request names none. A word for the medium itself, such as "cartoon",
+  "animation" or "video", names no style: leave the key out and the
+  company's house style applies.
   Character ids in any config value (screenplay_cast, screenplay_narrator,
   dialogue_narrator_persona) come only from CHARACTERS below; leave the
   narrator keys out unless the request says who narrates.
