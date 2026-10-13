@@ -554,9 +554,10 @@ yaml = ["PyYAML"]
 name = "banks"
 version = "2.5.1"
 description = "A prompt programming language"
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"rag\""
 files = [
     {file = "banks-2.5.1-py3-none-any.whl", hash = "sha256:b7c91365626bab4b46197d24ce04cd69540730ed669a50a399f240318ba3dcfb"},
     {file = "banks-2.5.1.tar.gz", hash = "sha256:a7ca5c250b605ae90cfd6e4ca5dd6ce2ee377d5d59021b6feba44e345910026d"},
@@ -1013,7 +1014,7 @@ files = [
     {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
     {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
 ]
-markers = {dev = "platform_system == \"Windows\" or sys_platform == \"win32\""}
+markers = {main = "platform_system == \"Windows\" or extra == \"pipeline\" or extra == \"rag\" or (extra == \"pipeline\" or extra == \"rag\" or extra == \"qa\") and sys_platform == \"win32\"", dev = "platform_system == \"Windows\" or sys_platform == \"win32\""}
 
 [[package]]
 name = "coolname"
@@ -1373,15 +1374,15 @@ mcp = ["mcp (>=2.0)"]
 
 [[package]]
 name = "deepeval"
-version = "4.2.2"
+version = "4.2.8"
 description = "The LLM Evaluation Framework"
 optional = true
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 markers = "extra == \"qa\""
 files = [
-    {file = "deepeval-4.2.2-py3-none-any.whl", hash = "sha256:b9ea5328083fb2a53ef6fef197942985cf92a1e3ae0d8f974c698635d439ef37"},
-    {file = "deepeval-4.2.2.tar.gz", hash = "sha256:43c7252718a1c0de467a2526c3dac873b2f5d6677faa9a01e2a332a8d07e8240"},
+    {file = "deepeval-4.2.8-py3-none-any.whl", hash = "sha256:1bc6ec6ad9f36427e5578a01b4a2aaa357d7ac51bb0cd726af7315304b0339f8"},
+    {file = "deepeval-4.2.8.tar.gz", hash = "sha256:6c6243a53be3e7fd59cf787310d24bbbc479b34cd48bb72f97c6ad81943596e2"},
 ]
 
 [package.dependencies]
@@ -1838,9 +1839,10 @@ markers = {main = "extra == \"ml\" or extra == \"rerank\" or extra == \"pipeline
 name = "filetype"
 version = "1.2.0"
 description = "Infer file type and MIME type of any file/buffer. No external dependencies."
-optional = false
+optional = true
 python-versions = "*"
 groups = ["main"]
+markers = "extra == \"rag\""
 files = [
     {file = "filetype-1.2.0-py2.py3-none-any.whl", hash = "sha256:7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25"},
     {file = "filetype-1.2.0.tar.gz", hash = "sha256:66b56cd6474bf41d8c54660347d37afcc3f7d1970648de365c102ef77548aadb"},
@@ -2275,9 +2277,10 @@ test = ["objgraph", "psutil", "setuptools"]
 name = "griffe"
 version = "2.0.2"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
-optional = false
+optional = true
 python-versions = ">=3.10"
 groups = ["main"]
+markers = "extra == \"pipeline\" or extra == \"rag\""
 files = [
     {file = "griffe-2.0.2-py3-none-any.whl", hash = "sha256:2b31816460aee1996af26050a1fc6927a2e5936486856707f55508e4c9b5960b"},
     {file = "griffe-2.0.2.tar.gz", hash = "sha256:c5d56326d159f274492e9bf93a9895cec101155d944caa66d0fc4e0c13751b92"},
@@ -2294,9 +2297,10 @@ pypi = ["griffelib[pypi] (==2.0.2)"]
 name = "griffecli"
 version = "2.0.2"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
-optional = false
+optional = true
 python-versions = ">=3.10"
 groups = ["main"]
+markers = "extra == \"pipeline\" or extra == \"rag\""
 files = [
     {file = "griffecli-2.0.2-py3-none-any.whl", hash = "sha256:0d44d39e59afa81e288a3e1c3bf352cc4fa537483326ac06b8bb6a51fd8303a0"},
     {file = "griffecli-2.0.2.tar.gz", hash = "sha256:40a1ad4181fc39685d025e119ae2c5b669acdc1f19b705fb9bf971f4e6f6dffb"},
@@ -2310,9 +2314,10 @@ griffelib = "2.0.2"
 name = "griffelib"
 version = "2.0.2"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
-optional = false
+optional = true
 python-versions = ">=3.10"
 groups = ["main"]
+markers = "extra == \"pipeline\" or extra == \"rag\""
 files = [
     {file = "griffelib-2.0.2-py3-none-any.whl", hash = "sha256:925c857658fb1ba40c0772c37acbc2ab650bd794d9c1b9726922e36ea4117ea1"},
     {file = "griffelib-2.0.2.tar.gz", hash = "sha256:3cf20b3bc470e83763ffbf236e0076b1211bac1bc67de13daf494640f2de707e"},
@@ -3039,9 +3044,10 @@ docs = ["Jinja2 (==3.1.6)", "MarkupSafe (==3.0.3)", "Pygments (==2.20.0)", "Sphi
 name = "jinja2"
 version = "3.1.6"
 description = "A very fast and expressive template engine."
-optional = false
+optional = true
 python-versions = ">=3.7"
 groups = ["main"]
+markers = "extra == \"ml\" or extra == \"rerank\" or extra == \"pipeline\" or extra == \"qa\" or extra == \"rag\""
 files = [
     {file = "jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"},
     {file = "jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d"},
@@ -4123,9 +4129,10 @@ testing = ["coverage", "pytest", "pytest-cov", "pytest-regressions", "pytest-tim
 name = "markupsafe"
 version = "3.0.3"
 description = "Safely add untrusted strings to HTML/XML markup."
-optional = false
+optional = true
 python-versions = ">=3.9"
 groups = ["main"]
+markers = "extra == \"ml\" or extra == \"rerank\" or extra == \"pipeline\" or extra == \"qa\" or extra == \"rag\""
 files = [
     {file = "markupsafe-3.0.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:2f981d352f04553a7171b8e44369f2af4055f888dfb147d55e42d29e29e74559"},
     {file = "markupsafe-3.0.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e1c1493fb6e50ab01d20a22826e57520f1284df32f2d8601fdd90b6304601419"},
@@ -5533,6 +5540,7 @@ files = [
     {file = "platformdirs-4.10.0-py3-none-any.whl", hash = "sha256:fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a"},
     {file = "platformdirs-4.10.0.tar.gz", hash = "sha256:31e761a6a0ca04faf7353ea759bdba55652be214725111e5aac52dfa29d4bef7"},
 ]
+markers = {main = "extra == \"rag\""}
 
 [[package]]
 name = "playwright"
@@ -9992,4 +10000,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "c01bbb77720a869e10b7dd586aa2154d456a95f50a4fca9ef6e1f1f0293a1eda"
+content-hash = "cfc820444ae3a9d63718a333c4d7e2cc68caf6eb1eb1bd0797227eafd9b1df54"
