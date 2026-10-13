@@ -2766,12 +2766,14 @@ class ReferenceContext:
     references for a shot that shows nobody. ``portraits`` caches each fetched
     portrait path. ``card_cleared``: image-gen and Ollama are evicted ONCE per
     render before the first reference still, not before every one (each hard
-    unload can trigger a sidecar restart).
+    unload can trigger a sidecar restart). ``pool``: the render's DB pool,
+    for the vision check on each talking frame.
     """
 
     cast: tuple[str, ...] = ()
     portraits: dict[str, str | None] = field(default_factory=dict)
     card_cleared: bool = False
+    pool: Any = None
 
 
 def _cast_named_in(prompt: str, cast: tuple[str, ...], site_config: Any) -> list[str]:
@@ -3507,6 +3509,70 @@ def _emit_presenter_fallback_finding(*, shot: Shot, post_id: str, reason: str) -
     )
 
 
+def _talking_frame_attempts(site_config: Any) -> int:
+    key = "video_cast_talking_frame_attempts"
+    try:
+        raw = DEFAULTS[key] if site_config is None else site_config.get(key, DEFAULTS[key])
+        return max(1, int(str(raw).strip()))
+    except (TypeError, ValueError):
+        return int(DEFAULTS[key])
+
+
+async def _draw_talking_frame(
+    shot: Shot,
+    *,
+    frame: Path,
+    persona: Any,
+    orientation: str,
+    reference_ctx: ReferenceContext | None,
+    work_dir: Path,
+    site_config: Any,
+    http_client_factory: Any,
+) -> None:
+    """Draw ``frame``, the speaker alone in this scene, and keep it only if it is.
+
+    The lip-sync animates the frame for every line the speaker has in the
+    scene, and a talking clip is never re-rolled, so a stranger in the frame
+    stays on screen for the whole scene: render a19363a9's closing scene put
+    a man nobody wrote beside Mira on all of her lines. Each draw is judged by
+    ``check_talking_frame`` (one person, and the speaker); a rejected draw is
+    redrawn with a fresh seed, up to ``video_cast_talking_frame_attempts``
+    draws, and after that the caller lip-syncs the portrait. A check that
+    cannot answer keeps the frame, so vision trouble never costs a shot.
+    """
+    from poindexter.services.video_renderers.shot_vision_qa import check_talking_frame
+
+    fw, fh, _ = _hero_render_dims(orientation, site_config)
+    attempts = _talking_frame_attempts(site_config)
+    for attempt in range(1, attempts + 1):
+        drawn = await _render_reference_still(
+            shot, prompt=shot.frame_prompt or "", output_path=str(frame), width=fw, height=fh,
+            ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
+            http_client_factory=http_client_factory, speakers=[persona.slug],
+        )
+        if not drawn:
+            if frame.exists():
+                frame.unlink()
+            return
+        verdict = await check_talking_frame(
+            frame_path=str(frame), name=persona.display_name,
+            appearance=getattr(persona, "appearance", "") or "",
+            site_config=site_config, pool=getattr(reference_ctx, "pool", None),
+        )
+        if verdict.ok is not False:
+            return
+        logger.warning(
+            "[SHOT_LIST] talking frame for %s (shot %d) rejected on draw %d/%d: "
+            "%s people, %s",
+            persona.slug, shot.idx, attempt, attempts, verdict.people, verdict.reason,
+        )
+        frame.unlink()
+    logger.warning(
+        "[SHOT_LIST] no talking frame for %s (shot %d) passed in %d draw(s) — "
+        "lip-syncing the portrait instead", persona.slug, shot.idx, attempts,
+    )
+
+
 async def _render_presenter_clip(
     shot: Shot,
     *,
@@ -3584,14 +3650,11 @@ async def _render_presenter_clip(
         key = hashlib.sha256(shot.frame_prompt.encode("utf-8")).hexdigest()[:10]
         frame = work_dir / f"talkframe_{persona.slug}_{key}.png"
         if not frame.exists():
-            fw, fh, _ = _hero_render_dims(orientation, site_config)
-            drawn = await _render_reference_still(
-                shot, prompt=shot.frame_prompt, output_path=str(frame), width=fw, height=fh,
-                ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
-                http_client_factory=http_client_factory, speakers=[persona.slug],
+            await _draw_talking_frame(
+                shot, frame=frame, persona=persona, orientation=orientation,
+                reference_ctx=reference_ctx, work_dir=work_dir,
+                site_config=site_config, http_client_factory=http_client_factory,
             )
-            if not drawn and frame.exists():
-                frame.unlink()
         if frame.exists():
             portrait = str(frame)
     segment = str(work_dir / f"presenter_{shot.idx}.wav")
@@ -5409,6 +5472,8 @@ async def render_shot_list(
     # A screenplay video (timing="exact") draws its stills from the cast's
     # portraits (poindexter#1141); a blog video keeps the text path untouched.
     reference_ctx = reference_context_for(shot_list)
+    if reference_ctx is not None:
+        reference_ctx.pool = pool
     render_kwargs = dict(
         work_dir=work_dir,
         image_gen_url=image_gen_url,

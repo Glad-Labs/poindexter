@@ -958,6 +958,10 @@ DEFAULTS: dict[str, str] = {
     # "alone": with only the speaker's portrait as reference, the edit model
     # drew a generic human listener beside Nova (2026-10-13), which is also a
     # second mouth for the lip-sync to pick.
+    # Draws of a cast talking frame before the portrait is lip-synced instead.
+    # Each draw is checked by qa.talking_frame (one person, and the speaker);
+    # a draw is ~20 s of Qwen-Image-Edit against ~6 min for the clip it feeds.
+    'video_cast_talking_frame_attempts': '3',
     'story_talking_frame_template': (
         '{style}, medium close-up of {name} alone in the frame, facing the '
         'viewer and talking, in {setting}'
@@ -6472,6 +6476,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reference_prompt_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_style_only_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'video_cast_talking_frame_attempts': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_clip_interpolation_engine': {'owner': 'video', 'value_type': 'string'},

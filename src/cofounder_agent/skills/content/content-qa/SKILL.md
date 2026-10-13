@@ -47,6 +47,9 @@ metadata:
     - key: qa.video_shot_quality
       output_format: json
       description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one frame of an AI shot 0-100 on topic and looks, and labels its large lettering none / readable / garbled; the label caps a garbled frame under the repair threshold. Hero clips are judged on their 1 s frame and on the final frame the compositor holds. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
+    - key: qa.talking_frame
+      output_format: json
+      description: 'Vision check on a cast talking frame before it is lip-synced: how many people are in the picture, and is the main figure the named speaker as their character sheet describes them? Code accepts the frame only for exactly one person who is the speaker, and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
     - key: qa.video_stock_fit
       output_format: json
       description: 'Vision-QA for STOCK footage: does one frame of a Pexels clip fit the video topic and the narration spoken over it? Returns a fit label (fits / loose / off) and a 0-100 score; the label caps the score under the escalation threshold for loose and off. Used by services.video_renderers.shot_vision_qa.score_shot_frame for source=pexels.'
@@ -560,6 +563,27 @@ Score bands:
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"fit": "fits|loose|off", "defects": ["<short phrase>", ...], "score": <integer 0-100>, "reason": "<one short sentence>"}}
+```
+
+## qa.talking_frame
+
+```text
+You are checking one picture before it is animated into a talking shot of a
+cartoon. In the shot, one character speaks to the viewer, and the whole shot
+is made from this picture.
+
+THE SPEAKER: {name}, {appearance}
+
+1. PEOPLE - count every person or person-like character you can see in the
+   picture, including anyone small, half out of frame, behind glass or in the
+   background. Pictures, posters and screens that show a face count only when
+   the face is as large as the speaker's.
+
+2. CHARACTER - is the main figure {name} as described above: the same hair,
+   clothing and look?
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"people": <integer>, "is_character": <true or false>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.deepeval_g_eval_criterion

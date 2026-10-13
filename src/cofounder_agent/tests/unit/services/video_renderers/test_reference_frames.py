@@ -226,6 +226,103 @@ class TestTalkingFrame:
         assert [Path(p).name for p in stub_refs["calls"][0]["reference_paths"]] == ["reference_nova.png"]
 
 
+class TestTalkingFrameCheck:
+    """A talking frame with anyone but the speaker in it is redrawn (a19363a9:
+    a stranger sat beside Mira through every line of the closing scene)."""
+
+    async def _render(self, monkeypatch, tmp_path, verdicts, **sc):
+        from poindexter.services.video_renderers import shot_vision_qa as svq
+
+        narration = tmp_path / "d.wav"
+        narration.write_bytes(b"WAV")
+        seen = {}
+
+        async def cut(src, dst, **kw):
+            Path(dst).write_bytes(b"WAV")
+            return True
+
+        async def render(**kw):
+            seen.update(kw)
+            Path(kw["output_path"]).write_bytes(b"MP4")
+            return True, ""
+
+        check = AsyncMock(side_effect=verdicts)
+        monkeypatch.setattr(svq, "check_talking_frame", check)
+        monkeypatch.setattr(slr, "_cut_narration_window", cut)
+        monkeypatch.setattr(slr, "_render_generative_clip", render)
+        monkeypatch.setattr(slr, "_reclaim_card_for_presenter", AsyncMock())
+        monkeypatch.setattr(slr, "_live_free_vram_gb", AsyncMock(return_value=30.0))
+        monkeypatch.setattr(slr, "_comfyui_reserved_gb", AsyncMock(return_value=0.0))
+        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
+        shot = _shot(0, "presenter", speaker="nova", frame_prompt="anime, Nova talking in a lab")
+        ctx = slr.ReferenceContext(cast=("dex", "nova"), pool=object())
+        res = await slr._render_one_shot(
+            shot, prior_clip=None, work_dir=tmp_path, image_gen_url="", site_config=_sc(**sc),
+            http_client_factory=None, narration_path=str(narration), reference_ctx=ctx)
+        assert res.success
+        return Path(seen["image_path"]).name, check
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_draw_is_redrawn_and_the_good_one_used(self, stub_refs, monkeypatch, tmp_path):
+        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
+
+        used, check = await self._render(
+            monkeypatch, tmp_path, [V(ok=False, people=2, reason="a man beside her"), V(ok=True, people=1)])
+        assert used.startswith("talkframe_nova_")
+        assert len(stub_refs["calls"]) == 2
+        assert check.await_args.kwargs["name"] == "Nova"
+
+    @pytest.mark.asyncio
+    async def test_every_draw_rejected_lip_syncs_the_portrait(self, stub_refs, monkeypatch, tmp_path):
+        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
+
+        used, _ = await self._render(
+            monkeypatch, tmp_path, [V(ok=False, people=2)] * 2,
+            video_cast_talking_frame_attempts="2")
+        assert used == "presenter_nova.png"
+        assert len(stub_refs["calls"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_check_that_cannot_answer_keeps_the_frame(self, stub_refs, monkeypatch, tmp_path):
+        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
+
+        used, _ = await self._render(monkeypatch, tmp_path, [V(ok=None, reason="vision call failed")])
+        assert used.startswith("talkframe_nova_")
+        assert len(stub_refs["calls"]) == 1
+
+
+class TestTalkingFrameVerdictParse:
+    def test_one_person_who_is_the_speaker_passes(self):
+        from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
+
+        v = _parse_talking_frame('{"people": 1, "is_character": true, "reason": "Mira alone"}')
+        assert v.ok is True and v.people == 1
+
+    @pytest.mark.parametrize("reply", [
+        '{"people": 2, "is_character": true, "reason": "a man beside her"}',
+        '{"people": 1, "is_character": false, "reason": "a different woman"}',
+        '{"people": 0, "is_character": false}',
+    ])
+    def test_extra_people_or_the_wrong_character_fail(self, reply):
+        from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
+
+        assert _parse_talking_frame(reply).ok is False
+
+    @pytest.mark.parametrize("reply", ["no idea", '{"is_character": true}', '{"people": "one"}'])
+    def test_an_unreadable_reply_is_no_verdict(self, reply):
+        from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
+
+        assert _parse_talking_frame(reply).ok is None
+
+    @pytest.mark.asyncio
+    async def test_no_pool_is_no_verdict(self, tmp_path):
+        from poindexter.services.video_renderers.shot_vision_qa import check_talking_frame
+
+        v = await check_talking_frame(frame_path=str(tmp_path / "f.png"), name="Mira", appearance="",
+                                      site_config=_sc(qa_vision_model="m"), pool=None)
+        assert v.ok is None
+
+
 def test_director_writes_a_talking_frame_per_cast_shot():
     shot = {"speaker": "nova", "delivery": "patient", "setting": "a garage at sunrise"}
     text = sd._talking_frame_prompt(shot, "flat 2D cartoon", _sc())

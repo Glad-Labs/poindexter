@@ -626,16 +626,16 @@ async def _score_stock(
     return worst or ShotQAResult(score=None, reason="stock frames unscoreable")
 
 
-async def _score_image(
+async def _vision_text(
     image_path: str, *, prompt: str, model: str, pool: Any, shot_idx: int,
-) -> ShotQAResult:
-    """One vision call over one image. Fail-soft to ``score=None``."""
+) -> tuple[str | None, str]:
+    """One vision call over one image: ``(reply, "")`` or ``(None, why)``."""
     try:
         with open(image_path, "rb") as fh:
             b64 = base64.b64encode(fh.read()).decode("ascii")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[SHOT_QA] frame read failed for %s: %s", image_path, exc)
-        return ShotQAResult(score=None, reason="frame read failed")
+        return None, "frame read failed"
 
     from poindexter.services.llm_providers.dispatcher import dispatch_complete
 
@@ -666,11 +666,89 @@ async def _score_image(
             "[SHOT_QA] vision call failed for shot %d (non-critical): %s",
             shot_idx, exc,
         )
-        return ShotQAResult(score=None, reason="vision call failed")
-
+        return None, "vision call failed"
     if not text:
-        return ShotQAResult(score=None, reason="empty vision response")
+        return None, "empty vision response"
+    return text, ""
+
+
+async def _score_image(
+    image_path: str, *, prompt: str, model: str, pool: Any, shot_idx: int,
+) -> ShotQAResult:
+    """One vision call over one image. Fail-soft to ``score=None``."""
+    text, why = await _vision_text(
+        image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
+    )
+    if text is None:
+        return ShotQAResult(score=None, reason=why)
     return _parse_score(text)
+
+
+@dataclass
+class TalkingFrameVerdict:
+    """Is this talking frame the speaker, alone? ``ok=None``: could not tell."""
+
+    ok: bool | None
+    people: int | None = None
+    reason: str = ""
+
+
+def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
+    try:
+        parsed = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
+    people = parsed.get("people")
+    if not isinstance(people, int) or isinstance(people, bool):
+        return TalkingFrameVerdict(ok=None, reason="vision response missing a people count")
+    is_character = parsed.get("is_character")
+    reason = str(parsed.get("reason", "") or "")[:200]
+    ok = people == 1 and is_character is True
+    return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
+
+
+async def check_talking_frame(
+    *,
+    frame_path: str,
+    name: str,
+    appearance: str,
+    site_config: Any,
+    pool: Any,
+) -> TalkingFrameVerdict:
+    """Does this talking frame show the speaker and nobody else?
+
+    The lip-sync animates whatever the frame holds, for every line the speaker
+    has in the scene, and a talking clip cannot be re-rolled the way a still
+    can. So the frame is judged before the clip is spent on it. On render
+    a19363a9 (2026-10-13) Mira's frame for the closing scene had a stranger
+    beside her (a man in a black shirt lettered with nonsense), though the
+    prompt asked for her alone, and he sat through every one of her lines in
+    that scene.
+
+    A count and a yes/no, not a score: the defect is countable, and a score
+    would blend it with how nice the picture is. Fail-soft: no model, no pool
+    or an unreadable reply returns ``ok=None``, and the caller keeps the frame.
+    """
+    if site_config is None or pool is None:
+        return TalkingFrameVerdict(ok=None, reason="no site_config or pool")
+    model = (site_config.get("qa_vision_model", "") or "").strip()
+    if not model:
+        return TalkingFrameVerdict(ok=None, reason="no vision model configured")
+
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt(
+        "qa.talking_frame", name=name, appearance=appearance or name,
+    )
+    text, why = await _vision_text(
+        frame_path, prompt=prompt, model=model, pool=pool, shot_idx=-1,
+    )
+    if text is None:
+        return TalkingFrameVerdict(ok=None, reason=why)
+    return _parse_talking_frame(text)
 
 
 def _sc_bool(site_config: Any, key: str, default: bool) -> bool:
@@ -699,4 +777,7 @@ def _remove_quietly(path: str) -> None:
         pass
 
 
-__all__ = ["ShotQAResult", "score_shot_frame", "_extract_video_frame", "_crop_frame"]
+__all__ = [
+    "ShotQAResult", "TalkingFrameVerdict", "check_talking_frame",
+    "score_shot_frame", "_extract_video_frame", "_crop_frame",
+]

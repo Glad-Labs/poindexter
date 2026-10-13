@@ -129,6 +129,15 @@ art style:
   lip-sync animates that frame instead of the fixed portrait. One frame is
   drawn per speaker per scene and reused for each of their lines there.
 
+  Before the lip-sync spends ~6 minutes on it, the vision judge checks the
+  frame (`qa.talking_frame`): exactly one person, and that person is the
+  speaker as their sheet describes them. A frame that fails is redrawn with a
+  fresh seed, up to `video_cast_talking_frame_attempts` (3) draws, and then the
+  portrait is used. On the first two-character render the edit model put an
+  unwritten stranger beside Mira in the closing scene, and he stayed there
+  through every one of her lines. On that render's six frames the check
+  rejected that one and passed the other five, twice each.
+
 Each frame takes about 6–22 s. The wording that tells the model which picture
 is whom is `video_reference_*_template`, and the model files and sampler
 settings are also `video_reference_*` settings. Any failure falls back to the
