@@ -105,6 +105,18 @@ async def _concat(parts: list[str], dst: str, work: Path) -> None:
         raise DialogueAudioError(f"ffmpeg could not join the dialogue track: {out[-300:]}")
 
 
+async def _reclaim_for_tts() -> None:
+    """Best-effort render-GPU reclaim before a line retry. Chatterbox is a
+    ladder rung, so it is excluded: restarting the engine about to be called
+    would turn a full card into a guaranteed miss."""
+    try:
+        from poindexter.services.gpu_scheduler import gpu
+
+        await gpu.reclaim_render_vram(include_ollama=True, exclude=("chatterbox",))
+    except Exception as exc:  # noqa: BLE001 — the retry runs either way
+        logger.warning("[dialogue] VRAM reclaim before retry failed: %s", exc)
+
+
 def resolve_voice(site_config: Any, speaker: str, narrator_persona: str) -> Any:
     """The persona that voices ``speaker``: the cast member, or for the
     narrator the configured narrator persona. ``None`` = the house voice."""
@@ -203,6 +215,12 @@ async def render_dialogue(
                         beat_idx, speaker, attempt, last_error,
                     )
                     produced = None
+                    if attempt == 1:
+                        # The usual cause is a full card (2026-10-12: Chatterbox
+                        # OOM'd with 45 MB free while ComfyUI held an edit model).
+                        # Run the shared VRAM ladder before the retry, keeping
+                        # the TTS engines we are about to call.
+                        await _reclaim_for_tts()
                 if not produced:
                     raise DialogueAudioError(
                         f"line {beat_idx} in scene {scene.get('scene_id')!r} "

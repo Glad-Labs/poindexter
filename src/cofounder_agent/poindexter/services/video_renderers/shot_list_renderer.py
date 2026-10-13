@@ -2758,6 +2758,128 @@ async def _resolve_demo_clip(
     return str(resolved), duration, ""
 
 
+@dataclass
+class ReferenceContext:
+    """Per-render state for reference-conditioned stills (poindexter#1141).
+
+    ``cast``: the persona slugs of a screenplay video, used as style-only
+    references for a shot that shows nobody. ``portraits`` caches each fetched
+    portrait path. ``card_cleared``: image-gen and Ollama are evicted ONCE per
+    render before the first reference still, not before every one (each hard
+    unload can trigger a sidecar restart).
+    """
+
+    cast: tuple[str, ...] = ()
+    portraits: dict[str, str | None] = field(default_factory=dict)
+    card_cleared: bool = False
+
+
+def _cast_named_in(prompt: str, cast: tuple[str, ...], site_config: Any) -> list[str]:
+    """Cast slugs whose id or display name appears as a word in ``prompt``."""
+    from poindexter.services.persona_service import get_persona
+
+    found: list[str] = []
+    for slug in cast:
+        persona = get_persona(site_config, slug)
+        names = {slug, (getattr(persona, "display_name", "") or "")}
+        for name in (n for n in names if n):
+            if re.search(rf"\b{re.escape(name)}\b", prompt or "", re.IGNORECASE):
+                found.append(slug)
+                break
+    return found
+
+
+def reference_context_for(shot_list: Any) -> ReferenceContext | None:
+    """A screenplay video (``timing="exact"``) draws its stills from its cast's
+    portraits; any other list keeps the text path (``None``). The cast is every
+    character and speaker in the list, in first-appearance order."""
+    if getattr(shot_list, "timing", "fit") != "exact":
+        return None
+    cast: list[str] = []
+    for shot in shot_list.shots:
+        for slug in [*(shot.characters or []), *([shot.speaker] if shot.speaker else [])]:
+            if slug not in cast:
+                cast.append(slug)
+    return ReferenceContext(cast=tuple(cast))
+
+
+async def _reference_portraits(
+    slugs: list[str], ctx: ReferenceContext, *, work_dir: Path,
+    site_config: Any, http_client_factory: Any,
+) -> tuple[list[str], list[str]]:
+    """Local portrait paths + display names for the slugs that have one."""
+    from poindexter.services.persona_service import get_persona
+
+    paths: list[str] = []
+    names: list[str] = []
+    for slug in slugs:
+        persona = get_persona(site_config, slug)
+        if persona is None or not persona.enabled or not persona.has_portrait:
+            continue
+        if slug not in ctx.portraits:
+            ctx.portraits[slug] = await _fetch_presenter_portrait(
+                persona.portrait_url, work_dir / f"reference_{slug}.png", http_client_factory,
+            )
+        if ctx.portraits[slug]:
+            paths.append(str(ctx.portraits[slug]))
+            names.append(persona.display_name or slug)
+    return paths, names
+
+
+async def _render_reference_still(
+    shot: Shot,
+    *,
+    prompt: str,
+    output_path: str,
+    width: int,
+    height: int,
+    ctx: ReferenceContext | None,
+    work_dir: Path,
+    site_config: Any,
+    http_client_factory: Any,
+    speakers: list[str] | None = None,
+) -> bool:
+    """Draw ``output_path`` with the cast's portraits as references.
+
+    References are ``speakers`` when given (a talking frame), else the shot's
+    characters, else the whole cast as style-only references. False means
+    "not drawn": the caller falls back to its text path.
+    """
+    from poindexter.services import reference_frames as rf
+
+    if ctx is None or not rf.enabled(site_config):
+        return False
+    wanted = list(speakers or shot.characters or [])
+    if not speakers:
+        # A cast member the picture NAMES is in it, whether or not the
+        # director listed them: without their portrait the edit model draws a
+        # generic human in their place (2026-10-13: "talking to dex" drew a man).
+        for slug in _cast_named_in(prompt, ctx.cast, site_config):
+            if slug not in wanted:
+                wanted.append(slug)
+    style_only = not wanted
+    paths, names = await _reference_portraits(
+        (wanted or list(ctx.cast))[: rf.MAX_REFERENCES], ctx,
+        work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
+    )
+    if not paths:
+        return False
+    if not ctx.card_cleared:
+        await _clear_image_gen_for_hero(site_config)
+        ctx.card_cleared = True
+    ok, why = await rf.render_reference_frame(
+        prompt=rf.compose_reference_prompt(prompt, names, style_only=style_only, site_config=site_config),
+        reference_paths=paths, output_path=output_path, width=width, height=height,
+        site_config=site_config,
+    )
+    if not ok:
+        logger.warning(
+            "[SHOT_LIST] shot %d reference still failed (%s) — falling back to the text path",
+            shot.idx, why,
+        )
+    return ok
+
+
 async def _render_one_shot(
     shot: Shot,
     *,
@@ -2774,6 +2896,7 @@ async def _render_one_shot(
     niche_slug: str | None = None,
     heartbeat_cb: Any = None,
     presenter_window: tuple[float, float] | None = None,
+    reference_ctx: ReferenceContext | None = None,
 ) -> ShotRenderResult:
     """Produce a clip file for one shot.
 
@@ -2957,7 +3080,15 @@ async def _render_one_shot(
             site_config.get_int("image_render_timeout_seconds", _render_default)
             if site_config is not None else _render_default
         )
-        ok = await _render_image_gen_image(
+        ok = await _render_reference_still(
+            shot, prompt=image_gen_prompt, output_path=clip_path,
+            width=site_config.get_int("video_reference_width", default_int("video_reference_width"))
+            if site_config is not None else default_int("video_reference_width"),
+            height=site_config.get_int("video_reference_height", default_int("video_reference_height"))
+            if site_config is not None else default_int("video_reference_height"),
+            ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
+            http_client_factory=http_client_factory,
+        ) or await _render_image_gen_image(
             prompt=image_gen_prompt,
             output_path=clip_path,
             image_gen_url=image_gen_url,
@@ -2991,6 +3122,7 @@ async def _render_one_shot(
             niche_slug=niche_slug,
             heartbeat_cb=heartbeat_cb,
             narration_window=presenter_window,
+            reference_ctx=reference_ctx,
         )
     if source in ("generative", "wan21"):
         still_result = await _render_hero_still(
@@ -3000,6 +3132,7 @@ async def _render_one_shot(
             site_config=site_config,
             http_client_factory=http_client_factory,
             orientation=orientation,
+            reference_ctx=reference_ctx,
         )
         if not still_result.success or not still_result.clip_path:
             return still_result
@@ -3386,6 +3519,7 @@ async def _render_presenter_clip(
     niche_slug: str | None,
     heartbeat_cb: Any = None,
     narration_window: tuple[float, float] | None = None,
+    reference_ctx: ReferenceContext | None = None,
 ) -> ShotRenderResult:
     """Render a talking-head clip: the shot's ``speaker`` persona (a cast
     shot), else the niche's persona, speaks this shot's narration window
@@ -3438,6 +3572,28 @@ async def _render_presenter_clip(
     )
     if not portrait:
         return _fail(f"could not fetch the persona portrait {persona.portrait_url}")
+    if _is_cast_shot(shot) and shot.frame_prompt:
+        # The talking frame: the speaker drawn in THIS scene's setting and
+        # style from their portrait, so the lip-synced shot matches the stills
+        # around it instead of cutting back to the portrait's own background
+        # (poindexter#1141). Drawn once per (speaker, frame prompt) — every
+        # line the speaker has in a scene reuses it. The portrait stays the
+        # fallback.
+        import hashlib
+
+        key = hashlib.sha256(shot.frame_prompt.encode("utf-8")).hexdigest()[:10]
+        frame = work_dir / f"talkframe_{persona.slug}_{key}.png"
+        if not frame.exists():
+            fw, fh, _ = _hero_render_dims(orientation, site_config)
+            drawn = await _render_reference_still(
+                shot, prompt=shot.frame_prompt, output_path=str(frame), width=fw, height=fh,
+                ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
+                http_client_factory=http_client_factory, speakers=[persona.slug],
+            )
+            if not drawn and frame.exists():
+                frame.unlink()
+        if frame.exists():
+            portrait = str(frame)
     segment = str(work_dir / f"presenter_{shot.idx}.wav")
     cut_offset = float(shot.narration_offset_s)
     cut_duration = float(shot.duration_s)
@@ -3529,6 +3685,7 @@ async def _render_hero_still(
     site_config: Any,
     http_client_factory: Any,
     orientation: str,
+    reference_ctx: ReferenceContext | None = None,
 ) -> ShotRenderResult:
     """Render a hero shot's stylized image-gen INIT still (poindexter#966).
 
@@ -3555,7 +3712,11 @@ async def _render_hero_still(
         site_config.get_int("image_render_timeout_seconds", _render_default)
         if site_config is not None else _render_default
     )
-    still_ok = await _render_image_gen_image(
+    still_ok = await _render_reference_still(
+        shot, prompt=shot.prompt, output_path=still_path, width=hero_w, height=hero_h,
+        ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
+        http_client_factory=http_client_factory,
+    ) or await _render_image_gen_image(
         prompt=shot.prompt,
         output_path=still_path,
         image_gen_url=image_gen_url,
@@ -3809,6 +3970,7 @@ async def _render_pass(
                 site_config=render_kwargs["site_config"],
                 http_client_factory=render_kwargs["http_client_factory"],
                 orientation=render_kwargs["orientation"],
+                reference_ctx=render_kwargs.get("reference_ctx"),
             )
             state = _ShotState(shot=shot, result=result, is_reused=False)
             if result.success and result.clip_path:
@@ -5244,6 +5406,9 @@ async def render_shot_list(
     )
 
     qa = _build_qa_config(site_config)
+    # A screenplay video (timing="exact") draws its stills from the cast's
+    # portraits (poindexter#1141); a blog video keeps the text path untouched.
+    reference_ctx = reference_context_for(shot_list)
     render_kwargs = dict(
         work_dir=work_dir,
         image_gen_url=image_gen_url,
@@ -5255,6 +5420,7 @@ async def render_shot_list(
         narration_path=audio_path or None,
         niche_slug=niche_slug,
         heartbeat_cb=heartbeat_cb,
+        reference_ctx=reference_ctx,
     )
 
     # Two-pass to stop the image-gen↔vision-model GPU thrash: render every shot

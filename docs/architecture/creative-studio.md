@@ -107,6 +107,39 @@ Talking cast shots act their line. They use `video_cast_render_prompt`
 (expressive face, gestures) and a quality-only `video_cast_negative_prompt`,
 not the blog presenter's still, gesture-free studio read.
 
+## One look: every frame drawn from the portraits
+
+The first cartoon renders switched art style whenever a character spoke.
+Stills, and the frames animated shots start from, came from the production
+image model, drawn from text. Talking shots lip-synced a fixed portrait made
+by another model, with its own style and a baked-in background.
+
+For a screenplay video (`timing="exact"`), every frame now comes from one
+source (`services/reference_frames.py`, poindexter#1141). An image-edit model,
+Qwen-Image-Edit-2511 in ComfyUI with a 4-step Lightning add-on, draws each
+still with the cast's portraits as references, which keeps both identity and
+art style:
+
+- **Stills and animated-shot first frames** use the portraits of the
+  characters in the shot as references. A shot that shows nobody passes the
+  cast portraits as style-only references, so backgrounds match too.
+- **Talking shots** first draw a per-scene talking frame: the speaker in
+  this scene's setting and style, from their portrait. The director writes
+  its prompt as `Shot.frame_prompt` (`story_talking_frame_template`), and the
+  lip-sync animates that frame instead of the fixed portrait. One frame is
+  drawn per speaker per scene and reused for each of their lines there.
+
+Each frame takes about 6–22 s. The wording that tells the model which picture
+is whom is `video_reference_*_template`, and the model files and sampler
+settings are also `video_reference_*` settings. Any failure falls back to the
+old path (text still, fixed portrait), and `video_reference_frames_enabled`
+turns the whole thing off. Blog videos never take this path.
+
+A line that fails to voice now runs the shared VRAM reclaim ladder, keeping
+Chatterbox, before its one retry. On 2026-10-12 a narrator line OOM'd because
+ComfyUI still held the edit model; the reclaim freed 24 GB and the retry
+voiced it.
+
 ## Cost
 
 Measured 2026-10-12 on the RTX 5090:
@@ -128,6 +161,5 @@ GPU time.
   video with no blog post is saved by `media.persist` as a task-keyed media
   asset. Gate-2 approval is created only for videos whose task has a post,
   so these do not reach the approval queue or YouTube yet.
-- Reference-image conditioning for stills.
 - A music-bed atom.
 - Two characters lip-synced in one shot. Dialogue cuts between speakers.

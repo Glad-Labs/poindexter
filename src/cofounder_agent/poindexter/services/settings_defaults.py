@@ -920,6 +920,48 @@ DEFAULTS: dict[str, str] = {
         'static, blurred, distorted face, extra fingers, text, subtitles, '
         'watermark, low quality, jpeg artifacts, overexposed'
     ),
+    # Reference-conditioned stills (poindexter#1141, services/reference_frames.py).
+    # Every prompted still of a screenplay video, and each cast shot's
+    # per-scene talking frame, is drawn by an image-EDIT model in ComfyUI with
+    # the cast's portraits as references, so identity and art style come from
+    # one source. The first cartoon renders switched style whenever a character
+    # spoke (talking shots used a fixed portrait from another model). Off, or a
+    # failed render, falls back to the image-gen text path.
+    'video_reference_frames_enabled': 'true',
+    'video_reference_model': 'qwen_image_edit_2511_fp8mixed.safetensors',
+    'video_reference_lora': 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors',
+    'video_reference_text_encoder': 'qwen_2.5_vl_7b_fp8_scaled.safetensors',
+    'video_reference_vae': 'qwen_image_vae.safetensors',
+    'video_reference_steps': '4',
+    'video_reference_cfg': '1.0',
+    'video_reference_shift': '3.1',
+    # FluxKontextMultiReferenceLatentMethod mode; empty = node omitted.
+    'video_reference_latent_method': 'index_timestep_zero',
+    'video_reference_timeout_s': '300',
+    'video_reference_width': '1024',
+    'video_reference_height': '576',
+    # How the edit model is told which reference is whom ({n}, {name},
+    # {references}, {prompt}).
+    'video_reference_name_template': 'Picture {n} is {name}',
+    'video_reference_prompt_template': (
+        "{references}. Draw a new picture with these characters, keeping each "
+        "one's exact design and the art style of the pictures: {prompt}"
+    ),
+    'video_reference_style_only_template': (
+        'Draw a new picture in the exact art style of the reference pictures, '
+        'without the characters shown in them: {prompt}'
+    ),
+    # A cast shot's talking frame ({style}, {name}, {setting}; {delivery} is
+    # also available). Delivery is left out by default so a speaker gets ONE
+    # frame per scene, reused for each of their lines there — the lip-sync
+    # carries each line's expression. With it, every line drew its own frame.
+    # "alone": with only the speaker's portrait as reference, the edit model
+    # drew a generic human listener beside Nova (2026-10-13), which is also a
+    # second mouth for the lip-sync to pick.
+    'story_talking_frame_template': (
+        '{style}, medium close-up of {name} alone in the frame, facing the '
+        'viewer and talking, in {setting}'
+    ),
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
     # PUNISHES stillness — 静态 (static), 静止 (still), 静止不动的画面 (motionless
@@ -6401,6 +6443,22 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_cast_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_cast_negative_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_reference_frames_enabled': {'owner': 'reference_frames', 'value_type': 'boolean'},
+    'video_reference_model': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_lora': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_text_encoder': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_vae': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_steps': {'owner': 'reference_frames', 'value_type': 'integer'},
+    'video_reference_cfg': {'owner': 'reference_frames', 'value_type': 'float'},
+    'video_reference_shift': {'owner': 'reference_frames', 'value_type': 'float'},
+    'video_reference_latent_method': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_timeout_s': {'owner': 'reference_frames', 'value_type': 'float'},
+    'video_reference_width': {'owner': 'reference_frames', 'value_type': 'integer'},
+    'video_reference_height': {'owner': 'reference_frames', 'value_type': 'integer'},
+    'video_reference_name_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_prompt_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_style_only_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_clip_interpolation_engine': {'owner': 'video', 'value_type': 'string'},

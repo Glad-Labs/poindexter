@@ -51,6 +51,14 @@ SCREENPLAY = {
 SECONDS = {"two seconds": 2.0, "three seconds": 3.0, "one second": 1.0}
 
 
+@pytest.fixture(autouse=True)
+def no_reclaim(monkeypatch):
+    """The retry path reclaims the render GPU; never touch the real ladder."""
+    mock = AsyncMock()
+    monkeypatch.setattr(da, "_reclaim_for_tts", mock)
+    return mock
+
+
 @pytest.fixture
 def fake_ffmpeg(monkeypatch):
     """Stub the four ffmpeg/ffprobe calls; durations come from the file name."""
@@ -168,6 +176,22 @@ class TestFailures:
             SCREENPLAY, site_config=_sc(), output_path=str(tmp_path / "d.wav"), synthesize=flaky,
         )
         assert len([b for b in out["timeline"] if b["kind"] == "line"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_a_failed_line_reclaims_the_gpu_before_retrying(self, fake_ffmpeg, tmp_path, no_reclaim):
+        attempts = {"n": 0}
+        good = _synth(fake_ffmpeg, [])
+
+        async def oom_once(text, persona, path):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise RuntimeError("CUDA out of memory")
+            return await good(text, persona, path)
+
+        await da.render_dialogue(
+            SCREENPLAY, site_config=_sc(), output_path=str(tmp_path / "d.wav"), synthesize=oom_once,
+        )
+        assert no_reclaim.await_count == 1
 
     @pytest.mark.asyncio
     async def test_a_line_that_fails_twice_stops_the_run(self, fake_ffmpeg, tmp_path):

@@ -278,12 +278,53 @@ async def write_visuals(
     return out, model
 
 
+def _talking_frame_prompt(shot: dict[str, Any], style: str, site_config: Any) -> str:
+    """The cast shot's first frame: the speaker in this scene, in this style.
+
+    The renderer draws it from the speaker's portrait (reference-conditioned)
+    and lip-syncs it, so the talking shot matches the stills around it
+    (poindexter#1141). Wording is ``story_talking_frame_template``.
+    """
+    from poindexter.services.persona_service import get_persona
+
+    persona = get_persona(site_config, shot["speaker"]) if site_config is not None else None
+    name = (getattr(persona, "display_name", "") or shot["speaker"]) if persona else shot["speaker"]
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    template = str(
+        (site_config.get("story_talking_frame_template", None) if site_config is not None else None)
+        or DEFAULTS["story_talking_frame_template"]
+    )
+    text = (
+        template.replace("{style}", style or "")
+        .replace("{name}", name)
+        .replace("{delivery}", shot.get("delivery") or "expressive")
+        .replace("{setting}", shot.get("setting") or "the scene")
+    )
+    return text.strip(" ,")[:1500]
+
+
+def _talking_intent(shot: dict[str, Any], site_config: Any) -> str:
+    """What a talking shot should show: who (with their looks) and where."""
+    from poindexter.services.persona_service import get_persona
+
+    persona = get_persona(site_config, shot["speaker"]) if site_config is not None else None
+    who = shot["speaker"]
+    if persona is not None:
+        name = persona.display_name or shot["speaker"]
+        looks = persona.visual_description
+        who = f"{name}, {looks}," if looks else name
+    where = f" in {shot['setting']}" if shot.get("setting") else ""
+    return f"{who} talking{where}"[:200]
+
+
 def build_shot_list(
     plan: list[dict[str, Any]],
     visuals: dict[int, dict[str, str]],
     *,
     style: str,
     director_model: str,
+    site_config: Any = None,
 ) -> dict[str, Any]:
     """Assemble and validate the ``VideoShotList``. Raises DirectorError."""
     from pydantic import ValidationError
@@ -308,11 +349,14 @@ def build_shot_list(
         # threshold and was swapped for a held frame (2026-10-12 test, shot 12).
         if s["source"] == "presenter":
             shot["speaker"] = s["speaker"]
-            shot["intent"] = (f"{s['speaker']} talking — {s['setting']}" if s["setting"]
-                              else f"{s['speaker']} talking")[:200]
+            # The judge must know what the speaker LOOKS like to catch a wrong
+            # face: S2V handed a smeared frame of a robot owl invented a human
+            # woman, and "nova talking" alone cannot flag that (2026-10-13).
+            shot["intent"] = _talking_intent(s, site_config)
             note = "; ".join(p for p in (s.get("delivery"), s.get("setting")) if p)
             if note:
                 shot["prompt"] = note[:2000]
+            shot["frame_prompt"] = _talking_frame_prompt(s, style, site_config)
         else:
             seen = visuals.get(i) or {}
             picture = seen.get("prompt") or f"{s['setting']}. {s['beat_text']}".strip(". ")
@@ -350,7 +394,7 @@ async def direct_screenplay(
 ) -> dict[str, Any]:
     plan = assign_sources(plan_shots(screenplay, timeline, track_seconds, site_config), site_config)
     visuals, model = await write_visuals(plan, screenplay, site_config=site_config, pool=pool, task_id=task_id)
-    listing = build_shot_list(plan, visuals, style=style, director_model=model)
+    listing = build_shot_list(plan, visuals, style=style, director_model=model, site_config=site_config)
     counts: dict[str, int] = {}
     for s in listing["shots"]:
         counts[s["source"]] = counts.get(s["source"], 0) + 1

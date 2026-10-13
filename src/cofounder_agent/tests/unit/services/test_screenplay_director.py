@@ -165,7 +165,12 @@ class TestBuild:
         plan = _plan()
         listing = sd.build_shot_list(plan, {}, style="anime", director_model="m")
         talk = next(s for s in listing["shots"] if s["source"] == "presenter")
-        assert talk["intent"] == f"{talk['speaker']} talking — a cosy lab at night"
+        assert talk["intent"] == f"{talk['speaker']} talking in a cosy lab at night"
+        with_looks = sd.build_shot_list(plan, {}, style="anime", director_model="m",
+                                        site_config=_sc(**{"persona.dex.appearance": "a fox in goggles",
+                                                           "persona.nova.appearance": "a robot owl"}))
+        talk2 = next(s for s in with_looks["shots"] if s["source"] == "presenter")
+        assert talk2["intent"].startswith(("Dex, a fox in goggles, talking", "Nova, a robot owl, talking"))
         for shot in listing["shots"]:
             if shot["source"] != "presenter":
                 assert shot["intent"].startswith("a cosy lab at night")

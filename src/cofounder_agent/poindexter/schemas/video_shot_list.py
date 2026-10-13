@@ -183,6 +183,16 @@ class Shot(BaseModel):
         ),
     )
 
+    frame_prompt: str | None = Field(
+        None,
+        max_length=1500,
+        description=(
+            "Cast shots: the prompt for this scene's talking frame — the speaker "
+            "drawn in this scene's setting and style, from their portrait. The "
+            "lip-sync animates it instead of the fixed portrait (poindexter#1141)"
+        ),
+    )
+
     @field_validator("characters")
     @classmethod
     def _validate_characters_are_slugs(cls, value: list[str]) -> list[str]:
