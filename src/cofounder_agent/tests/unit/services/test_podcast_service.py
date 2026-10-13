@@ -2339,3 +2339,28 @@ class TestRedundantInitialismIsDroppedForSpeech:
         sc = SiteConfig(initial_config={"tts_drop_redundant_initialism": "false", "tts_pronunciations": json.dumps({}), "tts_spell_numbers_enabled": "false"})
         out = _normalize_for_speech("large language model (LLM) performance", site_config=sc)
         assert "LLM" in out
+
+
+class TestSeededPronunciations:
+    """Entries in the SHIPPED ``tts_pronunciations`` default, read from DEFAULTS so
+    a test map cannot stand in for what a fresh install actually gets."""
+
+    @staticmethod
+    def _seeded_sc():
+        from poindexter.services.settings_defaults import DEFAULTS
+        from poindexter.services.site_config import SiteConfig
+        return SiteConfig(initial_config={"tts_pronunciations": DEFAULTS["tts_pronunciations"]})
+
+    def test_oss_is_spelled_out_in_every_casing(self):
+        """Scripts write the model name lowercase ("gpt oss"), and Chatterbox's
+        lowercase vocabulary read "oss" as a word: whisper heard "GPT-OS" on 3 of 3
+        renders, "GPT OSS" on 3 of 3 once spelled (2026-10-13)."""
+        out = _normalize_for_speech(
+            "OpenAI shipped gpt oss, then GPT-OSS and gpt-oss again.", site_config=self._seeded_sc(),
+        )
+        assert out.count("O S S") == 3
+        assert "oss" not in out.lower().replace("o s s", "")
+
+    def test_oss_inside_a_word_is_untouched(self):
+        out = _normalize_for_speech("The boss tossed the moss.", site_config=self._seeded_sc())
+        assert out == "The boss tossed the moss."

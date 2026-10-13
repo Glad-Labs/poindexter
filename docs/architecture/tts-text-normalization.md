@@ -347,3 +347,14 @@ ALL-CAPS brand words (TEAMGROUP) and digit-bearing product codes (SN770M,
 MP44S) still hesitate about 3× as often as plain words. Folding them is not
 safe without knowing which are spelled out (MSI) and which are words (ASUS).
 That is an operator call per name, through `tts_pronunciations`.
+
+### A lowercase acronym is read as a word (2026-10-13)
+
+The same lowercase vocabulary runs the other way. Scripts copy a model's
+literal name, and "gpt oss" reached the engine as written. Whisper heard
+"GPT-OS" on 3 of 3 renders, because "oss" has word-like pieces to read.
+Spelled "O S S", it heard "GPT OSS" on 3 of 3. The fix is the existing
+`tts_pronunciations` map (`"OSS": "O S S"`). It matches whole words in any
+casing, so "oss", "OSS" and "gpt-oss" all get it, while "boss" and "moss"
+don't. Any acronym a script may write in lowercase needs an entry there. The
+name fold cannot help: it never uppercases.
