@@ -890,3 +890,34 @@ class TestEndcardCtaThreading:
                 state, shot_list_key="video_shot_list", output_key="long_video_path"
             )
         assert mock_render.await_args.kwargs["endcard_cta_text"] == ""
+
+
+class TestExactTiming:
+    """A shot list built from a measured dialogue track (timing="exact") must
+    render on its planned timeline. Under the narration fit, the 2026-10-12
+    screenplay test clamped its short action shots up to
+    video_fit_min_shot_seconds and drifted the lip-sync 7.4 s by the end."""
+
+    @pytest.mark.asyncio
+    async def test_exact_timing_turns_the_narration_fit_off(self):
+        state = {"task_id": "t-1", "video_shot_list": {**_LONG_SHOT_LIST, "timing": "exact"},
+                 "site_config": SiteConfig(initial_config={})}
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path",
+                narration_fit=True,
+            )
+        assert mock_render.await_args.kwargs["narration_fit"] is False
+
+    @pytest.mark.asyncio
+    async def test_fit_timing_keeps_the_fit(self):
+        state = {"task_id": "t-1", "video_shot_list": _LONG_SHOT_LIST,
+                 "site_config": SiteConfig(initial_config={})}
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path",
+                narration_fit=True,
+            )
+        assert mock_render.await_args.kwargs["narration_fit"] is True

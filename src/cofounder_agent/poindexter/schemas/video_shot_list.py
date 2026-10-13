@@ -354,6 +354,20 @@ class VideoShotList(BaseModel):
         description="Output aspect ratio: 16:9 long-form, 9:16 short-form",
     )
     total_duration_s: float = Field(..., gt=0, description="Sum of shot durations; matches podcast length ±1s")
+    # How the renderer times the shots against the narration (poindexter#1134).
+    # "fit": the director planned on an estimated timeline, so the assembly
+    # stretches/compresses shots to the real narration (min/max shot clamps,
+    # the end-card carve-out) — the blog explainer path. "exact": the shots
+    # already tile the measured track (the screenplay director builds them
+    # from media.render_dialogue's timeline), so any fit would move them off
+    # their words. The 2-minute screenplay test on 2026-10-12 drifted 7.4 s
+    # by the end under "fit": its 0.5-1.5 s action shots were clamped up to
+    # video_fit_min_shot_seconds (2.0), and every lip-sync window after them
+    # was cut from later audio.
+    timing: Literal["fit", "exact"] = Field(
+        "fit",
+        description="'fit' = stretch shots to the narration; 'exact' = shots already tile the track",
+    )
     # 120, not the blog director's 30: a three-minute screenplay at ~5 s a
     # shot is ~36 shots (poindexter#1135). The blog director keeps its own cap.
     shots: list[Shot] = Field(..., min_length=1, max_length=MAX_SHOTS)

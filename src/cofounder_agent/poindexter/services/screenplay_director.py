@@ -298,22 +298,25 @@ def build_shot_list(
     shots: list[dict[str, Any]] = []
     for i, s in enumerate(plan):
         duration = round(s["length"], 3)
-        intent = (
-            f"{s['speaker']}: {s['beat_text']}" if s["source"] == "presenter"
-            else f"{s['beat_kind'] or 'scene'}: {s['beat_text']}"
-        )[:200] or "scene"
         shot: dict[str, Any] = {
-            "idx": i, "duration_s": duration, "intent": intent, "source": s["source"],
+            "idx": i, "duration_s": duration, "source": s["source"],
             "narration_offset_s": round(s["start_s"], 3), "characters": list(s["characters"]),
         }
+        # ``intent`` is what the per-shot vision QA grades the frame against,
+        # so it describes the PICTURE, never the spoken line: graded against
+        # dialogue text, a correct frame of a character talking scored under
+        # threshold and was swapped for a held frame (2026-10-12 test, shot 12).
         if s["source"] == "presenter":
             shot["speaker"] = s["speaker"]
+            shot["intent"] = (f"{s['speaker']} talking — {s['setting']}" if s["setting"]
+                              else f"{s['speaker']} talking")[:200]
             note = "; ".join(p for p in (s.get("delivery"), s.get("setting")) if p)
             if note:
                 shot["prompt"] = note[:2000]
         else:
             seen = visuals.get(i) or {}
             picture = seen.get("prompt") or f"{s['setting']}. {s['beat_text']}".strip(". ")
+            shot["intent"] = picture[:200] or "scene"
             shot["prompt"] = (f"{style}, {picture}" if style else picture)[:1500]
             if s["source"] == "generative":
                 shot["motion"] = (seen.get("motion") or "gentle camera push-in, subtle character motion")[:500]
@@ -321,6 +324,9 @@ def build_shot_list(
     try:
         listing = VideoShotList.model_validate({
             "aspect": "16:9",
+            # The shots tile the measured dialogue track: the renderer must not
+            # re-fit them (see VideoShotList.timing).
+            "timing": "exact",
             "total_duration_s": round(sum(s["duration_s"] for s in shots), 3),
             "shots": shots,
             "director_model": director_model,

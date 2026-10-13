@@ -594,8 +594,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             return text
         return _normalize_for_speech(text, site_config=site_config)
 
+    # A screenplay's dialogue track (media.render_dialogue, which leaves its
+    # dialogue_timeline on state) voices its lines and nothing else, so its
+    # captions carry no CTA. Appending media.cta.video here captioned "If this
+    # helped, like the video and subscribe" over a cartoon's last line, a
+    # line nobody spoke (2026-10-12 creative-studio test).
+    long_cta_key = "" if state.get("dialogue_timeline") else "media.cta.video"
     long_caption_text = compose_narration_text(
-        script=long_script, cta_key="media.cta.video", site_config=site_config,
+        script=long_script, cta_key=long_cta_key, site_config=site_config,
     )
     short_caption_text = compose_narration_text(
         script=state.get("short_summary_script") or "",

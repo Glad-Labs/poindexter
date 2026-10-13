@@ -225,6 +225,16 @@ async def render_from_state(
         if site_config is not None
         else True
     )
+    if fit_enabled and shot_list.timing == "exact":
+        # The shots already tile the measured narration (screenplay
+        # director); fitting would clamp short shots and drift every
+        # lip-sync window after them. No fit also means no end-card
+        # carve-out, which would cover the last line of dialogue.
+        logger.info(
+            "[media_render] %s has timing=exact — rendering on the planned "
+            "timeline, no narration fit or end-card", shot_list_key,
+        )
+        fit_enabled = False
     fit_max_shot_s = (
         site_config.get_float(
             narration_fit_max_shot_key, narration_fit_max_shot_default,

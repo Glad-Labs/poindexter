@@ -266,6 +266,34 @@ async def test_run_diffs_against_voiced_text_script_plus_cta(monkeypatch):
     assert seen["short"] == "Short summary body.\n\nFollow for more."
 
 
+@pytest.mark.asyncio
+async def test_dialogue_track_captions_carry_no_cta(monkeypatch):
+    """A screenplay's dialogue track never voices the video CTA, so neither its
+    fidelity reference nor its captions may carry one (a 2026-10-12 cartoon
+    captioned "If this helped, like the video and subscribe" over its last
+    line)."""
+    seen = {}
+
+    async def _fake_one(*, audio_path, script, caption_text="", task_id, label, site_config):
+        seen[label] = (script, caption_text)
+        return f"/tmp/{task_id}_{label}.srt"
+
+    monkeypatch.setattr(media_transcribe_narration, "_transcribe_one", _fake_one)
+    site_config = SimpleNamespace(
+        get=lambda key, default=None: {"media.cta.video": "Subscribe to the channel."}.get(key, default)
+    )
+    await transcribe_run({
+        "task_id": "t1",
+        "long_narration_audio_path": "/tmp/dialogue.wav",
+        "video_long_script": "Hey Nova.\nHello Dex.",
+        "dialogue_timeline": [{"kind": "line"}],
+        "site_config": site_config,
+    })
+    script, caption = seen["long"]
+    assert "Subscribe" not in script and "Subscribe" not in caption
+    assert caption == "Hey Nova.\nHello Dex."
+
+
 def test_atom_meta_shape():
     from poindexter.modules.content.atoms.media_transcribe_narration import ATOM_META
 

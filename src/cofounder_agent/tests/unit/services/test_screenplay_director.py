@@ -157,6 +157,18 @@ class TestBuild:
         still = next(s for s in listing["shots"] if s["source"] != "presenter")
         assert still["prompt"].startswith("flat 2D cartoon, ")
         assert listing["director_prompt_version"] == sd.DIRECTOR_PROMPT_VERSION
+        assert listing["timing"] == "exact"
+
+    def test_intents_describe_pictures_not_dialogue(self):
+        """Vision QA grades the frame against ``intent``; a spoken line there
+        made a correct talking frame fail and fall back to a held frame."""
+        plan = _plan()
+        listing = sd.build_shot_list(plan, {}, style="anime", director_model="m")
+        talk = next(s for s in listing["shots"] if s["source"] == "presenter")
+        assert talk["intent"] == f"{talk['speaker']} talking — a cosy lab at night"
+        for shot in listing["shots"]:
+            if shot["source"] != "presenter":
+                assert shot["intent"].startswith("a cosy lab at night")
 
     def test_llm_visuals_replace_the_fallback(self):
         plan = _plan()
