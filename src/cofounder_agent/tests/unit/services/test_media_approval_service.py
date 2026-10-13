@@ -531,6 +531,44 @@ async def test_list_pending_medium_filter_validates(mock_db: MagicMock) -> None:
         await media_approval_service.list_pending(mock_db, medium="audio")
 
 
+class _SC:
+    def __init__(self, **v):
+        self._v = v
+
+    def get(self, key, default=None):
+        return self._v.get(key, default)
+
+
+async def test_a_pending_short_shows_the_title_it_will_upload_under(mock_db: MagicMock) -> None:
+    """The drawer reviews what goes up: the package title with the suffix the
+    upload adds, and the description's opening lines. jsonb may arrive as text."""
+    mock_db.fetch.return_value = [
+        {
+            "post_id": "abc", "medium": "video_short", "title": "Post", "slug": "post",
+            "youtube_package": '{"title": "RTX 5090 fits 70B at 4-bit", "description": "Lead."}',
+        },
+        {"post_id": "def", "medium": "video_short", "title": "Post", "slug": "p", "youtube_package": None},
+        {"post_id": "ghi", "medium": "podcast", "title": "Post", "slug": "q", "youtube_package": None},
+    ]
+    rows = await media_approval_service.list_pending(
+        mock_db, site_config=_SC(youtube_short_title_suffix=" #Shorts"),
+    )
+    assert rows[0]["youtube_title"] == "RTX 5090 fits 70B at 4-bit #Shorts"
+    assert rows[0]["youtube_description"] == "Lead."
+    assert "youtube_package" not in rows[0]
+    assert "youtube_title" not in rows[1] and "youtube_title" not in rows[2]
+    sql = mock_db.fetch.await_args.args[0]
+    assert "youtube_package" in sql and "mas.type = 'video_short'" in sql
+
+
+async def test_the_short_has_its_own_thumbnail_and_a_podcast_none(mock_db: MagicMock) -> None:
+    mock_db.fetchrow.return_value = {"storage_path": "/v/t_short_thumbnail.jpg"}
+    got = await media_approval_service.get_thumbnail_storage_path(mock_db, "abc", "video_short")
+    assert got == "/v/t_short_thumbnail.jpg"
+    assert mock_db.fetchrow.await_args.args[1:] == ("abc", "video_short_thumbnail")
+    assert await media_approval_service.get_thumbnail_storage_path(mock_db, "abc", "podcast") is None
+
+
 # ---------------------------------------------------------------------------
 # notify_pending_for_review — Discord ops ping when a new medium needs review
 # ---------------------------------------------------------------------------

@@ -35,8 +35,8 @@ from poindexter.services.jobs.youtube_payload import (
     _build_youtube_title,
     _parse_seo_keywords,
     hashtags_for_short,
-    short_hook_line,
-    short_hook_title,
+    short_lead,
+    short_title_hook,
     twin_watch_url,
 )
 from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND
@@ -47,6 +47,7 @@ from poindexter.services.short_hook import (
     runaway_factor,
     strip_preamble,
 )
+from poindexter.services.short_package import ShortPackage
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -80,6 +81,9 @@ _TARGETS_SQL = """
            pd.task_id,
            -- The Short's own narration (its title + description hook, 2026-09-22).
            pv.stage_data -> 'task_metadata' ->> 'short_summary_script' AS short_script,
+           -- Its reviewed package (title + description lead written as such,
+           -- 2026-10-13), which wins over the narration when present.
+           pkg.youtube_package,
            -- The pair's other render, only while it is LIVE: the cross-link is
            -- composed from this and recomposed when the twin lands or vanishes.
            twin.external_id AS twin_video_id,
@@ -101,6 +105,13 @@ _TARGETS_SQL = """
               AND t.medium <> pd.medium
             ORDER BY t.published_at DESC NULLS LAST LIMIT 1
       ) twin ON TRUE
+      LEFT JOIN LATERAL (
+           SELECT m.metadata -> 'youtube_package' AS youtube_package FROM media_assets m
+            WHERE m.task_id::text = pd.task_id
+              AND m.type = 'video_short'
+              AND pd.medium = 'video_short'
+            ORDER BY m.created_at DESC LIMIT 1
+      ) pkg ON TRUE
      WHERE pd.target = 'youtube'
        AND pd.status = 'published'
        AND pd.external_id IS NOT NULL
@@ -272,8 +283,15 @@ def stored_hook_defects(row: dict[str, Any], site_config: Any) -> tuple[str, ...
     boundary and that is the designed behaviour. Only the defects a shorten
     cannot fix (a question, a run-on, a restatement of the title) are worth a
     corrective call.
+
+    A Short with a reviewed package title has none either: its title no
+    longer comes from the narration, so repairing the narration would pay a
+    model call for text that never reaches YouTube.
     """
     if row.get("medium") != "video_short":
+        return ()
+    package = ShortPackage.from_metadata(_as_dict(row.get("youtube_package")))
+    if package is not None and package.title:
         return ()
     script = str(row.get("short_script") or "")
     if not script.strip():
@@ -352,13 +370,15 @@ async def _repair_stored_hook(
 def _compose(row: dict[str, Any], site_config: Any) -> tuple[str, str, list[str]]:
     """Recompose (title, description, tags) exactly as an upload would.
 
-    Same builders, same inputs as ``media_distribute``: the Short's hook from
-    its narration, the twin's live URL for the cross-link (``twin_video_id``
-    is NULL when the other render is not published — the line is then
-    omitted, so a re-sync after a twin vanishes drops the dead link).
+    Same builders, same inputs as ``media_distribute``: the Short's reviewed
+    package when it has one, else the hook from its narration; the twin's live
+    URL for the cross-link (``twin_video_id`` is NULL when the other render is
+    not published — the line is then omitted, so a re-sync after a twin
+    vanishes drops the dead link).
     """
     shorts = row.get("medium") == "video_short"
     script = str(row.get("short_script") or "")
+    package = ShortPackage.from_metadata(_as_dict(row.get("youtube_package"))) if shorts else None
     tags = _parse_seo_keywords(row.get("seo_keywords") or "")
     twin_url = twin_watch_url(str(row.get("twin_video_id") or ""), twin_is_short=not shorts)
     description = _build_youtube_description(
@@ -367,7 +387,7 @@ def _compose(row: dict[str, Any], site_config: Any) -> tuple[str, str, list[str]
         site_config=site_config,
         slug=row.get("slug") or "",
         shorts=shorts,
-        hook=short_hook_line(script) if shorts else "",
+        hook=short_lead(package, script) if shorts else "",
         twin_url=twin_url,
         hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
     )
@@ -375,9 +395,21 @@ def _compose(row: dict[str, Any], site_config: Any) -> tuple[str, str, list[str]
         row.get("title") or "",
         shorts=shorts,
         site_config=site_config,
-        hook=short_hook_title(script, site_config=site_config) if shorts else "",
+        hook=short_title_hook(package, script, site_config=site_config) if shorts else "",
     )
     return (title, description, tags)
+
+
+def _as_dict(raw: Any) -> Any:
+    """asyncpg hands jsonb back as text unless a codec is set; accept either."""
+    if isinstance(raw, str):
+        import json
+
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return None
+    return raw
 
 
 async def sync_youtube_metadata(

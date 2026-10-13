@@ -107,3 +107,12 @@ test('offline (not live) is null without a request', async () => {
   assert.equal(await api.mediaThumbnailBlob('p1'), null);
   assert.equal(calls.api.length, 0);
 });
+
+test("a Short's vertical thumbnail is fetched under its own medium", async () => {
+  const { api, calls } = makeAdapter(() => res('jpeg-bytes'));
+  await api.mediaThumbnailBlob('post 1', 'video_short');
+  assert.match(
+    calls.api[0].url,
+    /\/api\/media-approval\/post%201\/video_short\/thumbnail$/
+  );
+});

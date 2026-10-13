@@ -2,11 +2,11 @@
 
 ## What each upload carries
 
-| Field       | Long form                                                                                                     | Short                                                                                                                                                     | Limit enforced                 |
-| ----------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Title       | `posts.title`                                                                                                 | first sentence of its own narration (`short_summary_script`), ≤ `youtube_short_title_max_chars`, + `#Shorts`                                              | 100 chars (adapter clamps)     |
-| Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet | its first two sentences · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
-| Tags        | `posts.seo_keywords`, comma-split                                                                             | same                                                                                                                                                      | 30 tags / 500 joined chars     |
+| Field       | Long form                                                                                                     | Short                                                                                                                                                                             | Limit enforced                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Title       | `posts.title`                                                                                                 | its reviewed package title (written as a title, checked, kept whole) + `#Shorts`; else the first sentence of its narration                                                        | 100 chars (adapter clamps)     |
+| Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet | its package lead (else its first two sentences) · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
+| Tags        | `posts.seo_keywords`, comma-split                                                                             | same                                                                                                                                                                              | 30 tags / 500 joined chars     |
 
 Composed by `services/jobs/youtube_payload.py`, dispatched by
 `services/jobs/media_distribute.py`. The back-link carries
@@ -166,10 +166,10 @@ re-consent that named only a new scope used to drop the old ones: running
 grant from Google and requests it again alongside anything new, and it prints
 each scope with the feature it unlocks. `--reset-scopes` narrows on purpose.
 
-| Flag | Scope added | Unlocks |
-| --- | --- | --- |
-| _(none)_ | `youtube.upload` | uploads, custom thumbnails |
-| `--with-update` | `youtube.force-ssl` | `youtube sync-metadata` (`videos.update`) |
+| Flag               | Scope added             | Unlocks                                                                                           |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------- |
+| _(none)_           | `youtube.upload`        | uploads, custom thumbnails                                                                        |
+| `--with-update`    | `youtube.force-ssl`     | `youtube sync-metadata` (`videos.update`)                                                         |
 | `--with-analytics` | `yt-analytics.readonly` | the [`youtube_reach` tap](/docs/integrations/tap_youtube_reporting) (thumbnail impressions + CTR) |
 
 `poindexter integrations youtube scopes` shows what the stored token holds
@@ -238,7 +238,8 @@ Shorts viewers into long-form viewers.
 Now (`services/jobs/youtube_payload.py`, both the upload and the sync go
 through the same builders):
 
-- **Short title** = the first sentence of its narration, shortened on a word
+- **Short title** = its reviewed package title when it has one (next
+  section), else the first sentence of its narration, shortened on a word
   boundary to `youtube_short_title_max_chars` (default **70** — punchy
   without clipping; see the budget note below), then the suffix. That first
   sentence is
@@ -258,6 +259,85 @@ utm_medium=shorts` · `#Shorts` plus up to `youtube_short_hashtags_max`
   CamelCase hashtags from `seo_keywords`. No body snippet on a Short.
 - **Long-form description** gains `Watch the Short:
 https://www.youtube.com/shorts/<short id>` after the article link.
+
+### The Short's own title and description (2026-10-13)
+
+Titling a Short from its narration kept producing spoken lines cut to fit. On
+the channel on 2026-10-13, the live Short titles included:
+
+```
+DeepSeek and Huawei's open-source tools for Ascend chips signify a #Shorts
+On June 19th, a GPU lock bug was quietly wreaking havoc on our #Shorts
+Three hundred fifty days have passed since OpenAI's last #Shorts
+```
+
+The first two were cut mid-phrase. The third carries the speech engine's
+spelling of a number, because narration is normalised for TTS. The
+description opened with the same spoken text.
+
+So a Short now gets its own **package**, written at render time by the
+`media.package_short` node (`services/short_package.py`). The director model
+writes a title from the `video.short_title` prompt and a one- or two-sentence
+lead from `video.short_description`, both in
+`skills/content/video-director/SKILL.md`. Code checks each one:
+
+| Check      | Title                                                                        | Description lead                                           |
+| ---------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| length     | fits **whole** in `youtube_short_title_max_chars`, never cut                 | ≤ `youtube_short_description_max_chars` (300)              |
+| numbers    | every number appears in the post or the narration                            | same                                                       |
+| opener     | no describes-the-video opener; a run-up is stripped if a whole title remains | no run-up or describes-the-video opener, judged as written |
+| searchable | names an entity (`services/title_searchability.py`)                          | —                                                          |
+| distinct   | not a restatement of the long video's title                                  | not the title again; no links or hashtags (code adds them) |
+
+A rejected line gets one corrective retry carrying the reason
+(`services/checked_llm_line.py`, shared with the thumbnail hook). A line that
+fails twice is left empty, and that field falls back to the narration as
+before. The package is stored on the Short's `video_short` row as
+`metadata.youtube_package` and shown in the console's media drawer under
+"YouTube — uploads with this Short", title exactly as it will upload.
+`media_distribute` and `sync-metadata` both read it. A Short with a package
+title no longer has its narration hook repaired by `sync-metadata`, since the
+narration no longer reaches the title.
+
+Measured over the 10 Shorts live on 2026-10-13 with the production director
+model (gemma-4-31B), about 3 s per Short:
+
+| Before (live)                                                                  | Package title                                      |
+| ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Three hundred fifty days have passed since OpenAI's last #Shorts               | OpenAI gpt-oss: No new models in 350 days          |
+| DeepSeek and Huawei's open-source tools for Ascend chips signify a #Shorts     | DeepSeek & Huawei: Breaking AI Software Monopolies |
+| In distributed reinforcement learning training, keeping policy weights #Shorts | GRPO Training: Sync LoRA Adapters to Skip NCCL     |
+| On June 19th, a GPU lock bug was quietly wreaking havoc on our #Shorts         | GPU Lock Bug: How we fixed our RAG sweep           |
+
+All 10 titles passed on the first try. 7 of 10 leads needed the retry, and 2
+failed twice at 222 and 224 characters, which is why the lead limit is 300 and
+not the 220 first tried.
+
+**Shorts rendered before packages existed.** Write packages for every Short
+on YouTube or awaiting approval (a local write, nothing sent), read them, then
+push the live ones (a pending Short uploads with its package when approved):
+
+```bash
+docker exec poindexter-worker python -m poindexter.cli integrations youtube short-package
+```
+
+```bash
+docker exec poindexter-worker python -m poindexter.cli integrations youtube sync-metadata --apply
+```
+
+`short-package --recompose` re-rolls stored packages, and
+`--post <id> --title "TEXT"` (or `--description`) sets one Short's text by
+hand, with no model call and no checks.
+
+| Key                                     | Default | What it does                                                                               |
+| --------------------------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `youtube_short_package_enabled`         | `true`  | Write the package at render time. Off: Shorts keep the narration-derived title and opener. |
+| `youtube_short_package_model`           | empty   | Model for both lines. Empty = `video_thumbnail_hook_model`, then `video_director_model`.   |
+| `youtube_short_package_temperature`     | `0.6`   | Sampling temperature.                                                                      |
+| `youtube_short_package_max_tokens`      | `256`   | Reply budget per call.                                                                     |
+| `youtube_short_package_timeout_seconds` | `90`    | How long a call may run before that line falls back.                                       |
+| `youtube_short_title_max_words`         | `10`    | Asked of the model. `youtube_short_title_max_chars` (70) is what code enforces.            |
+| `youtube_short_description_max_chars`   | `300`   | Longest lead accepted.                                                                     |
 
 ### The hook the title comes from
 

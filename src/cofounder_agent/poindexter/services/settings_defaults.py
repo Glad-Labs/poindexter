@@ -830,7 +830,7 @@ DEFAULTS: dict[str, str] = {
     # Trailing words of the hook drawn in the accent colour.
     'video_thumbnail_accent_words': '1',
     'video_thumbnail_uppercase': 'true',
-    # left | center | bottom (full-bleed backgrounds).
+    # left | center | bottom | top (full-bleed backgrounds; top is the Short's).
     'video_thumbnail_text_position': 'left',
     'video_thumbnail_text_width_pct': '52',
     # right = a person on the right, text beside it; cover = full-bleed.
@@ -856,6 +856,38 @@ DEFAULTS: dict[str, str] = {
     'video_thumbnail_frame_at_s': '5.0',
     # Upload the composed thumbnail with the long-form video.
     'youtube_custom_thumbnail_enabled': 'true',
+    # ----- The Short's YouTube package (services/short_package.py, 2026-10-13) -----
+    # A Short's own title and description lead, written by the director model
+    # AS a title and checked in code (kept whole, numbers from the post,
+    # searchable subject, no describes-the-video opener, not the long title),
+    # at render time so they are reviewed with the Short. Off, or a line that
+    # fails its checks twice = the narration-derived title and opener, as
+    # every Short shipped before.
+    'youtube_short_package_enabled': 'true',
+    # Model for the title and description; empty = video_thumbnail_hook_model,
+    # then video_director_model (the same model the render already has loaded).
+    'youtube_short_package_model': '',
+    'youtube_short_package_temperature': '0.6',
+    'youtube_short_package_max_tokens': '256',
+    'youtube_short_package_timeout_seconds': '90',
+    # Asked of the model; youtube_short_title_max_chars is what code enforces.
+    'youtube_short_title_max_words': '10',
+    # Two sentences. 220 rejected two good leads at 222/224 chars (2026-10-13).
+    'youtube_short_description_max_chars': '300',
+    # The Short's vertical thumbnail: the long thumbnail's hook, colours and
+    # mark on a 9:16 frame, words in the top band (the Shorts player covers
+    # the bottom and right). Reviewed with the Short in the media drawer.
+    'video_short_thumbnail_enabled': 'true',
+    'video_short_thumbnail_background_order': 'featured_image,presenter_portrait,brand',
+    'video_short_thumbnail_width': '1080',
+    'video_short_thumbnail_height': '1920',
+    'video_short_thumbnail_text_position': 'top',
+    'video_short_thumbnail_max_font_px': '150',
+    'video_short_thumbnail_min_font_px': '64',
+    # Upload it with the Short. YouTube takes custom Shorts thumbnails only
+    # from Partner Program channels; elsewhere the upload still succeeds and a
+    # youtube_thumbnail_failed finding says to set this false.
+    'youtube_short_custom_thumbnail_enabled': 'true',
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
     # Minimum usable VRAM (free + ComfyUI's reusable pool) before a presenter
@@ -6467,6 +6499,21 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_thumbnail_presenter_offset_s': {'owner': 'video_thumbnail', 'value_type': 'float'},
     'video_thumbnail_frame_at_s': {'owner': 'video_thumbnail', 'value_type': 'float'},
     'youtube_custom_thumbnail_enabled': {'owner': 'media_distribute', 'value_type': 'boolean'},
+    'youtube_short_package_enabled': {'owner': 'short_package', 'value_type': 'boolean'},
+    'youtube_short_package_model': {'owner': 'short_package', 'value_type': 'model'},
+    'youtube_short_package_temperature': {'owner': 'short_package', 'value_type': 'float'},
+    'youtube_short_package_max_tokens': {'owner': 'short_package', 'value_type': 'integer'},
+    'youtube_short_package_timeout_seconds': {'owner': 'short_package', 'value_type': 'integer'},
+    'youtube_short_title_max_words': {'owner': 'short_package', 'value_type': 'integer'},
+    'youtube_short_description_max_chars': {'owner': 'short_package', 'value_type': 'integer'},
+    'video_short_thumbnail_enabled': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
+    'video_short_thumbnail_background_order': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_short_thumbnail_width': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_short_thumbnail_height': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_short_thumbnail_text_position': {'owner': 'video_thumbnail', 'value_type': 'string'},
+    'video_short_thumbnail_max_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'video_short_thumbnail_min_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
+    'youtube_short_custom_thumbnail_enabled': {'owner': 'media_distribute', 'value_type': 'boolean'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},

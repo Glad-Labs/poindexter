@@ -73,7 +73,27 @@ async def test_apply_uploads_the_stored_file_and_never_recomposes(stored):
     compose.assert_not_awaited()
     adapter.set_thumbnail.assert_awaited_once_with(video_id="VB", thumbnail_path=stored)
     stamp = pool.execute.await_args
-    assert "video_thumbnail" in stamp.args[0] and '"status": "set"' in stamp.args[2]
+    assert stamp.args[3] == "video_thumbnail" and '"status": "set"' in stamp.args[2]
+    assert pool.fetch.await_args.args[2:] == ("video", "video_thumbnail")
+
+
+async def test_the_shorts_mode_selects_shorts_and_stamps_their_own_row(stored):
+    """``--shorts`` walks the video_short rows and their video_short_thumbnail,
+    so a Short's upload outcome never lands on the long thumbnail's row."""
+    pool = _pool([_row("s", "SHORT1", thumb=stored)])
+    adapter = MagicMock()
+    adapter.set_thumbnail = AsyncMock(return_value=(False, "forbidden"))
+    with patch("poindexter.services.publish_adapters.youtube.YouTubePublishAdapter", return_value=adapter):
+        out = await bf.backfill_youtube_thumbnails(pool, None, apply=True, shorts=True)
+    assert pool.fetch.await_args.args[2:] == ("video_short", "video_short_thumbnail")
+    assert out[0].action == "upload failed" and out[0].error == "forbidden"
+    assert pool.execute.await_args.args[3] == "video_short_thumbnail"
+
+
+async def test_a_shorts_hook_needs_exactly_one_short():
+    pool = _pool([_row("a", "VA"), _row("b", "VB")])
+    with pytest.raises(ValueError, match="exactly one Short"):
+        await bf.backfill_youtube_thumbnails(pool, None, hook="X", shorts=True)
 
 
 async def test_a_refused_upload_is_reported_with_its_fix(stored):

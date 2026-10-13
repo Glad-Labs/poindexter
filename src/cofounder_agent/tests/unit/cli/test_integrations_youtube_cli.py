@@ -1135,7 +1135,7 @@ def test_thumbnails_default_is_a_dry_run_that_names_the_files(runner, monkeypatc
     calls = _stub_thumbnails(monkeypatch, [_thumb()])
     res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "thumbnails"])
     assert res.exit_code == 0, res.output
-    assert calls == [{"selector": None, "apply": False, "recompose": False, "limit": None, "hook": None}]
+    assert calls == [{"selector": None, "apply": False, "recompose": False, "limit": None, "hook": None, "shorts": False}]
     assert "DRY RUN" in res.output and "nothing sent" in res.output
     assert "/videos/t1_thumbnail.jpg" in res.output and "'No NCCL'" in res.output
     assert "re-run with --apply" in res.output
@@ -1148,7 +1148,7 @@ def test_thumbnails_flags_reach_the_service(runner, monkeypatch):
         ["youtube", "thumbnails", "--post", "vidA", "--limit", "2", "--apply"],
     )
     assert res.exit_code == 0, res.output
-    assert calls == [{"selector": "vidA", "apply": True, "recompose": False, "limit": 2, "hook": None}]
+    assert calls == [{"selector": "vidA", "apply": True, "recompose": False, "limit": 2, "hook": None, "shorts": False}]
     assert "APPLIED" in res.output and "re-run with --apply" not in res.output
 
 
@@ -1212,3 +1212,87 @@ def test_a_refused_hook_combination_exits_with_the_reason(runner, monkeypatch):
     assert res.exit_code == 1
     assert "exactly one long video" in res.output
 
+
+
+def test_thumbnails_shorts_flag_reaches_the_service_and_names_shorts(runner, monkeypatch):
+    calls = _stub_thumbnails(monkeypatch, [])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "thumbnails", "--shorts"])
+    assert res.exit_code == 0, res.output
+    assert calls[0]["shorts"] is True
+    assert "No published Shorts matched." in res.output
+
+
+# ---------------------------------------------------------------------------
+# short-package — a Short's own title + description opening (2026-10-13)
+# ---------------------------------------------------------------------------
+
+
+def _stub_packages(monkeypatch, outcomes, exc=None):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.short_package as svc
+
+    calls: list[dict[str, Any]] = []
+
+    async def _backfill(_pool, _sc, **kw):
+        calls.append(kw)
+        if exc is not None:
+            raise exc
+        return list(outcomes)
+
+    async def _wire(_pool):
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(svc, "backfill_short_packages", _backfill)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    return calls
+
+
+def _pkg_outcome(**kw: Any):
+    from poindexter.services.short_package import PackageOutcome, ShortPackage
+
+    base = dict(
+        video_id="SHORT1", task_id="t1", post_title="A post",
+        action="composed — review, then sync-metadata --apply",
+        package=ShortPackage(title="RTX 5090 fits 70B at 4-bit", description="A lead.", title_note="retry"),
+    )
+    base.update(kw)
+    return PackageOutcome(**base)  # type: ignore[arg-type]
+
+
+def test_short_package_prints_what_it_stored_and_how_to_push_it(runner, monkeypatch):
+    calls = _stub_packages(monkeypatch, [_pkg_outcome()])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "short-package"])
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": None, "recompose": False, "limit": None, "title": None, "description": None}]
+    assert "nothing sent" in res.output
+    assert "'RTX 5090 fits 70B at 4-bit'  [retry]" in res.output and "'A lead.'" in res.output
+    assert "sync-metadata --apply" in res.output
+
+
+def test_short_package_flags_reach_the_service(runner, monkeypatch):
+    calls = _stub_packages(monkeypatch, [_pkg_outcome(video_id="", action="composed — uploads with the Short when you approve it")])
+    res = runner.invoke(
+        _integrations_mod.integrations_group,
+        ["youtube", "short-package", "--post", "t1", "--title", "My title", "--description", "My lead", "--recompose", "--limit", "3"],
+    )
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": "t1", "recompose": True, "limit": 3, "title": "My title", "description": "My lead"}]
+    assert "(pending)" in res.output and "sync-metadata --apply" not in res.output
+
+
+def test_short_package_failures_and_refusals_exit_non_zero(runner, monkeypatch):
+    _stub_packages(monkeypatch, [_pkg_outcome(action="store failed", error="no video_short row took the package")])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "short-package"])
+    assert res.exit_code == 1 and "no video_short row" in res.output
+    _stub_packages(monkeypatch, [], exc=ValueError("--title/--description need --post naming exactly one Short; 9 matched"))
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "short-package", "--title", "x"])
+    assert res.exit_code == 1 and "exactly one Short" in res.output

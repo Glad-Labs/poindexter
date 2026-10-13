@@ -215,6 +215,25 @@ def short_hook_line(script: str) -> str:
     return first_sentences(" ".join(parts[:2]), max_sentences=2, limit=_SHORT_HOOK_DESCRIPTION_MAX)
 
 
+def short_title_hook(package: Any, script: str, *, site_config: Any) -> str:
+    """The Short's title before its suffix: the reviewed package's, else the narration's.
+
+    ``package`` is the ``ShortPackage`` stored at render time
+    (``services/short_package.py``): a title the director model wrote AS a
+    title and code checked, kept whole. A Short rendered before packages
+    existed, or whose title failed its checks twice, has none, and gets the
+    narration's first sentence as before (:func:`short_hook_title`).
+    """
+    title = str(getattr(package, "title", "") or "").strip()
+    return title or short_hook_title(script, site_config=site_config)
+
+
+def short_lead(package: Any, script: str) -> str:
+    """The Short's description opener: the reviewed package's, else the narration's."""
+    lead = str(getattr(package, "description", "") or "").strip()
+    return lead or short_hook_line(script)
+
+
 def hashtags_for_short(keywords: list[str], *, site_config: Any) -> list[str]:
     """``#Shorts`` plus up to ``youtube_short_hashtags_max`` CamelCase tags
     from the post's keywords (letters/digits only, deduped, over-long
@@ -471,6 +490,8 @@ __all__ = [
     "hashtags_for_short",
     "short_hook_line",
     "short_hook_title",
+    "short_lead",
+    "short_title_hook",
     "strip_preamble",
     "shorten_at_word",
     "twin_watch_url",

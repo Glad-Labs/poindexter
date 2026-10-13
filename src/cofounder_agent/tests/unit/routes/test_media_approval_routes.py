@@ -137,8 +137,17 @@ class TestThumbnail:
         assert resp.content == thumb.read_bytes()
         assert lookup.await_args.args[1] == "post-1"
 
-    def test_only_the_long_video_has_one(self):
-        resp = TestClient(_build_app()).get("/api/media-approval/post-1/video_short/thumbnail")
+    def test_the_short_streams_its_own_vertical_thumbnail(self, tmp_path):
+        thumb = tmp_path / "t_short_thumbnail.jpg"
+        thumb.write_bytes(b"\xff\xd8\xff\xe0jpeg")
+        lookup = AsyncMock(return_value=str(thumb))
+        with patch("poindexter.services.media_approval_service.get_thumbnail_storage_path", new=lookup):
+            resp = TestClient(_build_app()).get("/api/media-approval/post-1/video_short/thumbnail")
+        assert resp.status_code == 200 and resp.content == thumb.read_bytes()
+        assert lookup.await_args.args[1:] == ("post-1", "video_short")
+
+    def test_a_podcast_has_none(self):
+        resp = TestClient(_build_app()).get("/api/media-approval/post-1/podcast/thumbnail")
         assert resp.status_code == 404
 
     def test_no_thumbnail_on_disk_is_a_404(self, tmp_path):

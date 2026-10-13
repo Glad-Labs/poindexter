@@ -570,6 +570,13 @@ class PipelineState(TypedDict, total=False):
     # discipline — undeclared keys are dropped on the graph_def path.
     long_thumbnail_path: str
     long_thumbnail_meta: dict
+    # The Short's YouTube package (2026-10-13): media.package_short writes its
+    # title + description lead and composes its vertical thumbnail;
+    # media.persist stores them with the Short. Same last-value-channel
+    # discipline — undeclared keys are dropped on the graph_def path.
+    short_package: dict
+    short_thumbnail_path: str
+    short_thumbnail_meta: dict
     # ASR caption track + transcript (#676 Plan 5): media.transcribe_narration
     # runs one whisper pass over podcast_audio_path BEFORE the renders and
     # produces these. caption_srt_path is read opportunistically by the render

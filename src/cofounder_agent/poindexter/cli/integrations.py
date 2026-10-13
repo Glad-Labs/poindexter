@@ -931,11 +931,19 @@ def youtube_test(
         "writes to a public channel, so the default is a dry run."
     ),
 )
+@click.option(
+    "--shorts", is_flag=True,
+    help=(
+        "Work on Shorts and their vertical thumbnails instead of long videos. The "
+        "words are the long thumbnail's unless --hook sets them. YouTube accepts "
+        "custom Shorts thumbnails only from Partner Program channels."
+    ),
+)
 def youtube_thumbnails(
     selector: str | None, limit: int | None, recompose: bool, hook_text: str | None,
-    do_apply: bool,
+    do_apply: bool, shorts: bool,
 ) -> None:
-    """Compose, re-roll or hand-write long videos' custom thumbnails.
+    """Compose, re-roll or hand-write long videos' (or Shorts') custom thumbnails.
 
     \b
     1. Dry run (default): compose + store a thumbnail for each published long
@@ -963,7 +971,7 @@ def youtube_thumbnails(
         try:
             return await backfill_youtube_thumbnails(
                 pool, sc, selector=selector, apply=do_apply, recompose=recompose, limit=limit,
-                hook=hook_text,
+                hook=hook_text, shorts=shorts,
             )
         finally:
             # This SiteConfig keeps its reads on the instance, which is gone
@@ -977,8 +985,9 @@ def youtube_thumbnails(
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         raise SystemExit(1) from exc
+    kind = "Shorts" if shorts else "long videos"
     if not outcomes:
-        click.echo("No long videos matched." if selector else "No published long videos matched.")
+        click.echo(f"No {kind} matched." if selector else f"No published {kind} matched.")
         return
     mode = "APPLIED" if do_apply else "DRY RUN — composed and stored locally, nothing sent"
     click.echo(f"YouTube thumbnails — {mode}\n")
@@ -994,6 +1003,85 @@ def youtube_thumbnails(
     if not do_apply and not failed and any(o.video_id for o in outcomes):
         click.echo("\nReview the files above, then re-run with --apply to upload them.")
     if failed:
+        raise SystemExit(1)
+
+
+@youtube_group.command("short-package")
+@click.option(
+    "--post", "selector", default=None,
+    help=(
+        "One post id, slug, task id or YouTube video id. Also reaches a Short still "
+        "awaiting approval. Default: every published Short."
+    ),
+)
+@click.option("--limit", default=None, type=int, help="Cap how many Shorts are processed.")
+@click.option("--recompose", is_flag=True, help="Replace stored packages with freshly written ones.")
+@click.option("--title", "title_text", default=None, help="Set the one Short's title yourself (no model, no checks).")
+@click.option(
+    "--description", "description_text", default=None,
+    help="Set the one Short's description opening yourself (no model, no checks).",
+)
+def youtube_short_package(
+    selector: str | None, limit: int | None, recompose: bool,
+    title_text: str | None, description_text: str | None,
+) -> None:
+    """Write and store Shorts' own YouTube title and description opening.
+
+    \b
+    A LOCAL write: nothing is sent. For each published Short with no package
+    the director model writes a title and description lead, code checks them,
+    and they are stored on the Short's row for review. Then:
+      sync-metadata --apply   pushes them to the Shorts on YouTube;
+      approving a pending Short uploads it with them.
+    --recompose re-rolls stored packages; --post X --title "TEXT" sets one by hand.
+
+    Runs in the worker container, which reaches the model:
+    `docker exec poindexter-worker python -m poindexter.cli integrations youtube short-package`.
+    """
+    from poindexter.cli._dataplane import run_service
+    from poindexter.services.short_package import backfill_short_packages
+
+    async def _go(pool):
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        sc, _container = await build_and_wire_subprocess_with_container(pool)
+        try:
+            return await backfill_short_packages(
+                pool, sc, selector=selector, recompose=recompose, limit=limit,
+                title=title_text, description=description_text,
+            )
+        finally:
+            # Same as the thumbnails command: this SiteConfig's reads are gone
+            # once _go returns, so stamp them now (read telemetry, #756).
+            await flush_read_telemetry(pool, sc)
+
+    try:
+        outcomes = run_service(_go)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+    if not outcomes:
+        click.echo("No Shorts matched." if selector else "No published Shorts matched.")
+        return
+    click.echo("Short packages — stored locally, nothing sent\n")
+    for o in outcomes:
+        click.echo(f"{(o.video_id or '(pending)'):<14}{o.action}  ({o.post_title[:50]})")
+        p = o.package
+        if p is not None:
+            click.echo(f"{'':<14}title  {p.title!r}" + (f"  [{p.title_note}]" if p.title_note else ""))
+            click.echo(
+                f"{'':<14}lead   {p.description!r}"
+                + (f"  [{p.description_note}]" if p.description_note else "")
+            )
+        if o.error:
+            click.secho(f"{'':<14}{o.error}", fg="red")
+    if any(o.video_id and o.package and o.package.title for o in outcomes):
+        click.echo(
+            "\nReview the lines above, then push them with: "
+            "poindexter integrations youtube sync-metadata --apply"
+        )
+    if any(o.failed for o in outcomes):
         raise SystemExit(1)
 
 

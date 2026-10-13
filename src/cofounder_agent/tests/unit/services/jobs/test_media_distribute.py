@@ -1049,19 +1049,24 @@ async def test_twin_refresh_failure_never_fails_the_landed_upload(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# Custom thumbnails (2026-09-25): the composed thumbnail rides with the LONG
-# upload, and what YouTube did with it is stamped + surfaced
+# Custom thumbnails (2026-09-25): each render's composed thumbnail rides with
+# its upload (the Short's since 2026-10-13), and what YouTube did with it is
+# stamped + surfaced
 # --------------------------------------------------------------------------
 
 
-def _thumb_pool(thumb_path):
+def _thumb_pool(thumb_path, short_thumb_path=None, package=None):
     pool = AsyncMock()
     pool.fetch = AsyncMock(return_value=[
         {"name": "yt", "platform": "youtube", "handler_name": "youtube", "config": {}, "metadata": {}},
     ])
 
     async def _fetchval(sql, *args):
-        return thumb_path if "video_thumbnail" in sql else None
+        if "youtube_package" in sql:
+            return package
+        if "type = $2" in sql and "storage_path" in sql:
+            return {"video_thumbnail": thumb_path, "video_short_thumbnail": short_thumb_path}.get(args[1])
+        return None
     pool.fetchval = AsyncMock(side_effect=_fetchval)
     pool.execute = AsyncMock()
     return pool
@@ -1093,20 +1098,87 @@ async def test_the_long_upload_carries_the_thumbnail_and_stamps_its_outcome(tmp_
         result={"success": True, "post_id": "VID9", "url": "u", "thumbnail": "set"},
     )
     assert payload["thumbnail_path"] == str(thumb)
-    stamp = [c for c in pool.execute.await_args_list if "video_thumbnail" in c.args[0]]
+    stamp = [c for c in pool.execute.await_args_list if "jsonb_build_object('youtube'" in c.args[0]]
     assert stamp and json.loads(stamp[0].args[2])["status"] == "set"
+    assert stamp[0].args[3] == "video_thumbnail"
     finding.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_a_short_never_carries_one(tmp_path):
+async def test_a_short_carries_its_own_vertical_thumbnail(tmp_path):
+    long_thumb, short_thumb = tmp_path / "t.jpg", tmp_path / "t_short.jpg"
+    long_thumb.write_bytes(b"\xff\xd8jpeg")
+    short_thumb.write_bytes(b"\xff\xd8jpeg")
+    pool = _thumb_pool(str(long_thumb), str(short_thumb))
+    payload, _ = await _dispatch_with(
+        pool, _sc(media_pipeline_trigger_enabled="true"), shorts=True,
+        result={"success": True, "post_id": "S1", "url": "u", "thumbnail": "set"},
+    )
+    assert payload["thumbnail_path"] == str(short_thumb)
+    stamp = [c for c in pool.execute.await_args_list if "jsonb_build_object('youtube'" in c.args[0]]
+    assert stamp and stamp[0].args[3] == "video_short_thumbnail"
+
+
+@pytest.mark.asyncio
+async def test_the_short_switch_turns_off_only_the_shorts_thumbnail(tmp_path):
     thumb = tmp_path / "t.jpg"
     thumb.write_bytes(b"\xff\xd8jpeg")
-    payload, _ = await _dispatch_with(
-        _thumb_pool(str(thumb)), _sc(media_pipeline_trigger_enabled="true"), shorts=True,
+    sc = _sc(media_pipeline_trigger_enabled="true", youtube_short_custom_thumbnail_enabled="false")
+    short_payload, _ = await _dispatch_with(
+        _thumb_pool(str(thumb), str(thumb)), sc, shorts=True,
         result={"success": True, "post_id": "S1", "url": "u"},
     )
-    assert "thumbnail_path" not in payload
+    long_payload, _ = await _dispatch_with(
+        _thumb_pool(str(thumb), str(thumb)), sc, shorts=False,
+        result={"success": True, "post_id": "V1", "url": "u"},
+    )
+    assert "thumbnail_path" not in short_payload
+    assert long_payload["thumbnail_path"] == str(thumb)
+
+
+@pytest.mark.asyncio
+async def test_a_refused_short_thumbnail_names_the_partner_program_and_its_switch(tmp_path):
+    thumb = tmp_path / "t.jpg"
+    thumb.write_bytes(b"\xff\xd8jpeg")
+    _, finding = await _dispatch_with(
+        _thumb_pool(None, str(thumb)), _sc(media_pipeline_trigger_enabled="true"), shorts=True,
+        result={"success": True, "post_id": "S1", "url": "u", "thumbnail": "failed: forbidden"},
+    )
+    finding.assert_called_once()
+    kw = finding.call_args.kwargs
+    assert "Partner Program" in kw["body"] and "youtube_short_custom_thumbnail_enabled=false" in kw["body"]
+    assert kw["dedup_key"].endswith(":short") and kw["extra"]["medium"] == "video_short"
+
+
+@pytest.mark.asyncio
+async def test_a_short_is_titled_and_opened_from_its_reviewed_package(tmp_path):
+    package = json.dumps({
+        "title": "OpenAI gpt-oss: No new models in 350 days",
+        "description": "OpenAI has shipped no open-weights model since gpt-oss.",
+    })
+    payload, _ = await _dispatch_with(
+        _thumb_pool(None, None, package=package), _sc(media_pipeline_trigger_enabled="true"),
+        shorts=True, result={"success": True, "post_id": "S1", "url": "u"},
+    )
+    assert payload["title"] == "OpenAI gpt-oss: No new models in 350 days #Shorts"
+    assert payload["description"].startswith("OpenAI has shipped no open-weights model since gpt-oss.")
+
+
+@pytest.mark.asyncio
+async def test_a_short_without_a_package_keeps_the_narration_title(tmp_path):
+    pool = _thumb_pool(None, None, package=None)
+    base_fetchval = pool.fetchval.side_effect
+
+    async def _fetchval(sql, *args):
+        if "short_summary_script" in sql:
+            return "Zero-click content is the new standard. It changes how posts get read."
+        return await base_fetchval(sql, *args)
+    pool.fetchval = AsyncMock(side_effect=_fetchval)
+    payload, _ = await _dispatch_with(
+        pool, _sc(media_pipeline_trigger_enabled="true"), shorts=True,
+        result={"success": True, "post_id": "S1", "url": "u"},
+    )
+    assert payload["title"] == "Zero-click content is the new standard #Shorts"
 
 
 @pytest.mark.asyncio

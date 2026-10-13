@@ -85,10 +85,39 @@ A thumbnail failure never fails the upload. The video goes up with YouTube's
 own frame, and a `youtube_thumbnail_failed` finding names the video and the
 reason, so you can retry with the backfill command below.
 
-Shorts keep YouTube's frame. The Shorts feed, where most Short views start,
-plays the video instead of showing a thumbnail. Long-form videos are chosen from
-their thumbnail in search, browse and suggested, so that is where a composed one
-pays off.
+A Short uploads with its own vertical thumbnail (next section). The Shorts
+feed plays the video rather than showing a thumbnail, but the channel's
+Shorts tab, search and the shelf show one.
+
+## The Short's thumbnail (2026-10-13)
+
+The `media.package_short` node composes a 9:16 thumbnail for the Short with
+`compose_short_thumbnail`. It uses the long thumbnail's hook, colours and brand
+mark, so the pair shares one headline and no second model call is spent. The
+type sits in the top band (`video_short_thumbnail_text_position=top`) because
+the Shorts player lays the title, channel and buttons over the bottom and
+right of the frame. The background order is the long one's, and a featured
+image is centre-cropped to the vertical frame.
+
+It is stored as a `video_short_thumbnail` asset, shown in the media drawer
+above the Short, and uploaded with it by `media_distribute`. The upload
+outcome is stamped on its row the same way as the long one's.
+
+**Partner Program only.** YouTube accepts custom Shorts thumbnails only from
+YouTube Partner Program channels (rolled out from July 2026). On a channel
+outside the program the Short still uploads, keeps YouTube's frame, and a
+`youtube_thumbnail_failed` finding says to set
+`youtube_short_custom_thumbnail_enabled=false`. The thumbnail is still
+composed and reviewable while that is off.
+
+Shorts already on the channel use the same command with `--shorts`:
+
+```bash
+docker exec poindexter-worker python -m poindexter.cli integrations youtube thumbnails --shorts
+```
+
+The Short's title and description are covered in
+[youtube-metadata.md](youtube-metadata.md#the-shorts-own-title-and-description-2026-10-13).
 
 ### Channel eligibility
 
@@ -178,39 +207,45 @@ open question of whether the CTR arrives as a fraction or a percentage.
 
 All in `app_settings`, seeded from `settings_defaults.py`.
 
-| Key                                            | Default                                   | What it does                                                                                                                                                            |
-| ---------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `video_thumbnail_enabled`                      | `true`                                    | Compose a thumbnail at render time. Off: no thumbnail is made, and uploads keep YouTube's frame.                                                                        |
-| `youtube_custom_thumbnail_enabled`             | `true`                                    | Upload the composed thumbnail with the long-form video. Off: thumbnails are still composed and reviewable, but not uploaded.                                            |
-| `video_thumbnail_background_order`             | `featured_image,presenter_portrait,brand` | Background sources tried in order (table above).                                                                                                                        |
-| `video_thumbnail_hook_enabled`                 | `true`                                    | Ask the model for hook text. Off: image-only thumbnails.                                                                                                                |
-| `video_thumbnail_hook_model`                   | empty                                     | Model for the hook. Empty = `video_director_model`.                                                                                                                     |
-| `video_thumbnail_hook_max_chars`               | `32`                                      | Longest hook accepted. Longer is rejected.                                                                                                                              |
-| `video_thumbnail_hook_temperature`             | `0.7`                                     | Sampling temperature for the hook call.                                                                                                                                 |
-| `video_thumbnail_hook_max_tokens`              | `256`                                     | Reply budget for the hook call. Raise it only for a model that thinks aloud before answering.                                                                           |
-| `video_thumbnail_hook_timeout_seconds`         | `90`                                      | How long the hook call may run before the thumbnail ships without text.                                                                                                 |
-| `video_thumbnail_hook_opener_window`           | `12`                                      | How many recent thumbnails the opener-variety rule looks at.                                                                                                            |
-| `video_thumbnail_hook_opener_max_repeats`      | `2`                                       | A hook whose first word already opens this many of those is sent back once. `0` = off.                                                                                  |
-| `video_thumbnail_width` / `_height`            | `1280` / `720`                            | Output size in pixels.                                                                                                                                                  |
-| `video_thumbnail_font_family`                  | `JetBrains Mono`                          | Hook typeface. Use a family installed in the worker image, or chromium substitutes one.                                                                                 |
-| `video_thumbnail_font_weight`                  | `800`                                     | Hook weight.                                                                                                                                                            |
-| `video_thumbnail_max_font_px` / `_min_font_px` | `120` / `48`                              | The type starts at the max and shrinks until it fits, never below the min.                                                                                              |
-| `video_thumbnail_text_color`                   | `#f4f8fb`                                 | Hook colour. The `brand` ground's grid lines are drawn in it at low opacity.                                                                                            |
-| `video_thumbnail_accent_color`                 | `#00e5ff`                                 | Colour of the hook's last words, the `//` in the brand mark, and the glow on the `brand` ground.                                                                        |
-| `video_thumbnail_accent_words`                 | `1`                                       | How many trailing words take the accent colour. `0` = none.                                                                                                             |
-| `video_thumbnail_uppercase`                    | `true`                                    | Set the hook in capitals.                                                                                                                                               |
-| `video_thumbnail_text_position`                | `left`                                    | `left`, `center` or `bottom`, over full-bleed backgrounds. Beside a person, the text always takes the free side.                                                        |
-| `video_thumbnail_text_width_pct`               | `52`                                      | Width of the text column for `left` text, as a percentage of the frame.                                                                                                 |
-| `video_thumbnail_person_layout`                | `right`                                   | `right` = person on the right with the text beside it; `cover` = full-bleed like any other background.                                                                  |
-| `video_thumbnail_person_width_pct`             | `58`                                      | Width of the person's panel in the `right` layout.                                                                                                                      |
-| `video_thumbnail_person_focus_y_pct`           | `22`                                      | Vertical crop anchor for the person's image, `0` = top, `100` = bottom. Raise it for a portrait framed with more headroom.                                              |
-| `video_thumbnail_scrim_opacity`                | `0.78`                                    | Strength of the scrim behind the text over full-bleed backgrounds, `0`–`1`. The scrim is in the ground colour.                                                          |
-| `video_thumbnail_brand_mark_enabled`           | `true`                                    | Draw the brand mark.                                                                                                                                                    |
-| `video_thumbnail_brand_mark`                   | empty                                     | Brand mark text. Empty = `site_name`.                                                                                                                                   |
-| `video_thumbnail_brand_mark_color`             | `#7a8a92`                                 | Brand mark text colour.                                                                                                                                                 |
-| `video_thumbnail_background_color`             | `#070a0f`                                 | The ground: the `brand` background, the fill beside a `right`-layout person, and the colour of the scrim and text shadow. Pair a light ground with a dark `text_color`. |
-| `video_thumbnail_jpeg_quality`                 | `88`                                      | Starting JPEG quality. It steps down until the file fits `_max_bytes`.                                                                                                  |
-| `video_thumbnail_max_bytes`                    | `2000000`                                 | YouTube's upload ceiling for a thumbnail.                                                                                                                               |
-| `video_thumbnail_frame_crop_bottom`            | `0.22`                                    | Share of a video frame cropped off the bottom, where the burned-in captions are.                                                                                        |
-| `video_thumbnail_presenter_offset_s`           | `1.5`                                     | How far into the opening presenter scene `presenter_frame` grabs.                                                                                                       |
-| `video_thumbnail_frame_at_s`                   | `5.0`                                     | Where `video_frame` grabs.                                                                                                                                              |
+| Key                                                  | Default                                   | What it does                                                                                                                                                            |
+| ---------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `video_thumbnail_enabled`                            | `true`                                    | Compose a thumbnail at render time. Off: no thumbnail is made, and uploads keep YouTube's frame.                                                                        |
+| `youtube_custom_thumbnail_enabled`                   | `true`                                    | Upload the composed thumbnail with the long-form video. Off: thumbnails are still composed and reviewable, but not uploaded.                                            |
+| `video_thumbnail_background_order`                   | `featured_image,presenter_portrait,brand` | Background sources tried in order (table above).                                                                                                                        |
+| `video_thumbnail_hook_enabled`                       | `true`                                    | Ask the model for hook text. Off: image-only thumbnails.                                                                                                                |
+| `video_thumbnail_hook_model`                         | empty                                     | Model for the hook. Empty = `video_director_model`.                                                                                                                     |
+| `video_thumbnail_hook_max_chars`                     | `32`                                      | Longest hook accepted. Longer is rejected.                                                                                                                              |
+| `video_thumbnail_hook_temperature`                   | `0.7`                                     | Sampling temperature for the hook call.                                                                                                                                 |
+| `video_thumbnail_hook_max_tokens`                    | `256`                                     | Reply budget for the hook call. Raise it only for a model that thinks aloud before answering.                                                                           |
+| `video_thumbnail_hook_timeout_seconds`               | `90`                                      | How long the hook call may run before the thumbnail ships without text.                                                                                                 |
+| `video_thumbnail_hook_opener_window`                 | `12`                                      | How many recent thumbnails the opener-variety rule looks at.                                                                                                            |
+| `video_thumbnail_hook_opener_max_repeats`            | `2`                                       | A hook whose first word already opens this many of those is sent back once. `0` = off.                                                                                  |
+| `video_thumbnail_width` / `_height`                  | `1280` / `720`                            | Output size in pixels.                                                                                                                                                  |
+| `video_thumbnail_font_family`                        | `JetBrains Mono`                          | Hook typeface. Use a family installed in the worker image, or chromium substitutes one.                                                                                 |
+| `video_thumbnail_font_weight`                        | `800`                                     | Hook weight.                                                                                                                                                            |
+| `video_thumbnail_max_font_px` / `_min_font_px`       | `120` / `48`                              | The type starts at the max and shrinks until it fits, never below the min.                                                                                              |
+| `video_thumbnail_text_color`                         | `#f4f8fb`                                 | Hook colour. The `brand` ground's grid lines are drawn in it at low opacity.                                                                                            |
+| `video_thumbnail_accent_color`                       | `#00e5ff`                                 | Colour of the hook's last words, the `//` in the brand mark, and the glow on the `brand` ground.                                                                        |
+| `video_thumbnail_accent_words`                       | `1`                                       | How many trailing words take the accent colour. `0` = none.                                                                                                             |
+| `video_thumbnail_uppercase`                          | `true`                                    | Set the hook in capitals.                                                                                                                                               |
+| `video_thumbnail_text_position`                      | `left`                                    | `left`, `center` or `bottom`, over full-bleed backgrounds. Beside a person, the text always takes the free side.                                                        |
+| `video_thumbnail_text_width_pct`                     | `52`                                      | Width of the text column for `left` text, as a percentage of the frame.                                                                                                 |
+| `video_thumbnail_person_layout`                      | `right`                                   | `right` = person on the right with the text beside it; `cover` = full-bleed like any other background.                                                                  |
+| `video_thumbnail_person_width_pct`                   | `58`                                      | Width of the person's panel in the `right` layout.                                                                                                                      |
+| `video_thumbnail_person_focus_y_pct`                 | `22`                                      | Vertical crop anchor for the person's image, `0` = top, `100` = bottom. Raise it for a portrait framed with more headroom.                                              |
+| `video_thumbnail_scrim_opacity`                      | `0.78`                                    | Strength of the scrim behind the text over full-bleed backgrounds, `0`–`1`. The scrim is in the ground colour.                                                          |
+| `video_thumbnail_brand_mark_enabled`                 | `true`                                    | Draw the brand mark.                                                                                                                                                    |
+| `video_thumbnail_brand_mark`                         | empty                                     | Brand mark text. Empty = `site_name`.                                                                                                                                   |
+| `video_thumbnail_brand_mark_color`                   | `#7a8a92`                                 | Brand mark text colour.                                                                                                                                                 |
+| `video_thumbnail_background_color`                   | `#070a0f`                                 | The ground: the `brand` background, the fill beside a `right`-layout person, and the colour of the scrim and text shadow. Pair a light ground with a dark `text_color`. |
+| `video_thumbnail_jpeg_quality`                       | `88`                                      | Starting JPEG quality. It steps down until the file fits `_max_bytes`.                                                                                                  |
+| `video_thumbnail_max_bytes`                          | `2000000`                                 | YouTube's upload ceiling for a thumbnail.                                                                                                                               |
+| `video_thumbnail_frame_crop_bottom`                  | `0.22`                                    | Share of a video frame cropped off the bottom, where the burned-in captions are.                                                                                        |
+| `video_thumbnail_presenter_offset_s`                 | `1.5`                                     | How far into the opening presenter scene `presenter_frame` grabs.                                                                                                       |
+| `video_thumbnail_frame_at_s`                         | `5.0`                                     | Where `video_frame` grabs.                                                                                                                                              |
+| `video_short_thumbnail_enabled`                      | `true`                                    | Compose the Short's vertical thumbnail at render time.                                                                                                                  |
+| `youtube_short_custom_thumbnail_enabled`             | `true`                                    | Upload it with the Short. Needs a Partner Program channel; set `false` on one outside it.                                                                               |
+| `video_short_thumbnail_background_order`             | `featured_image,presenter_portrait,brand` | Background sources for the Short. `video_frame` here is a frame of the Short itself.                                                                                    |
+| `video_short_thumbnail_width` / `_height`            | `1080` / `1920`                           | The Short's output size.                                                                                                                                                |
+| `video_short_thumbnail_text_position`                | `top`                                     | Where the Short's words sit. `top` keeps them clear of the Shorts player's overlay.                                                                                     |
+| `video_short_thumbnail_max_font_px` / `_min_font_px` | `150` / `64`                              | The Short's type size range.                                                                                                                                            |

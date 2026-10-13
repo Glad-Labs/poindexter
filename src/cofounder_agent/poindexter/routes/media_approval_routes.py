@@ -5,7 +5,7 @@ Operator surfaces previously only reachable in-process:
 - ``GET  /api/media-approval/pending``                    → list pending media
 - ``POST /api/media-approval/{post_id}/{medium}/decide``  → approve or reject
 - ``GET  /api/media-approval/{post_id}/{medium}/preview``  → stream the local render
-- ``GET  /api/media-approval/{post_id}/video/thumbnail``   → the composed YouTube thumbnail
+- ``GET  /api/media-approval/{post_id}/{video|video_short}/thumbnail`` → the composed YouTube thumbnail
 
 ``{post_id}`` is the item's ``subject_id``: the post id, or the pipeline task
 id of a standalone video that has no post (poindexter#1140). The path keeps
@@ -50,11 +50,12 @@ async def list_pending(
     limit: int = Query(50, ge=1, le=500),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: Any = Depends(get_site_config_dependency),
 ) -> MediaApprovalListResponse:
-    """Return pending media rows joined with post title/slug."""
+    """Return pending media rows joined with post title/slug (and a Short's YouTube package)."""
     from poindexter.services.media_approval_service import list_pending as _list_pending
 
-    rows = await _list_pending(db_service.pool, medium=medium, limit=limit)
+    rows = await _list_pending(db_service.pool, medium=medium, limit=limit, site_config=site_config)
     # Convert datetime objects for JSON serialisation
     for row in rows:
         for k, v in row.items():
@@ -177,17 +178,17 @@ async def thumbnail(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> FileResponse:
-    """The thumbnail that will be uploaded with this post's long video.
+    """The thumbnail that will be uploaded with this post's long video or Short.
 
-    Only the long video carries one (custom Shorts thumbnails are limited to
-    Partner Program channels), so any other medium is a 404. Same OAuth gate
-    as ``preview``: a pending asset never leaves the machine unauthenticated.
+    ``video`` is the 16:9 one, ``video_short`` the 9:16 one (since
+    2026-10-13); any other medium is a 404. Same OAuth gate as ``preview``: a
+    pending asset never leaves the machine unauthenticated.
     """
-    if medium != "video":
-        raise HTTPException(status_code=404, detail="Only the long-form video has a custom thumbnail.")
+    if medium not in ("video", "video_short"):
+        raise HTTPException(status_code=404, detail="Only the long video and the Short have a custom thumbnail.")
     from poindexter.services.media_approval_service import get_thumbnail_storage_path
 
-    storage_path = await get_thumbnail_storage_path(db_service.pool, post_id)
+    storage_path = await get_thumbnail_storage_path(db_service.pool, post_id, medium)
     if not storage_path or not Path(storage_path).is_file():
         raise HTTPException(status_code=404, detail="No composed thumbnail on disk for this post.")
     return FileResponse(storage_path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})

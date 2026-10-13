@@ -12,23 +12,40 @@
    says so (feedback_no_dummy_data). */
 function QaRailRow({ r, tone }) {
   const chip =
-    tone === 'veto' ? ['red', 'VETO'] : tone === 'adv' ? ['amber', 'ADVISORY'] : ['mint', 'PASS'];
+    tone === 'veto'
+      ? ['red', 'VETO']
+      : tone === 'adv'
+        ? ['amber', 'ADVISORY']
+        : ['mint', 'PASS'];
   return (
     <div style={{ marginBottom: 8 }}>
       <div
         className="mono"
-        style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', gap: 8 }}
+        style={{
+          fontSize: 11,
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 8,
+        }}
       >
-        <span className="c-text" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span
+          className="c-text"
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
           <span className={`tag tag--${chip[0]}`} style={{ marginRight: 6 }}>
             {chip[1]}
           </span>
           {r.reviewer}
         </span>
-        <span className="c-muted tnum">{r.score != null ? `${Math.round(r.score)}/100` : '—'}</span>
+        <span className="c-muted tnum">
+          {r.score != null ? `${Math.round(r.score)}/100` : '—'}
+        </span>
       </div>
       {r.feedback ? (
-        <p className="c-dim" style={{ fontSize: 11, margin: '3px 0 0', lineHeight: 1.45 }}>
+        <p
+          className="c-dim"
+          style={{ fontSize: 11, margin: '3px 0 0', lineHeight: 1.45 }}
+        >
           {r.feedback}
         </p>
       ) : null}
@@ -42,13 +59,19 @@ function QaReview({ qa }) {
   return (
     <>
       <div className="section-label">
-        QA review{qa.finalScore != null ? ` · gate score ${Math.round(qa.finalScore)}/100` : ''}
+        QA review
+        {qa.finalScore != null
+          ? ` · gate score ${Math.round(qa.finalScore)}/100`
+          : ''}
       </div>
       <p
         className="mono"
         style={{ fontSize: 11, margin: '0 0 10px', lineHeight: 1.5 }}
       >
-        <span className={`tag ${bad ? 'tag--red' : 'tag--mint'}`} style={{ marginRight: 6 }}>
+        <span
+          className={`tag ${bad ? 'tag--red' : 'tag--mint'}`}
+          style={{ marginRight: 6 }}
+        >
           {bad ? '⚑ FLAGGED' : '✓ PASSED'}
         </span>
         {qa.headline}
@@ -70,12 +93,17 @@ function QaReview({ qa }) {
             {showPasses ? 'Hide' : 'Show'} {qa.passes.length} passing rail
             {qa.passes.length === 1 ? '' : 's'}
           </button>
-          {showPasses ? qa.passes.map((r) => <QaRailRow key={r.reviewer} r={r} tone="pass" />) : null}
+          {showPasses
+            ? qa.passes.map((r) => (
+                <QaRailRow key={r.reviewer} r={r} tone="pass" />
+              ))
+            : null}
         </>
       ) : null}
       {qa.source === 'none' ? (
         <p className="c-dim" style={{ fontSize: 11, margin: 0 }}>
-          This draft carries no rail breakdown — open the trace for the run detail.
+          This draft carries no rail breakdown — open the trace for the run
+          detail.
         </p>
       ) : null}
     </>
@@ -137,22 +165,23 @@ function MediaPreviewPlayer({ postId, medium }) {
     };
   }, [postId, medium]);
 
-  // The long video's composed YouTube thumbnail (uploads with it, so it is
-  // reviewed with it). Absent → the player renders exactly as before.
+  // The composed YouTube thumbnail of the long video or the Short (it uploads
+  // with it, so it is reviewed with it). Absent → the player renders exactly
+  // as before.
   const [thumb, setThumb] = useState('');
   useEffect(() => {
     let alive = true;
     let thumbUrl = '';
     setThumb('');
     if (
-      medium !== 'video' ||
+      (medium !== 'video' && medium !== 'video_short') ||
       !postId ||
       !window.PX.api.isLive() ||
       !window.PX.api.mediaThumbnailBlob
     )
       return undefined;
     window.PX.api
-      .mediaThumbnailBlob(postId)
+      .mediaThumbnailBlob(postId, medium)
       .then((blob) => {
         if (!alive || !blob) return;
         thumbUrl = URL.createObjectURL(blob);
@@ -193,7 +222,11 @@ function MediaPreviewPlayer({ postId, medium }) {
           <img
             src={thumb}
             alt="YouTube thumbnail for this video"
-            style={{ width: '100%', borderRadius: 4, display: 'block' }}
+            style={
+              medium === 'video_short'
+                ? { height: 320, borderRadius: 4, display: 'block' }
+                : { width: '100%', borderRadius: 4, display: 'block' }
+            }
           />
           <figcaption
             className="mono c-dim"
@@ -1044,6 +1077,19 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
                   medium={e.detail.medium}
                 />
               </div>
+              {e.detail.youtube_title ? (
+                <>
+                  <div className="section-label">
+                    YouTube — uploads with this Short
+                  </div>
+                  <DL
+                    rows={[
+                      ['Title', e.detail.youtube_title],
+                      ['Description', e.detail.youtube_description || '—'],
+                    ]}
+                  />
+                </>
+              ) : null}
               <div className="section-label">Pipeline</div>
               <DL
                 rows={[

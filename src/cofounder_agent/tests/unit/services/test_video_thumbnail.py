@@ -415,3 +415,91 @@ async def test_a_thumbnail_follows_its_video(tmp_path, existing, video_now, stor
         assert kw["asset_type"] == "video_thumbnail" and kw["mime_type"] == "image/jpeg"
         assert kw["metadata"] == {"hook": "h"} and (kw["width"], kw["height"]) == (64, 36)
         assert os.path.exists(tmp_path / "video" / "t1_thumbnail.jpg")
+
+
+# ---------------------------------------------------------------------------
+# the Short's vertical thumbnail (2026-10-13)
+# ---------------------------------------------------------------------------
+
+
+def test_the_shorts_style_is_vertical_and_shares_the_long_colours():
+    sc = _SC(video_thumbnail_accent_color="#ff00aa", video_thumbnail_person_layout="right")
+    s = vt.short_style_from_settings(sc)
+    assert (s.width, s.height, s.text_position, s.person_layout) == (1080, 1920, "top", "cover")
+    assert s.accent_color == "#ff00aa"  # one channel look across the pair
+    odd = vt.short_style_from_settings(_SC(video_short_thumbnail_text_position="sideways"))
+    assert odd.text_position == "top"
+
+
+def test_the_top_layout_keeps_the_words_out_of_the_players_overlay():
+    """The Shorts player covers the bottom (title, channel) and right (buttons),
+    so the vertical layout sets the type in the upper band under a top scrim."""
+    style = vt.short_style_from_settings(None)
+    html = vt.render_thumbnail_html(hook="98% VRAM load", background_uri=None, style=style)
+    assert "justify-content:flex-start" in html and "linear-gradient(180deg" in html
+    assert f"height:{round(1920 * 0.36)}px" in html
+
+
+@pytest.mark.asyncio
+async def test_the_short_reuses_the_long_thumbnails_hook_and_spends_no_model_call(tmp_path):
+    ctx = {"title": "T", "summary": "s", "featured_image_url": "", "slug": "t"}
+    render = AsyncMock(return_value=b"\xff\xd8jpeg")
+    gen = AsyncMock()
+    with patch.object(vt, "load_post_context", AsyncMock(return_value=ctx)), \
+         patch.object(vt, "generate_thumbnail_hook", gen), \
+         patch.object(vt, "render_thumbnail_jpeg", render):
+        result = await vt.compose_short_thumbnail(
+            task_id="t", pool=object(), site_config=_SC(), out_path=str(tmp_path / "s.jpg"),
+            hook_text=" GPT-OSS IS  OLD NEWS ",
+        )
+    gen.assert_not_awaited()
+    kw = render.await_args.kwargs
+    assert kw["hook"] == "GPT-OSS IS OLD NEWS" and kw["image_layout"] == "cover"
+    assert (kw["style"].width, kw["style"].height) == (1080, 1920)
+    assert result.hook_note == "the long thumbnail's hook"
+
+
+@pytest.mark.asyncio
+async def test_without_a_hook_in_state_the_short_reads_the_stored_one(tmp_path):
+    ctx = {"title": "T", "summary": "s", "featured_image_url": "", "slug": "t"}
+    render = AsyncMock(return_value=b"\xff\xd8jpeg")
+    with patch.object(vt, "load_post_context", AsyncMock(return_value=ctx)), \
+         patch.object(vt, "load_stored_hook", AsyncMock(return_value="OPUS 5 KILLER?")) as stored, \
+         patch.object(vt, "render_thumbnail_jpeg", render):
+        await vt.compose_short_thumbnail(
+            task_id="t", pool=object(), site_config=_SC(), out_path=str(tmp_path / "s.jpg"),
+        )
+    stored.assert_awaited_once()
+    assert render.await_args.kwargs["hook"] == "OPUS 5 KILLER?"
+
+
+@pytest.mark.asyncio
+async def test_the_shorts_thumbnail_has_its_own_switch():
+    assert await vt.compose_short_thumbnail(
+        task_id="t", pool=None, site_config=_SC(video_short_thumbnail_enabled="false"),
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_the_shorts_thumbnail_is_stored_under_its_own_type_and_name(tmp_path):
+    src = tmp_path / "s.jpg"
+    from PIL import Image
+
+    Image.new("RGB", (108, 192)).save(src, format="JPEG")
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value=0)
+    pool = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
+    record = AsyncMock(return_value="asset-s")
+    with patch("poindexter.services.media_asset_recorder.record_media_asset", record):
+        got = await vt.store_thumbnail_asset(
+            pool, task_id="t9", src_path=str(src), meta={"hook": "h"}, post_id=None,
+            video_recorded_now=True, video_dir=tmp_path / "video",
+            asset_type=vt.SHORT_THUMBNAIL_ASSET_TYPE,
+        )
+    assert got == "asset-s"
+    assert conn.fetchval.await_args.args[2] == "video_short_thumbnail"
+    kw = record.await_args.kwargs
+    assert kw["asset_type"] == "video_short_thumbnail"
+    assert kw["storage_path"].endswith("t9_short_thumbnail.jpg") and (kw["width"], kw["height"]) == (108, 192)

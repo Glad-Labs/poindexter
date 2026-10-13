@@ -314,8 +314,53 @@ async def test_persist_hands_the_thumbnail_to_the_store_with_its_video_flag(
         "long_thumbnail_path": "/tmp/t.jpg", "long_thumbnail_meta": {"hook": "h"},
     })
     assert "thumb-asset" in out["media_assets_recorded"]
-    kw = store.await_args.kwargs
+    calls = {c.kwargs["asset_type"]: c.kwargs for c in store.await_args_list}
+    kw = calls["video_thumbnail"]
     assert kw["video_recorded_now"] is True and kw["meta"] == {"hook": "h"} and kw["src_path"] == "/tmp/t.jpg"
+    # No Short this run: its store call has nothing to move and is told so.
+    assert calls["video_short_thumbnail"]["src_path"] == ""
+    assert calls["video_short_thumbnail"]["video_recorded_now"] is False
+
+
+@pytest.mark.asyncio
+async def test_persist_stores_the_shorts_thumbnail_and_package_with_the_short(
+    tmp_path, monkeypatch, patched_recorder,
+):
+    """The Short's YouTube package rides on its own video_short row, and its
+    vertical thumbnail is stored as a video_short_thumbnail that follows the
+    Short (not the long video)."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", tmp_path / "video")
+    store = AsyncMock(return_value="short-thumb")
+    monkeypatch.setattr("poindexter.services.video_thumbnail.store_thumbnail_asset", store)
+    package = {"title": "RTX 5090 runs a 70B model at 4-bit", "description": "d"}
+    await persist_run({
+        "task_id": "t-short", "pool": _FakePool(),
+        "short_video_path": _write_tmp(tmp_path / "short.mp4"),
+        "short_package": package,
+        "short_thumbnail_path": "/tmp/s.jpg", "short_thumbnail_meta": {"hook": "h"},
+    })
+    rows = {c.kwargs["asset_type"]: c.kwargs for c in patched_recorder.await_args_list}
+    assert rows["video_short"]["metadata"] == {"youtube_package": package}
+    calls = {c.kwargs["asset_type"]: c.kwargs for c in store.await_args_list}
+    short = calls["video_short_thumbnail"]
+    assert short["video_recorded_now"] is True and short["src_path"] == "/tmp/s.jpg"
+    assert calls["video_thumbnail"]["video_recorded_now"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_long_video_row_never_carries_the_shorts_package(
+    tmp_path, monkeypatch, patched_recorder,
+):
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", tmp_path / "video")
+    await persist_run({
+        "task_id": "t-long", "pool": _FakePool(),
+        "long_video_path": _write_tmp(tmp_path / "long.mp4"),
+        "short_package": {"title": "x"},
+    })
+    rows = {c.kwargs["asset_type"]: c.kwargs for c in patched_recorder.await_args_list}
+    assert rows["video"]["metadata"] is None
 
 
 @pytest.mark.asyncio

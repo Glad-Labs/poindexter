@@ -12,6 +12,7 @@ fail with the remediation, not a raw Google 403.
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -517,6 +518,41 @@ class TestStoredHookDefects:
         from poindexter.services.youtube_metadata_sync import stored_hook_defects
 
         assert stored_hook_defects(_short_row(medium="video"), _sc()) == ()
+
+    def test_a_short_with_a_reviewed_title_is_not_scored(self):
+        """Its title no longer comes from the narration, so a repair would buy nothing."""
+        from poindexter.services.youtube_metadata_sync import stored_hook_defects
+
+        row = _short_row(youtube_package=json.dumps({"title": "RTX 5090 runs 70B at 4-bit"}))
+        assert stored_hook_defects(row, _sc()) == ()
+
+
+def test_compose_prefers_the_shorts_reviewed_package_over_its_narration():
+    from poindexter.services.youtube_metadata_sync import _compose
+
+    row = _short_row(youtube_package={
+        "title": "RTX 5090 runs a 70B model at 4-bit",
+        "description": "A 32 GB card fits a 70B model once it is quantized to 4-bit.",
+    })
+    title, description, _ = _compose(row, _sc())
+    assert title == "RTX 5090 runs a 70B model at 4-bit #Shorts"
+    assert description.startswith("A 32 GB card fits a 70B model once it is quantized to 4-bit.")
+
+
+def test_compose_falls_back_to_the_narration_for_an_empty_package_field():
+    from poindexter.services.youtube_metadata_sync import _compose
+
+    plain_title, plain_desc, _ = _compose(_short_row(short_script=_GOOD_SCRIPT), _sc())
+    title, description, _ = _compose(
+        _short_row(short_script=_GOOD_SCRIPT, youtube_package={"title": "", "description": ""}), _sc(),
+    )
+    assert (title, description) == (plain_title, plain_desc)
+
+
+def test_targets_sql_reads_the_package_off_the_shorts_own_row():
+    from poindexter.services.youtube_metadata_sync import _TARGETS_SQL
+
+    assert "youtube_package" in _TARGETS_SQL and "m.type = 'video_short'" in _TARGETS_SQL
 
     def test_length_alone_is_not_a_defect(self):
         """Over-long is a SHORTENING problem — the title builder handles it and

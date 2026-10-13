@@ -285,24 +285,40 @@ async def _fetch_short_script(pool: Any, task_id: str | None) -> str:
 
 _THUMBNAIL_SQL = (
     "SELECT storage_path FROM media_assets "
-    "WHERE task_id::text = $1 AND type = 'video_thumbnail' "
+    "WHERE task_id::text = $1 AND type = $2 "
     "ORDER BY created_at DESC LIMIT 1"
 )
 
+#: The thumbnail asset each render uploads with (long → 16:9, Short → 9:16).
+_THUMBNAIL_TYPE = {False: "video_thumbnail", True: "video_short_thumbnail"}
 
-def _custom_thumbnails_on(site_config: Any) -> bool:
+
+def _setting_on(site_config: Any, key: str) -> bool:
     if site_config is None:
         return True
-    raw = str(site_config.get("youtube_custom_thumbnail_enabled", "true") or "true")
+    raw = str(site_config.get(key, "true") or "true")
     return raw.strip().lower() in ("true", "1", "yes", "on")
 
 
-async def _fetch_thumbnail_path(pool: Any, task_id: str | None) -> str:
-    """The composed thumbnail for this task's long video, when it is on disk, else ""."""
+def _custom_thumbnails_on(site_config: Any, *, shorts: bool = False) -> bool:
+    """Whether this render's composed thumbnail goes up with it.
+
+    A Short needs both switches: YouTube accepts custom Shorts thumbnails only
+    from Partner Program channels, so ``youtube_short_custom_thumbnail_enabled``
+    turns that one upload off on a channel that is not, without touching the
+    long video's.
+    """
+    if not _setting_on(site_config, "youtube_custom_thumbnail_enabled"):
+        return False
+    return not shorts or _setting_on(site_config, "youtube_short_custom_thumbnail_enabled")
+
+
+async def _fetch_thumbnail_path(pool: Any, task_id: str | None, *, shorts: bool = False) -> str:
+    """The composed thumbnail for this task's long video (or Short), when it is on disk, else ""."""
     if not task_id:
         return ""
     try:
-        path = await pool.fetchval(_THUMBNAIL_SQL, str(task_id))
+        path = await pool.fetchval(_THUMBNAIL_SQL, str(task_id), _THUMBNAIL_TYPE[shorts])
     except Exception as exc:  # noqa: BLE001 — a thumbnail is a refinement, never a blocker
         logger.warning("[MEDIA_DISTRIBUTE] thumbnail lookup failed for %s: %s", task_id, describe_exception(exc))
         return ""
@@ -311,11 +327,13 @@ async def _fetch_thumbnail_path(pool: Any, task_id: str | None) -> str:
 
 async def _record_thumbnail_outcome(
     pool: Any, *, task_id: str | None, post_id: Any, video_id: str | None, status: str,
+    shorts: bool = False,
 ) -> None:
     """Stamp the thumbnail row with what YouTube did with it, and page on a failure.
 
     The stamp is what the backfill command reads to know which published
-    videos already carry their custom thumbnail.
+    videos already carry their custom thumbnail. ``shorts`` stamps the Short's
+    ``video_short_thumbnail`` row instead of the long one.
     """
     if not task_id or not status or status == "not requested":
         return
@@ -326,24 +344,41 @@ async def _record_thumbnail_outcome(
         await pool.execute(
             "UPDATE media_assets SET metadata = COALESCE(metadata, '{}'::jsonb) "
             "|| jsonb_build_object('youtube', $2::jsonb) "
-            "WHERE task_id::text = $1 AND type = 'video_thumbnail'",
-            str(task_id), _json.dumps(stamp),
+            "WHERE task_id::text = $1 AND type = $3",
+            str(task_id), _json.dumps(stamp), _THUMBNAIL_TYPE[shorts],
         )
     except Exception as exc:  # noqa: BLE001 — bookkeeping must not undo a good upload
         logger.warning("[MEDIA_DISTRIBUTE] thumbnail stamp failed for %s: %s", task_id, describe_exception(exc))
     if status.startswith("failed"):
-        emit_finding(
-            source="media_distribute",
-            kind="youtube_thumbnail_failed",
-            title="YouTube upload landed without its custom thumbnail",
-            body=(
+        if shorts:
+            body = (
+                f"Short {video_id or '?'} uploaded, but setting its thumbnail "
+                f"failed: {status}. YouTube accepts custom Shorts thumbnails only "
+                "from YouTube Partner Program channels. If this channel is not in "
+                "the program, set `youtube_short_custom_thumbnail_enabled=false` "
+                "and Shorts upload with YouTube's own frame. Otherwise retry with "
+                "`poindexter integrations youtube thumbnails --shorts --apply`."
+            )
+        else:
+            body = (
                 f"Video {video_id or '?'} uploaded, but setting its thumbnail "
                 f"failed: {status}. Retry once the cause is fixed with "
                 "`poindexter integrations youtube thumbnails --apply`."
+            )
+        emit_finding(
+            source="media_distribute",
+            kind="youtube_thumbnail_failed",
+            title=(
+                "YouTube Short landed without its custom thumbnail" if shorts
+                else "YouTube upload landed without its custom thumbnail"
             ),
+            body=body,
             severity="warning",
-            dedup_key=f"youtube_thumbnail_failed:{post_id}",
-            extra={"post_id": str(post_id), "video_id": video_id or "", "status": status[:400]},
+            dedup_key=f"youtube_thumbnail_failed:{post_id}:{'short' if shorts else 'long'}",
+            extra={
+                "post_id": str(post_id), "video_id": video_id or "", "status": status[:400],
+                "medium": "video_short" if shorts else "video",
+            },
         )
 
 
@@ -477,10 +512,11 @@ async def _dispatch_asset(
         _build_youtube_title,
         _parse_seo_keywords,
         hashtags_for_short,
-        short_hook_line,
-        short_hook_title,
+        short_lead,
+        short_title_hook,
         twin_watch_url,
     )
+    from poindexter.services.short_package import load_short_package
 
     try:
         load_all()  # idempotent — ensures publishing_youtube is registered
@@ -503,6 +539,10 @@ async def _dispatch_asset(
     # that lands second refreshes the first (see _refresh_twin_after_upload).
     task_id = row.get("task_id")
     script = await _fetch_short_script(pool, task_id) if shorts else ""
+    # The Short's reviewed package (title + description lead, written and
+    # checked at render time, services/short_package.py). Empty fields fall
+    # back to the narration-derived ones, which is what older Shorts have.
+    package = await load_short_package(pool, task_id) if shorts else None
     twin_url = twin_watch_url(
         await _fetch_twin_video_id(pool, task_id, "video_short" if shorts else "video"),
         twin_is_short=not shorts,
@@ -514,7 +554,7 @@ async def _dispatch_asset(
         site_config=site_config,
         slug=row.get("slug") or "",
         shorts=shorts,
-        hook=short_hook_line(script) if shorts else "",
+        hook=short_lead(package, script) if shorts else "",
         twin_url=twin_url,
         hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
     )
@@ -525,7 +565,7 @@ async def _dispatch_asset(
         # verbatim for each put two identically-named videos on the channel.
         "title": _build_youtube_title(
             row.get("title") or "", shorts=shorts, site_config=site_config,
-            hook=short_hook_title(script, site_config=site_config) if shorts else "",
+            hook=short_title_hook(package, script, site_config=site_config) if shorts else "",
         ),
         "description": description,
         "tags": tags or None,
@@ -534,11 +574,11 @@ async def _dispatch_asset(
         "shorts": shorts,
         "contains_synthetic_media": _contains_synthetic_media(row, site_config),
     }
-    # The composed thumbnail rides with the LONG upload only: custom Shorts
-    # thumbnails are limited to Partner Program channels, and the Shorts feed
-    # autoplays anyway.
-    if not shorts and _custom_thumbnails_on(site_config):
-        thumbnail_path = await _fetch_thumbnail_path(pool, task_id)
+    # Each render uploads with its own composed thumbnail: 16:9 for the long
+    # video, 9:16 for the Short. A Short's needs its own switch as well, since
+    # custom Shorts thumbnails are limited to Partner Program channels.
+    if _custom_thumbnails_on(site_config, shorts=shorts):
+        thumbnail_path = await _fetch_thumbnail_path(pool, task_id, shorts=shorts)
         if thumbnail_path:
             payload["thumbnail_path"] = thumbnail_path
 
@@ -587,6 +627,7 @@ async def _dispatch_asset(
                         pool, task_id=task_id, post_id=_subject(row),
                         video_id=result.get("post_id"),
                         status=str(result.get("thumbnail") or ""),
+                        shorts=shorts,
                     )
             else:
                 results.append(

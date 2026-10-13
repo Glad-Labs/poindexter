@@ -59,6 +59,9 @@ ATOM_META = AtomMeta(
         FieldSpec(name="long_thumbnail_path", type="str", description="temp path of the composed YouTube thumbnail", required=False),
         FieldSpec(name="long_thumbnail_meta", type="dict", description="hook + background of that thumbnail (stored on its row)", required=False),
         FieldSpec(name="screenplay", type="dict", description="a creative piece's screenplay: marks the video standalone and titles it", required=False),
+        FieldSpec(name="short_package", type="dict", description="the Short's YouTube title + description lead (stored on its row)", required=False),
+        FieldSpec(name="short_thumbnail_path", type="str", description="temp path of the Short's composed vertical thumbnail", required=False),
+        FieldSpec(name="short_thumbnail_meta", type="dict", description="hook + background of that thumbnail (stored on its row)", required=False),
     ),
     outputs=(
         FieldSpec(name="media_assets_recorded", type="list", description="ids of the media_assets rows written"),
@@ -273,7 +276,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 await _probed_duration_ms(durable) or _duration_ms(shot_list)
             ),
             file_size_bytes=size,
-            metadata=standalone_meta,
+            metadata=_asset_metadata(state, asset_type, standalone_meta),
             title=standalone_title,
             description=standalone_description,
         )
@@ -285,29 +288,60 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 asset_type, asset_id, task_id, durable,
             )
 
-    thumb_id = await _persist_thumbnail(
-        pool, state, str(task_id), VIDEO_DIR, video_recorded_now="video" in recorded_types,
-    )
-    if thumb_id:
-        recorded.append(thumb_id)
+    from poindexter.services.video_thumbnail import SHORT_THUMBNAIL_ASSET_TYPE, THUMBNAIL_ASSET_TYPE
+
+    for prefix, asset_type, video_type in (
+        ("long", THUMBNAIL_ASSET_TYPE, "video"),
+        ("short", SHORT_THUMBNAIL_ASSET_TYPE, "video_short"),
+    ):
+        thumb_id = await _persist_thumbnail(
+            pool, state, str(task_id), VIDEO_DIR, prefix=prefix, asset_type=asset_type,
+            video_recorded_now=video_type in recorded_types,
+        )
+        if thumb_id:
+            recorded.append(thumb_id)
     return {"media_assets_recorded": recorded}
 
 
+def _asset_metadata(
+    state: dict[str, Any], asset_type: str, standalone_meta: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """The row's metadata: a standalone video's identity, plus the Short's YouTube package.
+
+    The package rides on the ``video_short`` row itself, so it follows its
+    video exactly as the thumbnails do: written when the Short is persisted,
+    kept when a replay skips the Short (it may already be on YouTube).
+    """
+    meta = dict(standalone_meta) if standalone_meta else {}
+    package = state.get("short_package")
+    if asset_type == "video_short" and isinstance(package, dict) and package:
+        from poindexter.services.short_package import PACKAGE_METADATA_KEY
+
+        meta[PACKAGE_METADATA_KEY] = package
+    return meta or None
+
+
 async def _persist_thumbnail(
-    pool: Any, state: dict[str, Any], task_id: str, video_dir: Any, *, video_recorded_now: bool,
+    pool: Any, state: dict[str, Any], task_id: str, video_dir: Any, *,
+    prefix: str, asset_type: str, video_recorded_now: bool,
 ) -> str | None:
-    """Make the composed thumbnail durable (``services.video_thumbnail.store_thumbnail_asset``)."""
+    """Make a composed thumbnail durable (``services.video_thumbnail.store_thumbnail_asset``).
+
+    ``prefix`` picks the render: ``long`` reads ``long_thumbnail_*``, ``short``
+    reads ``short_thumbnail_*``.
+    """
     from poindexter.services.video_thumbnail import store_thumbnail_asset
 
-    meta = state.get("long_thumbnail_meta")
+    meta = state.get(f"{prefix}_thumbnail_meta")
     return await store_thumbnail_asset(
         pool,
         task_id=task_id,
-        src_path=str(state.get("long_thumbnail_path") or ""),
+        src_path=str(state.get(f"{prefix}_thumbnail_path") or ""),
         meta=meta if isinstance(meta, dict) else None,
         post_id=(str(state.get("post_id") or "").strip() or None),
         video_dir=video_dir,
         video_recorded_now=video_recorded_now,
+        asset_type=asset_type,
     )
 
 

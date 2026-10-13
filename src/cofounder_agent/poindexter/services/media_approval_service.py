@@ -798,7 +798,7 @@ async def list_approved_undispatched(
 
 
 async def list_pending(
-    db: Any, *, medium: str | None = None, limit: int = 50,
+    db: Any, *, medium: str | None = None, limit: int = 50, site_config: Any = None,
 ) -> list[dict[str, Any]]:
     """Operator listing — pending media awaiting review.
 
@@ -810,6 +810,12 @@ async def list_pending(
     None, ``standalone`` is true, and its title is the one ``media.persist``
     stored on the asset (else the task's topic). ``subject_id`` is the id to
     decide, preview or open either kind by.
+
+    A Short also carries its reviewed YouTube package
+    (``services/short_package.py``): ``youtube_title`` as it will upload
+    (composed with ``site_config``, so the suffix is the configured one) and
+    ``youtube_description``, its opening lines. Both are None when it has no
+    package, and the upload then uses the narration-derived title.
 
     ``db`` accepts either an asyncpg Pool or Connection.
     """
@@ -829,7 +835,8 @@ async def list_pending(
             ma.quality_signals,
             ma.quality_evaluated_at,
             COALESCE(p.title, sa.title, pt.topic) AS title,
-            p.slug
+            p.slug,
+            pkg.youtube_package
         FROM media_approvals ma
         LEFT JOIN posts p ON p.id = ma.post_id
         LEFT JOIN pipeline_tasks pt
@@ -840,6 +847,13 @@ async def list_pending(
                AND mas.type = ma.medium AND COALESCE(mas.title, '') <> ''
              ORDER BY mas.created_at DESC LIMIT 1
         ) sa ON true
+        LEFT JOIN LATERAL (
+            SELECT mas.metadata -> 'youtube_package' AS youtube_package FROM media_assets mas
+             WHERE ma.medium = 'video_short' AND mas.type = 'video_short'
+               AND (mas.post_id = ma.post_id
+                    OR mas.task_id::text = COALESCE(ma.task_id::text, p.metadata->>'pipeline_task_id'))
+             ORDER BY mas.created_at DESC LIMIT 1
+        ) pkg ON true
         WHERE ma.status = 'pending'
           AND ($1::text IS NULL OR ma.medium = $1)
         ORDER BY ma.created_at DESC
@@ -847,7 +861,28 @@ async def list_pending(
         """,
         medium, limit,
     )
-    return [dict(r) for r in rows]
+    return [_with_short_package(dict(r), site_config) for r in rows]
+
+
+def _with_short_package(row: dict[str, Any], site_config: Any) -> dict[str, Any]:
+    """Replace the raw ``youtube_package`` column with the reviewable title + lead."""
+    from poindexter.services.jobs.youtube_payload import _build_youtube_title
+    from poindexter.services.short_package import ShortPackage
+
+    raw = row.pop("youtube_package", None)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    package = ShortPackage.from_metadata(raw)
+    if package is not None and package.title:
+        row["youtube_title"] = _build_youtube_title(
+            row.get("title") or "", shorts=True, site_config=site_config, hook=package.title,
+        )
+    if package is not None and package.description:
+        row["youtube_description"] = package.description
+    return row
 
 
 async def get_asset_storage_path(
@@ -880,19 +915,29 @@ async def get_asset_storage_path(
     return row["storage_path"] if row is not None else None
 
 
-async def get_thumbnail_storage_path(db: Any, post_id: str) -> str | None:
-    """The composed YouTube thumbnail for ``post_id``'s long video, or ``None``.
+#: The thumbnail asset each reviewable medium uploads with.
+_THUMBNAIL_TYPE_BY_MEDIUM = {"video": "video_thumbnail", "video_short": "video_short_thumbnail"}
+
+
+async def get_thumbnail_storage_path(db: Any, post_id: str, medium: str = "video") -> str | None:
+    """The composed YouTube thumbnail for ``post_id``'s long video (or Short), or ``None``.
+
+    ``medium`` ``video_short`` returns the Short's vertical thumbnail; any
+    medium without one returns ``None``.
 
     The ``video_thumbnail`` row is written at render time, when the post may
     not exist yet, so it is matched by ``post_id`` OR by the post's
     ``pipeline_task_id``. Reviewed beside the video in the approval drawer:
     the thumbnail is public the moment the video is, so it is approved with it.
     """
+    asset_type = _THUMBNAIL_TYPE_BY_MEDIUM.get(medium)
+    if asset_type is None:
+        return None
     row = await db.fetchrow(
         """
         SELECT ma.storage_path
           FROM media_assets ma
-         WHERE ma.type = 'video_thumbnail'
+         WHERE ma.type = $2
            AND COALESCE(ma.storage_path, '') <> ''
            AND (
                 ma.post_id::text = $1
@@ -905,7 +950,7 @@ async def get_thumbnail_storage_path(db: Any, post_id: str) -> str | None:
          ORDER BY ma.created_at DESC
          LIMIT 1
         """,
-        str(post_id),
+        str(post_id), asset_type,
     )
     return row["storage_path"] if row is not None else None
 

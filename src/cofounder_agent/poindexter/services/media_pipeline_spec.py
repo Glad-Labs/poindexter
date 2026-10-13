@@ -60,6 +60,13 @@ v7 (2026-09-25) inserts ``render_thumbnail`` (``media.render_thumbnail``)
 between ``render_short_video`` and ``media_qa``: it composes the long video's
 custom YouTube thumbnail, which ``persist_media`` makes durable so the
 operator reviews it with the video and ``media_distribute`` uploads it with it.
+
+v9 (2026-10-13) inserts ``package_short`` (``media.package_short``) between
+``render_thumbnail`` and ``media_qa``: it writes and checks the Short's own
+YouTube title and description lead and composes its vertical thumbnail from
+the long thumbnail's hook. ``persist_media`` stores all three with the Short,
+so they are reviewed with it and uploaded exactly as stored
+(``services/short_package.py``).
 """
 
 from __future__ import annotations
@@ -88,6 +95,7 @@ MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
         {"id": "render_long_video", "atom": "media.render_long_video"},
         {"id": "render_short_video", "atom": "media.render_short_video"},
         {"id": "render_thumbnail", "atom": "media.render_thumbnail"},
+        {"id": "package_short", "atom": "media.package_short"},
         {"id": "media_qa", "atom": "media.qa"},
         {"id": "persist_media", "atom": "media.persist"},
     ],
@@ -98,7 +106,8 @@ MEDIA_PIPELINE_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_audio", "to": "render_long_video"},
         {"from": "render_long_video", "to": "render_short_video"},
         {"from": "render_short_video", "to": "render_thumbnail"},
-        {"from": "render_thumbnail", "to": "media_qa"},
+        {"from": "render_thumbnail", "to": "package_short"},
+        {"from": "package_short", "to": "media_qa"},
         {"from": "media_qa", "to": "persist_media"},
         {"from": "persist_media", "to": "END"},
     ],

@@ -29,6 +29,18 @@ metadata:
     - key: video.thumbnail_hook_fix
       output_format: text
       description: 'The one corrective retry for video.thumbnail_hook: carries the reason code rejected the first reply ({reason}) and the length limit ({max_chars}). Used by services.video_thumbnail.generate_thumbnail_hook.'
+    - key: video.short_title
+      output_format: text
+      description: "Writes a YouTube Short's own title: names the concrete subject of the Short and makes one claim, in different words from the full video's title. Checked in code for length (kept whole, never cut), invented numbers, searchability, describes-the-video openers and title restatement. Used by services.short_package.generate_short_package."
+    - key: video.short_title_fix
+      output_format: text
+      description: 'The one corrective retry for video.short_title: carries the reason code rejected the first reply ({reason}) and the limits ({max_chars}, {max_words}). Used by services.short_package.generate_short_package.'
+    - key: video.short_description
+      output_format: text
+      description: "Writes the one or two sentences that open a YouTube Short's description, above the links and hashtags code adds. Checked in code for length, links, hashtags, invented numbers and describes-the-video openers. Used by services.short_package.generate_short_package."
+    - key: video.short_description_fix
+      output_format: text
+      description: 'The one corrective retry for video.short_description: carries the reason code rejected the first reply ({reason}) and the length limit ({max_chars}). Used by services.short_package.generate_short_package.'
     - key: video.review_v1
       output_format: json
       description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
@@ -359,6 +371,72 @@ FIX: {reason}. Write the thumbnail text again: at most {max_chars} characters,
 in words the title leaves out, with numbers only from the video.
 
 Output ONLY the thumbnail text on a single line.
+```
+
+## video.short_title
+
+```text
+Write the YouTube title for this Short.
+
+The title sits under the Short in the Shorts player, on the channel page and
+in search, and a viewer reads it in about a second. It names the concrete
+thing the Short is about (the model, product, company, tool or number) and
+makes one claim about it. The full video on the same channel already uses the
+title below, so this one says it in different words.
+
+FULL VIDEO TITLE: {long_title}
+WHAT THE ARTICLE COVERS: {summary}
+WHAT THE SHORT SAYS: {script}
+
+Write a title that:
+- fits in {max_words} words or fewer
+- leads with the subject a viewer would search for
+- states what the Short delivers
+- writes numbers as digits and uses only numbers that appear above
+
+Output ONLY the title on a single line.
+```
+
+## video.short_title_fix
+
+```text
+FIX: {reason}. Write the title again: at most {max_chars} characters and
+{max_words} words, leading with the concrete subject of the Short, with
+numbers only from the text above.
+
+Output ONLY the title on a single line.
+```
+
+## video.short_description
+
+```text
+Write the opening of this Short's YouTube description.
+
+It sits under the Short's title and tells a viewer what the Short and the
+full article give them. Links and hashtags are added after it by code, so it
+carries neither.
+
+SHORT TITLE: {title}
+WHAT THE ARTICLE COVERS: {summary}
+WHAT THE SHORT SAYS: {script}
+
+Write one or two sentences that:
+- open with the point itself
+- add what the title leaves out: the result, the stakes, the named tool
+- stay true to the article
+- write numbers as digits and use only numbers that appear above
+
+Output ONLY the sentences.
+```
+
+## video.short_description_fix
+
+```text
+FIX: {reason}. Write the description opening again: one or two sentences, at
+most {max_chars} characters, opening with the point, with numbers only from
+the text above and no links or hashtags.
+
+Output ONLY the sentences.
 ```
 
 ## video.director_short_v1

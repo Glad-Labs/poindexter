@@ -457,6 +457,12 @@ class MediaApprovalItem(BaseModel):
     slug: str | None = None
     quality_score: float | None = None
     created_at: datetime | None = None
+    #: A Short's reviewed YouTube package (services/short_package.py): the
+    #: title exactly as it will upload (suffix included) and the description's
+    #: opening lines. None when the Short has no package (it then uploads under
+    #: its narration-derived title) and for every other medium.
+    youtube_title: str | None = None
+    youtube_description: str | None = None
 
 
 class MediaApprovalListResponse(ListResponse[MediaApprovalItem]):

@@ -44,7 +44,7 @@
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
                    · GET /{post_id}/{medium}/preview (raw asset bytes, for the drawer player)
-                   · GET /{post_id}/video/thumbnail (composed YouTube thumbnail, drawer)
+                   · GET /{post_id}/{video|video_short}/thumbnail (composed YouTube thumbnail, drawer)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
      gates         GET  /api/gates/pending  (tasks paused at a graph gate, e.g.
@@ -1274,6 +1274,11 @@
                   m.quality_score != null ? Math.round(m.quality_score) : null,
                 dur: null,
                 age: relAge(m.created_at),
+                // A Short's reviewed YouTube package: the title exactly as it
+                // uploads and its description's opening lines. Absent → the
+                // Short uploads under its narration-derived title.
+                youtube_title: m.youtube_title || null,
+                youtube_description: m.youtube_description || null,
               };
             }),
           };
@@ -1331,15 +1336,15 @@
       return res.blob();
     },
 
-    // GET /api/media-approval/{post_id}/video/thumbnail — the composed YouTube
-    // thumbnail that uploads with the long video, reviewed beside it (it is
-    // public the moment the video is). 404 = no thumbnail composed (an older
-    // render, or video_thumbnail_enabled off) → null, not an error: the
-    // drawer then shows the video exactly as before. Same OAuth + 401-retry
-    // as mediaPreviewBlob.
-    async mediaThumbnailBlob(postId) {
+    // GET /api/media-approval/{post_id}/{medium}/thumbnail — the composed
+    // YouTube thumbnail that uploads with the long video (medium 'video') or
+    // the Short ('video_short', 9:16), reviewed beside it (it is public the
+    // moment the video is). 404 = no thumbnail composed (an older render, or
+    // the feature off) → null, not an error: the drawer then shows the video
+    // exactly as before. Same OAuth + 401-retry as mediaPreviewBlob.
+    async mediaThumbnailBlob(postId, medium = 'video') {
       if (!cfg.live) return null;
-      const path = `/api/media-approval/${encodeURIComponent(postId)}/video/thumbnail`;
+      const path = `/api/media-approval/${encodeURIComponent(postId)}/${encodeURIComponent(medium)}/thumbnail`;
       const doFetch = async () => {
         const tok = await getToken();
         return fetch((cfg.base || '') + path, {

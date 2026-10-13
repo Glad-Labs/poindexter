@@ -70,7 +70,10 @@ _PERSON_SOURCES = ("presenter_portrait", "presenter_frame")
 #: top of that type, so such a featured image is not used as a background.
 _TEXT_BEARING_KINDS = frozenset({KIND_COMPOSED, KIND_CHART, KIND_SCREENSHOT})
 _IMAGE_LAYOUTS = ("cover", "right")
-_TEXT_POSITIONS = ("left", "center", "bottom")
+#: ``top`` is the Short's layout: the Shorts player lays the title, channel
+#: and buttons over the bottom and right of a vertical frame, so the words go
+#: in the upper part, which nothing covers.
+_TEXT_POSITIONS = ("left", "center", "bottom", "top")
 _NUMBER_RE = re.compile(r"\d[\d,.]*")
 _HOOK_ECHO_STARTS = ("here", "sure", "certainly", "thumbnail", "output", "text")
 #: Labels a model puts before its answer ("Thumbnail: …"). Only these are
@@ -170,6 +173,29 @@ def style_from_settings(site_config: Any) -> ThumbnailStyle:
     )
 
 
+def short_style_from_settings(site_config: Any) -> ThumbnailStyle:
+    """The Short's look: the long thumbnail's typeface, colours, scrim and mark on a vertical frame.
+
+    Only the frame and the type's position and size are the Short's own
+    (``video_short_thumbnail_*``). The colours stay shared so a pair reads as
+    one channel. A person is always full-bleed here: the long layout's
+    face-right, text-left split has no room in 9:16.
+    """
+    from dataclasses import replace
+
+    base = style_from_settings(site_config)
+    position = str(_sc(site_config, "video_short_thumbnail_text_position", "top")).strip().lower()
+    return replace(
+        base,
+        width=max(180, _sc_int(site_config, "video_short_thumbnail_width", 1080)),
+        height=max(320, _sc_int(site_config, "video_short_thumbnail_height", 1920)),
+        text_position=position if position in _TEXT_POSITIONS else "top",
+        max_font_px=_sc_int(site_config, "video_short_thumbnail_max_font_px", 150),
+        min_font_px=_sc_int(site_config, "video_short_thumbnail_min_font_px", 64),
+        person_layout="cover",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
@@ -248,6 +274,10 @@ def render_thumbnail_html(
     elif style.text_position == "bottom":
         box = f"left:{pad}px; right:{pad}px; bottom:{pad}px; height:{round(h * 0.42)}px; justify-content:flex-end;"
         scrim = f"linear-gradient(0deg, {_tint(ground, a)} 0%, {_tint(ground, a * 0.6)} 38%, transparent 70%)"
+    elif style.text_position == "top":
+        top = round(pad * 0.7 + max(16, h * 0.03) * 2.4)  # clear of the brand mark
+        box = f"left:{pad}px; right:{pad}px; top:{top}px; height:{round(h * 0.36)}px; justify-content:flex-start;"
+        scrim = f"linear-gradient(180deg, {_tint(ground, a)} 0%, {_tint(ground, a * 0.6)} 34%, transparent 58%)"
     else:
         box = f"left:{pad}px; top:{pad}px; bottom:{pad}px; width:{round(w * style.text_width_pct / 100)}px; justify-content:center;"
         scrim = f"linear-gradient(90deg, {_tint(ground, a)} 0%, {_tint(ground, a * 0.7)} 45%, transparent 75%)"
@@ -455,55 +485,30 @@ async def generate_thumbnail_hook(
     timeout_s = max(5.0, _sc_float(site_config, "video_thumbnail_hook_timeout_seconds", 90.0))
     max_opener_repeats = max(0, _sc_int(site_config, "video_thumbnail_hook_opener_max_repeats", 2))
 
-    from poindexter.services.llm_providers.dispatcher import dispatch_complete
+    from poindexter.services.checked_llm_line import generate_checked_line
     from poindexter.services.prompt_manager import get_prompt_manager
-    from poindexter.utils.exception_format import describe_exception
 
     prompt = get_prompt_manager().get_prompt(
         "video.thumbnail_hook", title=title, summary=summary or "(no summary)",
     )
-    kwargs: dict[str, Any] = {}
-    if _sc_bool(site_config, "video_director_disable_thinking", True):
-        kwargs["think"] = False
-    messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
-    reason = ""
-    for attempt in range(2):
-        try:
-            completion = await dispatch_complete(
-                pool, messages, model, tier="standard", phase="video_thumbnail_hook",
-                temperature=temperature, max_tokens=max_tokens, timeout_s=timeout_s, **kwargs,
-            )
-            raw = getattr(completion, "text", "") or ""
-        except Exception as exc:  # noqa: BLE001 — a hook failure must not cost the render
-            logger.warning(
-                "[video_thumbnail] hook call to %s failed (%s) — the thumbnail ships "
-                "without text", model, describe_exception(exc),
-            )
-            return "", f"hook call failed: {describe_exception(exc)}"
-        hook, reason = clean_thumbnail_hook(
+    return await generate_checked_line(
+        pool=pool,
+        model=model,
+        prompt=prompt,
+        check=lambda raw: clean_thumbnail_hook(
             raw, title=title, source_text=source_text, max_chars=max_chars,
             recent_hooks=recent_hooks, max_opener_repeats=max_opener_repeats,
-        )
-        if hook:
-            return hook, "retry" if attempt else ""
-        if attempt:
-            break
-        try:
-            fix = get_prompt_manager().get_prompt(
-                "video.thumbnail_hook_fix", reason=reason, max_chars=max_chars,
-            )
-        except Exception as exc:  # noqa: BLE001 — no retry prompt means no retry, not a failed render
-            logger.warning(
-                "[video_thumbnail] video.thumbnail_hook_fix prompt unavailable (%s) — "
-                "no corrective retry", describe_exception(exc),
-            )
-            return "", f"rejected ({reason}); no retry prompt"
-        messages = [
-            *messages,
-            {"role": "assistant", "content": raw.strip()[:400]},
-            {"role": "user", "content": fix},
-        ]
-    return "", f"rejected twice ({reason})"
+        ),
+        fix_prompt=lambda reason: get_prompt_manager().get_prompt(
+            "video.thumbnail_hook_fix", reason=reason, max_chars=max_chars,
+        ),
+        phase="video_thumbnail_hook",
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout_s=timeout_s,
+        disable_thinking=_sc_bool(site_config, "video_director_disable_thinking", True),
+        label="hook",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -797,12 +802,85 @@ async def compose_video_thumbnail(
     return ThumbnailResult(path=path, hook=hook, hook_note=note, background=source, size_bytes=len(data))
 
 
+async def load_stored_hook(pool: Any, task_id: str) -> str | None:
+    """The hook on ``task_id``'s stored long thumbnail, or ``None`` when it has none stored."""
+    if pool is None:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT metadata->>'hook' AS hook FROM media_assets "
+                "WHERE task_id::text = $1 AND type = $2 ORDER BY created_at DESC LIMIT 1",
+                str(task_id), THUMBNAIL_ASSET_TYPE,
+            )
+    except Exception as exc:  # noqa: BLE001 — no hook means an image-only Short thumbnail
+        logger.warning("[video_thumbnail] stored hook lookup failed for %s: %s", task_id, exc)
+        return None
+    return None if row is None else str(row["hook"] or "")
+
+
+async def compose_short_thumbnail(
+    *,
+    task_id: str,
+    pool: Any,
+    site_config: Any,
+    video_path: str = "",
+    hook_text: str | None = None,
+    out_path: str | None = None,
+    niche_slug: str | None = None,
+) -> ThumbnailResult | None:
+    """Compose the Short's vertical thumbnail and write it as a JPEG.
+
+    The words are the PAIR's: the long thumbnail's hook (``hook_text``, else
+    the stored one), so the Short and the long video share one headline and
+    no second model call is spent. ``video_frame`` here is a frame of the
+    Short itself, which is already vertical. ``None`` when
+    ``video_short_thumbnail_enabled`` is off or chromium fails.
+    """
+    if not _sc_bool(site_config, "video_short_thumbnail_enabled", True):
+        return None
+    ctx = await load_post_context(pool, task_id)
+    style = short_style_from_settings(site_config)
+    if hook_text is None:
+        hook_text = await load_stored_hook(pool, task_id)
+        note = "the long thumbnail's hook" if hook_text else "no long thumbnail hook to reuse"
+    else:
+        note = "the long thumbnail's hook" if hook_text else "the long thumbnail has no hook"
+    hook = " ".join((hook_text or "").split())
+    order = [
+        s.strip() for s in str(
+            _sc(site_config, "video_short_thumbnail_background_order", "featured_image,presenter_portrait,brand")
+        ).split(",") if s.strip() in BACKGROUND_SOURCES
+    ] or ["brand"]
+    with tempfile.TemporaryDirectory(prefix="yt-short-thumb-") as work:
+        background, source = await resolve_background(
+            order=order, featured_image_url=ctx["featured_image_url"], video_path=video_path,
+            shot_list=None, site_config=site_config, dest_dir=work, niche_slug=niche_slug,
+        )
+        data = await render_thumbnail_jpeg(
+            hook=hook, background_path=background, style=style, image_layout="cover",
+        )
+    if not data:
+        return None
+    path = out_path or os.path.join(tempfile.gettempdir(), f"media_{task_id}_short_thumbnail.jpg")
+    with open(path, "wb") as fh:
+        fh.write(data)
+    os.chmod(path, 0o644)
+    logger.info(
+        "[video_thumbnail] task %s Short: %s background, hook %r (%d bytes)",
+        task_id, source, hook, len(data),
+    )
+    return ThumbnailResult(path=path, hook=hook, hook_note=note, background=source, size_bytes=len(data))
+
+
 # ---------------------------------------------------------------------------
 # Durable storage
 # ---------------------------------------------------------------------------
 
 #: ``media_assets.type`` of a composed thumbnail.
 THUMBNAIL_ASSET_TYPE = "video_thumbnail"
+#: ``media_assets.type`` of the Short's vertical thumbnail.
+SHORT_THUMBNAIL_ASSET_TYPE = "video_short_thumbnail"
 
 
 async def store_thumbnail_asset(
@@ -814,8 +892,12 @@ async def store_thumbnail_asset(
     post_id: str | None,
     video_recorded_now: bool,
     video_dir: Any = None,
+    asset_type: str = THUMBNAIL_ASSET_TYPE,
 ) -> str | None:
     """Make the composed thumbnail durable as a ``video_thumbnail`` asset.
+
+    ``asset_type=SHORT_THUMBNAIL_ASSET_TYPE`` stores the Short's thumbnail the
+    same way; ``video_recorded_now`` is then whether the SHORT was persisted.
 
     The thumbnail FOLLOWS its video. A run that persisted the long video
     replaces any older thumbnail (a re-render gets a fresh one). A replay
@@ -834,7 +916,7 @@ async def store_thumbnail_asset(
         async with pool.acquire() as conn:
             existing = await conn.fetchval(
                 "SELECT count(*) FROM media_assets WHERE task_id::text = $1 AND type = $2",
-                task_id, THUMBNAIL_ASSET_TYPE,
+                task_id, asset_type,
             )
     except Exception as exc:  # noqa: BLE001 — a lookup failure must not block the node
         logger.warning("[video_thumbnail] thumbnail lookup failed for %s: %s", task_id, exc)
@@ -845,7 +927,8 @@ async def store_thumbnail_asset(
             "re-persisted — keeping the existing one", task_id,
         )
         return None
-    durable = video_dir / f"{task_id}_thumbnail.jpg"
+    suffix = "_short_thumbnail" if asset_type == SHORT_THUMBNAIL_ASSET_TYPE else "_thumbnail"
+    durable = video_dir / f"{task_id}{suffix}.jpg"
     try:
         video_dir.mkdir(parents=True, exist_ok=True)
         shutil.move(src, durable)
@@ -866,7 +949,7 @@ async def store_thumbnail_asset(
             async with pool.acquire() as conn:
                 await conn.execute(
                     "DELETE FROM media_assets WHERE task_id::text = $1 AND type = $2",
-                    task_id, THUMBNAIL_ASSET_TYPE,
+                    task_id, asset_type,
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[video_thumbnail] stale thumbnail row cleanup failed for %s: %s", task_id, exc)
@@ -874,7 +957,7 @@ async def store_thumbnail_asset(
         pool=pool,
         post_id=post_id,
         task_id=task_id,
-        asset_type=THUMBNAIL_ASSET_TYPE,
+        asset_type=asset_type,
         storage_path=str(durable),
         storage_provider="local",
         source="pipeline",
@@ -886,24 +969,28 @@ async def store_thumbnail_asset(
         metadata=dict(meta) if meta else None,
     )
     if asset_id:
-        logger.info("[video_thumbnail] recorded video_thumbnail %s for task %s", asset_id, task_id)
+        logger.info("[video_thumbnail] recorded %s %s for task %s", asset_type, asset_id, task_id)
     return asset_id
 
 
 __all__ = [
     "BACKGROUND_SOURCES",
+    "SHORT_THUMBNAIL_ASSET_TYPE",
     "THUMBNAIL_ASSET_TYPE",
     "ThumbnailResult",
     "ThumbnailStyle",
     "clean_thumbnail_hook",
+    "compose_short_thumbnail",
     "compose_video_thumbnail",
     "generate_thumbnail_hook",
     "jpeg_under",
     "load_post_context",
+    "load_stored_hook",
     "presenter_window_start",
     "render_thumbnail_html",
     "render_thumbnail_jpeg",
     "resolve_background",
+    "short_style_from_settings",
     "store_thumbnail_asset",
     "style_from_settings",
 ]
