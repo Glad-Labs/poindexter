@@ -3483,14 +3483,14 @@ langchain-core = ">=1.2.31,<2.0.0"
 
 [[package]]
 name = "langfuse"
-version = "4.13.0"
-description = "A client library for accessing langfuse"
+version = "4.15.6"
+description = "Langfuse Python SDK - LLM observability/tracing, datasets, experiments, LLM-as-a-judge evaluation, and prompt management"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["main"]
 files = [
-    {file = "langfuse-4.13.0-py3-none-any.whl", hash = "sha256:0e0c5af8c8f299d6878c328518ce8414a188d1f6333ad2109aa8208f2e41500a"},
-    {file = "langfuse-4.13.0.tar.gz", hash = "sha256:41b6b13e1e4e96f903a24e2bb69a38b83a8a296d12de11a345e33ec2763f10d2"},
+    {file = "langfuse-4.15.6-py3-none-any.whl", hash = "sha256:2364d5f17342301a8651ef166abb5bb260aaadd94d1ac72aa30c298b3a395d85"},
+    {file = "langfuse-4.15.6.tar.gz", hash = "sha256:af80ed1199e57c2641c9f228066bf9dc324657c06ce6e68660118fa46b237e35"},
 ]
 
 [package.dependencies]
@@ -3501,6 +3501,7 @@ opentelemetry-exporter-otlp-proto-http = ">=1.33.1,<2"
 opentelemetry-sdk = ">=1.33.1,<2"
 packaging = ">=23.2,<27.0"
 pydantic = ">=2,<3"
+typing-extensions = ">=4.12.2,<5"
 wrapt = ">=1.14,<3"
 
 [[package]]
@@ -10000,4 +10001,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "cfc820444ae3a9d63718a333c4d7e2cc68caf6eb1eb1bd0797227eafd9b1df54"
+content-hash = "df017b8fa42f9215aca7baf470d075ea609b32fc61d18c4b63093420031dc357"
