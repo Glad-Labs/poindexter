@@ -67,6 +67,31 @@ _TERMINAL_STATUSES = frozenset({
 })
 
 
+# Nodes whose output is reviewed on its own, at Gate 2 (media_approvals), and
+# the one node that leaves an article for the task-level review.
+_SELF_REVIEWED_ATOMS = frozenset({"media.persist", "podcast.persist"})
+_ARTICLE_ATOMS = frozenset({"content.persist_task"})
+
+
+def _landing_status(nodes: list[dict[str, Any]]) -> str:
+    """Where a plan run lands when the architect left that unsaid.
+
+    ``awaiting_approval`` is the article review: approving it stages the task,
+    and a later publish turns the task into a post. A plan whose deliverable is
+    media with no article (a creative-studio cartoon) is already reviewed on
+    the media itself, so parking its task there asked the operator for a
+    second decision about nothing. Rejecting the cartoon left a "plan awaiting
+    approval" row whose approve could only lead to a post with no body
+    (2026-10-13). Such a run lands at ``completed``, the status a graph with
+    no post already uses (``post_pipeline_actions`` skips the approval ping
+    for it).
+    """
+    atoms = {str(n.get("atom") or "") for n in nodes}
+    if atoms & _SELF_REVIEWED_ATOMS and not atoms & _ARTICLE_ATOMS:
+        return "completed"
+    return "awaiting_approval"
+
+
 def _has_terminal_node(nodes: list[dict[str, Any]]) -> bool:
     for n in nodes:
         atom = n.get("atom") or ""
@@ -83,9 +108,10 @@ def ensure_terminal(spec: dict[str, Any]) -> dict[str, Any]:
     """Return a copy guaranteed to end in a status-setting node.
 
     When the composed spec lacks a node that sets a TERMINAL status,
-    append ``atoms.set_task_status`` (``target_status='awaiting_approval'``
-    — the reviewable landing state; approve≠publish still applies) wired
-    from every sink node. Deterministic code, not LLM trust: the architect
+    append ``atoms.set_task_status`` wired from every sink node. Its target is
+    ``awaiting_approval`` (the reviewable landing state; approve≠publish still
+    applies), or ``completed`` for a media-only plan whose output has its own
+    review (``_landing_status``). Deterministic code, not LLM trust: the architect
     is free to design any pipeline shape, but a plan run must always land
     somewhere the operator can see.
     """
@@ -103,7 +129,7 @@ def ensure_terminal(spec: dict[str, Any]) -> dict[str, Any]:
     nodes = nodes + [{
         "id": term_id,
         "atom": "atoms.set_task_status",
-        "config": {"target_status": "awaiting_approval"},
+        "config": {"target_status": _landing_status(nodes)},
     }]
     edges = edges + [{"from": sink, "to": term_id} for sink in sinks]
     out["nodes"] = nodes

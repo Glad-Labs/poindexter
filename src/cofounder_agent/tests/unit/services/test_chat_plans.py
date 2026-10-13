@@ -408,6 +408,26 @@ class TestEnsureTerminal:
         term = out["nodes"][-1]["id"]
         assert {e["from"] for e in out["edges"] if e["to"] == term} == {"b", "c"}
 
+    def test_media_only_plan_lands_completed(self):
+        """A cartoon is reviewed on its video (Gate 2); its task must not also
+        sit in the article review queue (2026-10-13)."""
+        spec = {"name": "plan_x", "nodes": [
+            {"id": "w", "atom": "story.write_screenplay"},
+            {"id": "r", "atom": "media.render_long_video"},
+            {"id": "p", "atom": "media.persist"},
+        ], "edges": [{"from": "w", "to": "r"}, {"from": "r", "to": "p"}]}
+        out = chat_plans.ensure_terminal(spec)
+        assert out["nodes"][-1]["config"]["target_status"] == "completed"
+
+    def test_a_plan_with_an_article_still_awaits_approval(self):
+        spec = {"name": "plan_x", "nodes": [
+            {"id": "d", "atom": "content.generate_draft"},
+            {"id": "t", "atom": "content.persist_task"},
+            {"id": "p", "atom": "media.persist"},
+        ], "edges": [{"from": "d", "to": "t"}, {"from": "t", "to": "p"}]}
+        out = chat_plans.ensure_terminal(spec)
+        assert out["nodes"][-1]["config"]["target_status"] == "awaiting_approval"
+
     def test_noop_when_set_task_status_present(self):
         spec = {"name": "plan_x", "nodes": [
             {"id": "s", "atom": "atoms.set_task_status",

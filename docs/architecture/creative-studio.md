@@ -176,6 +176,10 @@ drawer previews it the same way. The quality eval runs as it does for any
 video. Shot fidelity comes from the render's own audit rows, and topic match
 is scored against the screenplay title.
 
+The plan's own task finishes as `completed`, not `awaiting_approval`: the
+video's review is the decision, and the article review queue has nothing to
+publish for a video with no post (`chat_plans._landing_status`).
+
 A standalone video always waits for a human. The niche auto-approve and
 earned-autonomy tiers vouch for an article's media, and that track record says
 nothing about a cartoon. The RSS feeds join posts, so a standalone video never
