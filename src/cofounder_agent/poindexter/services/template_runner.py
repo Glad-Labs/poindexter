@@ -607,6 +607,13 @@ class PipelineState(TypedDict, total=False):
     # reason as every channel here — an undeclared key is dropped between
     # nodes on the graph_def path.
     screenplay: dict
+    # story.cast_characters' decisions, read by story.write_screenplay
+    # (cast, narrator) and media.direct_screenplay (style). Without these
+    # declarations the cast would vanish before the writer ran.
+    screenplay_cast: list
+    screenplay_visual_style: str
+    screenplay_narrator: str
+    cast_sheet: dict
     # media.render_dialogue's measured beat timeline (start_s/end_s per line
     # and action beat), read by media.direct_screenplay.
     dialogue_timeline: list

@@ -77,7 +77,8 @@ ALLOWED_ENTRIES = {
     "backups": "pg_dumps (DbBackupJob, backup-hourly/daily) + the brain's age check",
     "logs": "dr-backup failure sentinels the brain scans (read-only)",
     "comfyui": "ComfyUI model weights (read-only)",
-    "tts-voices": "voice reference clips for the TTS sidecar (read-only)",
+    "tts-voices": "voice reference clips: the TTS sidecar reads them all (read-only); "
+    "prefect-worker writes only tts-voices/cast, the casting step's generated clips",
     "alertmanager-webhook-token": "alertmanager's webhook bearer token (read-only)",
 }
 

@@ -20,9 +20,12 @@ metadata:
     - key: story.shot_visuals
       output_format: json
       description: 'Shot visuals for a screenplay video — the piece''s title/logline and one row per non-talking shot (scene setting, what happens, who is visible, animated or still) in; JSON {"shots": [{id, prompt, motion}]} out. Style and character looks are added in code, so prompts describe composition and action only. Used by services.screenplay_director.write_visuals.'
+    - key: story.casting
+      output_format: json
+      description: "Casting for an animated piece: the request (topic, brief, format, length), the existing characters, a required cast, a style hint and the voice catalog in; JSON art style, narrator and characters out, each one either a reused character id or a new character with name, role, appearance, personality, voice, energy and a sample line. Validated in code (reused ids exist, voices are in the catalog, every new character has looks). Used by services.casting.cast_characters, which then draws each new character's portrait and builds its voice."
     - key: story.screenplay_fix
       output_format: json
-      description: 'The one repair retry for story.outline and story.scene: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
+      description: 'The one repair retry for story.casting, story.outline and story.scene: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
 ---
 
 # Storytelling skill
@@ -160,6 +163,43 @@ FOR EVERY SHOT
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
 {{"shots": [{{"id": 3, "prompt": "medium shot of dex at a cluttered workbench, holding a glowing graphics card up to the light, warm lamp glow", "motion": "slow push-in as dex turns the card in his paws"}}]}}
+```
+
+## story.casting
+
+```text
+You are the casting director for a short animated piece by {site_name}. Decide who is in it and how it looks.
+
+THE REQUEST
+Topic: {topic}
+Brief: {brief}
+Format: {format_name}
+Length: about {target_seconds} seconds
+
+CHARACTERS WHO ALREADY EXIST - reuse one when the request names them or when they fit the part:
+{roster_block}
+
+MUST BE IN THE CAST: {required}
+
+ART STYLE ASKED FOR: {style_hint}
+
+VOICES - choose each new character's voice from this list, by id:
+{voice_catalog}
+
+HOW TO CAST
+- Cast the characters the story needs to be told, usually two or three and at most {max_new} new ones. A character the story only mentions, or one who never speaks, stays out of the cast and is drawn in the scenes from the screenplay.
+- For a well-known tale, cast its own characters; give each one a short first name that suits the tale.
+- "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear. Make the cast easy to tell apart by colour and shape.
+- "personality": how they talk and behave, in one sentence.
+- "voice": an id from the list that fits their age and temperament. Give different characters different voices.
+- "energy": "low" for calm or dry characters, "medium" for most, "high" for lively, excitable or loud ones.
+- "sample_line": one or two sentences the character might say, in their voice, used to set up their voice.
+- "style": the art style for every picture of the piece, as a short phrase a painter would follow, in your own words. Use the style asked for when there is one; otherwise choose one that suits the story.
+- "narrator": set "use" to true when the piece needs a storyteller's voice, false otherwise. A narrator is heard and never seen. Put an existing character's id in "reuse" when one fits the part; otherwise leave "reuse" empty and describe a new voice with "name", "voice", "energy" and "sample_line".
+
+OUTPUT
+Reply with one JSON object and nothing else, shaped like this:
+{{"style": "...", "characters": [{{"reuse": "existing_id"}}, {{"id": "lowercase-id", "name": "...", "role": "...", "appearance": "...", "personality": "...", "voice": "voice_id", "energy": "medium", "sample_line": "..."}}], "narrator": {{"use": true, "reuse": "existing_id or empty", "name": "...", "voice": "voice_id", "energy": "low", "sample_line": "..."}}}}
 ```
 
 ## story.screenplay_fix

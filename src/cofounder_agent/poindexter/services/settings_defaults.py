@@ -3117,6 +3117,52 @@ DEFAULTS: dict[str, str] = {
     'story_line_intensity_offsets': 'low=-0.2,medium=0,high=0.2',
     'story_line_exaggeration_min': '0.25',
     'story_line_exaggeration_max': '1.2',
+    # Casting (story.cast_characters, poindexter#1134): the step that reads a
+    # request, reuses the characters that fit and designs, draws and voices
+    # the rest. At most this many new characters per piece.
+    'story_cast_max_new': '4',
+    # Kokoro voices casting may give a new character, "id: what it sounds
+    # like" separated by ";". The description is all the LLM hears of a voice.
+    'story_voice_catalog': (
+        'af_heart: warm, gentle young woman, American; '
+        'af_bella: bright, expressive young woman, American; '
+        'af_nova: clear, confident woman, American; '
+        'af_sky: soft, airy young woman, American; '
+        'af_sarah: calm, mature woman, American; '
+        'am_puck: playful, quick young man, American; '
+        'am_echo: clear, earnest young man, American; '
+        'am_michael: steady, warm man, American; '
+        'am_fenrir: deep, gravelly man, American; '
+        'am_onyx: low, smooth man, American; '
+        'am_santa: jolly, booming older man, American; '
+        'bf_emma: gentle, kind woman, British; '
+        'bf_isabella: warm, composed woman, British; '
+        'bf_alice: crisp, precise woman, British; '
+        'bm_george: deep, unhurried older man, British; '
+        'bm_lewis: warm, mature man, British; '
+        'bm_daniel: measured, quiet man, British; '
+        'bm_fable: bright, lively young man, British'
+    ),
+    # kokoro = the catalog voice as is. chatterbox = Kokoro reads the
+    # character's sample line and that clip becomes its Chatterbox clone
+    # reference, which can act (the treatment Kai's voice won on 2026-10-13).
+    'story_cast_voice_engine': 'chatterbox',
+    # Where the worker writes those clips, and the same folder as the
+    # chatterbox sidecar sees it (compose mounts tts-voices/cast at both).
+    'story_cast_voice_dir': '/home/appuser/.poindexter/cast-voices',
+    'story_cast_voice_ref_prefix': '/app/voices/cast',
+    # Chatterbox emotion strength for each energy casting can give a voice.
+    'story_cast_energy_exaggeration': 'low=0.5,medium=0.7,high=0.9',
+    # A new character's portrait: every frame of the piece is drawn from it.
+    # {style} is the cast's art style, {appearance} the character's looks.
+    'story_portrait_template': (
+        '{style}, character portrait of {appearance}, alone, head and shoulders, '
+        'centred, facing the viewer, mouth closed, plain light background, '
+        'no text, no letters, no watermark'
+    ),
+    'story_portrait_size': '1024',
+    # Draws per portrait; each is checked for exactly that one character.
+    'story_portrait_attempts': '3',
     # Dialogue track (poindexter#1137, services/dialogue_audio.py). Narrator
     # persona slug; empty = the house voice (podcast_tts_voice).
     'story_default_narrator_persona': '',
@@ -6542,6 +6588,15 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_line_intensity_offsets': {'owner': 'screenplay', 'value_type': 'string'},
     'story_line_exaggeration_min': {'owner': 'screenplay', 'value_type': 'float'},
     'story_line_exaggeration_max': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_cast_max_new': {'owner': 'casting', 'value_type': 'integer'},
+    'story_voice_catalog': {'owner': 'casting', 'value_type': 'string'},
+    'story_cast_voice_engine': {'owner': 'casting', 'value_type': 'string'},
+    'story_cast_voice_dir': {'owner': 'casting', 'value_type': 'string'},
+    'story_cast_voice_ref_prefix': {'owner': 'casting', 'value_type': 'string'},
+    'story_cast_energy_exaggeration': {'owner': 'casting', 'value_type': 'string'},
+    'story_portrait_template': {'owner': 'casting', 'value_type': 'string'},
+    'story_portrait_size': {'owner': 'casting', 'value_type': 'integer'},
+    'story_portrait_attempts': {'owner': 'casting', 'value_type': 'integer'},
     'video_cast_talking_frame_attempts': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},

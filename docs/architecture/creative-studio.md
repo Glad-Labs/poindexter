@@ -8,7 +8,7 @@ blog → podcast → video path and reuses its renderer.
 ## The chain
 
 ```text
-story.write_screenplay → media.render_dialogue → media.direct_screenplay
+[story.cast_characters →] story.write_screenplay → media.render_dialogue → media.direct_screenplay
     → media.transcribe_narration → media.render_long_video → media.qa → media.persist
 ```
 
@@ -21,11 +21,12 @@ seven steps with the cast, length and style in config. The node config keys belo
 are how a plan passes its creative choices; each falls back to a
 `story_default_*` setting.
 
-| Atom                      | Reads                                                          | Writes                                                                | Node config                                                                                                                                                                                                                                    |
-| ------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `story.write_screenplay`  | `topic`                                                        | `screenplay`                                                          | `screenplay_format` (explainer, story, dialogue, sketch), `screenplay_cast` (persona slugs), `screenplay_target_seconds`, `screenplay_brief`, `screenplay_tone`, `screenplay_narrator` (`none` = cast only, or the persona slug that narrates) |
-| `media.render_dialogue`   | `screenplay`                                                   | `long_narration_audio_path`, `video_long_script`, `dialogue_timeline` | `dialogue_narrator_persona`                                                                                                                                                                                                                    |
-| `media.direct_screenplay` | `screenplay`, `dialogue_timeline`, `long_narration_audio_path` | `video_shot_list`                                                     | `screenplay_visual_style` (art style for every still)                                                                                                                                                                                          |
+| Atom                      | Reads                                                          | Writes                                                                            | Node config                                                                                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `story.cast_characters`   | `topic`                                                        | `screenplay_cast`, `screenplay_visual_style`, `screenplay_narrator`, `cast_sheet` | `screenplay_format`, `screenplay_target_seconds`, `screenplay_brief`, `screenplay_cast` (slugs that must appear), `screenplay_visual_style`, `screenplay_narrator`                                                                             |
+| `story.write_screenplay`  | `topic`                                                        | `screenplay`                                                                      | `screenplay_format` (explainer, story, dialogue, sketch), `screenplay_cast` (persona slugs), `screenplay_target_seconds`, `screenplay_brief`, `screenplay_tone`, `screenplay_narrator` (`none` = cast only, or the persona slug that narrates) |
+| `media.render_dialogue`   | `screenplay`                                                   | `long_narration_audio_path`, `video_long_script`, `dialogue_timeline`             | `dialogue_narrator_persona`                                                                                                                                                                                                                    |
+| `media.direct_screenplay` | `screenplay`, `dialogue_timeline`, `long_narration_audio_path` | `video_shot_list`                                                                 | `screenplay_visual_style` (art style for every still)                                                                                                                                                                                          |
 
 ## The cast is personas
 
@@ -35,6 +36,48 @@ reference), and a character sheet. `appearance` is the canonical visual
 description joined into every still the character appears in. `personality`
 is how it talks; only the writer reads it. Set one up with
 `poindexter personas` (example in the personas doc).
+
+### Casting: characters the request brings with it
+
+`story.cast_characters` (`services/casting.py`) runs first when a request
+needs characters nobody has made: a fairytale, a fable, any story with its
+own people. Before it, those had to be created by hand as personas, so "make
+The Boy Who Cried Wolf" could not be asked for at all. One LLM call
+(`story.casting` in the storytelling pack) reads the request and the roster,
+reuses the personas that fit, and designs the rest: name, role, appearance,
+personality, a voice from `story_voice_catalog`, an energy and a sample line.
+It also picks the art style when the request names none, and decides on a
+narrator. Code checks the reply (reused ids exist, voices come from the
+catalog, every new character has looks, at most `story_cast_max_new`) and
+sends the FIX lines back once.
+
+Each new character becomes a persona, so it is reusable and shows up in the
+architect's roster afterwards:
+
+- **Portrait.** `story_portrait_template` with the cast's style. The first
+  one is drawn from text by the image service; each later one by the
+  image-edit model with the cast's portraits as style-only references, so
+  the whole cast shares one look. With no style asked for, reused characters'
+  portraits anchor too. Every draw is checked by `qa.cast_frame` for exactly
+  that one character and redrawn up to `story_portrait_attempts` times. The
+  portrait matters past the cast sheet: every still and talking shot of the
+  piece is drawn from it ([One look](#one-look-every-frame-drawn-from-the-portraits)).
+  A portrait that cannot be drawn or uploaded leaves the character voice-only.
+- **Voice.** With `story_cast_voice_engine=chatterbox`, Kokoro reads the
+  sample line in the chosen voice and the clip becomes the character's
+  Chatterbox clone reference, with an emotion strength from its energy
+  (`story_cast_energy_exaggeration`). That is the treatment Kai's voice won in
+  the 2026-10-13 audition. The worker writes the clip to
+  `story_cast_voice_dir`, which compose mounts from `~/.poindexter/tts-voices/cast`,
+  and chatterbox reads it under `story_cast_voice_ref_prefix`. The worker
+  gets only that `cast/` subfolder, never `tts-voices` itself, because the
+  hand-made references there must stay out of reach of LLM-driven code. A
+  clip that cannot be written leaves the character on plain Kokoro.
+
+Its outputs are state, and state wins over node config, so a plan that
+casts puts the cast, narrator and style on `story.cast_characters` and on no
+later node. All four outputs are declared `PipelineState` channels. An
+undeclared one would be dropped before the writer ran.
 
 ## Writing: outline, then scenes
 

@@ -698,6 +698,14 @@ services:
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
       - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+      # Voice clips for characters the casting step invents (story.cast_characters,
+      # poindexter#1134): Kokoro reads each new character's sample line and the
+      # clip becomes its Chatterbox clone reference, which the chatterbox
+      # sidecar reads as /app/voices/cast/<slug>.wav through its read-only
+      # tts-voices mount. Only the cast/ subdir, never tts-voices itself: that
+      # holds hand-made references (the operator's own voice among them) that
+      # LLM-driven pipeline code must not be able to overwrite.
+      - ${USERPROFILE:-.}/.poindexter/tts-voices/cast:/home/appuser/.poindexter/cast-voices
       # Local publishing folder (storage_provider=local). The flow stores post
       # images here; the worker exports and serves the site from the same
       # volume. See the matching mount on `worker`.

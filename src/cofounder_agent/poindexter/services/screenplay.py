@@ -385,6 +385,7 @@ async def _ask_validated(
     pool: Any,
     task_id: str | None,
     what: str,
+    phase: str = "story_write_screenplay",
 ) -> tuple[dict[str, Any], list[str]]:
     """One prompt, checked; one FIX retry. Returns ``(reply, soft_notes)``.
 
@@ -408,7 +409,7 @@ async def _ask_validated(
             site_config=site_config,
             pool=pool,
             task_id=task_id,
-            phase="story_write_screenplay",
+            phase=phase,
             timeout_setting="story_writer_timeout_seconds",
             timeout_default=300.0,
             think=False,

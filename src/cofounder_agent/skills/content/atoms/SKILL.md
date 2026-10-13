@@ -310,26 +310,40 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 - For dev_diary content: stage.verify_task -> atoms.narrate_bundle
   -> stage.finalize_task is the canonical 3-step pattern.
 - For a creative video (cartoon, animated explainer, sketch, a story
-  with characters), use these seven steps in exactly this order:
-  story.write_screenplay -> media.render_dialogue ->
-  media.direct_screenplay -> media.transcribe_narration ->
+  with characters), use these steps in exactly this order:
+  story.cast_characters -> story.write_screenplay -> media.render_dialogue
+  -> media.direct_screenplay -> media.transcribe_narration ->
   media.render_long_video -> media.qa -> media.persist.
+  story.cast_characters comes first whenever the piece needs a character
+  that is not in CHARACTERS below: a fairytale, a fable, a known story, or
+  any request that describes people of its own. It designs those
+  characters, draws them and gives them voices, and it reuses CHARACTERS
+  that fit. When every character the request wants is already in
+  CHARACTERS, start at story.write_screenplay instead.
   media.transcribe_narration comes BEFORE media.render_long_video because
   the render burns in the captions it makes, and media.persist comes last
   because it saves the video and puts it in the approval queue.
   Put the creative choices in config. On story.write_screenplay:
   screenplay_format ("sketch" for comedy, "story" for a narrative with a
   journey, "dialogue" for characters talking a topic through, "explainer"
-  for teaching one idea), screenplay_cast (a list of character ids from
-  CHARACTERS below), screenplay_target_seconds, screenplay_brief,
-  screenplay_tone. On media.direct_screenplay: screenplay_visual_style,
-  the art style the request asks for, in its own words (a request for
-  anime gets an anime style); leave it out when the request names none.
+  for teaching one idea), screenplay_target_seconds, screenplay_brief,
+  screenplay_tone. When story.cast_characters runs, give it the same
+  screenplay_format, screenplay_target_seconds and screenplay_brief, and
+  put these three on it and on no other node: screenplay_cast (only the
+  CHARACTERS ids the request names), screenplay_visual_style and
+  screenplay_narrator; it hands its decisions on to the later steps.
+  Without story.cast_characters, screenplay_cast (a list of ids from
+  CHARACTERS) goes on story.write_screenplay and screenplay_visual_style
+  on media.direct_screenplay.
+  screenplay_visual_style is the art style the request asks for, in its
+  own words (a request for anime gets an anime style); leave it out when
+  the request names none.
   Character ids in any config value (screenplay_cast, screenplay_narrator,
   dialogue_narrator_persona) come only from CHARACTERS below; leave the
   narrator keys out unless the request says who narrates.
   Keep only the steps the intent asks for: a script alone is just
-  story.write_screenplay; voiced audio ends after media.render_dialogue.
+  story.write_screenplay (after story.cast_characters when it needs new
+  characters); voiced audio ends after media.render_dialogue.
 
 CHARACTERS (ids a creative plan may cast in screenplay_cast):
 {cast_roster}
