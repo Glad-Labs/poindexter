@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## [0.155.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.154.2...v0.155.0) (2026-10-13)
+
+
+### Features
+
+* **architect:** compose creative video — cast roster + creative chain (creative studio phase 5) ([#4383](https://github.com/Glad-Labs/glad-labs-stack/issues/4383)) ([bb71a47](https://github.com/Glad-Labs/glad-labs-stack/commit/bb71a4793a2b61b2358adfb1f00aa324e78f70e3))
+* **media:** character sheets + cast-aware shots (creative studio phase 1) ([#4381](https://github.com/Glad-Labs/glad-labs-stack/issues/4381)) ([4543522](https://github.com/Glad-Labs/glad-labs-stack/commit/4543522d7e7060dcabb254aae4e4a018efc562ea))
+* **media:** draw every screenplay frame from the cast's portraits (creative studio phase 7) ([#4385](https://github.com/Glad-Labs/glad-labs-stack/issues/4385)) ([457cd9b](https://github.com/Glad-Labs/glad-labs-stack/commit/457cd9b1ceaf2bab156cc83a752e88abd64d78c1))
+* **media:** review standalone videos with no blog post (creative studio phase 6a) ([#4389](https://github.com/Glad-Labs/glad-labs-stack/issues/4389)) ([178fa0e](https://github.com/Glad-Labs/glad-labs-stack/commit/178fa0ec0d61857bc5b281b384a2711a147491a0))
+* **media:** screenplay writer, multi-voice dialogue, screenplay director (creative studio phases 2-4) ([#4382](https://github.com/Glad-Labs/glad-labs-stack/issues/4382)) ([25934a4](https://github.com/Glad-Labs/glad-labs-stack/commit/25934a45585432a574ce2e8304a20a088992b1a7))
+
+
+### Bug Fixes
+
+* **architect:** creative plans keep the requested style and their dialogue track ([#4387](https://github.com/Glad-Labs/glad-labs-stack/issues/4387)) ([aa75e92](https://github.com/Glad-Labs/glad-labs-stack/commit/aa75e92a49f9a3cd6c7eaa8946e362e8ee964a8c))
+* **media:** screenplay videos render on their exact timeline (creative studio) ([#4384](https://github.com/Glad-Labs/glad-labs-stack/issues/4384)) ([e44cb0e](https://github.com/Glad-Labs/glad-labs-stack/commit/e44cb0e54eaa8cb8d99ba10fd15158598e5d7d01))
+
 ## [0.154.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.154.1...v0.154.2) (2026-10-12)
 
 
