@@ -266,6 +266,16 @@ function ActionInbox({
                 )}
                 {it.kind === 'media' && (
                   <>
+                    {/* The row itself opens the drawer, whose player is the
+                        only way to watch a Gate-2 render; this says so. */}
+                    <button
+                      className="mbtn mbtn--ghost"
+                      onClick={() => onOpen(it)}
+                      title="Watch the render before deciding"
+                    >
+                      <Icon name="play" size={12} />
+                      Watch
+                    </button>
                     <button
                       className="mbtn mbtn--primary"
                       onClick={() => onMediaApprove(it)}

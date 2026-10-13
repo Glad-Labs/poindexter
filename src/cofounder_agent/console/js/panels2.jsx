@@ -803,6 +803,13 @@ function MediaPanel({ media, onOpenItem, onApprove, onReject, fresh }) {
                 onClick={(e) => e.stopPropagation()}
               >
                 <button
+                  className="mbtn mbtn--ghost"
+                  title="Watch the render before deciding"
+                  onClick={() => onOpenItem(it)}
+                >
+                  <Icon name="play" size={11} />
+                </button>
+                <button
                   className="mbtn mbtn--primary"
                   title="Approve · clear for dispatch"
                   onClick={() => onApprove(it)}
