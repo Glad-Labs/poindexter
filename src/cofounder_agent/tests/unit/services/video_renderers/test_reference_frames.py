@@ -162,6 +162,26 @@ class TestReferenceStill:
         assert stub_refs["clear"].await_count == 1 and list(ctx.portraits) == ["dex"]
 
     @pytest.mark.asyncio
+    async def test_the_same_picture_in_one_pass_is_drawn_once(self, stub_refs, tmp_path):
+        """A scene's master shot recurs between lines; it must be one picture,
+        not a new draw each time. A re-roll (its own repair dir) draws fresh."""
+        ctx = slr.ReferenceContext(cast=("dex", "nova"))
+        args = dict(width=8, height=8, ctx=ctx, site_config=_sc(), http_client_factory=None)
+        master = "anime, wide shot of Dex and Nova in a lab"
+        for i in (3, 7):
+            assert await slr._render_reference_still(
+                _shot(i, characters=["dex", "nova"]), prompt=master,
+                output_path=str(tmp_path / f"shot_{i}.png"), work_dir=tmp_path, **args)
+        assert len(stub_refs["calls"]) == 1
+        assert (tmp_path / "shot_7.png").read_bytes() == (tmp_path / "shot_3.png").read_bytes()
+        repair = tmp_path / "repair1"
+        repair.mkdir()
+        await slr._render_reference_still(
+            _shot(7, characters=["dex", "nova"]), prompt=master,
+            output_path=str(repair / "shot_7.png"), work_dir=repair, **args)
+        assert len(stub_refs["calls"]) == 2
+
+    @pytest.mark.asyncio
     async def test_no_context_or_disabled_means_text_path(self, stub_refs, tmp_path):
         args = dict(prompt="p", output_path=str(tmp_path / "s.png"), width=8, height=8,
                     work_dir=tmp_path, http_client_factory=None)
@@ -345,3 +365,55 @@ def test_unseeded_settings_fall_back_to_the_registered_defaults():
     assert g["50"]["inputs"]["steps"] == int(DEFAULTS["video_reference_steps"])
     assert g["32"]["inputs"]["reference_latents_method"] == DEFAULTS["video_reference_latent_method"]
     assert rf.enabled(SiteConfig(initial_config={})) is True
+
+
+class TestStillCastCheck:
+    """A still with characters must show them and no stranger (a19363a9's
+    re-direct drew a man nobody wrote into a reaction shot)."""
+
+    @pytest.mark.asyncio
+    async def test_a_still_with_a_stranger_is_redrawn(self, stub_refs, monkeypatch, tmp_path):
+        from poindexter.services.video_renderers import shot_vision_qa as svq
+        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
+
+        check = AsyncMock(side_effect=[V(ok=False, people=3, reason="a man in a white coat"), V(ok=True, people=2)])
+        monkeypatch.setattr(svq, "check_cast_frame", check)
+        ctx = slr.ReferenceContext(cast=("dex", "nova"), pool=object())
+        ok = await slr._render_reference_still(
+            _shot(4, characters=["nova"]), prompt="nova listening", output_path=str(tmp_path / "s.png"),
+            width=8, height=8, ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        assert ok and len(stub_refs["calls"]) == 2
+        kw = check.await_args.kwargs
+        assert kw["required"] == [("Nova", "")]
+        assert [n for n, _ in kw["cast"]] == ["Dex", "Nova"]
+
+    @pytest.mark.asyncio
+    async def test_no_pool_or_no_characters_skips_the_check(self, stub_refs, monkeypatch, tmp_path):
+        from poindexter.services.video_renderers import shot_vision_qa as svq
+
+        check = AsyncMock()
+        monkeypatch.setattr(svq, "check_cast_frame", check)
+        args = dict(width=8, height=8, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        await slr._render_reference_still(
+            _shot(1, characters=["nova"]), prompt="p", output_path=str(tmp_path / "a.png"),
+            ctx=slr.ReferenceContext(cast=("nova",)), **args)
+        await slr._render_reference_still(
+            _shot(2), prompt="an empty lab", output_path=str(tmp_path / "b.png"),
+            ctx=slr.ReferenceContext(cast=("nova",), pool=object()), **args)
+        check.assert_not_awaited()
+
+
+class TestCastFrameParse:
+    @pytest.mark.parametrize("reply,ok", [
+        ('{"people": 2, "strangers": 0, "all_present": true}', True),
+        ('{"people": 1, "strangers": 0, "all_present": true}', True),
+        ('{"people": 2, "strangers": 1, "all_present": true}', False),
+        ('{"people": 3, "strangers": 0, "all_present": true}', False),
+        ('{"people": 2, "strangers": 0, "all_present": false}', False),
+        ('{"people": 2, "all_present": true}', None),
+        ("no idea", None),
+    ])
+    def test_verdict(self, reply, ok):
+        from poindexter.services.video_renderers.shot_vision_qa import _parse_cast_frame
+
+        assert _parse_cast_frame(reply, cast_size=2).ok is ok

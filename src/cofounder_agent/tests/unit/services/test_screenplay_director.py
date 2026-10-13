@@ -87,17 +87,23 @@ class TestTiling:
         budget = slr.presenter_window_budget_s(_sc())
         assert all(s["length"] <= budget + 1e-6 for s in _plan() if s["source"] == "presenter")
 
-    def test_a_long_line_keeps_its_start_on_the_face_and_cuts_away_for_the_rest(self):
+    def test_a_long_line_keeps_its_start_on_the_face_and_cuts_to_the_listener(self):
+        """The rest of a long line is a reaction shot: the scene's other
+        characters listening, not a picture of what is being said."""
         nova = [s for s in _plan() if s["beat_text"] == "A long explanation."]
         assert nova[0]["source"] == "presenter" and nova[0]["speaker"] == "nova"
-        assert all(s["source"] != "presenter" and s["characters"] == ["nova"] for s in nova[1:])
+        assert all(s["source"] != "presenter" and s["characters"] == ["dex"] for s in nova[1:])
+        assert all(s["kind"] == "reaction" for s in nova[1:])
         assert all(s["length"] <= 6.0 + 1e-6 for s in nova[1:])
 
     def test_who_is_in_each_still(self):
         plan = _plan()
         by_text = {s["beat_text"]: s for s in plan}
         assert by_text["In the lab."]["characters"] == ["dex", "nova"]  # narrator: the scene's cast
-        assert by_text["Nova taps the GPU"]["characters"] == ["nova"]     # action: its own characters
+        # A 1.5 s action beat is too short to establish anything: it is the
+        # scene's master shot, which shows the scene's whole cast.
+        assert by_text["Nova taps the GPU"]["kind"] == "master"
+        assert by_text["Nova taps the GPU"]["characters"] == ["dex", "nova"]
         pip = by_text["Pip has no portrait."]
         assert pip["source"] != "presenter" and pip["characters"] == ["pip"]
 
@@ -125,7 +131,7 @@ class TestSlivers:
             _line(2, "nova", "A long explanation.", 3.3, 6.0),
         ]
         plan = sd.plan_shots(SCREENPLAY, timeline, 6.0, _sc())
-        assert [s["kind"] for s in plan] == ["talk", "still", "talk"]
+        assert [s["kind"] for s in plan] == ["talk", "master", "talk"]
 
 
 class TestSources:
@@ -133,7 +139,8 @@ class TestSources:
         timeline = [_line(i, "dex", "Short line.", i * 3.0, i * 3.0 + 3.0) for i in range(3)]
         plan = _plan(timeline=timeline, track=9.0)
         assert [s["source"] for s in plan][:2] == ["presenter", "presenter"]
-        assert plan[2]["source"] != "presenter" and plan[2]["characters"] == ["dex"]
+        # The third becomes a reaction: whoever listens to dex in the scene.
+        assert plan[2]["source"] != "presenter" and plan[2]["characters"] == ["nova"]
 
     def test_hero_budget_animates_the_longest_stills(self):
         plan = _plan()
@@ -171,8 +178,12 @@ class TestBuild:
                                                            "persona.nova.appearance": "a robot owl"}))
         talk2 = next(s for s in with_looks["shots"] if s["source"] == "presenter")
         assert talk2["intent"].startswith(("Dex, a fox in goggles, talking", "Nova, a robot owl, talking"))
-        for shot in listing["shots"]:
-            if shot["source"] != "presenter":
+        for shot, planned in zip(listing["shots"], plan, strict=True):
+            if shot["source"] == "presenter":
+                continue
+            if planned["kind"] == "master":
+                assert shot["intent"].lower().startswith("wide shot of dex and nova in a cosy lab at night")
+            else:
                 assert shot["intent"].startswith("a cosy lab at night")
 
     def test_llm_visuals_replace_the_fallback(self):
@@ -270,3 +281,46 @@ class TestCastRenderPrompts:
         sc2 = _sc(video_cast_negative_prompt="blurry", video_presenter_negative_prompt="bobbing")
         assert slr._presenter_negative_prompt(sc2, cast=True) == {"negative_prompt": "blurry"}
         assert slr._presenter_negative_prompt(sc2) == {"negative_prompt": "bobbing"}
+
+
+class TestCoverage:
+    """Coverage, not illustration (2026-10-13): the first cartoon cut talk /
+    1.5 s new picture / talk, and its stills illustrated the dialogue."""
+
+    def test_every_master_shot_of_a_scene_is_the_same_picture(self):
+        timeline = [
+            _line(0, "dex", "Short line.", 0.0, 3.0),
+            {"beat_idx": 1, "scene_id": "s1", "kind": "action", "speaker": None, "text": "dex shrugs",
+             "characters": ["dex"], "start_s": 3.0, "end_s": 4.5},
+            _line(2, "nova", "A long explanation.", 4.5, 7.5),
+            {"beat_idx": 3, "scene_id": "s1", "kind": "action", "speaker": None, "text": "nova taps",
+             "characters": ["nova"], "start_s": 7.5, "end_s": 9.0},
+            _line(4, "dex", "Short line.", 9.0, 12.0),
+        ]
+        plan = _plan(timeline=timeline, track=12.0)
+        listing = sd.build_shot_list(plan, {}, style="anime", director_model="m", site_config=_sc())
+        masters = [s for s, p in zip(listing["shots"], plan, strict=True) if p["kind"] == "master"]
+        assert len(masters) == 2
+        assert masters[0]["prompt"] == masters[1]["prompt"]
+        assert masters[0]["prompt"].startswith("anime, wide shot of Dex and Nova in a cosy lab at night")
+        assert all(s["source"] != "generative" for s in masters)
+
+    @pytest.mark.asyncio
+    async def test_masters_never_reach_the_illustrator_and_reactions_name_the_speaker(self, monkeypatch):
+        seen = {}
+
+        async def fake_chat(prompt, **kw):
+            seen["prompt"] = prompt
+            return "{}"
+
+        monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_chat)
+        monkeypatch.setattr("poindexter.services.llm_text.resolve_local_writer_model",
+                            lambda site_config=None: "m")
+        plan = _plan()
+        await sd.write_visuals(plan, SCREENPLAY, site_config=_sc())
+        rows = [line for line in seen["prompt"].splitlines() if line.startswith("- id ")]
+        master_ids = {i for i, s in enumerate(plan) if s["kind"] == "master"}
+        assert master_ids and not any(r.startswith(f"- id {i}:") for r in rows for i in master_ids)
+        reactions = [r for r in rows if "reaction while" in r]
+        assert reactions and all('nova says: "A long explanation."' in r for r in reactions)
+        assert all("show: dex listening" in r for r in reactions)

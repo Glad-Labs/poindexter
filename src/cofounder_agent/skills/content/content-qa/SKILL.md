@@ -50,6 +50,9 @@ metadata:
     - key: qa.talking_frame
       output_format: json
       description: 'Vision check on a cast talking frame before it is lip-synced: how many people are in the picture, and is the main figure the named speaker as their character sheet describes them? Code accepts the frame only for exactly one person who is the speaker, and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
+    - key: qa.cast_frame
+      output_format: json
+      description: "Vision check on a cartoon still drawn from the cast portraits: how many people are in the picture, how many are strangers outside the cartoon's cast, and is every character the shot needs there as their sheet describes them? Code accepts the still only with no strangers, no more people than the cast, and everyone required present; otherwise it redraws. Used by services.video_renderers.shot_vision_qa.check_cast_frame."
     - key: qa.video_stock_fit
       output_format: json
       description: 'Vision-QA for STOCK footage: does one frame of a Pexels clip fit the video topic and the narration spoken over it? Returns a fit label (fits / loose / off) and a 0-100 score; the label caps the score under the escalation threshold for loose and off. Used by services.video_renderers.shot_vision_qa.score_shot_frame for source=pexels.'
@@ -584,6 +587,31 @@ THE SPEAKER: {name}, {appearance}
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"people": <integer>, "is_character": <true or false>, "reason": "<one short sentence>"}}
+```
+
+## qa.cast_frame
+
+```text
+You are checking one picture from a cartoon before it goes on screen.
+
+THE CAST - the only characters who exist in this cartoon:
+{cast}
+
+MUST APPEAR in this picture: {required}
+
+1. PEOPLE - count every person or person-like character you can see in the
+   picture, including anyone small, half out of frame, behind glass or in the
+   background. Pictures, posters and screens that show a face count only when
+   the face is as large as the characters' faces.
+
+2. STRANGERS - how many of those people are not one of the cast above, going
+   by the hair, clothing and look described?
+
+3. PRESENT - is every character under MUST APPEAR in the picture, looking as
+   described?
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"people": <integer>, "strangers": <integer>, "all_present": <true or false>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.deepeval_g_eval_criterion

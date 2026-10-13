@@ -710,6 +710,67 @@ def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
     return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
 
 
+def _parse_cast_frame(text: str, cast_size: int) -> TalkingFrameVerdict:
+    """Pass only with no strangers, no more people than the cast, and every
+    required character present. A missing count is no verdict."""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
+    try:
+        parsed = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
+    people, strangers = parsed.get("people"), parsed.get("strangers")
+    for value in (people, strangers):
+        if not isinstance(value, int) or isinstance(value, bool):
+            return TalkingFrameVerdict(ok=None, reason="vision response missing a count")
+    reason = str(parsed.get("reason", "") or "")[:200]
+    ok = strangers == 0 and people <= cast_size and parsed.get("all_present") is True
+    return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
+
+
+async def check_cast_frame(
+    *,
+    frame_path: str,
+    required: list[tuple[str, str]],
+    cast: list[tuple[str, str]],
+    site_config: Any,
+    pool: Any,
+) -> TalkingFrameVerdict:
+    """Does this still show the ``required`` characters and nobody outside ``cast``?
+
+    Pairs are ``(name, appearance)``. The stills twin of
+    ``check_talking_frame``. Re-directed with scene coverage, render
+    a19363a9's closing scene drew a reaction shot with a man in a white coat
+    nobody wrote (2026-10-13). The defect is a STRANGER, not another cast
+    member: a reaction shot of Kai with Mira over his shoulder is coverage,
+    and an exact-count rule rejected two such shots in the same run. Same
+    fail-soft contract: ``ok=None`` when nothing can answer.
+    """
+    if not required:
+        return TalkingFrameVerdict(ok=None, reason="no cast to check")
+    if site_config is None or pool is None:
+        return TalkingFrameVerdict(ok=None, reason="no site_config or pool")
+    model = (site_config.get("qa_vision_model", "") or "").strip()
+    if not model:
+        return TalkingFrameVerdict(ok=None, reason="no vision model configured")
+
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    everyone = list(dict.fromkeys([*cast, *required]))
+    prompt = get_prompt_manager().get_prompt(
+        "qa.cast_frame",
+        cast="\n".join(f"- {name}: {looks or name}" for name, looks in everyone),
+        required=", ".join(name for name, _ in required),
+    )
+    text, why = await _vision_text(
+        frame_path, prompt=prompt, model=model, pool=pool, shot_idx=-1,
+    )
+    if text is None:
+        return TalkingFrameVerdict(ok=None, reason=why)
+    return _parse_cast_frame(text, len(everyone))
+
+
 async def check_talking_frame(
     *,
     frame_path: str,
@@ -778,6 +839,6 @@ def _remove_quietly(path: str) -> None:
 
 
 __all__ = [
-    "ShotQAResult", "TalkingFrameVerdict", "check_talking_frame",
+    "ShotQAResult", "TalkingFrameVerdict", "check_cast_frame", "check_talking_frame",
     "score_shot_frame", "_extract_video_frame", "_crop_frame",
 ]

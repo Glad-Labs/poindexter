@@ -10,18 +10,32 @@ on the words it belongs to:
 - A cast member's line becomes a **talking shot** (``presenter`` + ``speaker``)
   when that persona has a portrait. One S2V chunk is the longest seamless
   take (``presenter_window_budget_s``), so a longer line keeps its first part
-  on the speaker's face and the rest becomes a **cutaway** of the scene with
-  the voice continuing over it.
+  on the speaker's face and the rest becomes a **reaction shot**: the scene's
+  other characters listening, with the voice continuing over it.
 - Narrator lines, lines by a character without a portrait, and ``action``
   beats become stills of the scene: ``generative`` (animated, within
   ``video_hero_shots_max``) or Ken Burns / static stills, alternated so the
   schema's pacing rule (no source three times running) holds.
 
-Visuals are LLM. One call (``story.shot_visuals``) writes a picture prompt
-and a motion line for every non-talking shot from the scene setting and the
-beat. If that call fails or skips a shot, the shot falls back to its setting
-plus beat text, so a render never stalls on it. Code then puts the visual
-style in front, and the renderer adds each character's appearance
+**Coverage, not illustration** (2026-10-13). The first two-character cartoon
+cut talk, 1.5 s picture, talk, 1.5 s picture: 16 of its 19 non-talking shots
+were action-beat pauses, each drawn new, and the illustrator was given the
+spoken line as "what is happening". A line that said "think of the model as a
+pot of soup" got a picture of soup. Matt: the stills "are kinda off-topic or
+not really a continuation of the previous scene". So:
+
+- A non-talking shot shorter than ``story_min_insert_seconds`` is the scene's
+  **master shot** (``kind="master"``): one wide picture of the scene's
+  characters in its setting (``story_scene_master_template``), drawn once
+  per scene and reused, moving differently each time.
+- The rest of a long line is a **reaction** shot of whoever is listening.
+- Only the remaining inserts and reactions go to the illustrator
+  (``story.shot_visuals``), which is told each picture is the next moment of
+  the same scene and that analogies stay spoken.
+
+If that call fails or skips a shot, the shot falls back to its setting plus
+beat text, so a render never stalls on it. Code then puts the visual style in
+front, and the renderer adds each character's appearance
 (``character_prompt``).
 """
 
@@ -33,7 +47,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DIRECTOR_PROMPT_VERSION = "screenplay-v1"
+DIRECTOR_PROMPT_VERSION = "screenplay-v2"
 _STILL_SOURCES = ("image_kenburns", "image_gen")
 
 
@@ -96,10 +110,11 @@ def plan_shots(
         scene = scenes.get(seg.get("scene_id")) or {}
         setting = str(scene.get("setting") or "")
         speaker = seg.get("speaker")
+        scene_cast = [c for c in scene.get("characters") or [] if c in cast]
         base = {
             "scene_id": seg.get("scene_id"), "setting": setting,
             "beat_text": seg.get("text", ""), "beat_kind": seg.get("kind"),
-            "delivery": "",
+            "delivery": "", "scene_cast": scene_cast, "line_speaker": speaker,
         }
         length = seg["end_s"] - seg["start_s"]
         if seg.get("kind") == "line" and speaker in talkable and (
@@ -112,8 +127,8 @@ def plan_shots(
             talking += 1
             rest = length - talk_len
             for start, piece in _split(seg["start_s"] + talk_len, rest, max_shot) if rest > 1e-3 else []:
-                plan.append({**base, "kind": "cutaway", "start_s": start, "length": piece,
-                             "speaker": None, "characters": [speaker]})
+                plan.append({**base, "kind": "reaction", "start_s": start, "length": piece,
+                             "speaker": None, "characters": _listeners(scene_cast, speaker)})
             continue
         if seg.get("kind") == "action":
             chars = [c for c in seg.get("characters") or [] if c in cast]
@@ -124,7 +139,46 @@ def plan_shots(
         for start, piece in _split(seg["start_s"], length, max_shot):
             plan.append({**base, "kind": "still", "start_s": start, "length": piece,
                          "speaker": None, "characters": chars})
-    return _merge_slivers(plan, site_config)
+    return _mark_masters(_merge_slivers(plan, site_config), site_config)
+
+
+def _listeners(scene_cast: list[str], speaker: str | None) -> list[str]:
+    """Who a reaction shot shows: the scene's other characters, else the speaker."""
+    others = [c for c in scene_cast if c != speaker]
+    return others or ([speaker] if speaker else [])
+
+
+def _mark_masters(plan: list[dict[str, Any]], site_config: Any) -> list[dict[str, Any]]:
+    """A non-talking shot too short to establish anything of its own becomes
+    the scene's master shot (``kind="master"``), which shows the scene's whole
+    cast. Lengths are final here (after ``_merge_slivers``)."""
+    floor = site_config.get_float("story_min_insert_seconds", 2.5)
+    out: list[dict[str, Any]] = []
+    for shot in plan:
+        if shot["kind"] != "talk" and shot["length"] < floor:
+            shot = {**shot, "kind": "master",
+                    "characters": list(shot.get("scene_cast") or shot["characters"])}
+        out.append(shot)
+    return out
+
+
+def _scene_master_prompt(shot: dict[str, Any], site_config: Any) -> str:
+    """The one picture every master shot of a scene shows."""
+    from poindexter.services.persona_service import get_persona
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    names = []
+    for slug in shot.get("characters") or []:
+        persona = get_persona(site_config, slug) if site_config is not None else None
+        names.append((getattr(persona, "display_name", "") or slug) if persona else slug)
+    who = " and ".join(names) if names else "the scene, with nobody in it"
+    template = str(
+        (site_config.get("story_scene_master_template", None) if site_config is not None else None)
+        or DEFAULTS["story_scene_master_template"]
+    )
+    return (
+        template.replace("{names}", who).replace("{setting}", shot.get("setting") or "the scene")
+    ).strip(" ,")[:1500]
 
 
 def _delivery_for(screenplay: dict[str, Any], seg: dict[str, Any]) -> str:
@@ -179,7 +233,8 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
     hero_left = site_config.get_int("video_hero_shots_max", 3)
     hero_floor = site_config.get_float("story_min_animated_shot_seconds", 2.5)
     candidates = sorted(
-        (i for i, s in enumerate(plan) if s["kind"] in ("still", "cutaway") and s["length"] >= hero_floor),
+        (i for i, s in enumerate(plan)
+         if s["kind"] in ("still", "cutaway", "reaction") and s["length"] >= hero_floor),
         key=lambda i: (-plan[i]["length"], i),
     )
     animate = set(candidates[: max(0, hero_left)]) if hero_left >= 0 else set(candidates)
@@ -198,7 +253,8 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
                 out.append(shot)
                 history.append(key)
                 continue
-            shot.update(kind="cutaway", speaker=None)
+            shot.update(kind="reaction", speaker=None,
+                        characters=_listeners(shot.get("scene_cast") or [], shot["speaker"]))
         options = (["generative"] if i in animate else []) + list(_STILL_SOURCES)
         for source in options:
             if _streak_ok((source, None)):
@@ -207,6 +263,21 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
         out.append(shot)
         history.append((shot["source"], None))
     return out
+
+
+def _visual_row(i: int, shot: dict[str, Any]) -> str:
+    """One shot as the illustrator reads it. A reaction row says who is
+    talking and who listens, so the picture stays on the listener in the
+    scene instead of illustrating what is being said."""
+    kind = "animated" if shot["source"] == "generative" else "still"
+    visible = ", ".join(shot["characters"]) or "no characters"
+    head = f"- id {i}: scene {shot.get('scene_id') or '?'}: {shot['setting']}"
+    if shot["kind"] in ("reaction", "cutaway") and shot.get("line_speaker"):
+        return (
+            f"{head} | reaction while {shot['line_speaker']} says: \"{shot['beat_text']}\" | "
+            f"show: {visible} listening and reacting | {kind}"
+        )
+    return f"{head} | happening: {shot['beat_text']} | visible: {visible} | {kind}"
 
 
 async def write_visuals(
@@ -226,7 +297,9 @@ async def write_visuals(
     from poindexter.services.prompt_manager import get_prompt_manager
     from poindexter.utils.json_extract import extract_json_object
 
-    wanted = [i for i, s in enumerate(plan) if s["source"] != "presenter"]
+    # Master shots are a fixed picture of the scene; only inserts and
+    # reactions need the illustrator.
+    wanted = [i for i, s in enumerate(plan) if s["source"] != "presenter" and s["kind"] != "master"]
     model = str(site_config.get("story_visuals_model", "") or "").strip()
     if not model:
         from poindexter.services.llm_text import resolve_local_writer_model
@@ -234,12 +307,7 @@ async def write_visuals(
         model = resolve_local_writer_model(site_config=site_config)
     if not wanted:
         return {}, model
-    rows = "\n".join(
-        f"- id {i}: scene: {plan[i]['setting']} | happening: {plan[i]['beat_text']} | "
-        f"visible: {', '.join(plan[i]['characters']) or 'no characters'} | "
-        f"{'animated' if plan[i]['source'] == 'generative' else 'still'}"
-        for i in wanted
-    )
+    rows = "\n".join(_visual_row(i, plan[i]) for i in wanted)
     prompt = get_prompt_manager().get_prompt(
         "story.shot_visuals",
         title=str(screenplay.get("title") or ""),
@@ -357,6 +425,10 @@ def build_shot_list(
             if note:
                 shot["prompt"] = note[:2000]
             shot["frame_prompt"] = _talking_frame_prompt(s, style, site_config)
+        elif s["kind"] == "master":
+            picture = _scene_master_prompt(s, site_config)
+            shot["intent"] = picture[:200]
+            shot["prompt"] = (f"{style}, {picture}" if style else picture)[:1500]
         else:
             seen = visuals.get(i) or {}
             picture = seen.get("prompt") or f"{s['setting']}. {s['beat_text']}".strip(". ")

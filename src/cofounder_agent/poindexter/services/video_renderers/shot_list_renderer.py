@@ -2773,6 +2773,9 @@ class ReferenceContext:
     cast: tuple[str, ...] = ()
     portraits: dict[str, str | None] = field(default_factory=dict)
     card_cleared: bool = False
+    # Stills already drawn in this work dir, by prompt + references: a scene's
+    # master shot recurs between lines and must be the SAME picture each time.
+    drawn: dict[str, str] = field(default_factory=dict)
     pool: Any = None
 
 
@@ -2860,6 +2863,17 @@ async def _render_reference_still(
             if slug not in wanted:
                 wanted.append(slug)
     style_only = not wanted
+    # The same picture in the same pass is drawn once. A re-roll renders into
+    # its own repair dir, so it still gets a fresh draw.
+    import hashlib
+
+    reuse_key = hashlib.sha256(
+        "|".join([str(work_dir), prompt, *sorted(wanted)]).encode("utf-8"),
+    ).hexdigest()
+    earlier = ctx.drawn.get(reuse_key)
+    if earlier and os.path.exists(earlier) and earlier != output_path:
+        shutil.copyfile(earlier, output_path)
+        return True
     paths, names = await _reference_portraits(
         (wanted or list(ctx.cast))[: rf.MAX_REFERENCES], ctx,
         work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
@@ -2869,17 +2883,56 @@ async def _render_reference_still(
     if not ctx.card_cleared:
         await _clear_image_gen_for_hero(site_config)
         ctx.card_cleared = True
-    ok, why = await rf.render_reference_frame(
-        prompt=rf.compose_reference_prompt(prompt, names, style_only=style_only, site_config=site_config),
-        reference_paths=paths, output_path=output_path, width=width, height=height,
-        site_config=site_config,
-    )
+    # A still with characters must show exactly them: the edit model invents
+    # extra people (a19363a9's re-direct drew a stranger into a reaction
+    # shot). A talking frame is checked by its own caller, so only stills here.
+    check = bool(wanted) and speakers is None and getattr(ctx, "pool", None) is not None
+    attempts = _talking_frame_attempts(site_config) if check else 1
+    ok, why = False, ""
+    for attempt in range(1, attempts + 1):
+        ok, why = await rf.render_reference_frame(
+            prompt=rf.compose_reference_prompt(prompt, names, style_only=style_only, site_config=site_config),
+            reference_paths=paths, output_path=output_path, width=width, height=height,
+            site_config=site_config,
+        )
+        if not ok or not check:
+            break
+        verdict = await _check_still_cast(output_path, wanted, ctx=ctx, site_config=site_config)
+        if verdict.ok is not False:
+            break
+        logger.warning(
+            "[SHOT_LIST] still for shot %d rejected on draw %d/%d: %s people for %d "
+            "character(s), %s", shot.idx, attempt, attempts, verdict.people,
+            len(wanted), verdict.reason,
+        )
+        # The last draw stands if none passes: a still from the cast's own
+        # portraits with a flaw beats a text-path still in another style.
     if not ok:
         logger.warning(
             "[SHOT_LIST] shot %d reference still failed (%s) — falling back to the text path",
             shot.idx, why,
         )
+    else:
+        ctx.drawn[reuse_key] = output_path
     return ok
+
+
+async def _check_still_cast(
+    path: str, slugs: list[str], *, ctx: ReferenceContext, site_config: Any,
+) -> Any:
+    from poindexter.services.persona_service import get_persona
+    from poindexter.services.video_renderers.shot_vision_qa import check_cast_frame
+
+    def _pair(slug: str) -> tuple[str, str]:
+        persona = get_persona(site_config, slug)
+        if persona is None:
+            return slug, ""
+        return (persona.display_name or slug), (getattr(persona, "appearance", "") or "")
+
+    return await check_cast_frame(
+        frame_path=path, required=[_pair(s) for s in slugs],
+        cast=[_pair(s) for s in ctx.cast], site_config=site_config, pool=ctx.pool,
+    )
 
 
 async def _render_one_shot(

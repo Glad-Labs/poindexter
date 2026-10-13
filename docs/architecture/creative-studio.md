@@ -87,21 +87,42 @@ shots tile the dialogue track exactly:
 - **Cast lines** become talking shots: `presenter` with `speaker` set, so the
   speaker's portrait is lip-synced (Wan S2V). A talking shot is capped at one
   seamless S2V chunk (`presenter_window_budget_s`, about 4.7 s), because a
-  chunk seam visibly jumps. The rest of a longer line becomes a cutaway with
-  the voice over it.
+  chunk seam visibly jumps. The rest of a longer line becomes a **reaction
+  shot**: the scene's other characters listening, with the voice over it.
 - **Narration, action beats, and characters without a portrait** become scene
   stills. They are animated (`generative`) within `video_hero_shots_max`,
   longest first. The rest alternate between Ken Burns and static stills so the
   schema's pacing rule holds.
 - **Repeated speakers:** a third talking shot in a row by one speaker becomes
-  a cutaway.
+  a reaction shot of the listener.
+- **Short beats** (under `story_min_insert_seconds`, 2.5 s) are the scene's
+  **master shot**: one wide picture of the scene's characters in its setting
+  (`story_scene_master_template`), drawn once per scene and reused.
 - **Very short shots** (under `story_min_shot_seconds`) fold into a neighbouring
   still.
 
 Visuals come from an LLM. One `story.shot_visuals` call writes a picture and a
-motion line per non-talking shot. A failed or partial call falls back to the
-scene setting plus beat text, per shot. Code then puts the visual style first,
-and the renderer adds each character's appearance (`character_prompt`).
+motion line per reaction and longer insert (master shots are fixed). It is told
+that each picture is the next moment of the same scene, in the same place with
+the same people, and that a spoken analogy stays spoken: the picture shows the
+characters talking it through. A failed or partial call falls back to the scene
+setting plus beat text, per shot. Code then puts the visual style first, and
+the renderer adds each character's appearance (`character_prompt`).
+
+This is coverage, the way a filmed conversation is cut, rather than
+illustration. The first two-character cartoon cut talk, a new 1.5 s picture,
+talk, another new picture: 16 of its 19 non-talking shots were action-beat
+pauses, each drawn fresh, and the illustrator was handed the spoken line as
+"what is happening", so "think of the model as a pot of soup" became a picture
+of soup. Re-directed with the same screenplay, 15 of the 20 stills became the
+scene's own master shot and the other 5 reactions.
+
+Every still with characters is checked before use (`qa.cast_frame`): the
+characters it needs are there, and nobody outside the cartoon's cast is. A
+still that fails is redrawn, up to `video_cast_talking_frame_attempts`; the
+last draw stands if none passes. On the re-directed cartoon's 20 stills it
+rejected the one with an invented man in a white coat and passed the rest,
+twice each, including reaction shots with the speaker in the background.
 
 Talking cast shots act their line. They use `video_cast_render_prompt`
 (expressive face, gestures) and a quality-only `video_cast_negative_prompt`,
