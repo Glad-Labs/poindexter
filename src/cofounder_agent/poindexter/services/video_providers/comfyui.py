@@ -57,6 +57,10 @@ Config (all in app_settings; per-call ``config`` overrides win where noted):
   ``video_comfyui_lora_high`` / ``video_comfyui_lora_low`` — model filenames
   as ComfyUI sees them in its models dirs; weight swaps are settings-only.
 - ``video_comfyui_timeout_s`` (default 900) — end-to-end render budget.
+- ``video_comfyui_s2v_lora`` (default empty) — the talking-head lightning
+  LoRA. Set, S2V samples at ``video_comfyui_s2v_lora_steps`` /
+  ``_lora_cfg`` (4 / 1.0) instead of ``_s2v_steps`` / ``_s2v_cfg``
+  (20 / 4.0); see ``s2v_sampling``.
 - ``video_comfyui_ready_wait_s`` (default 90) — how long to wait for
   ``/system_stats`` to answer before failing, mirroring the wan-server
   ready-wait (#3102: a cold-booting sidecar must delay the render, not
@@ -160,6 +164,11 @@ _DEFAULT_S2V_SAMPLER = "uni_pc"
 _DEFAULT_S2V_LENGTH = 77
 _DEFAULT_S2V_MAX_CHUNKS = 6
 _DEFAULT_S2V_TIMEOUT_PER_CHUNK_S = 900.0
+# The lightning path's own sampler regime, per ComfyUI's S2V template
+# ("With 4 steps lightning LoRA: 4 steps, cfg 1.0").
+_DEFAULT_S2V_LORA_STEPS = 4
+_DEFAULT_S2V_LORA_CFG = 1.0
+_DEFAULT_S2V_LORA_STRENGTH = 1.0
 _S2V_FILENAME_PREFIX = "poindexter_talking_head"
 _AUDIO_CONTENT_TYPES = {
     ".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac",
@@ -442,6 +451,34 @@ async def _probe_audio_seconds(path: str) -> float | None:
     return await probe_duration_s(path)
 
 
+def _s2v_lora(site_config: Any) -> str:
+    """The S2V lightning LoRA filename, or "" when the full sampler runs."""
+    return str(_sc_get(site_config, "video_comfyui_s2v_lora", "") or "").strip()
+
+
+def s2v_sampling(site_config: Any) -> tuple[int, float]:
+    """``(steps, cfg)`` for a talking-head clip.
+
+    The two regimes are not interchangeable, so they are separate settings and
+    the LoRA picks between them. A distilled LoRA sampled at 20 steps and cfg 4
+    burns the picture. The full model at 4 steps and cfg 1 is mush.
+
+    Without the LoRA, a clip costs 20 steps, each a cond and an uncond pass
+    because cfg > 1: 40 forward passes. On the 5090 that is 5 min 56 s per 77
+    frames (17.8 s/step, measured 2026-10-13). The lightning path costs 4
+    passes.
+    """
+    if _s2v_lora(site_config):
+        return (
+            int(_sc_num(site_config, "video_comfyui_s2v_lora_steps", _DEFAULT_S2V_LORA_STEPS)),
+            float(_sc_num(site_config, "video_comfyui_s2v_lora_cfg", _DEFAULT_S2V_LORA_CFG)),
+        )
+    return (
+        int(_sc_num(site_config, "video_comfyui_s2v_steps", _DEFAULT_S2V_STEPS)),
+        float(_sc_num(site_config, "video_comfyui_s2v_cfg", _DEFAULT_S2V_CFG)),
+    )
+
+
 def build_s2v_graph(
     *,
     prompt: str,
@@ -464,8 +501,15 @@ def build_s2v_graph(
     vae: str = _DEFAULT_VAE,
     filename_prefix: str = _S2V_FILENAME_PREFIX,
     mux_audio_name: str | None = None,
+    lora: str = "",
+    lora_strength: float = 1.0,
 ) -> dict[str, Any]:
     """Build the Wan 2.2 S2V talking-head graph in ComfyUI API format.
+
+    ``lora`` (a filename as ComfyUI sees it, empty = none) adds a
+    ``LoraLoaderModelOnly`` between the model and its sampling shift: the
+    4-step lightning path of ComfyUI's own S2V template, which the caller
+    pairs with its own step count and cfg.
 
     ``audio_name`` drives the lips (pace-corrected when the caller corrected
     it); ``mux_audio_name`` is muxed into the output clip and defaults to
@@ -494,6 +538,7 @@ def build_s2v_graph(
     shots always looked right.
     """
     chunks = max(1, int(chunks))
+    model_src: list[Any] = ["1", 0]
     graph: dict[str, Any] = {
         "1": {"class_type": "UNETLoader", "inputs": {
             "unet_name": model, "weight_dtype": "default"}},
@@ -511,7 +556,7 @@ def build_s2v_graph(
         "10": {"class_type": "CLIPTextEncode", "inputs": {
             "clip": ["3", 0], "text": negative}},
         "11": {"class_type": "ModelSamplingSD3", "inputs": {
-            "model": ["1", 0], "shift": shift}},
+            "model": model_src, "shift": shift}},
         "12": {"class_type": "WanSoundImageToVideo", "inputs": {
             "positive": ["9", 0], "negative": ["10", 0], "vae": ["4", 0],
             "width": width, "height": height, "length": length,
@@ -525,6 +570,11 @@ def build_s2v_graph(
         "14": {"class_type": "VAEDecode", "inputs": {
             "samples": ["13", 0], "vae": ["4", 0]}},
     }
+    if lora.strip():
+        graph["2"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+            "model": ["1", 0], "lora_name": lora.strip(),
+            "strength_model": float(lora_strength)}}
+        graph["11"]["inputs"]["model"] = ["2", 0]
     images_src: list[Any] = ["14", 0]
     # The video so far, as ONE latent. Extend reads its own audio offset off
     # this latent's length, so it must grow with every chunk (see docstring).
@@ -890,6 +940,10 @@ class ComfyUIProvider:
                 text_encoder=str(_sc_get(
                     site_config, "video_comfyui_text_encoder", _DEFAULT_TEXT_ENCODER)),
                 vae=str(_sc_get(site_config, "video_comfyui_vae", _DEFAULT_VAE)),
+                lora=_s2v_lora(site_config),
+                lora_strength=_sc_num(
+                    site_config, "video_comfyui_s2v_lora_strength",
+                    _DEFAULT_S2V_LORA_STRENGTH),
                 **values,
             )
             return graph, ""
@@ -951,8 +1005,7 @@ class ComfyUIProvider:
             site_config, "video_comfyui_s2v_length_frames", _DEFAULT_S2V_LENGTH))
         max_chunks = int(_sc_num(
             site_config, "video_comfyui_s2v_max_chunks", _DEFAULT_S2V_MAX_CHUNKS))
-        steps = int(_sc_num(site_config, "video_comfyui_s2v_steps", _DEFAULT_S2V_STEPS))
-        cfg = _sc_num(site_config, "video_comfyui_s2v_cfg", _DEFAULT_S2V_CFG)
+        steps, cfg = s2v_sampling(site_config)
         shift = _sc_num(site_config, "video_comfyui_s2v_shift", _DEFAULT_S2V_SHIFT)
         sampler = str(_sc_get(
             site_config, "video_comfyui_s2v_sampler", _DEFAULT_S2V_SAMPLER))

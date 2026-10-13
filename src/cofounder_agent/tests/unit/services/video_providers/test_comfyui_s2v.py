@@ -533,3 +533,40 @@ class TestFetchSpeechPaceCorrection:
         assert provider.last_error == "" and len(results) == 1
         assert [n for n, _ in fake.uploads] == ["still.png", "speech.wav"]
         assert list(_by_class(fake.submitted_graphs[0], "LoadAudio")) == ["6"]
+
+
+# ---------------------------------------------------------------------------
+# lightning LoRA (2026-10-13): ComfyUI's own S2V template samples 4 steps at
+# cfg 1 with a lightx2v LoRA. Off unless video_comfyui_s2v_lora names a file.
+# ---------------------------------------------------------------------------
+
+class TestS2VLightningLora:
+    def test_no_lora_keeps_the_model_straight_into_the_shift(self):
+        g = _graph()
+        assert _by_class(g, "LoraLoaderModelOnly") == {}
+        assert g["11"]["inputs"]["model"] == ["1", 0]
+
+    def test_lora_sits_between_the_model_and_the_shift(self):
+        g = _graph(lora="lightning.safetensors", lora_strength=0.8, chunks=3)
+        loras = _by_class(g, "LoraLoaderModelOnly")
+        assert list(loras) == ["2"]
+        assert loras["2"]["inputs"] == {
+            "model": ["1", 0], "lora_name": "lightning.safetensors", "strength_model": 0.8,
+        }
+        assert g["11"]["inputs"]["model"] == ["2", 0]
+        # Every chunk's sampler draws from the one shifted (LoRA'd) model.
+        for node in _by_class(g, "KSampler").values():
+            assert node["inputs"]["model"] == ["11", 0]
+
+    def test_sampling_follows_the_lora(self):
+        from poindexter.services.video_providers.comfyui import s2v_sampling
+
+        assert s2v_sampling(_FakeSiteConfig({})) == (20, 4.0)
+        assert s2v_sampling(_FakeSiteConfig({
+            "video_comfyui_s2v_steps": "20", "video_comfyui_s2v_cfg": "4.0",
+            "video_comfyui_s2v_lora": "lightning.safetensors",
+        })) == (4, 1.0)
+        assert s2v_sampling(_FakeSiteConfig({
+            "video_comfyui_s2v_lora": "lightning.safetensors",
+            "video_comfyui_s2v_lora_steps": "6", "video_comfyui_s2v_lora_cfg": "1.5",
+        })) == (6, 1.5)

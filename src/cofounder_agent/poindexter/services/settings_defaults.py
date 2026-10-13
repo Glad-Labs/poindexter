@@ -1171,6 +1171,15 @@ DEFAULTS: dict[str, str] = {
     'video_comfyui_s2v_cfg': '4.0',
     'video_comfyui_s2v_shift': '8.0',
     'video_comfyui_s2v_sampler': 'uni_pc',
+    # Optional 4-step lightning LoRA for talking heads, the default path of
+    # ComfyUI's own S2V template. Empty = the full 20-step sampler above. Set,
+    # the clip samples at the _lora_steps / _lora_cfg pair instead: 4 forward
+    # passes against 40, where 40 cost 5 min 56 s per 77-frame chunk on the
+    # 5090 (2026-10-13). A filename as ComfyUI sees it in models/loras.
+    'video_comfyui_s2v_lora': '',
+    'video_comfyui_s2v_lora_strength': '1.0',
+    'video_comfyui_s2v_lora_steps': '4',
+    'video_comfyui_s2v_lora_cfg': '1.0',
     'video_comfyui_s2v_length_frames': '77',
     # Each S2V chunk consumes batch_frames = latent_t*4 (80) audio-embed frames
     # at 16 fps = 5.000 s of speech, but the VAE decodes latent_t latents into
@@ -6506,6 +6515,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_comfyui_s2v_model': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_s2v_audio_encoder': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_s2v_steps': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_lora': {'owner': 'video', 'value_type': 'string'},
+    'video_comfyui_s2v_lora_strength': {'owner': 'video', 'value_type': 'float'},
+    'video_comfyui_s2v_lora_steps': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_s2v_lora_cfg': {'owner': 'video', 'value_type': 'float'},
     'video_comfyui_s2v_cfg': {'owner': 'video', 'value_type': 'float'},
     'video_comfyui_s2v_shift': {'owner': 'video', 'value_type': 'float'},
     'video_comfyui_s2v_sampler': {'owner': 'video', 'value_type': 'string'},
