@@ -45,9 +45,11 @@ def _outline(n=1, chars=("Dex", "nova")):
     return {
         "title": "Why VRAM Matters",
         "logline": "Dex learns why memory bandwidth rules.",
+        "spine": {"want": "Dex wants his card to run a big model", "obstacle": "he thinks speed is everything",
+                  "turn": "Nova shows him the memory wall", "payoff": "Dex picks memory over clock speed"},
         "scenes": [
             {"scene_id": f"s{i}", "setting": "a cosy lab at night", "summary": "Dex asks, Nova explains",
-             "characters": list(chars)}
+             "turn": "Dex sees the memory is the limit", "characters": list(chars)}
             for i in range(1, n + 1)
         ],
     }
@@ -175,11 +177,14 @@ def test_pack_prompts_render_with_the_variables_code_passes():
     outline = pm.get_prompt("story.outline", scene_count=2, **common)
     assert '{"title"' in outline and "- dex: Dex" in outline and "about 2 scene" in outline
     scene = pm.get_prompt(
-        "story.scene", outline_block="- s1: x", scene_id="s1", scene_setting="lab",
-        scene_summary="Dex asks", scene_characters="dex", scene_word_budget=60,
+        "story.scene", outline_block="- s1: x", spine_block="Want: w", scene_id="s1",
+        scene_setting="lab", scene_summary="Dex asks", scene_turn="Dex gets it",
+        scene_position="This is the LAST scene.", scene_characters="dex", scene_word_budget=60,
         previous_lines="(this is the opening scene)", **common,
     )
     assert '{"beats"' in scene and "about 60 spoken words" in scene
+    assert "Want: w" in scene and "By the end of the scene: Dex gets it" in scene
+    assert '"intensity"' in scene and '"spine"' in outline
     fix = pm.get_prompt("story.screenplay_fix", previous='{"title": "x"}', errors="FIX: a")
     assert '{"title": "x"}' in fix and "FIX: a" in fix
 
@@ -263,3 +268,36 @@ class TestAtom:
         with pytest.raises(sp.ScreenplayError):
             await atom.run({"topic": "t", "site_config": _sc(), "screenplay_format": "opera"})
         chat.assert_not_awaited()
+
+
+
+# --- story spine + line intensity (2026-10-13) -------------------------------
+
+
+class TestSpine:
+    def test_an_outline_without_a_spine_or_scene_turns_is_sent_back(self):
+        o = _outline()
+        del o["spine"]
+        del o["scenes"][0]["turn"]
+        errors = sp.check_outline(sp.normalize_outline(o), _req())
+        assert any('"spine"' in e for e in errors)
+        assert any('"turn"' in e for e in errors)
+
+    def test_a_full_spine_passes(self):
+        assert sp.check_outline(sp.normalize_outline(_outline()), _req()) == []
+
+    def test_intensity_is_kept_and_defaults_to_medium(self):
+        beats = sp.normalize_beats([
+            {"kind": "line", "speaker": "dex", "text": "What?!", "intensity": "HIGH"},
+            {"kind": "line", "speaker": "nova", "text": "Calm down.", "intensity": "seething"},
+            {"kind": "line", "speaker": "dex", "text": "Fine."},
+        ])
+        assert [b["intensity"] for b in beats] == ["high", "medium", "medium"]
+
+    def test_the_last_scene_is_told_to_pay_off_the_opening(self):
+        outline = sp.normalize_outline(_outline(n=2))
+        middle = sp._scene_position(outline, 0, [])
+        last = sp._scene_position(outline, 1, ["dex: Why is my card crashing?"])
+        assert middle.startswith("The next scene:")
+        assert "LAST scene" in last and "Dex picks memory over clock speed" in last
+        assert "Why is my card crashing?" in last

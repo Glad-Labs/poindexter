@@ -58,6 +58,31 @@ unknown beat kind is a hard problem. It gets one repair attempt
 retry, then the scene is accepted and the shortfall is recorded in
 `screenplay.notes`.
 
+### A story, not a lecture with pictures
+
+Matt on the first two-character cartoon: he wants "coherent stories and not
+just random shots stitched together without emotion or meaning". So:
+
+- The outline names a **spine**: who wants what, what is in the way (often a
+  wrong belief), the turn, and the payoff that answers the opening. Each scene
+  names its **turn**, what is different by its end. Missing either is a hard
+  problem that goes back to the writer once.
+- Each scene is written knowing the spine, its turn, and its place: what the
+  next scene needs, or, for the last scene, the payoff and the opening lines
+  to call back to.
+- Characters answer each other, the emotion follows the story, and action
+  beats appear only where the audience must see something (one to three a
+  scene, not one between every line). The characters stay in one main place
+  unless the story gives them a reason to move.
+- Every line carries an **intensity** (low / medium / high), which the
+  voicing step turns into emotion (below).
+
+Re-written with the same topic, cast and length, the first cartoon's script
+went from four scenes of explanation with 11 action beats to a spine (Kai
+thinks "RAM is RAM", Mira's desk-and-bookshelf analogy turns him, he ends on
+"I just need a bigger desk!") with 4 action beats and an arc from frustrated
+to triumphant.
+
 ## Voicing: one track, measured
 
 `services/dialogue_audio.py` speaks every line in its speaker's persona voice
@@ -78,6 +103,16 @@ Re-voicing it would put one character's words in another's mouth.
 
 The narrator is a persona too (`story_default_narrator_persona`). Without one,
 narration uses the house voice.
+
+**Per-line emotion.** A Chatterbox voice reads each line at its own emotion
+strength: the character's level (`persona.<slug>.voice_exaggeration`, else
+the shared `plugin.tts_provider.chatterbox.exaggeration`) moved by the line's
+intensity (`story_line_intensity_offsets`, default low −0.2 / high +0.2) and
+clamped to `story_line_exaggeration_min` / `_max` (0.25–1.2; past about 1.2
+Chatterbox garbles words). Kai sits at 0.9, so his outbursts read at 1.1 and
+his quiet lines at 0.7; a Whisper round trip of a voiced scene came back word
+for word. Kokoro has no emotion control, so a Kokoro character's lines are
+unchanged.
 
 ## Directing: shots that tile the track
 

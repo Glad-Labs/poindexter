@@ -2040,6 +2040,7 @@ class PodcastService:
 
     async def synthesize_line(
         self, text: str, persona: Any, output_path: "Path | str",
+        *, exaggeration: float | None = None,
     ) -> str:
         """Voice ONE dialogue line as ``persona`` (creative studio, poindexter#1137).
 
@@ -2049,13 +2050,18 @@ class PodcastService:
         (``podcast_tts_voice``). There is no fallback ladder: another voice
         would put this character's words in someone else's mouth, so a
         failure raises and the caller decides. Returns the written path.
+
+        ``exaggeration`` is this line's Chatterbox emotion strength (from its
+        intensity, ``dialogue_audio.line_exaggeration``); ``None`` keeps the
+        persona's own.
         """
         from poindexter.services.persona_service import persona_voice
 
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         voice = persona_voice(persona, self._site_config) or VOICE_FALLBACKS[0]
-        result = await self._generate_with_voice(text, voice, out, persona=persona)
+        extra = {"exaggeration": exaggeration} if exaggeration is not None else {}
+        result = await self._generate_with_voice(text, voice, out, persona=persona, **extra)
         if not result.success or not result.file_path:
             raise RuntimeError(
                 f"line synthesis failed for {getattr(persona, 'slug', 'house voice')!r}: "
@@ -2065,6 +2071,7 @@ class PodcastService:
 
     async def _generate_with_voice(
         self, script: str, voice: str, output_path: Path, *, persona: Any = None,
+        exaggeration: float | None = None,
     ) -> EpisodeResult:
         """Generate audio via the configured ``podcast_tts_engine``.
 
@@ -2106,11 +2113,11 @@ class PodcastService:
                 getattr(persona, "slug", "?"), persona_provider,
                 engine, persona_engine,
             )
-        exaggeration: float | None = None
         if persona_provider == "chatterbox":
             engine = "chatterbox"
             audio_prompt_path = str(getattr(persona, "voice_ref_audio_url", "") or "").strip() or None
-            exaggeration = getattr(persona, "voice_exaggeration", None)
+            if exaggeration is None:
+                exaggeration = getattr(persona, "voice_exaggeration", None)
         elif persona_provider == "kokoro":
             engine = "speaches"
         if engine == "chatterbox":

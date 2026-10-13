@@ -3078,6 +3078,13 @@ DEFAULTS: dict[str, str] = {
     'story_default_target_seconds': '90',
     # Seconds of audio per scene the writer is asked for (target / this).
     'story_seconds_per_scene': '40',
+    # Per-line emotion (2026-10-13): each screenplay line's intensity moves its
+    # speaker's Chatterbox emotion strength (persona voice_exaggeration, else
+    # the shared plugin.tts_provider.chatterbox.exaggeration) by these offsets,
+    # clamped to min/max. Past about 1.2 Chatterbox garbles words.
+    'story_line_intensity_offsets': 'low=-0.2,medium=0,high=0.2',
+    'story_line_exaggeration_min': '0.25',
+    'story_line_exaggeration_max': '1.2',
     # Dialogue track (poindexter#1137, services/dialogue_audio.py). Narrator
     # persona slug; empty = the house voice (podcast_tts_voice).
     'story_default_narrator_persona': '',
@@ -6485,6 +6492,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_min_insert_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_scene_master_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_line_intensity_offsets': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_line_exaggeration_min': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_line_exaggeration_max': {'owner': 'screenplay', 'value_type': 'float'},
     'video_cast_talking_frame_attempts': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},

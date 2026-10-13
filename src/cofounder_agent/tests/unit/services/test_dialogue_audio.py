@@ -285,3 +285,62 @@ class TestSynthesizeLine:
                             AsyncMock(return_value=pod.EpisodeResult(success=False, error="engine down")))
         with pytest.raises(RuntimeError, match="engine down"):
             await svc.synthesize_line("hi", get_persona(sc, "dex"), tmp_path / "z.mp3")
+
+
+# --- per-line emotion (2026-10-13) ---------------------------------------------
+
+
+class TestLineEmotion:
+    """A line's intensity moves its speaker's Chatterbox emotion: Matt asked for
+    stories with feeling, and every Kai line had been read at one level."""
+
+    def _kai(self, **extra):
+        return _sc(**{
+            "persona.kai.display_name": "Kai", "persona.kai.enabled": "true",
+            "persona.kai.voice_provider": "chatterbox",
+            "persona.kai.voice_ref_audio_url": "/app/voices/kai-ref.wav",
+            "persona.kai.voice_exaggeration": "0.9",
+            "plugin.tts_provider.chatterbox.exaggeration": "0.65",
+            "story_line_intensity_offsets": "low=-0.2,medium=0,high=0.2",
+            "story_line_exaggeration_min": "0.25", "story_line_exaggeration_max": "1.2",
+            **extra,
+        })
+
+    def test_intensity_moves_the_persona_level_within_the_clamp(self):
+        from poindexter.services.persona_service import get_persona
+
+        sc = self._kai()
+        kai = get_persona(sc, "kai")
+        assert da.line_exaggeration(kai, "low", sc) == 0.7
+        assert da.line_exaggeration(kai, "medium", sc) == 0.9
+        assert da.line_exaggeration(kai, "high", sc) == 1.1
+        loud = self._kai(**{"persona.kai.voice_exaggeration": "1.15"})
+        assert da.line_exaggeration(get_persona(loud, "kai"), "high", loud) == 1.2
+
+    def test_a_kokoro_voice_and_the_house_voice_get_no_emotion(self):
+        from poindexter.services.persona_service import get_persona
+
+        sc = self._kai()
+        assert da.line_exaggeration(get_persona(sc, "dex"), "high", sc) is None
+        assert da.line_exaggeration(None, "high", sc) is None
+
+    @pytest.mark.asyncio
+    async def test_each_chatterbox_line_is_voiced_at_its_own_level(self, fake_ffmpeg, tmp_path):
+        seen: list = []
+
+        async def synthesize(text, persona, path, **kw):
+            seen.append((getattr(persona, "slug", None), kw.get("exaggeration")))
+            Path(path).write_bytes(b"MP3")
+            fake_ffmpeg[path] = 1.0
+            return path
+
+        screenplay = {"title": "t", "scenes": [{"scene_id": "s1", "characters": ["kai", "dex"], "beats": [
+            {"kind": "line", "speaker": "kai", "text": "What?!", "intensity": "high"},
+            {"kind": "line", "speaker": "dex", "text": "Easy.", "intensity": "low"},
+            {"kind": "line", "speaker": "kai", "text": "Oh.", "intensity": "low"},
+        ]}]}
+        out = await da.render_dialogue(
+            screenplay, site_config=self._kai(), output_path=str(tmp_path / "d.wav"), synthesize=synthesize,
+        )
+        assert seen == [("kai", 1.1), ("dex", None), ("kai", 0.7)]
+        assert [b["intensity"] for b in out["timeline"]] == ["high", "low", "low"]

@@ -8,9 +8,10 @@ nothing at all).
 A screenplay is plain JSON::
 
     {"title", "logline", "format", "cast": [slug], "narrator": bool,
-     "scenes": [{"scene_id", "setting", "summary", "characters": [slug],
+     "spine": {"want", "obstacle", "turn", "payoff"},
+     "scenes": [{"scene_id", "setting", "summary", "turn", "characters": [slug],
                  "beats": [{"kind": "line", "speaker": slug|"narrator",
-                            "text", "delivery"},
+                            "text", "delivery", "intensity"},
                            {"kind": "action", "text", "characters": [slug]}]}],
      "notes": [str]}
 
@@ -31,6 +32,16 @@ is a weaker video, not a broken one.
 
 The cast is personas (``persona_service``). The writer reads each one's
 ``display_name``, ``personality`` and ``appearance``.
+
+**A story, not a lecture with pictures** (2026-10-13). Matt on the first
+two-character cartoon: he wants "coherent stories and not just random shots
+stitched together without emotion or meaning". So the outline now names a
+**spine** (who wants what, what is in the way, the turn, the payoff) and each
+scene its **turn** (what is different by its end). Missing either is a HARD
+problem. The scene writer is handed the spine, its turn and its place in the
+piece (what the next scene needs, or the opening to pay off), and gives every
+line an **intensity** (low / medium / high) that ``dialogue_audio`` turns
+into the speaker's Chatterbox emotion for that line.
 """
 
 from __future__ import annotations
@@ -51,6 +62,11 @@ NARRATOR = "narrator"
 FORMATS: tuple[str, ...] = ("explainer", "story", "dialogue", "sketch")
 BEAT_KINDS: tuple[str, ...] = ("line", "action")
 _WORD_RE = re.compile(r"[A-Za-z0-9']+")
+#: The story spine every outline names (see the module docstring).
+SPINE_PARTS: tuple[str, ...] = ("want", "obstacle", "turn", "payoff")
+#: How strongly a line's feeling is played; ``dialogue_audio`` maps it to the
+#: speaker's Chatterbox emotion strength.
+INTENSITIES: tuple[str, ...] = ("low", "medium", "high")
 
 
 class ScreenplayError(RuntimeError):
@@ -213,6 +229,8 @@ def normalize_beats(raw_beats: Any) -> list[dict[str, Any]]:
         if kind == "line":
             item["speaker"] = str(beat.get("speaker") or "").strip().lower()
             item["delivery"] = str(beat.get("delivery") or "").strip()
+            intensity = str(beat.get("intensity") or "").strip().lower()
+            item["intensity"] = intensity if intensity in INTENSITIES else "medium"
         else:
             item["characters"] = _csv_or_list(beat.get("characters"))
         out.append(item)
@@ -228,11 +246,15 @@ def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
             "scene_id": str(scene.get("scene_id") or f"s{i}").strip() or f"s{i}",
             "setting": str(scene.get("setting") or "").strip(),
             "summary": str(scene.get("summary") or "").strip(),
+            "turn": str(scene.get("turn") or "").strip(),
             "characters": _csv_or_list(scene.get("characters")),
         })
+    spine_value = raw.get("spine")
+    spine_raw: dict[str, Any] = spine_value if isinstance(spine_value, dict) else {}
     return {
         "title": str(raw.get("title") or "").strip(),
         "logline": str(raw.get("logline") or "").strip(),
+        "spine": {k: str(spine_raw.get(k) or "").strip() for k in SPINE_PARTS},
         "scenes": scenes,
     }
 
@@ -245,12 +267,21 @@ def check_outline(outline: dict[str, Any], request: ScreenplayRequest) -> list[s
         errors.append("FIX: add a non-empty \"title\"")
     if not outline["scenes"]:
         errors.append("FIX: add at least one scene")
+    spine = outline.get("spine") or {}
+    missing = [k for k in SPINE_PARTS if not spine.get(k)]
+    if missing:
+        errors.append(
+            "FIX: add a \"spine\" with " + ", ".join(f'"{k}"' for k in missing)
+            + " (who wants what, what is in the way, the turn, the payoff)",
+        )
     for scene in outline["scenes"]:
         sid = scene["scene_id"]
         if not scene["setting"]:
             errors.append(f"FIX scene {sid!r}: add a \"setting\" (one sentence: place and mood)")
         if not scene["summary"]:
             errors.append(f"FIX scene {sid!r}: add a \"summary\" of what happens")
+        if not scene.get("turn"):
+            errors.append(f"FIX scene {sid!r}: add a \"turn\": what is different by the end of the scene")
         for name in scene["characters"]:
             if name not in cast:
                 errors.append(
@@ -411,10 +442,30 @@ async def _ask_validated(
 
 def _outline_text(outline: dict[str, Any]) -> str:
     return "\n".join(
-        f"- {s['scene_id']}: {s['summary']} (setting: {s['setting']}; "
-        f"characters: {', '.join(s['characters']) or 'none'})"
+        f"- {s['scene_id']}: {s['summary']} Ends with: {s.get('turn') or '(unstated)'} "
+        f"(setting: {s['setting']}; characters: {', '.join(s['characters']) or 'none'})"
         for s in outline["scenes"]
     )
+
+
+def _spine_text(outline: dict[str, Any]) -> str:
+    spine = outline.get("spine") or {}
+    return "\n".join(f"{k.capitalize()}: {spine.get(k) or '(unstated)'}" for k in SPINE_PARTS)
+
+
+def _scene_position(outline: dict[str, Any], index: int, opening: list[str]) -> str:
+    """What this scene owes the rest of the piece: set up the next one, or
+    (the last) pay off the opening."""
+    scenes = outline["scenes"]
+    if index == len(scenes) - 1:
+        payoff = (outline.get("spine") or {}).get("payoff") or "land the point"
+        first = "\n".join(opening[:2]) or "(this is also the opening scene)"
+        return (
+            f"This is the LAST scene. Deliver the payoff: {payoff}\n"
+            f"The piece opened with:\n{first}"
+        )
+    nxt = scenes[index + 1]
+    return f"The next scene: {nxt['summary']} Leave the characters ready for it."
 
 
 async def write_screenplay(
@@ -453,7 +504,8 @@ async def write_screenplay(
     notes: list[str] = []
     recent: list[str] = []
     scenes: list[dict[str, Any]] = []
-    for scene in outline["scenes"]:
+    opening: list[str] = []
+    for index, scene in enumerate(outline["scenes"]):
         sid = scene["scene_id"]
 
         def _check_scene(reply: dict[str, Any], sid: str = sid) -> tuple[list[str], list[str]]:
@@ -471,9 +523,12 @@ async def write_screenplay(
             {
                 **common,
                 "outline_block": _outline_text(outline),
+                "spine_block": _spine_text(outline),
                 "scene_id": sid,
                 "scene_setting": scene["setting"],
                 "scene_summary": scene["summary"],
+                "scene_turn": scene.get("turn") or "(unstated)",
+                "scene_position": _scene_position(outline, index, opening),
                 "scene_characters": ", ".join(scene["characters"]) or "none",
                 "scene_word_budget": int(round(per_scene)),
                 "previous_lines": "\n".join(recent[-6:]) or "(this is the opening scene)",
@@ -484,9 +539,12 @@ async def write_screenplay(
         beats = normalize_beats(reply.get("beats"))
         scenes.append({**scene, "beats": beats})
         recent.extend(f"{b['speaker']}: {b['text']}" for b in beats if b["kind"] == "line")
+        if not opening:
+            opening = list(recent[:2])
 
     screenplay: dict[str, Any] = {
-        "title": outline["title"], "logline": outline["logline"], "scenes": scenes,
+        "title": outline["title"], "logline": outline["logline"],
+        "spine": outline["spine"], "scenes": scenes,
     }
     hard = validate(screenplay, request, site_config)
     if hard:
@@ -516,6 +574,8 @@ async def write_screenplay(
 
 __all__ = [
     "BEAT_KINDS",
+    "INTENSITIES",
+    "SPINE_PARTS",
     "FORMATS",
     "NARRATOR",
     "ScreenplayError",

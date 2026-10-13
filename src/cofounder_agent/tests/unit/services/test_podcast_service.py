@@ -2051,6 +2051,23 @@ class TestPersonaDrivenEngine:
         assert str(seen["exaggeration"]) == expected
 
     @pytest.mark.asyncio
+    async def test_a_line_level_overrides_the_persona_level(self, tmp_path):
+        from poindexter.services.persona_service import get_persona
+        sc = self._matt_sc(**{"persona.matt.voice_exaggeration": "0.9"})
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        seen = {}
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            seen.update(config or {})
+            output_path.write_bytes(b"CLONE")
+            return TTSResult(audio_path=output_path, duration_seconds=3, voice=voice or "default",
+                             file_size_bytes=5, metadata={"engine": "chatterbox"})
+
+        with patch("poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize", new=_fake_synthesize):
+            await svc.synthesize_line("hello", get_persona(sc, "matt"), tmp_path / "l.mp3", exaggeration=1.1)
+        assert str(seen["exaggeration"]) == "1.1"
+
+    @pytest.mark.asyncio
     async def test_kokoro_persona_keeps_speaches_even_when_the_global_engine_is_chatterbox(self, tmp_path):
         from poindexter.services.persona_service import get_persona
         sc = self._matt_sc(**{

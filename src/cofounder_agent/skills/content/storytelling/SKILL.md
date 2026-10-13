@@ -58,16 +58,26 @@ FORMATS — follow the one named above.
 - dialogue: two or more cast members talk it through. One is curious and asks; the other knows and explains; both have personality.
 - sketch: a short comedic scene built on one funny premise drawn from the topic, escalating to a punchline.
 
+FIND THE STORY FIRST
+Every format, an explainer included, is a story about a character. Decide the spine before the scenes:
+- "want": which cast member wants what, in their own words and as something concrete.
+- "obstacle": what stands in the way, often a belief the character holds that is wrong.
+- "turn": the moment the character sees it differently, and what makes it happen.
+- "payoff": how the last scene answers the first: the opening problem solved, a line called back, the character changed.
+The topic is what the character learns or runs into; the audience learns it by watching them.
+
 PLAN THE SCENES
-- Give the piece about {scene_count} scene(s). Each scene moves the piece forward and happens in its own place or moment, so the picture changes from scene to scene.
+- Give the piece about {scene_count} scene(s). Each scene is one step of the spine, and something is different at its end: a new understanding, a decision, a feeling.
+- Keep the characters in one main place unless the story has a reason to move. When it moves, the summary says why (they go to try something, or a demonstration takes them there).
 - "setting": a place, time of day and mood in one sentence a background artist could paint.
 - "summary": what happens in the scene and what the audience learns or feels, in one or two sentences.
+- "turn": what is different by the end of this scene, in one sentence.
 - "characters": the cast ids visible in the scene.
-- The first scene hooks the audience; the last one lands the point or the punchline.
+- The first scene sets up the want and hooks the audience; the last one delivers the payoff.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"title": "a short title", "logline": "the whole piece in one sentence", "scenes": [{{"scene_id": "s1", "setting": "a cosy workshop at night, warm lamps, rain on the window", "summary": "what happens here", "characters": ["id"]}}]}}
+{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "scenes": [{{"scene_id": "s1", "setting": "a cosy workshop at night, warm lamps, rain on the window", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
 ```
 
 ## story.scene
@@ -86,29 +96,38 @@ CAST — the only characters who may speak or appear. Use the id before the colo
 
 Narrator available: {narrator_available}. When yes, a line may use the speaker "narrator" for scene-setting, transitions and wrap-ups; the narrator's text is spoken aloud like any line, so sounds and visuals belong in action beats. When no, only cast members speak.
 
+THE STORY
+{spine_block}
+
 THE OUTLINE
 {outline_block}
 
 WRITE THIS SCENE: {scene_id}
 Setting: {scene_setting}
 What happens: {scene_summary}
+By the end of the scene: {scene_turn}
 Characters in the scene: {scene_characters}
 Length: about {scene_word_budget} spoken words.
+{scene_position}
 
 The lines just before this scene:
 {previous_lines}
 
 HOW TO WRITE IT
 - The scene is an ordered list of beats. A "line" beat is one speaker saying one to three short sentences that sound natural out loud. An "action" beat is something the audience sees while nobody speaks, in one visual sentence, with the cast ids it shows in its "characters".
-- Give every line a "delivery" note an actor could perform: an emotion and where the speaker looks.
-- Write each character in their own voice, from their personality, and pick up naturally from the lines before.
+- Build the scene toward its turn: every line moves the character closer to it, and the turn lands on screen, in a line or a reaction.
+- Characters answer each other. Each line reacts to the one before it (agreeing, pushing back, joking, realizing) so the scene is a conversation with feeling, not turns at a microphone.
+- Give every line a "delivery" note an actor could perform: an emotion and where the speaker looks. The emotion follows the story: frustration builds, curiosity sharpens, the turn brings surprise or relief.
+- Give every line an "intensity": "low" for quiet, thoughtful or deadpan lines, "medium" for ordinary conversation, "high" for outbursts, big surprises and the turn itself. Vary it across the scene.
+- Write each character in their own voice, from their personality.
+- Use an action beat only where something happens that the audience must see to follow the story, such as a demonstration, a reaction that replaces a line, or an entrance. Most scenes need one to three.
 - Keep facts accurate. Where a fact is uncertain, let a character ask or wonder rather than state it.
 - The "text" of a line is read aloud by a speech synthesizer: write words exactly as a person would say them, spell out symbols and abbreviations, and keep stage directions in "delivery".
-- Alternate lines with action beats so the picture keeps moving, and spend the full length on this scene's part of the story.
+- Spend the full length on this scene's part of the story.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera"}}, {{"kind": "action", "text": "what we see", "characters": ["id"]}}]}}
+{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high"}}, {{"kind": "action", "text": "what we see", "characters": ["id"]}}]}}
 ```
 
 ## story.shot_visuals

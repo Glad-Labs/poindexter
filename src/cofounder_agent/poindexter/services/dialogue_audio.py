@@ -138,6 +138,45 @@ def resolve_voice(site_config: Any, speaker: str, narrator_persona: str) -> Any:
     return persona
 
 
+def _intensity_offsets(site_config: Any) -> dict[str, float]:
+    """``story_line_intensity_offsets`` ("low=-0.2,medium=0,high=0.2")."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    raw = str(site_config.get("story_line_intensity_offsets", "") or DEFAULTS["story_line_intensity_offsets"])
+    out: dict[str, float] = {}
+    for part in raw.split(","):
+        name, _, value = part.partition("=")
+        try:
+            out[name.strip().lower()] = float(value)
+        except ValueError:
+            continue
+    return out
+
+
+def line_exaggeration(persona: Any, intensity: str, site_config: Any) -> float | None:
+    """The Chatterbox emotion strength for one line, or ``None`` to leave it.
+
+    The character's own level (``voice_exaggeration``, else the shared
+    ``plugin.tts_provider.chatterbox.exaggeration``) moved by the line's
+    intensity, clamped to ``story_line_exaggeration_min`` / ``_max`` (past
+    about 1.2 Chatterbox starts to garble). A Kokoro voice has no emotion
+    control, so it gets ``None``.
+    """
+    if persona is None or str(getattr(persona, "voice_provider", "")) != "chatterbox":
+        return None
+    own = getattr(persona, "voice_exaggeration", None)
+    try:
+        base = float(own) if own is not None else float(
+            site_config.get("plugin.tts_provider.chatterbox.exaggeration", "0.5") or 0.5,
+        )
+    except (TypeError, ValueError):
+        base = 0.5
+    offset = _intensity_offsets(site_config).get((intensity or "medium").lower(), 0.0)
+    low = site_config.get_float("story_line_exaggeration_min", 0.25)
+    high = site_config.get_float("story_line_exaggeration_max", 1.2)
+    return round(min(high, max(low, base + offset)), 3)
+
+
 async def render_dialogue(
     screenplay: dict[str, Any],
     *,
@@ -149,8 +188,10 @@ async def render_dialogue(
     """Voice every line, join the track, return ``{audio_path, timeline,
     spoken_script, duration_s}``.
 
-    ``synthesize(text, persona, path) -> path`` is the per-line TTS seam;
-    production passes ``PodcastService.synthesize_line``.
+    ``synthesize(text, persona, path, *, exaggeration=None) -> path`` is the
+    per-line TTS seam; production passes ``PodcastService.synthesize_line``.
+    ``exaggeration`` is passed only for a Chatterbox voice: the line's
+    intensity moves the speaker's emotion strength (``line_exaggeration``).
     """
     if synthesize is None:
         from poindexter.services.podcast_service import PodcastService
@@ -202,9 +243,12 @@ async def render_dialogue(
                 clip = str(work / f"line_{beat_idx:03d}.wav")
                 produced = None
                 last_error = ""
+                intensity = str(beat.get("intensity") or "medium")
+                emotion = line_exaggeration(persona, intensity, site_config)
+                extra = {"exaggeration": emotion} if emotion is not None else {}
                 for attempt in (1, 2):
                     try:
-                        produced = await synthesize(beat["text"], persona, raw)
+                        produced = await synthesize(beat["text"], persona, raw, **extra)
                     except Exception as exc:  # noqa: BLE001 — retried, then raised below
                         last_error = f"{type(exc).__name__}: {exc}"
                         produced = None
@@ -233,6 +277,7 @@ async def render_dialogue(
                 timeline.append({
                     "beat_idx": beat_idx, "scene_id": scene.get("scene_id"),
                     "kind": "line", "speaker": speaker, "text": beat["text"],
+                    "intensity": intensity, "exaggeration": emotion,
                     "characters": list(scene.get("characters") or []),
                     "start_s": round(t, 3), "end_s": round(t + seconds, 3),
                 })
