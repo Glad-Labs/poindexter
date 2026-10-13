@@ -13,6 +13,9 @@ Examples
     poindexter media approve <post_id> video --note "great pacing"
     poindexter media reject  <post_id> podcast --note "tts glitches at 0:42"
 
+``<post_id>`` is the id ``media pending`` prints: a post, or for a standalone
+video with no post (a creative-studio cartoon, poindexter#1140) its task.
+
 The single source of truth is
 ``services/media_approval_service.py`` — this module is a thin Click
 wrapper that opens a pool, calls into the service, and renders the
@@ -142,12 +145,16 @@ def cmd_pending(medium: str | None, limit: int, as_json: bool):
 
     click.secho(f"{len(rows)} pending media item(s):", fg="cyan", bold=True)
     for r in rows:
-        post_id_short = (r.get("post_id") or "")[:8]
+        # subject_id: the post, or the task of a standalone video (#1140).
+        post_id_short = (r.get("subject_id") or r.get("post_id") or "")[:8]
         med = r.get("medium") or "?"
         title = (r.get("title") or "(untitled)")[:60]
         slug = r.get("slug") or ""
         click.secho(f"  {post_id_short}  {med:<14} {title}", fg="yellow")
-        click.secho(f"    slug={slug}", fg="bright_black")
+        if r.get("standalone"):
+            click.secho("    standalone video (no post) — id is its task", fg="bright_black")
+        else:
+            click.secho(f"    slug={slug}", fg="bright_black")
 
         # Surface Layer 1 quality signals when present so the operator
         # can decide without spinning up a separate player. If
@@ -236,22 +243,24 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
         pool = await _make_pool()
         try:
             # Operators paste the 8-char prefix `media pending` renders;
-            # decide() casts post_id::uuid, so expand it first. Resolve
+            # decide() needs the full id, so expand it first. Resolve
             # WITHIN this medium (the medium already disambiguates) against
             # media_approvals — the surface the operator actually saw — via
             # the shared resolver (#1511 semantics, now on the common seam).
+            # subject_id is the post id, or the task id of a standalone
+            # video (poindexter#1140), so one prefix names either.
             resolved = await resolve_uuid_prefix(
                 pool,
                 table="media_approvals",
-                column="post_id",
+                column="subject_id",
                 prefix=post_id,
                 extra_where="medium = $1",
                 params=(medium,),
-                noun="post",
+                noun="item",
             )
             if resolved is None:
                 raise click.UsageError(
-                    f"No {medium} media for a post matching {post_id!r}. "
+                    f"No {medium} media matching {post_id!r}. "
                     f"See `poindexter media pending --medium {medium}`."
                 )
             # Load site_config so the decision rebuilds the matching R2 feed
@@ -285,7 +294,7 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
 
     verb = "approved" if approved else "rejected"
     click.secho(
-        f"{verb}: {medium} for post {resolved_id[:8]}",
+        f"{verb}: {medium} for {resolved_id[:8]}",
         fg="green" if approved else "yellow",
     )
 
@@ -328,7 +337,12 @@ async def _resolve_open_path(post_id: str, medium: str) -> tuple[str, Path | Non
         if looks_like_full_uuid(post_id):
             resolved = post_id
         else:
+            # A review item first (a post, or a standalone video's task,
+            # poindexter#1140), then any post.
             matched = await resolve_uuid_prefix(
+                pool, table="media_approvals", column="subject_id", prefix=post_id,
+                extra_where="medium = $1", params=(medium,), noun="item",
+            ) or await resolve_uuid_prefix(
                 pool, table="posts", column="id", prefix=post_id, noun="post",
             )
             if matched is None:

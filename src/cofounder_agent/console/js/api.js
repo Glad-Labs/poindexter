@@ -1257,17 +1257,25 @@
             renderSuccess24h: null,
             dispatched: null,
             videosPersisted: null,
-            queue: rows.map((m) => ({
-              id: m.post_id + ':' + m.medium,
-              post_id: m.post_id,
-              medium: m.medium,
-              title: m.title || m.slug || m.post_id,
-              slug: m.slug,
-              quality:
-                m.quality_score != null ? Math.round(m.quality_score) : null,
-              dur: null,
-              age: relAge(m.created_at),
-            })),
+            // subject_id is the id every media-approval route takes: the
+            // post, or the task of a standalone video with no post
+            // (poindexter#1140). It rides as post_id because the drawer and
+            // mediaDecide already route by that field.
+            queue: rows.map((m) => {
+              const subject = m.subject_id || m.post_id;
+              return {
+                id: subject + ':' + m.medium,
+                post_id: subject,
+                standalone: !!m.standalone,
+                medium: m.medium,
+                title: m.title || m.slug || subject,
+                slug: m.standalone ? 'standalone video' : m.slug,
+                quality:
+                  m.quality_score != null ? Math.round(m.quality_score) : null,
+                dur: null,
+                age: relAge(m.created_at),
+              };
+            }),
           };
         },
         () => mock().media

@@ -140,6 +140,38 @@ Chatterbox, before its one retry. On 2026-10-12 a narrator line OOM'd because
 ComfyUI still held the edit model; the reclaim freed 24 GB and the retry
 voiced it.
 
+## Review: a video with no post
+
+A creative video has no blog post. It is the whole piece. Gate 2 used to key
+every review row on a post, so these videos could not be reviewed
+(poindexter#1140).
+
+`media.persist` marks a video **standalone** when the run has a `screenplay` and
+no post: `media_assets.metadata.standalone = true`, with the screenplay's title
+and logline as the asset's title and description. `media_distribute` seeds
+its review row under the task on the first cycle it sees the asset, instead of
+waiting for a post.
+
+A `media_approvals` row is keyed on its **subject**. `subject_id` is a stored
+generated column: the post id, or the task id when there is no post. Every
+review surface takes that one id:
+
+```bash
+poindexter media pending --medium video   # a standalone item prints its task id
+poindexter media open <id> video
+poindexter media approve <id> video
+```
+
+The console's media queue lists the video with its screenplay title, and the
+drawer previews it the same way. The quality eval runs as it does for any
+video. Shot fidelity comes from the render's own audit rows, and topic match
+is scored against the screenplay title.
+
+A standalone video always waits for a human. The niche auto-approve and
+earned-autonomy tiers vouch for an article's media, and that track record says
+nothing about a cartoon. The RSS feeds join posts, so a standalone video never
+appears in one.
+
 ## Cost
 
 Measured 2026-10-12 on the RTX 5090:
@@ -157,9 +189,7 @@ GPU time.
 
 ## Not yet
 
-- Reviewing and publishing standalone videos (poindexter#1140). A creative
-  video with no blog post is saved by `media.persist` as a task-keyed media
-  asset. Gate-2 approval is created only for videos whose task has a post,
-  so these do not reach the approval queue or YouTube yet.
+- Uploading an approved standalone video to YouTube (poindexter#1140, part 2).
+  The upload pass reads its title, description and link from a post.
 - A music-bed atom.
 - Two characters lip-synced in one shot. Dialogue cuts between speakers.

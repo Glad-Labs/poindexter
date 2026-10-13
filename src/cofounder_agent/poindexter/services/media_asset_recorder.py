@@ -78,6 +78,8 @@ async def record_media_asset(
     storage_provider: str = "local",
     metadata: dict[str, Any] | None = None,
     task_id: Any = None,
+    title: str = "",
+    description: str = "",
 ) -> str | None:
     """Insert a row into ``media_assets`` for a freshly-produced file.
 
@@ -117,6 +119,9 @@ async def record_media_asset(
             Backfill scripts pass ``"backfill"`` to keep rows distinct.
         storage_provider: ``"local"`` / ``"cloudflare_r2"`` / ``"s3"`` etc.
         metadata: Free-form JSON; coerced to ``str`` if not serializable.
+        title / description: The asset's own title and description, for a
+            piece with no post to carry them (a standalone video,
+            poindexter#1140). Empty stores NULL.
 
     Returns:
         The new row's UUID as a string, or ``None`` on any failure.
@@ -155,12 +160,12 @@ async def record_media_asset(
                     type, source, storage_provider, url, storage_path,
                     metadata, post_id, task_id, provider_plugin,
                     width, height, duration_ms, file_size_bytes,
-                    mime_type, cost_usd, electricity_kwh
+                    mime_type, cost_usd, electricity_kwh, title, description
                 ) VALUES (
                     $1, $2, $3, $4, $5,
                     $6::jsonb, $7, $8, $9,
                     $10, $11, $12, $13,
-                    $14, $15, $16
+                    $14, $15, $16, NULLIF($17, ''), NULLIF($18, '')
                 ){conflict}
                 RETURNING id
                 """,  # nosec B608 - conflict is "" or a hardcoded _VIDEO_UPSERT_CONFLICT / _PODCAST_UPSERT_CONFLICT constant, never external input
@@ -180,6 +185,8 @@ async def record_media_asset(
                 mime_type,
                 cost_usd,
                 electricity_kwh,
+                title or "",
+                description or "",
             )
             return str(row_id) if row_id else None
     except Exception as exc:

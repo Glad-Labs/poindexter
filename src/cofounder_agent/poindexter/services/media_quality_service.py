@@ -580,10 +580,28 @@ def _cfg_float(site_config: Any, key: str, default: float) -> float:
         return default
 
 
+_SUBJECT_TITLE_SQL = """
+    SELECT COALESCE(
+        (SELECT title FROM posts WHERE id::text = $1),
+        (SELECT title FROM media_assets
+          WHERE task_id = $1 AND post_id IS NULL AND COALESCE(title, '') <> ''
+          ORDER BY created_at DESC LIMIT 1),
+        (SELECT topic FROM pipeline_tasks WHERE task_id = $1)
+    ) AS title
+"""
+
+
 async def _fetch_post_title(db: Any, post_id: str) -> str:
-    """The post's title (the topic the video is supposed to be about). '' on miss."""
-    row = await db.fetchrow("SELECT title FROM posts WHERE id = $1::uuid", post_id)
-    return (row["title"] if row and row["title"] else "") if row is not None else ""
+    """What the video is supposed to be about. '' on miss.
+
+    ``post_id`` is the approval row's subject: a post id, or the task id of a
+    video with no post (poindexter#1140). That video's title is the one
+    ``media.persist`` stored on its asset (the screenplay's title), else the
+    task's topic.
+    """
+    row = await db.fetchrow(_SUBJECT_TITLE_SQL, str(post_id))
+    title = row["title"] if row is not None else None
+    return title if isinstance(title, str) else ""
 
 
 async def _run_video_layer2(
@@ -899,7 +917,7 @@ _LAYER1_REJECT_SQL = """
         quality_score = $4,
         quality_signals = $5::jsonb,
         quality_evaluated_at = now()
-    WHERE post_id = $1::uuid AND medium = $2
+    WHERE subject_id = $1 AND medium = $2
 """
 
 
@@ -1082,7 +1100,7 @@ async def evaluate_podcast(
             SET quality_score = $3,
                 quality_signals = $4::jsonb,
                 quality_evaluated_at = now()
-            WHERE post_id = $1::uuid AND medium = $2
+            WHERE subject_id = $1 AND medium = $2
             """,
             post_id, "podcast", score, json.dumps(signals),
         )
@@ -1170,7 +1188,7 @@ async def evaluate_video(
             SET quality_score = $3,
                 quality_signals = $4::jsonb,
                 quality_evaluated_at = now()
-            WHERE post_id = $1::uuid AND medium = $2
+            WHERE subject_id = $1 AND medium = $2
             """,
             post_id, medium, score, json.dumps(signals),
         )

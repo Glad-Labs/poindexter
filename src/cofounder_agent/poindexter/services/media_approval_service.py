@@ -321,6 +321,41 @@ async def record_pending(
     return "pending"
 
 
+async def record_pending_standalone(
+    db: Any, task_id: str, medium: str, *, file_path: str | None = None,
+    site_config: Any = None,
+) -> str:
+    """Seed the review row for a video that has no blog post (poindexter#1140).
+
+    A creative-studio cartoon is the whole piece, not media for an article, so
+    no post ever exists to key its row on. The row is keyed on the pipeline
+    task instead (``task_id`` set, ``post_id`` NULL); its ``subject_id`` is the
+    task id, which is the id every other function here takes in place of a
+    post id.
+
+    Always manual review. Both auto-approve tiers trust a niche's track record
+    with the media of its articles, and that record says nothing about a
+    cartoon. The quality eval and the review ping run exactly as for a post.
+    Idempotent, like ``record_pending``.
+    """
+    _validate_medium(medium)
+    task_id = str(task_id)
+    await db.execute(
+        """
+        INSERT INTO media_approvals (task_id, medium, status)
+        VALUES ($1, $2, 'pending')
+        ON CONFLICT (subject_id, medium) DO NOTHING
+        """,
+        task_id, medium,
+    )
+    logger.info(
+        "[media_approval] pending: standalone %s for task %s (awaiting operator)",
+        medium, task_id,
+    )
+    await _evaluate_and_notify(db, task_id, medium, file_path, site_config)
+    return "pending"
+
+
 async def _evaluate_and_notify(
     db: Any, post_id: str, medium: str, file_path: str | None,
     site_config: Any = None,
@@ -355,9 +390,9 @@ async def _evaluate_and_notify(
         row = await db.fetchrow(
             """
             SELECT status, decided_by, quality_evaluated_at FROM media_approvals
-            WHERE post_id = $1::uuid AND medium = $2
+            WHERE subject_id = $1 AND medium = $2
             """,
-            post_id, medium,
+            str(post_id), medium,
         )
         if row is None:
             return
@@ -450,13 +485,20 @@ async def notify_pending_for_review(
             ma.status,
             ma.quality_score,
             ma.quality_signals,
-            p.title,
+            ma.post_id IS NULL AS standalone,
+            COALESCE(p.title, sa.title) AS title,
             p.slug
         FROM media_approvals ma
         LEFT JOIN posts p ON p.id = ma.post_id
-        WHERE ma.post_id = $1::uuid AND ma.medium = $2
+        LEFT JOIN LATERAL (
+            SELECT mas.title FROM media_assets mas
+             WHERE ma.post_id IS NULL AND mas.task_id = ma.task_id
+               AND mas.type = ma.medium
+             ORDER BY mas.created_at DESC LIMIT 1
+        ) sa ON true
+        WHERE ma.subject_id = $1 AND ma.medium = $2
         """,
-        post_id, medium,
+        str(post_id), medium,
     )
     if row is None:
         logger.debug(
@@ -509,9 +551,11 @@ async def notify_pending_for_review(
     medium_emoji = {"podcast": "\U0001F3A7", "video": "\U0001F3AC", "video_short": "\U0001F39E"}
     emoji = medium_emoji.get(medium, "\U0001F3AC")
 
+    # A standalone video (poindexter#1140) has no post; its id is its task.
+    subject = "standalone" if row.get("standalone") else "post"
     message = (
         f"{emoji} New {medium} awaiting approval\n"
-        f"post: {post_id_short} — {title}\n"
+        f"{subject}: {post_id_short} — {title}\n"
         f"quality: score={score_str}  duration={dur_str}  "
         f"silence={sil_str}  size={size_str}\n"
         f"review: poindexter media pending --medium {medium}\n"
@@ -556,9 +600,9 @@ async def is_approved(db: Any, post_id: str, medium: str) -> bool:
     row = await db.fetchrow(
         """
         SELECT status FROM media_approvals
-        WHERE post_id = $1::uuid AND medium = $2
+        WHERE subject_id = $1 AND medium = $2
         """,
-        post_id, medium,
+        str(post_id), medium,
     )
     return bool(row and row["status"] == "approved")
 
@@ -618,10 +662,10 @@ async def decide(
         UPDATE media_approvals
         SET status = $3, decided_at = now(),
             decided_by = $4, notes = $5
-        WHERE post_id = $1::uuid AND medium = $2
+        WHERE subject_id = $1 AND medium = $2
         RETURNING status
         """,
-        post_id, medium, new_status, decided_by, notes,
+        str(post_id), medium, new_status, decided_by, notes,
     )
     if row is None:
         raise ValueError(
@@ -690,18 +734,18 @@ async def record_dispatched(
             UPDATE media_approvals
                SET dispatched_at    = COALESCE(dispatched_at, now()),
                    dispatch_success = true
-             WHERE post_id = $1::uuid AND medium = $2
+             WHERE subject_id = $1 AND medium = $2
             """,
-            post_id, medium,
+            str(post_id), medium,
         )
     else:
         await db.execute(
             """
             UPDATE media_approvals
                SET dispatch_success = false
-             WHERE post_id = $1::uuid AND medium = $2
+             WHERE subject_id = $1 AND medium = $2
             """,
-            post_id, medium,
+            str(post_id), medium,
         )
     logger.info(
         "[media_approval] dispatch %s: %s for post %s",
@@ -762,6 +806,11 @@ async def list_pending(
     ``posts`` so the operator sees the post title in the listing
     rather than just a uuid.
 
+    A standalone video (poindexter#1140) has no post: its ``post_id`` is
+    None, ``standalone`` is true, and its title is the one ``media.persist``
+    stored on the asset (else the task's topic). ``subject_id`` is the id to
+    decide, preview or open either kind by.
+
     ``db`` accepts either an asyncpg Pool or Connection.
     """
     if medium is not None:
@@ -770,16 +819,27 @@ async def list_pending(
     rows = await db.fetch(
         """
         SELECT
+            ma.subject_id,
             ma.post_id::text AS post_id,
+            ma.task_id,
+            ma.post_id IS NULL AS standalone,
             ma.medium,
             ma.created_at,
             ma.quality_score,
             ma.quality_signals,
             ma.quality_evaluated_at,
-            p.title,
+            COALESCE(p.title, sa.title, pt.topic) AS title,
             p.slug
         FROM media_approvals ma
-        JOIN posts p ON p.id = ma.post_id
+        LEFT JOIN posts p ON p.id = ma.post_id
+        LEFT JOIN pipeline_tasks pt
+               ON ma.post_id IS NULL AND pt.task_id = ma.task_id
+        LEFT JOIN LATERAL (
+            SELECT mas.title FROM media_assets mas
+             WHERE ma.post_id IS NULL AND mas.task_id = ma.task_id
+               AND mas.type = ma.medium AND COALESCE(mas.title, '') <> ''
+             ORDER BY mas.created_at DESC LIMIT 1
+        ) sa ON true
         WHERE ma.status = 'pending'
           AND ($1::text IS NULL OR ma.medium = $1)
         ORDER BY ma.created_at DESC
@@ -796,6 +856,9 @@ async def get_asset_storage_path(
     """Return the canonical ``storage_path`` for the most-recent asset of
     ``medium`` type belonging to ``post_id``, or ``None`` when no row exists.
 
+    ``post_id`` is a review subject: a post id, or the task id of a
+    standalone video (poindexter#1140), whose asset never gets a post.
+
     Used by the ``poindexter media open`` CLI to resolve the on-disk path
     without coupling the transport layer to raw SQL.
 
@@ -805,13 +868,13 @@ async def get_asset_storage_path(
         """
         SELECT storage_path
           FROM media_assets
-         WHERE post_id = $1::uuid
+         WHERE (post_id::text = $1 OR (post_id IS NULL AND task_id = $1))
            AND type = $2
            AND COALESCE(storage_path, '') <> ''
          ORDER BY created_at DESC
          LIMIT 1
         """,
-        post_id,
+        str(post_id),
         medium,
     )
     return row["storage_path"] if row is not None else None
@@ -832,15 +895,17 @@ async def get_thumbnail_storage_path(db: Any, post_id: str) -> str | None:
          WHERE ma.type = 'video_thumbnail'
            AND COALESCE(ma.storage_path, '') <> ''
            AND (
-                ma.post_id = $1::uuid
+                ma.post_id::text = $1
+             -- a standalone video's subject is its task (poindexter#1140)
+             OR ma.task_id::text = $1
              OR ma.task_id::text = (
-                    SELECT p.metadata->>'pipeline_task_id' FROM posts p WHERE p.id = $1::uuid
+                    SELECT p.metadata->>'pipeline_task_id' FROM posts p WHERE p.id::text = $1
                 )
            )
          ORDER BY ma.created_at DESC
          LIMIT 1
         """,
-        post_id,
+        str(post_id),
     )
     return row["storage_path"] if row is not None else None
 

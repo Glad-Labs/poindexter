@@ -316,3 +316,40 @@ async def test_persist_hands_the_thumbnail_to_the_store_with_its_video_flag(
     assert "thumb-asset" in out["media_assets_recorded"]
     kw = store.await_args.kwargs
     assert kw["video_recorded_now"] is True and kw["meta"] == {"hook": "h"} and kw["src_path"] == "/tmp/t.jpg"
+
+
+@pytest.mark.asyncio
+async def test_screenplay_run_without_a_post_is_marked_standalone(
+    tmp_path, monkeypatch, patched_recorder
+):
+    """A creative piece (poindexter#1140) is titled from its screenplay and
+    flagged, so media_distribute reviews it under its task."""
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", tmp_path / "d")
+    state = {
+        "task_id": "t-cartoon",
+        "pool": _FakePool(),
+        "long_video_path": _write_tmp(tmp_path / "long.mp4"),
+        "screenplay": {"title": "Kai and Mira Explain VRAM", "logline": "Two friends, one GPU."},
+    }
+    await persist_run(state)
+    kw = patched_recorder.await_args.kwargs
+    assert kw["metadata"] == {"standalone": True}
+    assert kw["title"] == "Kai and Mira Explain VRAM"
+    assert kw["description"] == "Two friends, one GPU."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "extra",
+    [{}, {"screenplay": {"title": "T"}, "post_id": "p1"}],
+    ids=["article media", "screenplay with a post"],
+)
+async def test_media_with_a_post_or_no_screenplay_is_not_standalone(
+    tmp_path, monkeypatch, patched_recorder, extra
+):
+    monkeypatch.setattr("poindexter.services.video_service.VIDEO_DIR", tmp_path / "d")
+    state = {"task_id": "t1", "pool": _FakePool(), "long_video_path": _write_tmp(tmp_path / "l.mp4"), **extra}
+    await persist_run(state)
+    kw = patched_recorder.await_args.kwargs
+    assert kw["metadata"] is None
+    assert kw["title"] == ""

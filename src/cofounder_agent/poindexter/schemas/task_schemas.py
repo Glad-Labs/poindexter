@@ -442,9 +442,16 @@ class MediaApprovalItem(BaseModel):
     internal scoring columns (``quality_signals`` / ``quality_evaluated_at``)
     are intentionally not surfaced over HTTP — the ``poindexter media pending``
     CLI reads those straight from the service, not this endpoint.
+
+    ``subject_id`` is the id the item is decided, previewed and opened by:
+    the post id, or for a standalone video with no post (poindexter#1140)
+    its pipeline task id. ``post_id`` is then None and ``standalone`` true.
     """
 
+    subject_id: str | None = None
     post_id: str | None = None
+    task_id: str | None = None
+    standalone: bool = False
     medium: str | None = None
     title: str | None = None
     slug: str | None = None

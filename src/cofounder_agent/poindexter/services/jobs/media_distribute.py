@@ -12,7 +12,10 @@ task-keyed render output to the post-keyed Gate-2 distribution world:
 2. **Seed Gate 2.** Record a ``media_approvals`` pending row so the asset
    surfaces in the operator's Gate-2 review queue — ``video`` for the long form,
    ``video_short`` for the short (post-#1460 the media_assets *type* and the
-   approvals *medium* are identical).
+   approvals *medium* are identical). A **standalone** asset
+   (``metadata.standalone``, a creative-studio video with no post,
+   poindexter#1140) skips the link: no post will ever come, so it is seeded
+   under its task (``record_pending_standalone``) the first cycle it is seen.
 3. **Dispatch.** Deliver Gate-2-*approved* assets to the enabled video platforms
    via the publishing handler registry — long form ``shorts=False``, short
    ``shorts=True`` (the #682/#1249 Shorts-aware YouTube handler) — then stamp
@@ -69,7 +72,11 @@ from poindexter.services.jobs.dispatch_handles import (
     claim_media_dispatch,
     persist_platform_handles,
 )
-from poindexter.services.media_approval_service import record_dispatched, record_pending
+from poindexter.services.media_approval_service import (
+    record_dispatched,
+    record_pending,
+    record_pending_standalone,
+)
 from poindexter.services.video_r2_mirror import run_video_r2_mirror
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
@@ -97,13 +104,22 @@ _TYPE_TO_MEDIUM: dict[str, str] = {
 
 # media_pipeline assets awaiting a post link: a rendered video with a task id
 # but no post yet. Newest task first so a freshly-published piece links promptly.
+# A standalone video (poindexter#1140) never gets a post; once its task-keyed
+# review row exists it drops out here, so it cannot hold a slot of the LIMIT.
 _UNLINKED_SQL = """
-    SELECT id::text AS id, task_id, type, storage_path
-      FROM media_assets
-     WHERE post_id IS NULL
-       AND task_id IS NOT NULL
-       AND type = ANY($1::text[])
-     ORDER BY created_at DESC
+    SELECT mas.id::text AS id, mas.task_id, mas.type, mas.storage_path,
+           COALESCE(mas.metadata->>'standalone', '') = 'true' AS standalone
+      FROM media_assets mas
+     WHERE mas.post_id IS NULL
+       AND mas.task_id IS NOT NULL
+       AND mas.type = ANY($1::text[])
+       AND NOT EXISTS (
+           SELECT 1 FROM media_approvals ma
+            WHERE ma.post_id IS NULL
+              AND ma.task_id = mas.task_id
+              AND ma.medium = mas.type
+       )
+     ORDER BY mas.created_at DESC
      LIMIT $2
 """
 
@@ -630,11 +646,33 @@ class MediaDistributeJob:
             return JobResult(ok=False, detail=f"query failed: {describe_exception(exc)}", changes_made=0)
 
         linked = 0
+        standalone_seeded = 0
         for row in rows or []:
             asset_id = row["id"]
             task_id = row["task_id"]
             medium = _TYPE_TO_MEDIUM.get(row["type"])
             if medium is None:
+                continue
+
+            if row.get("standalone"):
+                # A video with no post behind it (poindexter#1140): review it
+                # under its task now, because no post will ever come to link.
+                try:
+                    await record_pending_standalone(
+                        pool, str(task_id), medium,
+                        file_path=row.get("storage_path") or None,
+                        site_config=sc,
+                    )
+                    standalone_seeded += 1
+                    logger.info(
+                        "[MEDIA_DISTRIBUTE] seeded Gate-2 %s for standalone asset %s "
+                        "(task %s)", medium, asset_id, task_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
+                    logger.warning(
+                        "[MEDIA_DISTRIBUTE] standalone seed failed for asset %s (task %s): %s",
+                        asset_id, task_id, describe_exception(exc),
+                    )
                 continue
 
             try:
@@ -818,11 +856,13 @@ class MediaDistributeJob:
             await rebuild_video_feed(sc)
 
         detail = (
-            f"linked {linked}, dispatched {dispatched}; "
+            f"linked {linked}, standalone seeded {standalone_seeded}, "
+            f"dispatched {dispatched}; "
             f"video R2 mirror: {mirror.summary()}"
         )
         metrics = {
             "linked": linked,
+            "standalone_seeded": standalone_seeded,
             "dispatched": dispatched,
             "video_r2_uploaded": mirror.count("uploaded"),
             "video_r2_stamped": mirror.count("stamped"),
@@ -832,7 +872,7 @@ class MediaDistributeJob:
         return JobResult(
             ok=True,
             detail=detail,
-            changes_made=linked + dispatched + mirror.delivered,
+            changes_made=linked + standalone_seeded + dispatched + mirror.delivered,
             # The scheduler writes an audit_log job_run row for every fire that
             # carries metrics. An idle cycle every 10 minutes would add 144
             # rows of zeros a day, so only a cycle that did something records.

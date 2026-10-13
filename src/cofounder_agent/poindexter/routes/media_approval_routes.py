@@ -6,6 +6,10 @@ Operator surfaces previously only reachable in-process:
 - ``POST /api/media-approval/{post_id}/{medium}/decide``  → approve or reject
 - ``GET  /api/media-approval/{post_id}/{medium}/preview``  → stream the local render
 - ``GET  /api/media-approval/{post_id}/video/thumbnail``   → the composed YouTube thumbnail
+
+``{post_id}`` is the item's ``subject_id``: the post id, or the pipeline task
+id of a standalone video that has no post (poindexter#1140). The path keeps
+its old name so existing clients keep working.
 """
 
 from pathlib import Path

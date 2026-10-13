@@ -292,7 +292,7 @@ class TestDecideResolvesPrefix:
         media = _import_media_module()
         full = "b938661c-1111-2222-3333-444455556666"
 
-        pool = _make_pool_with(exact=None, prefix_rows=[{"post_id": full}])
+        pool = _make_pool_with(exact=None, prefix_rows=[{"subject_id": full}])
         # pool.close() is awaited in _decide's finally block.
         pool.close = AsyncMock()
 
@@ -325,4 +325,4 @@ class TestDecideResolvesPrefix:
         # The service got the FULL uuid, not the 8-char prefix.
         assert decide_calls[0][0] == full
         assert decide_calls[0][1] == "video"
-        assert "approved: video for post b938661c" in result.output
+        assert "approved: video for b938661c" in result.output

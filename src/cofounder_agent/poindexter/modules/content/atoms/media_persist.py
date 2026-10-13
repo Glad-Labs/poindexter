@@ -16,6 +16,13 @@ created at publish). The post-keyed Gate-2 approval + distribution lane resolves
 the post later via ``posts.metadata->>'pipeline_task_id'`` (Plan 8 / 8b-2). This
 split keeps the post dependency out of the render graph.
 
+**Standalone videos** (poindexter#1140). A run with a ``screenplay`` on
+state and no post is a creative-studio piece: the video IS the content, and
+no post will ever exist to resolve. Its rows carry ``metadata.standalone``
+plus the screenplay's title and logline as the asset's own title and
+description. ``media_distribute`` reads the flag to seed a task-keyed review
+row instead of waiting for a post.
+
 **Best-effort.** A missing render (the renders emit their own findings on
 failure) or a no-pool environment never raises — the node returns the list of
 recorded asset ids and lets the graph finish.
@@ -50,6 +57,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="database_service", type="object", description="DB service (pool seam)", required=False),
         FieldSpec(name="long_thumbnail_path", type="str", description="temp path of the composed YouTube thumbnail", required=False),
         FieldSpec(name="long_thumbnail_meta", type="dict", description="hook + background of that thumbnail (stored on its row)", required=False),
+        FieldSpec(name="screenplay", type="dict", description="a creative piece's screenplay: marks the video standalone and titles it", required=False),
     ),
     outputs=(
         FieldSpec(name="media_assets_recorded", type="list", description="ids of the media_assets rows written"),
@@ -148,6 +156,20 @@ async def _probed_duration_ms(path: Any) -> int | None:
         return None
 
 
+def _standalone_identity(state: dict[str, Any], post_id: str | None) -> tuple[dict[str, Any] | None, str, str]:
+    """``(metadata, title, description)`` for a video with no post, else ``(None, "", "")``.
+
+    Only a screenplay run qualifies: an article's media always gets its post
+    at publish, and marking it standalone would review it twice.
+    """
+    screenplay = state.get("screenplay")
+    if post_id or not isinstance(screenplay, dict):
+        return None, "", ""
+    title = str(screenplay.get("title") or "").strip()
+    logline = str(screenplay.get("logline") or "").strip()
+    return {"standalone": True}, title, logline
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Move temp renders to durable storage + record media_assets rows."""
     task_id = state.get("task_id")
@@ -179,6 +201,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # re-execution doesn't strand duplicate task-keyed media_assets rows. See
     # _existing_asset_types for the full rationale.
     already_recorded = await _existing_asset_types(pool, str(task_id))
+
+    post_id = str(state.get("post_id") or "").strip() or None
+    standalone_meta, standalone_title, standalone_description = _standalone_identity(state, post_id)
 
     recorded: list[str] = []
     recorded_types: set[str] = set()
@@ -225,7 +250,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # pipeline_task_id resolver never matches a task that LOADED
             # its post; see podcast_persist for the full note). Canonical
             # Stage-2 runs still pass None and resolve at distribution.
-            post_id=(str(state.get("post_id") or "").strip() or None),
+            post_id=post_id,
             task_id=task_id,
             asset_type=asset_type,
             storage_path=str(durable),
@@ -238,6 +263,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 await _probed_duration_ms(durable) or _duration_ms(shot_list)
             ),
             file_size_bytes=size,
+            metadata=standalone_meta,
+            title=standalone_title,
+            description=standalone_description,
         )
         if asset_id:
             recorded.append(asset_id)

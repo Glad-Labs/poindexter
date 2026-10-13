@@ -280,6 +280,40 @@ async def test_skips_asset_with_no_published_post():
 
 
 @pytest.mark.asyncio
+async def test_standalone_asset_is_seeded_under_its_task_without_a_post():
+    """A standalone video (poindexter#1140) never gets a post: it is seeded for
+    review under its task straight away, and no post lookup or back-stamp runs."""
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        [{"id": "a1", "task_id": "cartoon-task", "type": "video",
+          "storage_path": "/v/cartoon.mp4", "standalone": True}],
+        post_id=None,
+    )
+    pending = AsyncMock()
+    standalone = AsyncMock(return_value="pending")
+    with patch.object(md, "record_pending", pending), patch.object(
+        md, "record_pending_standalone", standalone,
+    ):
+        out = await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    assert out.changes_made == 1
+    standalone.assert_awaited_once()
+    assert standalone.await_args.args[1:] == ("cartoon-task", "video")
+    assert standalone.await_args.kwargs["file_path"] == "/v/cartoon.mp4"
+    pending.assert_not_awaited()
+    pool.fetchval.assert_not_awaited()  # no post resolve for a standalone video
+    pool.execute.assert_not_called()
+
+
+def test_unlinked_sql_drops_standalone_assets_once_seeded():
+    """Without this a seeded standalone video would hold a LIMIT slot forever."""
+    sql = " ".join(md._UNLINKED_SQL.split())
+    assert "metadata->>'standalone'" in sql
+    assert "NOT EXISTS ( SELECT 1 FROM media_approvals" in sql
+
+
+@pytest.mark.asyncio
 async def test_link_failure_is_best_effort():
     """A record_pending failure for one asset never halts the pass."""
     job = MediaDistributeJob()
