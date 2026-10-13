@@ -322,8 +322,12 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   journey, "dialogue" for characters talking a topic through, "explainer"
   for teaching one idea), screenplay_cast (a list of character ids from
   CHARACTERS below), screenplay_target_seconds, screenplay_brief,
-  screenplay_tone. On media.direct_screenplay: screenplay_visual_style
-  (the art style, e.g. "flat 2D cartoon, bold outlines").
+  screenplay_tone. On media.direct_screenplay: screenplay_visual_style,
+  the art style the request asks for, in its own words (a request for
+  anime gets an anime style); leave it out when the request names none.
+  Character ids in any config value (screenplay_cast, screenplay_narrator,
+  dialogue_narrator_persona) come only from CHARACTERS below; leave the
+  narrator keys out unless the request says who narrates.
   Keep only the steps the intent asks for: a script alone is just
   story.write_screenplay; voiced audio ends after media.render_dialogue.
 

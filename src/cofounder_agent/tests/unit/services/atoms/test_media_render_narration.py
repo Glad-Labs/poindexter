@@ -66,3 +66,31 @@ async def test_empty_scripts_yield_empty_paths(monkeypatch):
     out = await media_render_narration.run({"task_id": "t1", "site_config": object()})
     assert out["long_narration_audio_path"] == ""
     assert out["short_narration_audio_path"] == ""
+
+
+@pytest.mark.asyncio
+async def test_a_dialogue_track_is_never_re_narrated(monkeypatch):
+    """A screenplay's long lane is voiced by media.render_dialogue (its
+    dialogue_timeline on state). A live architect plan put this atom after the
+    screenplay director; it must leave long_narration_audio_path alone, or the
+    house voice replaces every character and the shots lose their timing."""
+    calls = []
+
+    async def _fake_render(*, script, cta_key, site_config, task_id, key, **kw):
+        calls.append(key)
+        return f"/tmp/{key}.mp3" if script else ""
+
+    monkeypatch.setattr(
+        "poindexter.modules.content.atoms._narration_render.render_narration", _fake_render
+    )
+    out = await media_render_narration.run({
+        "task_id": "t1",
+        "video_long_script": "Mira: hi.\nKai: hello.",
+        "long_narration_audio_path": "/tmp/dialogue.wav",
+        "dialogue_timeline": [{"kind": "line"}],
+        "short_summary_script": "",
+        "site_config": object(),
+    })
+    assert "long_narration_audio_path" not in out
+    assert "t1_long" not in calls
+    assert out == {"short_narration_audio_path": ""}

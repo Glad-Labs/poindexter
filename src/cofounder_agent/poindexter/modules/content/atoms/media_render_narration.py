@@ -19,9 +19,12 @@ channels (they are — added alongside this atom) or LangGraph silently drops th
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from poindexter.plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+
+logger = logging.getLogger(__name__)
 
 ATOM_META = AtomMeta(
     name="media.render_narration",
@@ -72,6 +75,31 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     task_id = state.get("task_id")
     site_config = state.get("site_config")
+
+    # A screenplay's long lane is already voiced: media.render_dialogue wrote
+    # the multi-voice track to long_narration_audio_path and left its
+    # dialogue_timeline on state. Re-narrating video_long_script (the spoken
+    # lines) in the house voice would replace that track and every shot timed
+    # to it. A live architect plan placed this atom right after the
+    # screenplay director (2026-10-13), so the guard lives here, not in the
+    # prompt: the long lane is left untouched (no key returned).
+    dialogue_voiced = bool(state.get("dialogue_timeline"))
+    if dialogue_voiced:
+        logger.info(
+            "[media.render_narration] task=%s long lane already voiced by "
+            "media.render_dialogue; leaving it alone", task_id,
+        )
+
+    if dialogue_voiced:
+        short_only = await render_narration(
+            script=state.get("short_summary_script") or "",
+            cta_key="media.cta.video_short",
+            site_config=site_config,
+            task_id=task_id,
+            key=f"{task_id}_short",
+            **_niche_kw(state),
+        )
+        return {"short_narration_audio_path": short_only}
 
     # Long: prefer the purpose-built long script, fall back to the podcast
     # script so a missing long script degrades to "has audio", not silence.
