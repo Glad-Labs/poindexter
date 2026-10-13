@@ -44,7 +44,7 @@ ATOM_META = AtomMeta(
         "(a look the request names; empty = the house style), screenplay_narrator "
         "('none' = no narrator, a slug = that persona narrates, empty = "
         "casting decides). OUTPUT screenplay_cast, screenplay_visual_style, "
-        "screenplay_narrator, cast_sheet. USUALLY FOLLOWED BY "
+        "screenplay_narrator, cast_sheet, cast_portraits. USUALLY FOLLOWED BY "
         "story.write_screenplay."
     ),
     inputs=(
@@ -71,9 +71,12 @@ ATOM_META = AtomMeta(
                   description="'none' or the narrating persona's slug"),
         FieldSpec(name="cast_sheet", type="dict",
                   description="who was reused, created, drawn and voiced"),
+        FieldSpec(name="cast_portraits", type="dict",
+                  description="reused characters redrawn in this piece's style, slug -> URL"),
     ),
     requires=("topic",),
-    produces=("screenplay_cast", "screenplay_visual_style", "screenplay_narrator", "cast_sheet"),
+    produces=("screenplay_cast", "screenplay_visual_style", "screenplay_narrator", "cast_sheet",
+              "cast_portraits"),
     capability_tier="standard",
     cost_class="compute",
     idempotent=False,

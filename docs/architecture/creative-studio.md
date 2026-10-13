@@ -70,6 +70,15 @@ architect's roster afterwards:
   portrait matters past the cast sheet: every still and talking shot of the
   piece is drawn from it ([One look](#one-look-every-frame-drawn-from-the-portraits)).
   A portrait that cannot be drawn or uploaded leaves the character voice-only.
+- **Restyled for the piece.** A reused character whose portrait was drawn in
+  another style is redrawn in this piece's asked-for look, for this piece only.
+  The image-edit model gets their own portrait as the identity reference. The
+  redraw travels in the shot list as `cast_portraits`, and the renderer
+  draws that character's stills and talking frames from it. The persona keeps
+  its own portrait. Without it, a cyberpunk-anime retelling that reused the
+  watercolour Ruby and Wolf (2026-10-13) would have drawn every frame from
+  watercolour faces. A portrait whose prompt already names the style is kept,
+  and the house style redraws nobody.
 - **Voice.** With `story_cast_voice_engine=chatterbox`, Kokoro reads the
   sample line in the chosen voice and the clip becomes the character's
   Chatterbox clone reference, with an emotion strength from its energy

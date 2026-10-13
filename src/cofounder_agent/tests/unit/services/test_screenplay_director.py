@@ -154,6 +154,13 @@ class TestSources:
 
 
 class TestBuild:
+    def test_carries_per_piece_portraits(self):
+        plain = sd.build_shot_list(_plan(), {}, style="ink", director_model="m")
+        assert plain["cast_portraits"] == {}
+        styled = sd.build_shot_list(_plan(), {}, style="ink", director_model="m",
+                                    cast_portraits={"dex": "https://cdn/dex-ink.png"})
+        assert styled["cast_portraits"] == {"dex": "https://cdn/dex-ink.png"}
+
     def test_validates_and_carries_cast_fields(self):
         plan = _plan()
         listing = sd.build_shot_list(plan, {}, style="flat 2D cartoon", director_model="m")

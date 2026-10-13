@@ -120,6 +120,29 @@ def test_reference_context_only_for_exact_lists_with_the_whole_cast():
     assert slr.reference_context_for(VideoShotList(**base)) is None  # timing defaults to "fit"
     ctx = slr.reference_context_for(VideoShotList(**base, timing="exact"))
     assert ctx.cast == ("nova", "dex", "pip")
+    assert ctx.portrait_urls == {}
+    styled = slr.reference_context_for(
+        VideoShotList(**base, timing="exact", cast_portraits={"dex": "https://cdn/dex-ink.png"}))
+    assert styled.portrait_urls == {"dex": "https://cdn/dex-ink.png"}
+
+
+@pytest.mark.asyncio
+async def test_a_per_piece_portrait_wins_over_the_persona_portrait(monkeypatch, tmp_path):
+    """A reused character redrawn in this piece's style (story.cast_characters)
+    is drawn from that redraw, not from the portrait made for another piece."""
+    fetched: list[str] = []
+
+    async def fetch(url, dest, factory):
+        fetched.append(url)
+        Path(dest).write_bytes(b"PNG")
+        return str(dest)
+
+    monkeypatch.setattr(slr, "_fetch_presenter_portrait", fetch)
+    ctx = slr.ReferenceContext(cast=("dex", "nova"), portrait_urls={"dex": "https://cdn/dex-ink.png"})
+    paths, names = await slr._reference_portraits(
+        ["dex", "nova", "pip"], ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+    assert fetched == ["https://cdn/dex-ink.png", "https://cdn/nova.png"]
+    assert names == ["Dex", "Nova"] and len(paths) == 2
 
 
 class TestReferenceStill:

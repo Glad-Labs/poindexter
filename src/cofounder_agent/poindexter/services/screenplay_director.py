@@ -393,6 +393,7 @@ def build_shot_list(
     style: str,
     director_model: str,
     site_config: Any = None,
+    cast_portraits: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Assemble and validate the ``VideoShotList``. Raises DirectorError."""
     from pydantic import ValidationError
@@ -448,6 +449,7 @@ def build_shot_list(
             "director_model": director_model,
             "director_prompt_version": DIRECTOR_PROMPT_VERSION,
             "director_decided_at": datetime.now(timezone.utc),
+            "cast_portraits": dict(cast_portraits or {}),
         })
     except ValidationError as exc:
         raise DirectorError(f"the planned shot list does not validate: {exc}") from exc
@@ -463,10 +465,14 @@ async def direct_screenplay(
     style: str,
     pool: Any = None,
     task_id: str | None = None,
+    cast_portraits: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     plan = assign_sources(plan_shots(screenplay, timeline, track_seconds, site_config), site_config)
     visuals, model = await write_visuals(plan, screenplay, site_config=site_config, pool=pool, task_id=task_id)
-    listing = build_shot_list(plan, visuals, style=style, director_model=model, site_config=site_config)
+    listing = build_shot_list(
+        plan, visuals, style=style, director_model=model, site_config=site_config,
+        cast_portraits=cast_portraits,
+    )
     counts: dict[str, int] = {}
     for s in listing["shots"]:
         counts[s["source"]] = counts.get(s["source"], 0) + 1

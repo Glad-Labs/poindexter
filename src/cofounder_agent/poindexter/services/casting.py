@@ -40,6 +40,7 @@ import logging
 import os
 import re
 import tempfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -261,11 +262,14 @@ async def draw_portrait(
     work: Path,
     site_config: Any,
     pool: Any,
+    identity: str = "",
 ) -> tuple[str | None, str]:
     """Draw ``slug``'s portrait; ``(local_path, prompt)``.
 
     With ``anchors`` (other cast portraits) the image-edit model draws it in
-    their style; without, the image service draws it from text. Each draw is
+    their style; without, the image service draws it from text. With
+    ``identity`` (the character's name), ``anchors`` is that character's own
+    portrait and the edit model redraws them in ``style``. Each draw is
     checked for exactly this one character and redrawn up to
     ``story_portrait_attempts`` times; the last draw stands if none passes.
     """
@@ -284,7 +288,10 @@ async def draw_portrait(
     for attempt in range(1, attempts + 1):
         if anchors:
             ok, why = await rf.render_reference_frame(
-                prompt=rf.compose_reference_prompt(prompt, [], style_only=True, site_config=site_config),
+                prompt=rf.compose_reference_prompt(
+                    prompt, [identity] if identity else [], style_only=not identity,
+                    site_config=site_config,
+                ),
                 reference_paths=anchors, output_path=local, width=size, height=size,
                 site_config=site_config,
             )
@@ -435,17 +442,55 @@ async def cast_characters(
 
     use_refs = rf.enabled(site_config)
     cleared = False
+
+    async def _free_card() -> None:
+        # The image-edit model needs the card the image service holds.
+        nonlocal cleared
+        if cleared:
+            return
+        from poindexter.services.video_renderers.shot_list_renderer import (
+            _clear_image_gen_for_hero,
+        )
+
+        await _clear_image_gen_for_hero(site_config)
+        cleared = True
+
+    # A reused character whose portrait was drawn for another piece's style is
+    # redrawn in this one, for this piece only (the shot list carries it as
+    # cast_portraits). Every frame is drawn from the portraits, so a
+    # watercolour face would pull a neon anime piece back toward watercolour
+    # (2026-10-13). The persona keeps its own portrait.
+    restyled: dict[str, str] = {}
+    for slug in cast if asked and use_refs else []:
+        persona = roster.get(slug)
+        if persona is None or not persona.has_portrait:
+            continue
+        if style.lower() in (persona.portrait_prompt or "").lower():
+            continue
+        own = await _fetch(persona.portrait_url, work / f"own_{slug}.png")
+        if not own:
+            continue
+        await _free_card()
+        local, _prompt = await draw_portrait(
+            slug=f"{slug}-restyled", name=persona.display_name or slug,
+            appearance=persona.visual_description, style=style, anchors=[own],
+            identity=persona.display_name or slug, work=work, site_config=site_config, pool=pool,
+        )
+        try:
+            if not local:
+                raise PersonaError("no restyled portrait could be drawn")
+            seeded = Persona(slug=slug, portrait_seed=zlib.crc32(style.encode("utf-8")))
+            restyled[slug] = await upload_portrait(seeded, local, site_config=site_config)
+        except PersonaError as exc:
+            logger.warning("[casting] %s keeps its own portrait (%s)", slug, exc)
+            continue
+        anchors.append(local)
+
     drawn: dict[str, str] = {}
     for ch in new:
         refs = anchors[-rf.MAX_REFERENCES:] if use_refs else []
-        if refs and not cleared:
-            # The image-edit model needs the card the image service holds.
-            from poindexter.services.video_renderers.shot_list_renderer import (
-                _clear_image_gen_for_hero,
-            )
-
-            await _clear_image_gen_for_hero(site_config)
-            cleared = True
+        if refs:
+            await _free_card()
         local, prompt = await draw_portrait(
             slug=ch["slug"], name=str(ch.get("name") or ch["slug"]),
             appearance=str(ch.get("appearance") or ""), style=style,
@@ -480,6 +525,7 @@ async def cast_characters(
         "reused": [s for s in cast if s in roster],
         "created": [ch["slug"] for ch in new],
         "portraits": drawn,
+        "restyled": restyled,
         "voices": voices,
         "narrator": narrator_slug,
     }
@@ -489,6 +535,7 @@ async def cast_characters(
         "screenplay_visual_style": style,
         "screenplay_narrator": narrator_slug,
         "cast_sheet": sheet,
+        "cast_portraits": restyled,
     }
 
 

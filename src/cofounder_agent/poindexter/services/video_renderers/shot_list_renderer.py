@@ -2777,6 +2777,16 @@ class ReferenceContext:
     # master shot recurs between lines and must be the SAME picture each time.
     drawn: dict[str, str] = field(default_factory=dict)
     pool: Any = None
+    # Per-piece portraits (VideoShotList.cast_portraits): a reused character
+    # drawn in this piece's style. Wins over the persona's own portrait_url.
+    portrait_urls: dict[str, str] = field(default_factory=dict)
+
+
+def _portrait_url(persona: Any, ctx: ReferenceContext | None) -> str:
+    """The portrait to draw ``persona`` from in this render."""
+    if ctx is not None and ctx.portrait_urls.get(persona.slug):
+        return ctx.portrait_urls[persona.slug]
+    return str(persona.portrait_url or "")
 
 
 def _cast_named_in(prompt: str, cast: tuple[str, ...], site_config: Any) -> list[str]:
@@ -2805,7 +2815,10 @@ def reference_context_for(shot_list: Any) -> ReferenceContext | None:
         for slug in [*(shot.characters or []), *([shot.speaker] if shot.speaker else [])]:
             if slug not in cast:
                 cast.append(slug)
-    return ReferenceContext(cast=tuple(cast))
+    overrides = getattr(shot_list, "cast_portraits", None) or {}
+    return ReferenceContext(
+        cast=tuple(cast), portrait_urls={str(k): str(v) for k, v in overrides.items() if v},
+    )
 
 
 async def _reference_portraits(
@@ -2819,11 +2832,12 @@ async def _reference_portraits(
     names: list[str] = []
     for slug in slugs:
         persona = get_persona(site_config, slug)
-        if persona is None or not persona.enabled or not persona.has_portrait:
+        url = _portrait_url(persona, ctx) if persona is not None else ""
+        if persona is None or not persona.enabled or not url:
             continue
         if slug not in ctx.portraits:
             ctx.portraits[slug] = await _fetch_presenter_portrait(
-                persona.portrait_url, work_dir / f"reference_{slug}.png", http_client_factory,
+                url, work_dir / f"reference_{slug}.png", http_client_factory,
             )
         if ctx.portraits[slug]:
             paths.append(str(ctx.portraits[slug]))
@@ -3686,11 +3700,12 @@ async def _render_presenter_clip(
             return _fail("no enabled persona with a portrait is allowed for this niche")
     if not narration_path or not os.path.exists(narration_path):
         return _fail("narration track missing — a presenter shot lip-syncs to the rendered narration")
+    portrait_url = _portrait_url(persona, reference_ctx) if _is_cast_shot(shot) else persona.portrait_url
     portrait = await _fetch_presenter_portrait(
-        persona.portrait_url, work_dir / f"presenter_{persona.slug}.png", http_client_factory,
+        portrait_url, work_dir / f"presenter_{persona.slug}.png", http_client_factory,
     )
     if not portrait:
-        return _fail(f"could not fetch the persona portrait {persona.portrait_url}")
+        return _fail(f"could not fetch the persona portrait {portrait_url}")
     if _is_cast_shot(shot) and shot.frame_prompt:
         # The talking frame: the speaker drawn in THIS scene's setting and
         # style from their portrait, so the lip-synced shot matches the stills

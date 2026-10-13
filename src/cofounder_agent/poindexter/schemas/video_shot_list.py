@@ -381,6 +381,15 @@ class VideoShotList(BaseModel):
     # 120, not the blog director's 30: a three-minute screenplay at ~5 s a
     # shot is ~36 shots (poindexter#1135). The blog director keeps its own cap.
     shots: list[Shot] = Field(..., min_length=1, max_length=MAX_SHOTS)
+    # A reused character drawn in this piece's art style, for this piece only
+    # (story.cast_characters): slug -> portrait URL. The renderer draws that
+    # character's stills and talking frames from it instead of the persona's
+    # own portrait, which may be in another piece's style. Empty = every
+    # persona's own portrait.
+    cast_portraits: dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-piece portrait URL by persona slug, overriding persona.<slug>.portrait_url",
+    )
     director_model: str = Field(..., description="LLM model that produced this shot list")
     director_prompt_version: str = Field(..., description="Prompt version (e.g. 'v1') for traceability")
     director_decided_at: datetime = Field(..., description="When the director produced this output")

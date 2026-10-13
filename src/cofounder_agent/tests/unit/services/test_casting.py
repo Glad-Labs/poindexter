@@ -154,7 +154,8 @@ def studio(monkeypatch, tmp_path):
         return str(path), f"{kw['style']}, portrait of {kw['appearance']}"
 
     async def fake_upload(persona, local, *, site_config):
-        return f"https://cdn.example/personas/{persona.slug}.png"
+        tag = f"-{persona.portrait_seed}" if persona.portrait_seed is not None else ""
+        return f"https://cdn.example/personas/{persona.slug}{tag}.png"
 
     async def fake_voice(slug, voice_id, energy, sample, *, site_config):
         return {"voice_provider": "chatterbox", "voice_id": voice_id,
@@ -206,7 +207,32 @@ class TestCastCharacters:
             site_config=_sc(), pool=None, settings=FakeSettings())
         assert out["screenplay_visual_style"] == "ink wash, loose brush lines"
         assert "ART STYLE: ink\n" in chat.await_args.args[0]
-        assert studio.drawn[0]["anchors"] == []
+        # Dex was drawn for another piece: redrawn in this style from his own
+        # portrait, for this piece only. The new face anchors on that, never
+        # on the old-style original.
+        restyle, new = studio.drawn
+        assert restyle["identity"] == "Dex" and restyle["style"] == "ink wash, loose brush lines"
+        assert [Path(a).name for a in restyle["anchors"]] == ["own_dex.png"]
+        assert [Path(a).name for a in new["anchors"]] == ["dex-restyled.png"]
+        assert set(out["cast_portraits"]) == {"dex"} and out["cast_portraits"]["dex"] != _sc().get(
+            "persona.dex.portrait_url")
+        assert out["cast_sheet"]["restyled"] == out["cast_portraits"]
+
+    @pytest.mark.asyncio
+    async def test_a_reused_face_already_in_the_style_is_not_redrawn(self, chat, studio):
+        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, style="ink wash"))]
+        out = await casting.cast_characters(
+            casting.CastingRequest(topic="t", style_hint="ink"),
+            site_config=_sc(**{"persona.dex.portrait_prompt": "Ink wash, character portrait of a fox"}),
+            pool=None, settings=FakeSettings())
+        assert out["cast_portraits"] == {} and studio.drawn == []
+
+    @pytest.mark.asyncio
+    async def test_the_house_style_redraws_nobody(self, chat, studio):
+        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}))]
+        out = await casting.cast_characters(
+            casting.CastingRequest(topic="t"), site_config=_sc(), pool=None, settings=FakeSettings())
+        assert out["cast_portraits"] == {} and studio.drawn == []
 
     @pytest.mark.asyncio
     async def test_the_asked_for_look_stands_when_the_reply_has_none(self, chat, studio):
@@ -409,7 +435,8 @@ class TestAtom:
         from poindexter.services.template_runner import PipelineState
 
         produces = set(atom.ATOM_META.produces)
-        assert produces == {"screenplay_cast", "screenplay_visual_style", "screenplay_narrator", "cast_sheet"}
+        assert produces == {"screenplay_cast", "screenplay_visual_style", "screenplay_narrator", "cast_sheet",
+                            "cast_portraits"}
         assert produces <= set(PipelineState.__annotations__)
 
     @pytest.mark.asyncio

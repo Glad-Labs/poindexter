@@ -39,6 +39,8 @@ ATOM_META = AtomMeta(
         FieldSpec(name="long_narration_audio_path", type="str", description="the dialogue track"),
         FieldSpec(name="screenplay_visual_style", type="str", required=False,
                   description="art style prefix for every still, e.g. 'flat 2D cartoon, bold outlines'"),
+        FieldSpec(name="cast_portraits", type="dict", required=False,
+                  description="from story.cast_characters: reused characters drawn in this piece's style"),
     ),
     outputs=(
         FieldSpec(name="video_shot_list", type="dict", description="VideoShotList (16:9)"),
@@ -82,5 +84,6 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         screenplay, list(timeline), await probe_seconds(track),
         site_config=site_config, style=style, pool=pool,
         task_id=str(state.get("task_id") or "") or None,
+        cast_portraits=dict(state.get("cast_portraits") or {}),
     )
     return {"video_shot_list": listing}

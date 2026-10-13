@@ -614,6 +614,9 @@ class PipelineState(TypedDict, total=False):
     screenplay_visual_style: str
     screenplay_narrator: str
     cast_sheet: dict
+    # Reused characters redrawn in this piece's style (slug -> portrait URL),
+    # read by media.direct_screenplay into the shot list.
+    cast_portraits: dict
     # media.render_dialogue's measured beat timeline (start_s/end_s per line
     # and action beat), read by media.direct_screenplay.
     dialogue_timeline: list
