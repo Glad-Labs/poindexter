@@ -48,6 +48,7 @@ FIELDS: tuple[str, ...] = (
     "voice_provider",
     "voice_id",
     "voice_ref_audio_url",
+    "voice_exaggeration",
     "portrait_url",
     "portrait_prompt",
     "portrait_seed",
@@ -76,6 +77,11 @@ class Persona:
     voice_provider: str = "kokoro"
     voice_id: str = ""  # "" = inherit podcast_tts_voice
     voice_ref_audio_url: str = ""
+    # Chatterbox emotion strength for this persona's lines; None = the shared
+    # plugin.tts_provider.chatterbox.exaggeration. Per persona because the
+    # shared value also voices the podcast: Kai's lines wanted 0.9 (Matt's pick
+    # in the 2026-10-13 audition) where the house narrator stays at 0.65.
+    voice_exaggeration: float | None = None
     portrait_url: str = ""
     portrait_prompt: str = ""
     portrait_seed: int | None = None
@@ -144,6 +150,14 @@ def validate_field(field: str, value: Any) -> str:
         if low in _FALSE:
             return "false"
         raise PersonaError(f"enabled must be true or false, got {text!r}")
+    elif field == "voice_exaggeration":
+        if text:
+            try:
+                amount = float(text)
+            except ValueError as e:
+                raise PersonaError(f"voice_exaggeration must be a number, got {text!r}") from e
+            if not 0.0 <= amount <= 2.0:
+                raise PersonaError(f"voice_exaggeration must be 0-2, got {text!r}")
     elif field == "portrait_seed":
         if text:
             try:
@@ -160,6 +174,11 @@ def _parse(slug: str, raw: dict[str, str]) -> Persona:
         seed = int(seed_text) if seed_text else None
     except ValueError:
         seed = None
+    exaggeration: float | None
+    try:
+        exaggeration = float(raw.get("voice_exaggeration") or "") if (raw.get("voice_exaggeration") or "").strip() else None
+    except ValueError:
+        exaggeration = None
     return Persona(
         slug=slug,
         display_name=raw.get("display_name", "") or "",
@@ -167,6 +186,7 @@ def _parse(slug: str, raw: dict[str, str]) -> Persona:
         voice_provider=(raw.get("voice_provider") or "kokoro").strip() or "kokoro",
         voice_id=(raw.get("voice_id") or "").strip(),
         voice_ref_audio_url=(raw.get("voice_ref_audio_url") or "").strip(),
+        voice_exaggeration=exaggeration,
         portrait_url=(raw.get("portrait_url") or "").strip(),
         portrait_prompt=raw.get("portrait_prompt", "") or "",
         portrait_seed=seed,

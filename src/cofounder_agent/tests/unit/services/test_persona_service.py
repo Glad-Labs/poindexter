@@ -165,3 +165,25 @@ class TestPortrait:
         with patch("poindexter.services.r2_upload_service.R2UploadService", return_value=uploader):
             with pytest.raises(ps.PersonaError, match="upload failed"):
                 await ps.upload_portrait(persona, str(f), site_config=_presenter())
+
+
+class TestVoiceExaggeration:
+    def test_parsed_as_a_number_or_none(self):
+        from poindexter.services import persona_service as ps
+
+        assert ps._parse("kai", {"voice_exaggeration": "0.9"}).voice_exaggeration == 0.9
+        assert ps._parse("kai", {"voice_exaggeration": ""}).voice_exaggeration is None
+        assert ps._parse("kai", {}).voice_exaggeration is None
+
+    @pytest.mark.parametrize("value", ["loud", "-0.1", "2.5"])
+    def test_out_of_range_or_not_a_number_is_refused(self, value):
+        from poindexter.services import persona_service as ps
+
+        with pytest.raises(ps.PersonaError, match="voice_exaggeration"):
+            ps.validate_field("voice_exaggeration", value)
+
+    def test_empty_and_in_range_pass(self):
+        from poindexter.services import persona_service as ps
+
+        assert ps.validate_field("voice_exaggeration", "") == ""
+        assert ps.validate_field("voice_exaggeration", "0.9") == "0.9"

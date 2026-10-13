@@ -2028,6 +2028,29 @@ class TestPersonaDrivenEngine:
         assert seen["audio_prompt_path"] == "/app/voices/matt-voice.wav"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("own,expected", [("0.9", "0.9"), ("", "0.65")])
+    async def test_a_persona_sets_its_own_emotion_strength(self, tmp_path, own, expected):
+        """Kai voices at 0.9 while the shared narrator stays at 0.65; an empty
+        field keeps the shared value."""
+        from poindexter.services.persona_service import get_persona
+        sc = self._matt_sc(**{
+            "persona.matt.voice_exaggeration": own,
+            "plugin.tts_provider.chatterbox.exaggeration": "0.65",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        seen = {}
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            seen.update(config or {})
+            output_path.write_bytes(b"CLONE")
+            return TTSResult(audio_path=output_path, duration_seconds=3, voice=voice or "default",
+                             file_size_bytes=5, metadata={"engine": "chatterbox"})
+
+        with patch("poindexter.services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize", new=_fake_synthesize):
+            await svc._generate_with_voice("hello", "default", tmp_path / "m.mp3", persona=get_persona(sc, "matt"))
+        assert str(seen["exaggeration"]) == expected
+
+    @pytest.mark.asyncio
     async def test_kokoro_persona_keeps_speaches_even_when_the_global_engine_is_chatterbox(self, tmp_path):
         from poindexter.services.persona_service import get_persona
         sc = self._matt_sc(**{

@@ -3049,6 +3049,8 @@ DEFAULTS: dict[str, str] = {
     'persona.presenter.voice_provider': 'kokoro',
     'persona.presenter.voice_id': '',
     'persona.presenter.voice_ref_audio_url': '',
+    # Empty = the shared plugin.tts_provider.chatterbox.exaggeration.
+    'persona.presenter.voice_exaggeration': '',
     'persona.presenter.portrait_url': '',
     'persona.presenter.portrait_prompt': '',
     'persona.presenter.portrait_seed': '',
@@ -7273,6 +7275,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'persona.presenter.voice_provider': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.voice_id': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.voice_ref_audio_url': {'owner': 'media_policy', 'value_type': 'string'},
+    'persona.presenter.voice_exaggeration': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.portrait_url': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.portrait_prompt': {'owner': 'media_policy', 'value_type': 'string'},
     'persona.presenter.portrait_seed': {'owner': 'media_policy', 'value_type': 'string'},

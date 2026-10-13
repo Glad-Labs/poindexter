@@ -25,6 +25,7 @@ niche resolution, voice inheritance and the portrait render.
 | `display_name`, `description`                      | Who the presenter is; the description seeds the portrait prompt                                                                 |
 | `voice_provider`, `voice_id`                       | `kokoro` or `chatterbox`; the voice id. **Empty `voice_id` inherits `podcast_tts_voice`**                                       |
 | `voice_ref_audio_url`                              | Chatterbox clone reference (optional)                                                                                           |
+| `voice_exaggeration`                               | Chatterbox emotion strength for this persona (0-2); empty keeps the shared `plugin.tts_provider.chatterbox.exaggeration`        |
 | `portrait_url`, `portrait_prompt`, `portrait_seed` | The canonical reference still (R2) and how to regenerate it                                                                     |
 | `style_policy`                                     | `photoreal` or `stylized`; must agree with the niche media policy                                                               |
 | `enabled`                                          | A disabled persona resolves to none, never to a different one                                                                   |
@@ -47,6 +48,11 @@ the persona — an operator who turned rotation on asked for variety.
 with its own `voice_ref_audio_url` as the zero-shot clone reference (a path
 inside the sidecar, e.g. `/app/voices/matt-voice.wav`), whatever
 `podcast_tts_engine` says; a `kokoro` persona renders through Speaches. If the
+persona's `voice_exaggeration`, when set, replaces the shared emotion strength
+for its lines only, so a lively character and a calm narrator can share the
+sidecar. Kai is a Chatterbox clone of a clip of his own earlier Kokoro voice
+(`/app/voices/kai-ref.wav`) at 0.9, picked by ear on 2026-10-13 over Kokoro,
+which has no emotion control. If the
 clone fails, the ladder falls back to the install's normal voices _without_
 the persona, so a broken reference degrades to the house voice, never to
 silence.

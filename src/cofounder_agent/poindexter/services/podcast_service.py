@@ -2106,14 +2106,17 @@ class PodcastService:
                 getattr(persona, "slug", "?"), persona_provider,
                 engine, persona_engine,
             )
+        exaggeration: float | None = None
         if persona_provider == "chatterbox":
             engine = "chatterbox"
             audio_prompt_path = str(getattr(persona, "voice_ref_audio_url", "") or "").strip() or None
+            exaggeration = getattr(persona, "voice_exaggeration", None)
         elif persona_provider == "kokoro":
             engine = "speaches"
         if engine == "chatterbox":
             return await self._generate_with_chatterbox(
                 script, voice, output_path, audio_prompt_path=audio_prompt_path,
+                exaggeration=exaggeration,
             )
 
         audio_bytes = await tts_service.synthesize_speech(
@@ -2146,9 +2149,12 @@ class PodcastService:
 
     async def _generate_with_chatterbox(
         self, script: str, voice: str, output_path: Path,
-        *, audio_prompt_path: str | None = None,
+        *, audio_prompt_path: str | None = None, exaggeration: float | None = None,
     ) -> EpisodeResult:
         """Generate audio via the Chatterbox sidecar (Phase 2 engine cutover).
+
+        ``exaggeration`` is a persona's own emotion strength; ``None`` keeps
+        the shared ``plugin.tts_provider.chatterbox.exaggeration``.
 
         Config comes entirely from ``plugin.tts_provider.chatterbox.*``
         app_settings — including ``audio_prompt_path``, the zero-shot voice
@@ -2174,7 +2180,10 @@ class PodcastService:
             ),
             "model": sc.get("plugin.tts_provider.chatterbox.model", "chatterbox"),
             "response_format": sc.get("podcast_tts_format", "mp3") or "mp3",
-            "exaggeration": sc.get("plugin.tts_provider.chatterbox.exaggeration", "0.5"),
+            "exaggeration": (
+                str(exaggeration) if exaggeration is not None
+                else sc.get("plugin.tts_provider.chatterbox.exaggeration", "0.5")
+            ),
             "cfg_weight": sc.get("plugin.tts_provider.chatterbox.cfg_weight", "0.5"),
             "timeout_s": sc.get("plugin.tts_provider.chatterbox.timeout_s", "600"),
             # The sidecar exits once idle to give its CUDA context back and is
