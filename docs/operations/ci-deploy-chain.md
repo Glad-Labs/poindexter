@@ -818,6 +818,16 @@ auto-deploy too. `deploy-worker.ps1` remains the tool for an _immediate_ deploy
 elsewhere (which need `docker compose build`) and for `poindexter-prefect-worker`
 bootstrap-level changes.
 
+**A stranded name is renamed back (step 6a-ter, 2026-10-14).** compose
+recreates a container by renaming the old one to `<id>_<name>` while the
+replacement comes up. An apply that loses the dependency race mid-recreate can
+leave the running container under that temporary name (the worker ran as
+`5ad23a82015e_poindexter-worker`), which compose still finds by label but
+anything addressing it by name misses. Right after compose-apply the sync
+renames any of the stack's `<id>_poindexter-*` containers whose real name is
+free (`renamed stranded container … -> …` in the log). A rename restarts
+nothing; a real name that is also taken is left for compose and logged.
+
 **A rebuilt image goes into service once, by compose-apply.** `up -d`
 recreates a container whose rebuilt image has different content — compose
 compares the platform manifest digest it recorded on the container

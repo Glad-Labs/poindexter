@@ -937,6 +937,47 @@ done
 [ "$apply_failed" = "1" ] && \
   log "compose-apply failed twice; continuing to container restarts — marker withheld, retries next cycle." ERROR
 
+# ---- stranded names (6a-ter) ----
+# compose recreates a container by renaming the old one to `<id>_<name>` while
+# it brings up the replacement. An apply that dies mid-recreate (the dependency
+# race above) can leave the RUNNING container under that temporary name, and
+# the retry does not rename it back: on 2026-10-14 the worker ran for minutes
+# as `5ad23a82015e_poindexter-worker` (and auto-embed likewise). compose finds
+# its containers by label, so the stack kept serving, but everything that
+# addresses a container by NAME missed it: this script's own restart step
+# logged "skip 'poindexter-worker' (not present)", and the brain's probes and
+# every `docker exec poindexter-worker` in tooling would have too. A rename
+# restarts nothing. A stranded name whose real name is also taken is left for
+# compose and logged, never guessed at.
+repair_stranded_names() {
+  local c base
+  resolve_compose_project
+  # Only the stack's own containers: another compose project on this host (a
+  # throwaway consumer-stack checkout) can strand a same-named container too.
+  if [ -z "$compose_project" ]; then
+    log "  stranded-name check skipped: the stack's compose project is unknown" WARN
+    return 0
+  fi
+  while IFS= read -r c || [ -n "$c" ]; do
+    case "$c" in
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]_poindexter-*) ;;
+      *) continue ;;
+    esac
+    base="${c#*_}"
+    if docker inspect "$base" >/dev/null 2>&1; then
+      log "  stranded name $c: '$base' exists too; leaving both for compose" WARN
+      continue
+    fi
+    if docker rename "$c" "$base" >>"$LOG_FILE" 2>&1; then
+      log "  renamed stranded container $c -> $base" WARN
+    else
+      log "  could not rename stranded container $c -> $base" ERROR
+    fi
+  done < <(docker ps -a --filter "name=_poindexter-" \
+    --filter "label=com.docker.compose.project=${compose_project}" --format '{{.Names}}' 2>/dev/null || true)
+}
+repair_stranded_names
+
 # ---- recreate check: is every rebuilt service on its new image? (6a-bis) ----
 # compose-apply above already recreates a container whose rebuilt image has
 # different content — it compares the platform manifest digest it recorded on
