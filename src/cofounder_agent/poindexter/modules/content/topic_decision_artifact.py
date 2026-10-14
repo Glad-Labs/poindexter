@@ -1,15 +1,14 @@
-"""TopicDecisionGateStage — topic-decision HITL gate (#146).
+"""The artifact an operator reviews at the topic-decision gate (#146).
 
-Wires the generic :class:`modules.content.stages.approval_gate.ApprovalGateStage`
-to a topic-decision-shaped artifact and registers itself under the stable
-Stage name ``"topic_decision_gate"`` so the StageRunner can pick it up
-from the configured order list.
+``services.topic_proposal_service`` pauses a proposed topic at the
+``topic_decision`` approval gate (when ``pipeline_gate_topic_decision`` is
+on) with this artifact, reached through ``modules.content.api``.
 
-The Stage is **inert by default** — the underlying ApprovalGateStage
-checks ``pipeline_gate_topic_decision`` in app_settings and returns a
-passthrough StageResult when it isn't ``"on"``. Adding this Stage to the
-default pipeline order doesn't change behaviour for existing operators
-until they explicitly flip the gate.
+This module was ``stages/topic_decision_gate.py``, which also held a
+``TopicDecisionGateStage`` wrapper for the StageRunner. The StageRunner
+was deleted in May 2026 and the Stage was never registered as an entry
+point or placed in a graph, so the wrapper was removed (poindexter#643)
+and the live builder moved here, out of the retiring stages layer.
 
 Artifact shape (per #146):
 
@@ -29,30 +28,15 @@ Artifact shape (per #146):
         },
     }
 
-When ``research_context`` isn't on the context yet (i.e. the gate is
-running before research) the ``research_summary`` field is omitted so
-the operator can still approve a topic ahead of any LLM cycles burning.
-
-Why a wrapper Stage rather than registering ApprovalGateStage twice
-with different config: the Stage Runner keys stages by their ``.name``
-attribute. Registering ``ApprovalGateStage`` directly only gives one
-``"approval_gate"`` slot, which we'd burn on the first gate that
-wants it. A thin per-gate wrapper Class with a stable ``.name`` keeps
-multiple gates additive — ``"preview_approval_gate"``,
-``"final_media_gate"``, etc. follow the same pattern when they ship.
+When ``research_context`` isn't available yet (the gate runs before
+research), ``research_summary`` is omitted so the operator can approve a
+topic before any LLM cycles are spent.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any
-
-from poindexter.modules.content.stages.approval_gate import ApprovalGateStage
-from poindexter.plugins.stage import StageResult
-from poindexter.services.logger_config import get_logger
-
-logger = get_logger(__name__)
-
 
 # Word-count budget for the research summary embedded in the artifact.
 # The operator scans the artifact on Telegram + the CLI; longer than
@@ -126,8 +110,7 @@ def _coerce_tags(value: Any) -> list[str]:
 def build_topic_decision_artifact(context: dict[str, Any]) -> dict[str, Any]:
     """Build the artifact dict the operator reviews for the topic-decision gate.
 
-    Pure function so the unit tests can call it directly without
-    instantiating the Stage. Missing fields are handled gracefully:
+    Pure function. Missing fields are handled gracefully:
 
     - ``primary_keyword`` falls back to the first tag, then to ``""``.
     - ``tags`` defaults to ``[]``.
@@ -171,61 +154,7 @@ def build_topic_decision_artifact(context: dict[str, Any]) -> dict[str, Any]:
     return artifact
 
 
-class TopicDecisionGateStage:
-    """Topic-decision HITL gate Stage.
-
-    Thin wrapper around :class:`ApprovalGateStage` that bakes in:
-
-    - ``gate_name = "topic_decision"``
-    - the topic-shaped ``artifact_fn``
-    - the stable Stage name ``"topic_decision_gate"`` (distinct from
-      the inner Stage's ``"approval_gate"`` name so the runner can
-      register both side-by-side and route by order).
-
-    The wrapper preserves the inert-by-default behaviour: when
-    ``pipeline_gate_topic_decision`` is unset / off, the inner Stage's
-    own enable check returns a passthrough StageResult and the pipeline
-    runs unchanged.
-    """
-
-    name = "topic_decision_gate"
-    description = "Pause the pipeline pending human approval of a proposed topic"
-    timeout_seconds = 30
-    halts_on_failure = True
-
-    def __init__(self) -> None:
-        # Reuse the generic gate Stage — single instance per wrapper is
-        # fine since ApprovalGateStage holds no per-call state.
-        self._inner = ApprovalGateStage()
-
-    async def execute(
-        self,
-        context: dict[str, Any],
-        config: dict[str, Any],
-    ) -> StageResult:
-        # Operators can override the gate slug or the artifact_fn via
-        # PluginConfig if they really want to, but the defaults are
-        # what #146 ships. Per-stage PluginConfig still threads through
-        # so ``halts_on_failure`` / ``timeout_seconds`` overrides work.
-        merged_config: dict[str, Any] = {
-            "gate_name": "topic_decision",
-            "artifact_fn": build_topic_decision_artifact,
-        }
-        if config:
-            # Caller-supplied config wins for everything except
-            # gate_name — locking that down here means a misconfigured
-            # PluginConfig can't accidentally point this Stage at a
-            # different gate.
-            for k, v in config.items():
-                if k == "gate_name":
-                    continue
-                merged_config[k] = v
-
-        return await self._inner.execute(context, merged_config)
-
-
 __all__ = [
-    "TopicDecisionGateStage",
     "build_topic_decision_artifact",
     "_summarize_research",
 ]

@@ -24,7 +24,7 @@ Rerouted imports (11 executable imports across 9 substrate files):
 8. ``services/research_context.py`` → ``InternalLinkCoherenceFilter``,
    ``LinkCandidate`` from ``internal_link_coherence``
 9. ``services/topic_proposal_service.py`` → ``build_topic_decision_artifact``
-   from ``stages.topic_decision_gate``
+   from ``topic_decision_artifact``
 10. ``services/pipeline_templates/__init__.py`` → ``narrate_bundle`` module
     (whole module, aliased as ``_narrate_atom``)
 11. ``services/social_drafts.py`` → ``generate_social_drafts`` (lazy import
@@ -183,9 +183,9 @@ from poindexter.modules.content.quality_service import (
 from poindexter.modules.content.short_hook_repair import repair_short_hook  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# stages.topic_decision_gate
+# topic_decision_artifact
 # ---------------------------------------------------------------------------
-from poindexter.modules.content.stages.topic_decision_gate import (
+from poindexter.modules.content.topic_decision_artifact import (
     build_topic_decision_artifact as build_topic_decision_artifact,
 )
 
@@ -216,7 +216,7 @@ __all__ = [
     # internal_link_coherence
     "InternalLinkCoherenceFilter",
     "LinkCandidate",
-    # stages.topic_decision_gate
+    # topic_decision_artifact
     "build_topic_decision_artifact",
     # atoms.narrate_bundle
     "narrate_bundle",

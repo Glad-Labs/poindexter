@@ -9,7 +9,7 @@ dependencies = [
     "httpx>=0.27.0",
     "sentry-sdk>=2.0,<3",
     # Required transitively by topics_propose: services.topic_proposal_service
-    # → services.stages.topic_decision_gate → plugins (top-level
+    # → modules.content.api → plugins (top-level
     # plugins/__init__.py imports plugins.scheduler, which imports
     # apscheduler.schedulers.asyncio). Pinned to match
     # src/cofounder_agent/pyproject.toml ("^3.11.2"). See

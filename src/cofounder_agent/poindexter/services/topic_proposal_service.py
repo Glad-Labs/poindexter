@@ -411,10 +411,10 @@ async def propose_topic(
         }
 
     # Gate enabled — pause the row immediately so the operator drains
-    # the queue. Build the artifact through the same helper the Stage
-    # uses so manual + auto proposals look identical to the operator.
+    # the queue. Build the artifact through the shared helper so every
+    # proposal looks identical to the operator.
     # Lazy import — avoids a kernel→module top-level import that would
-    # violate the kernel-purity seam (poindexter#666). topic_decision_gate
+    # violate the kernel-purity seam (poindexter#666). topic_decision_artifact
     # lives in modules/content/ and must not be imported at module load time
     # from kernel services.
     from poindexter.modules.content.api import build_topic_decision_artifact  # noqa: PLC0415

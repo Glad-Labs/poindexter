@@ -35,10 +35,10 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 - [`services/tts_providers/`](#servicesttsproviders) (4 files)
 - [`services/video_providers/`](#servicesvideoproviders) (3 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (5 files)
-- [`modules/content/`](#modulescontent) (19 files)
+- [`modules/content/`](#modulescontent) (20 files)
 - [`modules/content/atoms/`](#modulescontentatoms) (84 files)
 - [`modules/content/jobs/`](#modulescontentjobs) (3 files)
-- [`modules/content/stages/`](#modulescontentstages) (17 files)
+- [`modules/content/stages/`](#modulescontentstages) (16 files)
 
 ## services/ (top-level)
 
@@ -665,6 +665,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `quality_service.py` | Unified Quality Assessment Service |
 | `short_hook_repair.py` | Repair a Short's opening line while it is still text. |
 | `task_metadata.py` | Single source of truth for the finalize ``task_metadata`` blob. |
+| `topic_decision_artifact.py` | The artifact an operator reviews at the topic-decision gate (#146). |
 | `writer_core.py` | writer_core — the blog-body writer library behind ``content.generate_draft``. |
 
 ## modules/content/atoms/
@@ -782,7 +783,6 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `resolve_internal_link_placeholders.py` | ResolveInternalLinkPlaceholdersStage — convert ``[posts/<slug>]`` |
 | `review_video_shot_list.py` | ReviewVideoShotListStage — director self-critique of the video shot list. |
 | `source_featured_image.py` | SourceFeaturedImageStage — stage 3 of the content pipeline. |
-| `topic_decision_gate.py` | TopicDecisionGateStage — topic-decision HITL gate (#146). |
 | `url_validation.py` | UrlValidationStage — stage 2B.1 of the content pipeline. |
 | `verify_task.py` | VerifyTaskStage — confirm the task row exists before the pipeline works on it. |
 

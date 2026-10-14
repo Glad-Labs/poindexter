@@ -1,25 +1,19 @@
-"""Unit tests for ``services/stages/topic_decision_gate.py`` (#146).
+"""Unit tests for ``modules/content/topic_decision_artifact.py`` (#146).
 
 Covers the topic-decision artifact builder + the research summarizer
-helper. The Stage's pause/passthrough behaviour itself is exercised
-by ``test_approval_gate_stage.py`` against the inner
-``ApprovalGateStage``; here we verify only the topic-specific
-artifact shape and the summary truncation rules.
+helper: the topic-specific artifact shape and the summary truncation
+rules. The pause itself is ``topic_proposal_service``'s and is tested
+there.
 """
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from poindexter.modules.content.stages.topic_decision_gate import (
-    TopicDecisionGateStage,
+from poindexter.modules.content.topic_decision_artifact import (
     _summarize_research,
     build_topic_decision_artifact,
 )
-from poindexter.plugins.stage import StageResult
 
 # ---------------------------------------------------------------------------
 # build_topic_decision_artifact — shape contract
@@ -176,112 +170,3 @@ class TestSummarizeResearch:
 
     def test_dict_input_empty_returns_empty(self):
         assert _summarize_research({}) == ""
-
-
-# ---------------------------------------------------------------------------
-# Stage wiring — confirm the wrapper Stage routes through ApprovalGateStage
-# with the right gate_name + artifact_fn, and that PluginConfig overrides
-# don't get to override gate_name.
-# ---------------------------------------------------------------------------
-
-
-class TestStageMetadata:
-    def test_stable_name(self):
-        stage = TopicDecisionGateStage()
-        assert stage.name == "topic_decision_gate"
-
-    def test_halts_on_failure(self):
-        # Approval gates must halt — silently continuing past a gate
-        # failure would defeat the point of the HITL checkpoint.
-        assert TopicDecisionGateStage().halts_on_failure is True
-
-
-@pytest.mark.asyncio
-class TestStageExecution:
-    async def _make_context(self) -> dict[str, Any]:
-        from types import SimpleNamespace
-
-        site_cfg = SimpleNamespace(
-            get=lambda key, default=None: {
-                "pipeline_gate_topic_decision": "on",
-            }.get(key, default),
-            get_int=lambda key, default=0: int(default),
-            get_bool=lambda key, default=False: False,
-        )
-        pool = MagicMock()
-        return {
-            "task_id": "t-topic-1",
-            "topic": "A great topic",
-            "tags": ["ai"],
-            "site_config": site_cfg,
-            "database_service": SimpleNamespace(pool=pool),
-        }
-
-    async def test_passes_topic_decision_gate_name(self):
-        ctx = await self._make_context()
-        captured: dict[str, Any] = {}
-
-        async def _fake_pause(**kwargs):
-            captured.update(kwargs)
-            return {
-                "ok": True,
-                "task_id": kwargs["task_id"],
-                "gate_name": kwargs["gate_name"],
-                "paused_at": "2026-04-26T12:00:00+00:00",
-                "notify": {"sent": True, "reason": "ok"},
-            }
-
-        with patch(
-            "poindexter.modules.content.stages.approval_gate.pause_at_gate",
-            AsyncMock(side_effect=_fake_pause),
-        ):
-            result = await TopicDecisionGateStage().execute(ctx, {})
-
-        assert isinstance(result, StageResult)
-        assert result.ok is True
-        assert result.continue_workflow is False
-        assert captured["gate_name"] == "topic_decision"
-        # Artifact shape is the topic-specific one.
-        assert captured["artifact"]["topic"] == "A great topic"
-        assert captured["artifact"]["tags"] == ["ai"]
-        assert "score_signals" in captured["artifact"]
-
-    async def test_plugin_config_cannot_override_gate_name(self):
-        # The wrapper Stage pins gate_name="topic_decision". A misconfigured
-        # PluginConfig pointing the gate at "preview_approval" must NOT
-        # silently re-route — the topic-decision gate stays the topic-decision
-        # gate.
-        ctx = await self._make_context()
-        captured: dict[str, Any] = {}
-
-        async def _fake_pause(**kwargs):
-            captured.update(kwargs)
-            return {"ok": True, "paused_at": "x", "notify": {"sent": False}}
-
-        with patch(
-            "poindexter.modules.content.stages.approval_gate.pause_at_gate",
-            AsyncMock(side_effect=_fake_pause),
-        ):
-            await TopicDecisionGateStage().execute(
-                ctx, {"gate_name": "preview_approval"},
-            )
-
-        assert captured["gate_name"] == "topic_decision"
-
-    async def test_plugin_config_can_pass_other_keys(self):
-        # Other PluginConfig keys (skip_if_setting, halt_status) should
-        # still flow through. We can't observe them from the artifact
-        # capture, but execution should succeed without raising.
-        ctx = await self._make_context()
-
-        async def _fake_pause(**kwargs):
-            return {"ok": True, "paused_at": "x", "notify": {"sent": False}}
-
-        with patch(
-            "poindexter.modules.content.stages.approval_gate.pause_at_gate",
-            AsyncMock(side_effect=_fake_pause),
-        ):
-            result = await TopicDecisionGateStage().execute(
-                ctx, {"halt_status": "in_progress"},
-            )
-        assert result.ok is True
