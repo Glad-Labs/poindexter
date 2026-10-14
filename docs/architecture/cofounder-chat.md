@@ -180,6 +180,14 @@ SEO"), a technical toggle with raw node ids, and Run/Adjust.
   the adjust loop, no bespoke state machine.
 - Compose failures surface the architect's `FIX:` errors verbatim (they
   are written as the repair signal).
+- A composed plan is checked against what it was asked for, not only for
+  shape (`_validate_composed_spec` plus the intent checks in `compose`):
+  a plan that loads an existing post may not run a `post_write` atom
+  (poindexter#1056), characters the intent names are the ones it casts, and
+  an intent that says **"exactly"** and names atoms by their full catalog
+  names (`media.render_narration`) gets a plan with those atoms and no
+  others. Without "exactly", named atoms are read as description: "skip
+  `media.load_scripts`" names an atom it wants left out.
 
 Compose runs on the architect model (`pipeline_architect_model`, else the
 local-writer resolver) — a cold large model can push a plan turn toward

@@ -308,7 +308,11 @@ async def compose(
         valid, validation_errors = _validate_composed_spec(spec)
         from poindexter.services.setting_overrides import check_spec_overrides
 
-        override_errors = [*check_spec_overrides(spec, _sc), *_named_cast_errors(spec, intent, _sc)]
+        override_errors = [
+            *check_spec_overrides(spec, _sc),
+            *_named_cast_errors(spec, intent, _sc),
+            *_requested_atom_list_errors(spec, intent),
+        ]
         if override_errors:
             valid, validation_errors = False, [*validation_errors, *override_errors]
         if valid:
@@ -930,6 +934,54 @@ def _named_cast_errors(spec: dict[str, Any], intent: str, site_config: Any) -> l
             f'FIX: screenplay_cast lists "{slug}", whom the intent does not name; cast '
             f"the characters it names ({', '.join(sorted(named))}) and drop {slug!r}"
         )
+    return errors
+
+
+_EXACT_LIST = re.compile(r"\bexactly\b", re.IGNORECASE)
+
+
+def _requested_atom_list_errors(spec: dict[str, Any], intent: str) -> list[str]:
+    """An intent that asks for EXACTLY a list of atoms gets that list.
+
+    poindexter#1056, ask 3: asked four times for "exactly these 11 atoms",
+    the architect added atoms on three of them: ``media.load_scripts`` (which
+    would have overwritten the new scripts), a parallel
+    ``media.render_short_video`` and a rewrite-and-republish tail. A prompt
+    asks; this checks. The rule applies when the intent says "exactly" and
+    names at least one catalog atom by its full name. The plan must then hold
+    every named atom and no other, and each FIX names the node to add or
+    remove so the retry loop repairs it. An intent that names atoms without
+    "exactly" is a description, not a list, and stays unchecked: "skip
+    media.load_scripts" names an atom it wants left out.
+
+    Matches canonical names, so it runs after :func:`_validate_spec` has
+    rewritten the nodes' atoms in place.
+    """
+    if not intent or not _EXACT_LIST.search(intent):
+        return []
+    requested = {
+        m.name
+        for m in list_atoms()
+        if re.search(rf"(?<![\w.]){re.escape(m.name)}(?![\w])", intent)
+    }
+    if not requested:
+        return []
+    planned: dict[str, str] = {}
+    for n in spec.get("nodes") or []:
+        if isinstance(n, dict) and isinstance(n.get("atom"), str):
+            planned.setdefault(n["atom"], str(n.get("id")))
+    errors = [
+        f"FIX node {nid!r}: remove it. The intent asks for exactly "
+        f"{len(requested)} atoms and {atom!r} is not one of them; add no atom "
+        "the intent does not name."
+        for atom, nid in planned.items()
+        if atom not in requested
+    ]
+    errors += [
+        f"FIX: add a node running {atom!r}. The intent names it in the exact "
+        "list of atoms the plan must run."
+        for atom in sorted(requested - planned.keys())
+    ]
     return errors
 
 

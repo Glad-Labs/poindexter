@@ -634,6 +634,91 @@ class TestExistingPostIsReadOnly:
         assert "FIX node 'republish': remove it" in prompts[1]
 
 
+class TestExactAtomListIsHeld:
+    """poindexter#1056, ask 3: asked four times for "exactly these 11 atoms",
+    the architect added atoms the operator had left out on three of them.
+    An intent that says "exactly" and names catalog atoms now gets a plan
+    with those atoms and no others."""
+
+    _ASKED = [
+        "content.load_existing_post", "stage.generate_media_scripts",
+        "media.render_narration", "media.persist",
+    ]
+    _INTENT = "Render a video for post 42 using exactly these atoms: " + " -> ".join(_ASKED)
+
+    @staticmethod
+    def _chain(atoms):
+        from poindexter.services.atom_registry import discover
+
+        discover()
+        nodes = [{"id": f"n{i}", "atom": a} for i, a in enumerate(atoms)]
+        edges = [{"from": f"n{i}", "to": f"n{i + 1}"} for i in range(len(atoms) - 1)]
+        edges.append({"from": nodes[-1]["id"], "to": "END"})
+        return _spec(nodes, edges)
+
+    def _errors(self, atoms, intent=None):
+        return pipeline_architect._requested_atom_list_errors(
+            self._chain(atoms), self._INTENT if intent is None else intent
+        )
+
+    def test_the_requested_list_passes(self):
+        assert self._errors(self._ASKED) == []
+
+    def test_an_added_atom_is_refused_by_node(self):
+        """The first measured drift: media.load_scripts slipped in."""
+        errors = self._errors(self._ASKED[:2] + ["media.load_scripts"] + self._ASKED[2:])
+        assert errors == [
+            "FIX node 'n2': remove it. The intent asks for exactly 4 atoms and "
+            "'media.load_scripts' is not one of them; add no atom the intent does not name."
+        ]
+
+    def test_a_dropped_atom_is_asked_back(self):
+        errors = self._errors([a for a in self._ASKED if a != "media.render_narration"])
+        assert len(errors) == 1
+        assert "add a node running 'media.render_narration'" in errors[0]
+
+    def test_without_exactly_named_atoms_are_a_description(self):
+        """'skip media.load_scripts' names an atom it wants left out."""
+        intent = "Render a video for post 42; skip media.load_scripts"
+        assert self._errors(self._ASKED, intent) == []
+
+    def test_exactly_without_atom_names_is_unchecked(self):
+        assert self._errors(self._ASKED, "make exactly one short video for post 42") == []
+
+    def test_a_name_inside_a_longer_name_is_not_a_request(self):
+        """media.qa must not match inside a longer dotted or underscored name."""
+        intent = "exactly content.load_existing_post then media.qa_extra_thing"
+        errors = self._errors(["content.load_existing_post"], intent)
+        assert errors == []
+
+    @pytest.mark.asyncio
+    async def test_compose_applies_the_rule_and_feeds_the_fix_back(self, monkeypatch):
+        import json
+
+        from poindexter.services.site_config import SiteConfig
+
+        drifted = self._chain(self._ASKED + ["media.load_scripts"])
+        prompts: list[str] = []
+
+        async def _fake_ollama(prompt, **_kwargs):
+            prompts.append(prompt)
+            return json.dumps(drifted)
+
+        monkeypatch.setattr(pipeline_architect, "to_catalog_text", lambda: "catalog")
+        monkeypatch.setattr(pipeline_architect, "_ollama_chat_text", _fake_ollama)
+
+        result = await pipeline_architect.compose(
+            self._INTENT,
+            site_config=SiteConfig(initial_config={"pipeline_architect_model": "qwen3:14b"}),
+            max_attempts=2,
+        )
+
+        assert result.ok is False
+        assert any("'media.load_scripts' is not one of them" in e for e in result.errors or [])
+        assert len(prompts) == 2
+        assert "FIX node 'n4': remove it" in prompts[1]
+
+
 class TestGateThatGatesNothing:
     """2026-10-13: the architect closed a Little Red Riding Hood plan with an
     approval gate after media.persist, which only fills the media approval
