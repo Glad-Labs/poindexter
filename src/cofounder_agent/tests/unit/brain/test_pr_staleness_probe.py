@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -546,3 +546,63 @@ class TestCIGreenFromActionsRuns:
         assert summary["skipped_ci_not_green"] == 0
         assert any("/actions/runs" in url for url in client.calls)
         assert not any("check-runs" in url for url in client.calls)
+
+
+# ---------------------------------------------------------------------------
+# Reminder backoff (glad-labs-stack#4265): a PR held open on purpose (the
+# Prefect bump, stack#3908) re-paged every 12 h for three weeks.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("repeats, expected", [
+    (1, 12.0), (2, 24.0), (3, 48.0), (4, 96.0), (5, 168.0), (40, 168.0),
+])
+def test_each_reminder_about_the_same_pr_waits_longer(repeats, expected):
+    assert psp.quiet_hours(12, repeats, backoff_factor=2.0, max_hours=168) == expected
+
+
+def test_factor_one_is_the_old_fixed_window_and_zero_cap_means_none():
+    assert psp.quiet_hours(12, 9, backoff_factor=1.0, max_hours=168) == 12.0
+    assert psp.quiet_hours(12, 4, backoff_factor=2.0, max_hours=0) == 96.0
+    # A cap below the first window never shortens the first window.
+    assert psp.quiet_hours(12, 3, backoff_factor=2.0, max_hours=6) == 12.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("hours_since, repeat_count, deduped", [
+    (13, 1, False),   # first page was 13 h ago: 12 h window over, remind
+    (13, 2, True),    # second reminder waits 24 h
+    (30, 2, False),
+    (30, 3, True),    # third waits 48 h
+    (200, 9, False),  # capped at a week
+])
+async def test_dedup_reads_the_rows_repeat_count(hours_since, repeat_count, deduped):
+    now = _FIXED_NOW
+    pool = MagicMock()
+    pool.fetchrow = AsyncMock(return_value={
+        "last_seen_at": now - timedelta(hours=hours_since), "repeat_count": repeat_count,
+    })
+    got = await psp._is_pr_deduped(
+        pool, fingerprint="pr_stale_x_1", now_utc=now, dedup_hours=12,
+        backoff_factor=2.0, max_hours=168,
+    )
+    assert got is deduped
+    assert "repeat_count" in pool.fetchrow.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_backoff_settings_are_read_and_clamped():
+    values = {psp.DEDUP_BACKOFF_FACTOR_KEY: "0.5", psp.DEDUP_MAX_HOURS_KEY: "-3"}
+
+    async def _read(pool, key, default):  # noqa: ANN001, ARG001
+        return values.get(key, default)
+
+    with patch.object(psp, "_read_setting", side_effect=_read):
+        config = await psp._read_config(MagicMock())
+    assert config["dedup_backoff_factor"] == 1.0
+    assert config["dedup_max_hours"] == 0
+
+    values.clear()
+    with patch.object(psp, "_read_setting", side_effect=_read):
+        config = await psp._read_config(MagicMock())
+    assert (config["dedup_backoff_factor"], config["dedup_max_hours"]) == (2.0, 168)

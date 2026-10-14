@@ -5578,6 +5578,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Scheduled runs read per query; the newest is picked by created_at from
     # the page, since GitHub's order under a status filter flapped (#4325).
     'scheduled_workflow_watch_runs_per_page': '20',
+    # PR staleness probe: each repeat reminder about the same stale PR waits
+    # this many times longer than the last (12 h, 24 h, 48 h ...), capped at
+    # _max_hours (0 = no cap). 1 = a fixed pr_staleness_dedup_hours window, the
+    # pre-2026-10-14 behaviour that paged about one held PR twice a day for
+    # three weeks (glad-labs-stack#4265).
+    'pr_staleness_dedup_backoff_factor': '2',
+    'pr_staleness_dedup_max_hours': '168',
 
     # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
     # poindexter/brain/clock_skew_probe.py compares postgres clock_timestamp() to an
@@ -8049,6 +8056,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'scheduled_workflow_watch_failure_repage_hours': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
     'scheduled_workflow_watch_transient_failure_page_hours': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
     'scheduled_workflow_watch_runs_per_page': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
+    'pr_staleness_dedup_backoff_factor': {'owner': 'pr_staleness_probe', 'value_type': 'float'},
+    'pr_staleness_dedup_max_hours': {'owner': 'pr_staleness_probe', 'value_type': 'integer'},
     'scheduled_workflows': {'owner': 'scheduled_workflow_watch', 'value_type': 'json'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_alert_on_job_overlap': {'owner': 'scheduler', 'value_type': 'boolean'},

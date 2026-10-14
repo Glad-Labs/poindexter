@@ -32,7 +32,13 @@ Lifecycle per cycle (mirrors brain/glitchtip_triage_probe.py):
    one Discord card.
 6. Each surfaced PR gets a fingerprint row inserted into
    ``alert_dedup_state`` (per-PR) so we don't re-page on the next
-   cycle until ``pr_staleness_dedup_hours`` has elapsed.
+   cycle until its quiet period has elapsed. The first is
+   ``pr_staleness_dedup_hours``; each further reminder about the same PR
+   waits ``pr_staleness_dedup_backoff_factor`` times longer, up to
+   ``pr_staleness_dedup_max_hours``. Until 2026-10-14 every reminder came
+   12 h after the last, so a PR held open on purpose (the Prefect bump,
+   stack#3908, waits on a live smoke) paged twice a day for three weeks
+   (glad-labs-stack#4265).
 
 Design parity with the rest of the brain:
 
@@ -114,6 +120,8 @@ DEDUP_HOURS_KEY = "pr_staleness_dedup_hours"
 REPO_KEY = "pr_staleness_repo"
 MAX_PRS_PER_ALERT_KEY = "pr_staleness_max_prs_per_alert"
 FAILURE_REPAGE_HOURS_KEY = "pr_staleness_failure_repage_hours"
+DEDUP_BACKOFF_FACTOR_KEY = "pr_staleness_dedup_backoff_factor"
+DEDUP_MAX_HOURS_KEY = "pr_staleness_dedup_max_hours"
 
 # Token reuse — same secret the dev_diary topic source already populates.
 TOKEN_SETTING_KEY = "gh_token"
@@ -125,6 +133,9 @@ DEFAULT_DEDUP_HOURS = 12
 DEFAULT_REPO = "Glad-Labs/poindexter"
 DEFAULT_MAX_PRS_PER_ALERT = 5
 DEFAULT_FAILURE_REPAGE_HOURS = 24
+# 12 h, 24 h, 48 h, 96 h, then weekly while one PR stays stale.
+DEFAULT_DEDUP_BACKOFF_FACTOR = 2.0
+DEFAULT_DEDUP_MAX_HOURS = 168
 
 # Brain default cycle is ~5 min; the registry-driven probe path runs
 # every cycle and the inner cadence gate decides whether to do real work.
@@ -242,11 +253,26 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         DEFAULT_FAILURE_REPAGE_HOURS,
     ))
 
+    try:
+        backoff_factor = float(str(await _read_setting(
+            pool, DEDUP_BACKOFF_FACTOR_KEY, DEFAULT_DEDUP_BACKOFF_FACTOR,
+        )).strip())
+    except (TypeError, ValueError):
+        backoff_factor = DEFAULT_DEDUP_BACKOFF_FACTOR
+    # 0 = no ceiling.
+    dedup_max_hours = max(0, _coerce_int(
+        await _read_setting(pool, DEDUP_MAX_HOURS_KEY, DEFAULT_DEDUP_MAX_HOURS),
+        DEFAULT_DEDUP_MAX_HOURS,
+    ))
+
     return {
         "enabled": enabled,
         "poll_interval_minutes": poll_interval_minutes,
         "min_hours": min_hours,
         "dedup_hours": dedup_hours,
+        # Below 1 would shrink the window on each repeat; 1 = fixed window.
+        "dedup_backoff_factor": max(1.0, backoff_factor),
+        "dedup_max_hours": dedup_max_hours,
         "repo": repo,
         "max_prs": max_prs,
         "failure_repage_hours": failure_repage_hours,
@@ -272,19 +298,41 @@ def _fingerprint_for(repo: str, pr_number: int) -> str:
     return f"pr_stale_{repo}_{pr_number}"
 
 
+def quiet_hours(
+    dedup_hours: int, repeat_count: int, *, backoff_factor: float = 1.0, max_hours: int = 0,
+) -> float:
+    """How long after its last page a PR stays quiet, given how often it has paged.
+
+    The first page waits ``dedup_hours``; every repeat multiplies that by
+    ``backoff_factor``. ``max_hours`` caps it (0 = no cap) but never below
+    ``dedup_hours``.
+    """
+    repeats = max(1, int(repeat_count or 1)) - 1
+    hours = dedup_hours * (max(1.0, backoff_factor) ** min(repeats, 32))
+    if max_hours > 0:
+        hours = min(hours, max(max_hours, dedup_hours))
+    return float(hours)
+
+
 async def _is_pr_deduped(
     pool: Any,
     *,
     fingerprint: str,
     now_utc: datetime,
     dedup_hours: int,
+    backoff_factor: float = 1.0,
+    max_hours: int = 0,
 ) -> bool:
-    """Return True iff a dedup row for this fingerprint exists and is fresh."""
+    """Return True iff a dedup row for this fingerprint exists and is fresh.
+
+    "Fresh" is :func:`quiet_hours` of the row's ``repeat_count``: a PR that
+    keeps going stale is reminded less and less often.
+    """
     if dedup_hours <= 0:
         return False
     try:
         row = await pool.fetchrow(
-            "SELECT last_seen_at FROM alert_dedup_state WHERE fingerprint = $1",
+            "SELECT last_seen_at, repeat_count FROM alert_dedup_state WHERE fingerprint = $1",
             fingerprint,
         )
     except Exception as exc:  # noqa: BLE001
@@ -300,7 +348,14 @@ async def _is_pr_deduped(
         return False
     if last_seen.tzinfo is None:
         last_seen = last_seen.replace(tzinfo=UTC)
-    return (now_utc - last_seen) < timedelta(hours=dedup_hours)
+    try:
+        repeat_count = int(row["repeat_count"] or 1)
+    except (KeyError, TypeError, ValueError):
+        repeat_count = 1
+    window = quiet_hours(
+        dedup_hours, repeat_count, backoff_factor=backoff_factor, max_hours=max_hours,
+    )
+    return (now_utc - last_seen) < timedelta(hours=window)
 
 
 async def _record_pr_dedup(
@@ -986,6 +1041,8 @@ async def run_pr_staleness_probe(
                     fingerprint=fingerprint,
                     now_utc=now_utc,
                     dedup_hours=dedup_hours,
+                    backoff_factor=float(config["dedup_backoff_factor"]),
+                    max_hours=int(config["dedup_max_hours"]),
                 ):
                     skipped_deduped += 1
                     continue
