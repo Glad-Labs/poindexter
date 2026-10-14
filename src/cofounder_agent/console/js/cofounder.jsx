@@ -573,7 +573,7 @@ function CfDraftCast({ payload }) {
 // Chat drafting phase 3: a draft rendering into a video. Polls the watch
 // snapshot while it runs, then plays the render and decides it in place
 // (the same Gate-2 decision as the media inbox; the subject is the task).
-function CfRenderCard({ card, pushToast }) {
+function CfRenderCard({ card, onAdjust, pushToast }) {
   const [snap, setSnap] = React.useState(null);
   const [videoUrl, setVideoUrl] = React.useState('');
   const [decided, setDecided] = React.useState('');
@@ -708,6 +708,142 @@ function CfRenderCard({ card, pushToast }) {
           Say "package it for YouTube" for its title, description and thumbnail.
         </div>
       )}
+      {done && (
+        <CfNotes
+          taskId={card.task_id}
+          onAdjust={onAdjust}
+          pushToast={pushToast}
+        />
+      )}
+    </div>
+  );
+}
+
+// Chat drafting phase 8: director's notes on a finished render. Every
+// cartoon render is screened as its last step; this reads the notes (polling
+// while they are written), and a pick of redo notes goes to the composer as
+// a request, so the operator sends it and the chat runs the revision.
+function CfNotes({ taskId, onAdjust, pushToast }) {
+  const [review, setReview] = React.useState(null);
+  const [picked, setPicked] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(async () => {
+    try {
+      setReview(await PX.api.chatNotes(taskId));
+    } catch (e) {
+      /* the next poll retries */
+    }
+  }, [taskId]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const working = review && review.status === 'working';
+  React.useEffect(() => {
+    if (!working) return undefined;
+    const t = setInterval(load, 8000);
+    return () => clearInterval(t);
+  }, [working, load]);
+  const start = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setReview(await PX.api.chatNotesStart(taskId));
+    } catch (e) {
+      pushToast && pushToast(`Notes failed — ${e.message}`, 'red', '✕');
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!review) return null;
+  if (review.status === 'none' || review.status === 'failed')
+    return (
+      <div className="cf-notes">
+        {review.status === 'failed' && (
+          <div className="cf-draft__note cf-draft__note--bad">
+            The review failed: {review.error || 'unknown'}
+          </div>
+        )}
+        <div className="cf-plan__actions">
+          <button className="mbtn" disabled={busy} onClick={start}>
+            {review.status === 'failed'
+              ? 'Try the notes again'
+              : "Get director's notes"}
+          </button>
+        </div>
+      </div>
+    );
+  if (working)
+    return (
+      <div className="cf-notes">
+        <div className="cf-draft__note">
+          Director's notes: screening every shot, then writing the notes…
+        </div>
+      </div>
+    );
+  const notes = review.notes || [];
+  const picks = notes
+    .filter((n) => n.kind === 'redo' && picked[n.n])
+    .map((n) => n.n);
+  return (
+    <div className="cf-notes">
+      <div className="cf-notes__head">Director's notes</div>
+      <div className="cf-notes__verdict">{review.verdict}</div>
+      {(review.strengths || []).length > 0 && (
+        <div className="cf-notes__works">
+          Works: {review.strengths.join(' · ')}
+        </div>
+      )}
+      {notes.length === 0 && (
+        <div className="cf-draft__note">No notes: a clean cut.</div>
+      )}
+      {notes.map((n) => (
+        <label key={n.n} className={`cf-notes__note cf-notes__note--${n.kind}`}>
+          {n.kind === 'redo' ? (
+            <input
+              type="checkbox"
+              checked={!!picked[n.n]}
+              onChange={(e) =>
+                setPicked({ ...picked, [n.n]: e.target.checked })
+              }
+            />
+          ) : (
+            <span className="cf-notes__spacer" />
+          )}
+          <span>
+            <b>
+              {n.n}. {n.kind}
+              {n.shots && n.shots.length
+                ? ` · shot${n.shots.length > 1 ? 's' : ''} ${n.shots.join(', ')}`
+                : ''}
+            </b>{' '}
+            {n.problem} <i>Fix: {n.fix}</i>
+          </span>
+        </label>
+      ))}
+      <div className="cf-plan__actions">
+        {notes.some((n) => n.kind === 'redo') && (
+          <button
+            className="mbtn mbtn--primary"
+            disabled={!picks.length}
+            onClick={() =>
+              onAdjust &&
+              onAdjust(
+                `Apply director's notes ${picks.join(', ')} to render ${String(taskId).slice(0, 8)}`
+              )
+            }
+            title="Puts the request in the message box; send it to redo those shots"
+          >
+            Redo picked shots
+          </button>
+        )}
+        <button className="mbtn" disabled={busy} onClick={start}>
+          Review again
+        </button>
+        <span className="cf-draft__hint">
+          {review.shots_reviewed || 0} shots screened
+          {review.shots_unread ? `, ${review.shots_unread} unread` : ''}
+        </span>
+      </div>
     </div>
   );
 }
@@ -829,7 +965,28 @@ function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
   if (card.kind === 'draft')
     return <CfDraftCard card={card} pushToast={pushToast} />;
   if (card.kind === 'render')
-    return <CfRenderCard card={card} pushToast={pushToast} />;
+    return (
+      <CfRenderCard card={card} onAdjust={onAdjust} pushToast={pushToast} />
+    );
+  if (card.kind === 'notes')
+    return (
+      <div className="cf-plan cf-draft">
+        <div className="cf-plan__head">
+          <Icon name="doc" size={13} />
+          <span className="cf-plan__title">
+            Director's notes{card.title ? ` — ${card.title}` : ''}
+          </span>
+          <span className="cf-plan__slug tnum">
+            {String(card.task_id).slice(0, 8)}
+          </span>
+        </div>
+        <CfNotes
+          taskId={card.task_id}
+          onAdjust={onAdjust}
+          pushToast={pushToast}
+        />
+      </div>
+    );
   if (card.kind === 'approval')
     return (
       <CfApprovalCard

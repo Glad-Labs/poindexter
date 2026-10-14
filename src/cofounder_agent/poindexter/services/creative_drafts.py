@@ -427,6 +427,7 @@ _RENDER_TAIL = (
     ("render", "media.render_long_video"),
     ("qa", "media.qa"),
     ("persist", "media.persist"),
+    ("notes", "media.director_notes"),
 )
 
 

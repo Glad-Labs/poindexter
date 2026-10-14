@@ -542,9 +542,10 @@ POST_WRITE_EFFECT = "post_write"
 _EXISTING_POST_ENTRY = "content.load_existing_post"
 
 
-# Atoms that only record how the run ended. A gate followed by nothing else
-# has no step that waits on the approval.
-_BOOKKEEPING_ATOMS = frozenset({"atoms.set_task_status"})
+# Atoms that only record or review how the run ended. A gate followed by
+# nothing else has no step that waits on the approval. media.director_notes
+# reviews the video media.persist saved; it acts on nothing an approval holds.
+_BOOKKEEPING_ATOMS = frozenset({"atoms.set_task_status", "media.director_notes"})
 
 
 def _gates_that_gate_nothing(

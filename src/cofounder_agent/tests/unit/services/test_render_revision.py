@@ -170,6 +170,7 @@ class TestRevision:
         assert ok, errors
         assert [n["atom"] for n in spec["nodes"]] == [
             "media.load_render_revision", "media.render_long_video", "media.qa", "media.persist",
+            "media.director_notes",
         ]
 
     @pytest.mark.asyncio

@@ -185,6 +185,13 @@ def _content_of(message_row: dict[str, Any]) -> str:
             chunks.append(
                 f"[{c.get('draft_kind')} draft {str(c.get('draft_id', ''))[:8]} v{c.get('version')}]"
             )
+        elif kind == "card" and (part.get("card") or {}).get("kind") in ("render", "notes"):
+            # Same for a render: its task id is what revise_render,
+            # review_render, apply_director_notes and package_video take.
+            c = part["card"]
+            what = "render" if c.get("kind") == "render" else "director's notes for render"
+            title = f' "{c.get("title")}"' if c.get("title") else ""
+            chunks.append(f"[{what} {str(c.get('task_id', ''))[:8]}{title}]")
         elif kind == "tool_call":
             # Context tail keeps a one-line trace of past tool activity so the
             # model remembers WHAT it did without re-carrying full results.

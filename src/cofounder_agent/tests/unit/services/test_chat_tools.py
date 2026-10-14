@@ -66,6 +66,8 @@ class TestRegistryShape:
             "render_draft": False,
             # Same: a render revision's new video lands in that queue too.
             "revise_render": False,
+            # Same: director's notes apply as a render revision.
+            "apply_director_notes": False,
             # Approval-carded (executed only via the operator's click):
             "set_setting": True,
             "restart_service": True,

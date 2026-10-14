@@ -315,7 +315,7 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   story.cast_characters -> story.write_screenplay -> media.render_dialogue
   -> media.direct_screenplay -> media.score_screenplay ->
   media.transcribe_narration -> media.render_long_video -> media.qa ->
-  media.persist.
+  media.persist -> media.director_notes.
   story.cast_characters comes first whenever the piece needs a character
   that is not in CHARACTERS below: a fairytale, a fable, a known story, or
   any request that describes people of its own. It designs those
@@ -325,7 +325,9 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   media.transcribe_narration comes BEFORE media.render_long_video because
   the render burns in the captions it makes, and media.persist comes last
   because it saves the video and puts it in the approval queue. That queue
-  is where the video is reviewed, so the chain ends at media.persist.
+  is where the video is reviewed. media.director_notes follows it: it
+  screens the saved video and writes notes for the operator, and the chain
+  ends there.
   media.score_screenplay adds the music and sound effects; include it in
   every cartoon unless the intent asks for no music.
   Put the creative choices in config. On story.write_screenplay:

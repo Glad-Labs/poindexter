@@ -37,13 +37,16 @@ metadata:
       description: 'Scores a voiced cartoon: its scenes (id, length, setting, what happens, the turn), its action beats (number, scene, what happens) and the art style in; JSON {"music": [{scene_id, prompt}], "sounds": [{beat, prompt}]} out, a music brief per scene and a sound for the actions worth hearing. Validated in code (real scene ids and beat numbers, a prompt each). Used by services.score.plan_score; Stable Audio makes each piece.'
     - key: story.youtube_package
       output_format: json
-      description: 'Packages a finished cartoon for YouTube (chat drafting phase 7): the title, logline, art style, cast (id and name), the story (scene summaries and turns, then the spoken lines) and a table of the drawn shots in; JSON {title, description, tags, thumbnail_text, thumbnail_shot} out. Validated in code (title fits whole, numbers only from the script, no links, short comma-free tags, the long-video thumbnail checks on thumbnail_text, a real shot number). Used by services.video_package.package_video, which composes the thumbnail from a frame of that shot.'
+      description: 'Packages a finished cartoon for YouTube (chat drafting phase 7): the title, logline, art style, cast (id and name), the story (scene summaries and turns, then the spoken lines) and a table of the drawn shots in; JSON {title, description, tags, thumbnail_text, thumbnail_shot} out. Validated in code (title fits whole, numbers only from the script, no links, short comma-free tags, the long-video thumbnail checks on thumbnail_text, a real shot number). Used by services.video_package.draft_package, which composes the thumbnail from a frame of that shot.'
     - key: story.youtube_package_revise
       output_format: json
-      description: "Revises a cartoon's YouTube package to address one note from the operator: the same inputs as story.youtube_package plus the current package JSON and the note; the whole revised package out in the same shape, untouched fields kept. Validated in code like a new package. Used by services.video_package.package_video."
+      description: "Revises a cartoon's YouTube package to address one note from the operator: the same inputs as story.youtube_package plus the current package JSON and the note; the whole revised package out in the same shape, untouched fields kept. Validated in code like a new package. Used by services.video_package.draft_package."
+    - key: story.director_notes
+      output_format: json
+      description: "Director's notes on a finished cartoon: the title, logline, art style, the story, the length and a table of every shot (start, length, drawn or not, who, the line, the picture, and the flaws the vision judge saw in it) in; JSON {verdict, strengths, notes: [{kind: redo|story|pacing|sound, shots, problem, fix}]} out, ranked by how much each note would improve the piece. Validated in code (real shot numbers; a redo names only drawn shots and says how to redraw them). Used by services.director_notes.write_notes; redo notes feed a render revision."
     - key: story.screenplay_fix
       output_format: json
-      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise, story.storyboard_revise, story.score, story.youtube_package and story.youtube_package_revise: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
+      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise, story.storyboard_revise, story.score, story.youtube_package, story.youtube_package_revise and story.director_notes: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
 ---
 
 # Storytelling skill
@@ -390,6 +393,36 @@ HOW TO REVISE
 OUTPUT
 Reply with the whole package as one JSON object and nothing else, shaped like this:
 {{"title": "...", "description": "...", "tags": ["..."], "thumbnail_text": "...", "thumbnail_shot": 0}}
+```
+
+## story.director_notes
+
+```text
+You are the director of a short animated piece, "{title}": {logline}. You have just screened the finished cut ({total_seconds} seconds) and are giving notes to the team.
+
+ART STYLE: {style}
+
+THE STORY
+{story}
+
+THE CUT - shot | starts | seconds | drawn or not | who | heard over it | the picture | what the screening judge saw
+{shot_table}
+
+GIVE NOTES
+- "verdict": two or three sentences on how the piece plays as a whole: does the story land, does it feel alive, what holds it back most.
+- "strengths": the few things that work and should stay.
+- "notes": at most {max_notes}, the most important first. Each has:
+  - "kind": "redo" for shots to redraw (a visible flaw, a picture that misses its moment, a frame that is dull where the story peaks); "story" for the script; "pacing" for shots or scenes that drag or rush; "sound" for voices, music or effects.
+  - "shots": the shot numbers it is about. A redo names drawn shots only.
+  - "problem": what the audience notices, in one sentence.
+  - "fix": for a redo, the new picture in one or two sentences a shot artist can draw: framing, who is where doing what, the expression, the light. For the other kinds, the change to make.
+- Base picture notes on what the judge saw. A shot the judge could not read gets no picture note.
+- "Not known" in the heard-over-it column means the words were not kept for this review, not that the shot is silent; judge sound only from what the table does show.
+- Give a note only where fixing it makes the piece clearly better; an empty list is a fine answer for a clean cut.
+
+OUTPUT
+Reply with one JSON object and nothing else, shaped like this:
+{{"verdict": "...", "strengths": ["..."], "notes": [{{"kind": "redo", "shots": [0], "problem": "...", "fix": "..."}}]}}
 ```
 
 ## story.screenplay_fix

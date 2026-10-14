@@ -2634,6 +2634,23 @@
         () => window.PX.chatMock.watchSnapshot(taskId)
       );
     },
+    // Director's notes on a finished render (chat drafting phase 8). The
+    // notes card polls chatNotes while the review is working; mock mode has
+    // no render to review, so it reports none rather than inventing notes.
+    chatNotes(taskId) {
+      return pick(
+        () =>
+          http('GET', `/api/chat/renders/${encodeURIComponent(taskId)}/notes`),
+        () => Promise.resolve({ status: 'none' })
+      );
+    },
+    chatNotesStart(taskId) {
+      return pick(
+        () =>
+          http('POST', `/api/chat/renders/${encodeURIComponent(taskId)}/notes`),
+        () => Promise.reject(new Error('Notes need a live worker connection.'))
+      );
+    },
   };
 
   // Tiny boot hint in the console for whoever wires this up.

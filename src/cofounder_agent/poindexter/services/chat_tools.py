@@ -28,6 +28,7 @@ and audited.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -540,6 +541,51 @@ async def _revise_render(
     )
 
 
+async def _review_render(ctx: ChatToolContext, *, task_id: str, again: bool = False) -> str:
+    from poindexter.services import director_notes as dn
+    from poindexter.utils.uuid_prefix import resolve_task_id_prefix
+
+    resolved = await resolve_task_id_prefix(ctx.pool, task_id.strip())
+    review = await dn.get_review(ctx.pool, task_id=resolved, site_config=ctx.site_config)
+    if review and review.get("status") in ("ready", "working") and not again:
+        ctx.emitted_cards.append({"kind": "notes", "task_id": resolved, "title": review.get("title") or ""})
+        return dn.describe(review)
+    try:
+        await dn.start_review(ctx.pool, task_id=resolved, site_config=ctx.site_config)
+    except dn.ReviewError as exc:
+        raise ChatToolError(str(exc)) from exc
+    ctx.emitted_cards.append({"kind": "notes", "task_id": resolved, "title": ""})
+    return (
+        f"Director's notes for {resolved[:8]} started: the judge looks at every shot, then the "
+        "notes are written (a few minutes). The notes card fills in when they are ready. Say so and stop."
+    )
+
+
+async def _apply_director_notes(ctx: ChatToolContext, *, task_id: str, notes: str) -> str:
+    from poindexter.services import director_notes as dn
+    from poindexter.utils.uuid_prefix import resolve_task_id_prefix
+
+    resolved = await resolve_task_id_prefix(ctx.pool, task_id.strip())
+    review = await dn.get_review(ctx.pool, task_id=resolved, site_config=ctx.site_config)
+    if not review or review.get("status") != "ready":
+        raise ChatToolError("this render has no finished director's notes; run review_render first")
+    raw = notes.strip().lower()
+    if raw in ("", "all"):
+        picks = [int(n["n"]) for n in review.get("notes") or [] if n["kind"] == "redo"]
+    else:
+        try:
+            picks = sorted({int(p) for p in re.split(r"[,\s]+", raw) if p})
+        except ValueError as exc:
+            raise ChatToolError('notes is a list of note numbers ("1, 3") or "all"') from exc
+    if not picks:
+        raise ChatToolError("the review has no redo notes; its other notes are for the script")
+    try:
+        instruction = dn.revision_instruction(review, picks)
+    except dn.ReviewError as exc:
+        raise ChatToolError(str(exc)) from exc
+    return await _revise_render(ctx, task_id=resolved, instruction=instruction)
+
+
 async def _package_video(ctx: ChatToolContext, *, task_id: str) -> str:
     return await _start_draft(ctx, "package", {"task_id": task_id.strip()})
 
@@ -779,6 +825,35 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         ),
         tier="write",
         handler=_revise_render,
+    ),
+    ChatToolSpec(
+        name="review_render",
+        description=(
+            "Director's notes on a finished cartoon render: the vision judge "
+            "screens every shot (hands, faces, mouths, strangers, garbled "
+            "writing, frozen shots, shots that miss their moment) and the "
+            "writer gives a verdict and ranked notes. Every cartoon render "
+            "gets them automatically; this reads them (or starts them, or "
+            "again=true redoes them). task_id is the render's task id. Use it "
+            "when the operator asks what is wrong with a render or how to "
+            "make it better."
+        ),
+        parameters=_params({"task_id": _STR, "again": {"type": "boolean"}}, ["task_id"]),
+        tier="read",
+        handler=_review_render,
+    ),
+    ChatToolSpec(
+        name="apply_director_notes",
+        description=(
+            "Redo the shots a render's director's notes name: notes is the "
+            "note numbers to apply ('1, 3') or 'all' for every redo note. "
+            "Only redo notes apply; story, pacing and sound notes are for the "
+            "script. Every other shot is reused, so it takes minutes; the new "
+            "video lands in the approval queue."
+        ),
+        parameters=_params({"task_id": _STR, "notes": _STR}, ["task_id", "notes"]),
+        tier="write",
+        handler=_apply_director_notes,
     ),
     ChatToolSpec(
         name="package_video",

@@ -310,13 +310,17 @@ async def save_package(
     pool: Any, *, video: dict[str, Any], package: dict[str, Any],
 ) -> None:
     """Write the package where the uploader reads it (the video's own row)."""
-    meta = dict(video["metadata"])
-    meta.setdefault(SOURCE_KEY, {"title": video.get("title") or "", "logline": video.get("description") or ""})
-    meta[PACKAGE_KEY] = package
+    # Only this module's two keys: other writers (director's notes) keep theirs.
+    keys = {
+        SOURCE_KEY: video["metadata"].get(SOURCE_KEY)
+        or {"title": video.get("title") or "", "logline": video.get("description") or ""},
+        PACKAGE_KEY: package,
+    }
     await pool.execute(
-        "UPDATE media_assets SET title = $2, description = $3, metadata = $4::jsonb, updated_at = now() "
+        "UPDATE media_assets SET title = $2, description = $3, "
+        "metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb, updated_at = now() "
         "WHERE id = $1::uuid",
-        video["id"], package["title"][:500], package["description"], json.dumps(meta, default=str),
+        video["id"], package["title"][:500], package["description"], json.dumps(keys, default=str),
     )
 
 

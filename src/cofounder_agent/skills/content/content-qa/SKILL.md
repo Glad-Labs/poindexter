@@ -53,6 +53,9 @@ metadata:
     - key: qa.talking_clip
       output_format: json
       description: 'Vision check on a rendered cartoon talking clip, shown as a contact sheet of moments across the take: are the hands intact, is the mouth in proportion while speaking, does the face stay the same character, and did anyone else appear? Code passes a take only when all four hold, re-renders a failing take and keeps whichever has fewer problems. Used by services.video_renderers.shot_vision_qa.check_talking_clip.'
+    - key: qa.director_shot
+      output_format: json
+      description: "Vision check on one shot of a FINISHED cartoon for the director's notes, shown as a contact sheet of moments across the shot: are hands, face and mouth intact, how many strangers, is there garbled writing, does anything move, and does it show what the shot was meant to (the picture prompt, who speaks, the line)? Countable checks plus a one-line note; code turns the failed checks into named flaws. Used by services.director_notes.look_at_shots."
     - key: qa.cast_frame
       output_format: json
       description: "Vision check on a cartoon still drawn from the cast portraits: how many people are in the picture, how many are strangers outside the cartoon's cast, and is every character the shot needs there as their sheet describes them? Code accepts the still only with no strangers, no more people than the cast, and everyone required present; otherwise it redraws. Used by services.video_renderers.shot_vision_qa.check_cast_frame."
@@ -619,6 +622,40 @@ Look at every moment and answer four questions.
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"hands_ok": <true or false>, "mouth_ok": <true or false>, "face_ok": <true or false>, "strangers": <integer>, "reason": "<one short sentence naming what is wrong, or that the take is clean>"}}
+```
+
+## qa.director_shot
+
+```text
+You are the director screening a finished cartoon, one shot at a time. The
+picture is a contact sheet: {frames} moments from this shot, in order, left to
+right and top to bottom.
+
+WHAT THE SHOT IS MEANT TO SHOW
+Who: {who}
+Picture: {picture}
+Heard over it: {line}
+
+Look at every moment and answer:
+
+1. HANDS - wherever hands or fingers show, are they whole and natural: the
+   right number of fingers, no melting, smearing, fusing or twisting? Hands
+   out of frame count as intact.
+2. FACE - does each face stay the same character from moment to moment,
+   without melting, warping or changing into someone else?
+3. MOUTH - while someone speaks, does the mouth stay in proportion to the
+   face? Answer true when no one is speaking.
+4. STRANGERS - how many people or person-like characters appear who are not
+   the ones named above?
+5. WRITING - is any writing, sign or screen text legible and sensible? Answer
+   true when there is none.
+6. MOVES - does something change across the moments (a character, the camera,
+   the light)? A shot frozen in place answers false.
+7. MATCHES - does it show what the shot is meant to: the right characters,
+   place and action?
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"hands_ok": <true or false>, "face_ok": <true or false>, "mouth_ok": <true or false>, "strangers": <integer>, "text_ok": <true or false>, "moves_ok": <true or false>, "matches": <true or false>, "note": "<one short sentence: the most visible problem, or what makes the shot work>"}}
 ```
 
 ## qa.cast_frame

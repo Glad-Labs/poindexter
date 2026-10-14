@@ -362,6 +362,44 @@ async def _draft_action(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+# --- Director's notes on a render (chat drafting, phase 8) --------------------
+
+
+async def _notes_action(
+    action: str, task_id: str, db_service: DatabaseService, site_config: SiteConfig,
+) -> dict[str, Any]:
+    _require_enabled(site_config)
+    from poindexter.services import director_notes as dn
+
+    try:
+        if action == "start":
+            return await dn.start_review(db_service.pool, task_id=task_id, site_config=site_config)
+        review = await dn.get_review(db_service.pool, task_id=task_id, site_config=site_config)
+    except dn.ReviewError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return review or {"status": "none"}
+
+
+@router.get("/renders/{task_id}/notes")
+async def get_render_notes_route(
+    task_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """A render's director's notes (``status`` none / working / ready / failed); the card polls this."""
+    return await _notes_action("get", task_id, db_service, site_config)
+
+
+@router.post("/renders/{task_id}/notes")
+async def start_render_notes_route(
+    task_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Start (or restart) a render's director's notes in the background."""
+    return await _notes_action("start", task_id, db_service, site_config)
+
+
 @router.get("/drafts/{draft_id}")
 async def get_draft_route(
     draft_id: str,

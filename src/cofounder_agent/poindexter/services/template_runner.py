@@ -626,6 +626,9 @@ class PipelineState(TypedDict, total=False):
     video_clip_cache_key: str
     render_source: str
     shot_list_file: str
+    # Chat drafting phase 8: media.director_notes' outcome (status, note
+    # count); the review itself is stored on the video's asset row.
+    director_notes: dict
     # media.render_dialogue's measured beat timeline (start_s/end_s per line
     # and action beat), read by media.direct_screenplay.
     dialogue_timeline: list

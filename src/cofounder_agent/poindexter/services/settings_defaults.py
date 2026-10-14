@@ -3189,6 +3189,19 @@ DEFAULTS: dict[str, str] = {
     'video_package_description_max_chars': '700',
     'video_package_max_tags': '12',
     'video_package_thumbnail_layout': 'right',
+    # Chat drafting phase 8: director's notes (services/director_notes.py).
+    # After a cartoon renders, the vision judge looks at frames_per_shot
+    # moments of each drawn shot (up to max_shots), with the bottom
+    # caption_crop of each frame (the burned-in captions) cut off so the
+    # judge does not read them as writing in the picture, then the writer gives up
+    # to max_notes ranked notes; redo notes feed a render revision. A review
+    # still "working" after stale_minutes was interrupted and reads as failed.
+    'director_notes_enabled': 'true',
+    'director_notes_frames_per_shot': '4',
+    'director_notes_max_shots': '60',
+    'director_notes_max_notes': '8',
+    'director_notes_caption_crop': '0.22',
+    'director_notes_stale_minutes': '45',
     # A cast draft's voice previews load Chatterbox on the render card; below
     # this much free VRAM, ComfyUI's resident image-edit model is reclaimed first.
     'story_cast_preview_min_free_gb': '3',
@@ -6697,6 +6710,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_package_description_max_chars': {'owner': 'video_package', 'value_type': 'integer'},
     'video_package_max_tags': {'owner': 'video_package', 'value_type': 'integer'},
     'video_package_thumbnail_layout': {'owner': 'video_package', 'value_type': 'string'},
+    'director_notes_enabled': {'owner': 'director_notes', 'value_type': 'boolean'},
+    'director_notes_frames_per_shot': {'owner': 'director_notes', 'value_type': 'integer'},
+    'director_notes_max_shots': {'owner': 'director_notes', 'value_type': 'integer'},
+    'director_notes_max_notes': {'owner': 'director_notes', 'value_type': 'integer'},
+    'director_notes_caption_crop': {'owner': 'director_notes', 'value_type': 'float'},
+    'director_notes_stale_minutes': {'owner': 'director_notes', 'value_type': 'float'},
     'story_cast_preview_min_free_gb': {'owner': 'casting', 'value_type': 'float'},
     'creative_draft_gpu_busy_stages': {'owner': 'creative_drafts', 'value_type': 'csv'},
     'creative_draft_gpu_wait_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},

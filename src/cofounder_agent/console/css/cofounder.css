@@ -872,6 +872,44 @@
   overflow-wrap: anywhere;
 }
 
+/* Director's notes on a render */
+.cf-notes {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--gl-mint) 18%, transparent);
+}
+.cf-notes__head {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  margin-bottom: 4px;
+}
+.cf-notes__verdict {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.cf-notes__works {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+.cf-notes__note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.cf-notes__note input {
+  margin-top: 3px;
+}
+.cf-notes__spacer {
+  flex: 0 0 13px;
+}
+
 /* Storyboard draft: an animatic screen above a strip of shots */
 .cf-draft__screen {
   position: relative;

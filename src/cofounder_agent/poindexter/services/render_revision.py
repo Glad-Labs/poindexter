@@ -10,7 +10,8 @@ revision:
    storyboard's revision prompt: a render's shots are a storyboard's shots);
 2. writes the revised shot list beside the cache;
 3. queues a fixed plan (``media.load_render_revision`` →
-   ``media.render_long_video`` → ``media.qa`` → ``media.persist``) that
+   ``media.render_long_video`` → ``media.qa`` → ``media.persist`` →
+   ``media.director_notes``) that
    re-renders under the source's cache key, so every unchanged shot's clip is
    reused and only the changed ones render. The same dialogue track and
    captions are reused; the new video lands in the approval queue.
@@ -107,7 +108,7 @@ async def plan_revision(
 def revision_spec(key: str, shot_list_file: str, *, setting_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     steps = [
         ("load", "media.load_render_revision"), ("render", "media.render_long_video"),
-        ("qa", "media.qa"), ("persist", "media.persist"),
+        ("qa", "media.qa"), ("persist", "media.persist"), ("notes", "media.director_notes"),
     ]
     nodes = [
         {"id": nid, "atom": atom,

@@ -721,29 +721,44 @@ async def talking_clip_sheet(clip_path: str, frames: int, tag: str) -> str | Non
     clip, so one frame misses them; one sheet lets a single vision call see
     the whole take.
     """
-    import math
-
     duration = await _probe_seconds(clip_path)
     if not duration:
         return None
     n = max(1, frames)
+    return await sheet_at(clip_path, [duration * (i + 0.5) / n for i in range(n)], tag)
+
+
+async def sheet_at(
+    video_path: str, times: list[float], tag: str, *, crop_bottom: float = 0.0,
+) -> str | None:
+    """The frames of ``video_path`` at ``times`` tiled into one PNG, in order, or ``None``.
+
+    ``crop_bottom`` cuts that share of each frame off the bottom first: a
+    finished video's burned-in captions are writing a judge would otherwise
+    read as part of the picture.
+    """
+    import math
+
     stills = []
-    for i in range(n):
-        got = await _frame_at(clip_path, duration * (i + 0.5) / n, f"{tag}_{i}")
+    for i, at in enumerate(times):
+        got = await _frame_at(video_path, max(0.0, at), f"{tag}_{i}")
         if got:
             stills.append(got)
     if not stills:
         return None
     cols = math.ceil(math.sqrt(len(stills)))
-    out = os.path.join(tempfile.gettempdir(), f"shotqa_{tag}_sheet_{os.path.basename(clip_path)}.png")
+    out = os.path.join(tempfile.gettempdir(), f"shotqa_{tag}_sheet_{os.path.basename(video_path)}.png")
     inputs: list[str] = []
     for still in stills:
         inputs += ["-i", still]
-    layout = "|".join(f"{(k % cols) * 512}_{(k // cols) * 288}" for k in range(len(stills)))
-    scaled = "".join(f"[{k}:v]scale=512:288[s{k}];" for k in range(len(stills)))
+    keep = min(1.0, max(0.5, 1.0 - crop_bottom))
+    height = int(288 * keep) // 2 * 2
+    crop = f"crop=iw:ih*{keep:.3f}:0:0," if keep < 1.0 else ""
+    layout = "|".join(f"{(k % cols) * 512}_{(k // cols) * height}" for k in range(len(stills)))
+    scaled = "".join(f"[{k}:v]{crop}scale=512:{height}[s{k}];" for k in range(len(stills)))
     joined = "".join(f"[s{k}]" for k in range(len(stills)))
     graph = f"{scaled}{joined}xstack=inputs={len(stills)}:layout={layout}:fill=black[out]" \
-        if len(stills) > 1 else "[0:v]scale=512:288[out]"
+        if len(stills) > 1 else f"[0:v]{crop}scale=512:{height}[out]"
     cmd = ["ffmpeg", "-y", "-loglevel", "error", *inputs, "-filter_complex", graph, "-map", "[out]", out]
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -751,8 +766,11 @@ async def talking_clip_sheet(clip_path: str, frames: int, tag: str) -> str | Non
         )
         await proc.wait()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[SHOT_QA] contact sheet failed for %s: %s", clip_path, exc)
+        logger.warning("[SHOT_QA] contact sheet failed for %s: %s", video_path, exc)
         return None
+    finally:
+        for still in stills:
+            _remove_quietly(still)
     return out if os.path.exists(out) and os.path.getsize(out) > 0 else None
 
 
