@@ -23,9 +23,15 @@ metadata:
     - key: story.casting
       output_format: json
       description: "Casting for an animated piece: the request (topic, brief, format, length), the existing characters, a required cast, a style hint and the voice catalog in; JSON art style, narrator and characters out, each one either a reused character id or a new character with name, role, appearance, personality, voice, energy and a sample line. Validated in code (reused ids exist, voices are in the catalog, every new character has looks). Used by services.casting.cast_characters, which then draws each new character's portrait and builds its voice."
+    - key: story.screenplay_revise
+      output_format: json
+      description: 'Revises a whole screenplay to address one note from the operator (chat drafting): the current screenplay JSON, the note, the cast and the word budget in; the whole revised screenplay out, in the same shape, with untouched scenes and lines kept. Validated in code exactly like a new screenplay. Used by services.screenplay.revise_screenplay.'
+    - key: story.casting_revise
+      output_format: json
+      description: 'Revises a cast design to address one note from the operator (chat drafting): the current design JSON (style, characters, narrator), the note, the art style and the voice catalog in; the whole revised design out in the story.casting shape, with untouched characters kept under their ids. Validated in code like a new cast. Used by services.casting.revise_cast_design.'
     - key: story.screenplay_fix
       output_format: json
-      description: 'The one repair retry for story.casting, story.outline and story.scene: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
+      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene and story.screenplay_revise: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
 ---
 
 # Storytelling skill
@@ -200,6 +206,66 @@ HOW TO CAST
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
+{{"style": "...", "characters": [{{"reuse": "existing_id"}}, {{"id": "lowercase-id", "name": "...", "role": "...", "appearance": "...", "personality": "...", "voice": "voice_id", "energy": "medium", "sample_line": "..."}}], "narrator": {{"use": true, "reuse": "existing_id or empty", "name": "...", "voice": "voice_id", "energy": "low", "sample_line": "..."}}}}
+```
+
+## story.screenplay_revise
+
+```text
+You are the head writer at {site_name}, revising a short animated screenplay with the operator.
+
+THE SCREENPLAY NOW
+{current}
+
+THE NOTE TO ADDRESS
+{instruction}
+
+CAST - the only characters who may appear or speak. Use the id before the colon exactly.
+{cast_block}
+
+Narrator available: {narrator_available}.
+Length: about {word_budget} spoken words in total.
+
+HOW TO REVISE
+- Make the change the note asks for, and whatever that change needs elsewhere to stay consistent: a renamed thing, a moved beat, a line that calls back to it.
+- Keep everything the note does not touch: the same scenes, lines and order, word for word.
+- Keep the story spine (want, obstacle, turn, payoff). When the note changes one of them, update the spine to match.
+- Every "line" beat has "speaker", "text", "delivery" and "intensity" ("low", "medium" or "high"). Every "action" beat has "text" and "characters".
+
+OUTPUT
+Reply with the whole revised screenplay as one JSON object and nothing else, in the same shape as THE SCREENPLAY NOW:
+{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "scenes": [{{"scene_id": "s1", "setting": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"]}}]}}]}}
+```
+
+## story.casting_revise
+
+```text
+You are the casting director for a short animated piece by {site_name}, revising a cast design with the operator.
+
+THE CAST NOW
+{current}
+
+THE NOTE TO ADDRESS
+{instruction}
+
+ART STYLE: {style_hint}
+
+CHARACTERS WHO ALREADY EXIST AND MAY BE REUSED:
+{roster_block}
+
+VOICES - choose each new character's voice from this list, by id:
+{voice_catalog}
+
+HOW TO REVISE
+- Make the change the note asks for: a character's looks, personality, voice, energy or sample line; a character added or dropped; the narrator.
+- Keep every character the note does not touch exactly as it is, under the same "id", or as the same {{"reuse": id}} entry.
+- "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear.
+- "voice": an id from the list that fits the character. Different characters get different voices.
+- "energy": "low", "medium" or "high".
+- At most {max_new} new characters.
+
+OUTPUT
+Reply with the whole revised cast as one JSON object and nothing else, in the same shape as THE CAST NOW:
 {{"style": "...", "characters": [{{"reuse": "existing_id"}}, {{"id": "lowercase-id", "name": "...", "role": "...", "appearance": "...", "personality": "...", "voice": "voice_id", "energy": "medium", "sample_line": "..."}}], "narrator": {{"use": true, "reuse": "existing_id or empty", "name": "...", "voice": "voice_id", "energy": "low", "sample_line": "..."}}}}
 ```
 

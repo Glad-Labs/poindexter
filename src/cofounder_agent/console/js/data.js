@@ -2879,6 +2879,44 @@
     links: {},
     // P4 (poindexter#950): architect plan cards.
     plans: {},
+    // Chat drafting (creative_drafts): a demo cast draft, ready at once.
+    drafts: {},
+    getDraft(draftId) {
+      if (!this.drafts[draftId]) {
+        this.drafts[draftId] = {
+          id: draftId,
+          kind: 'cast',
+          version: 1,
+          status: 'ready',
+          note: '',
+          error: '',
+          payload: {
+            style: 'soft storybook watercolour, pencil outlines',
+            characters: [
+              {
+                slug: 'wren',
+                name: 'Wren',
+                role: 'the hero',
+                appearance: 'a small girl in a red wool coat',
+                voice: 'bf_emma',
+                energy: 'high',
+                sample_line: 'Who goes there?',
+                reused: false,
+                portrait_url: '',
+                voice_url: '',
+              },
+            ],
+            narrator: { slug: 'none' },
+          },
+        };
+      }
+      return this.drafts[draftId];
+    },
+    setDraftStatus(draftId, status) {
+      const d = this.getDraft(draftId);
+      d.status = status;
+      return d;
+    },
     runPlan(planId) {
       const p = this.plans[planId];
       if (!p) throw new Error(`Unknown plan: ${planId}`);

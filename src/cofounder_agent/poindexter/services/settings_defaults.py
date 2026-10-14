@@ -3143,6 +3143,17 @@ DEFAULTS: dict[str, str] = {
     # request, reuses the characters that fit and designs, draws and voices
     # the rest. At most this many new characters per piece.
     'story_cast_max_new': '4',
+    # Chat drafting (services/creative_drafts.py). A draft still "working"
+    # after this many minutes without progress was interrupted (a worker
+    # restart) and reads as failed.
+    'creative_draft_stale_minutes': '45',
+    # A cast draft's voice previews load Chatterbox on the render card; below
+    # this much free VRAM, ComfyUI's resident image-edit model is reclaimed first.
+    'story_cast_preview_min_free_gb': '3',
+    # A cast draft draws on the GPU, so it waits while a pipeline task runs a
+    # stage matching one of these SQL LIKE patterns, up to the wait below.
+    'creative_draft_gpu_busy_stages': '%render%, %cast_characters%, %direct_screenplay%, %transcribe%',
+    'creative_draft_gpu_wait_minutes': '180',
     # Words for the medium, not a look. A creative plan whose art style is only
     # one of these ("a cartoon") is drawn in the niche's house style instead.
     'story_style_medium_words': (
@@ -6623,6 +6634,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_line_exaggeration_min': {'owner': 'screenplay', 'value_type': 'float'},
     'story_line_exaggeration_max': {'owner': 'screenplay', 'value_type': 'float'},
     'story_cast_max_new': {'owner': 'casting', 'value_type': 'integer'},
+    'creative_draft_stale_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},
+    'story_cast_preview_min_free_gb': {'owner': 'casting', 'value_type': 'float'},
+    'creative_draft_gpu_busy_stages': {'owner': 'creative_drafts', 'value_type': 'csv'},
+    'creative_draft_gpu_wait_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},
     'story_style_medium_words': {'owner': 'media_policy', 'value_type': 'string'},
     'story_voice_catalog': {'owner': 'casting', 'value_type': 'string'},
     'story_cast_voice_engine': {'owner': 'casting', 'value_type': 'string'},

@@ -301,3 +301,45 @@ class TestSpine:
         assert middle.startswith("The next scene:")
         assert "LAST scene" in last and "Dex picks memory over clock speed" in last
         assert "Why is my card crashing?" in last
+
+
+# --- revision (chat drafting) ---------------------------------------------------
+
+
+def _written():
+    out = _assembled()
+    out.update({"format": "dialogue", "cast": ["dex", "nova"], "narrator": True, "narrator_persona": "",
+                "topic": "why VRAM matters", "target_seconds": 8.0, "writer_model": "old", "notes": []})
+    return out
+
+
+class TestReviseScreenplay:
+    @pytest.mark.asyncio
+    async def test_one_call_returns_the_whole_revised_screenplay(self, chat):
+        revised = {**_outline(), "title": "Why VRAM Really Matters"}
+        revised["scenes"][0]["beats"] = _scene()["beats"]
+        chat.side_effect = [json.dumps(revised)]
+        out = await sp.revise_screenplay(_written(), "punchier title", site_config=_sc())
+        assert out["title"] == "Why VRAM Really Matters"
+        assert out["cast"] == ["dex", "nova"] and out["format"] == "dialogue"
+        assert out["revised_with"] == "punchier title" and out["writer_model"] == "ollama/test-writer"
+        prompt = chat.await_args.args[0]
+        assert "punchier title" in prompt and '"Why VRAM Matters"' in prompt
+        assert chat.await_args.kwargs["phase"] == "story_revise_screenplay"
+
+    @pytest.mark.asyncio
+    async def test_a_stranger_speaking_gets_one_repair(self, chat):
+        bad = _outline()
+        bad["scenes"][0]["beats"] = _scene((("zed", "Who am I?"),))["beats"]
+        good = _outline()
+        good["scenes"][0]["beats"] = _scene()["beats"]
+        chat.side_effect = [json.dumps(bad), json.dumps(good)]
+        out = await sp.revise_screenplay(_written(), "add a line", site_config=_sc())
+        assert chat.await_count == 2 and "'zed' cannot speak" in chat.await_args_list[1].args[0]
+        assert out["scenes"][0]["beats"][0]["speaker"] == "dex"
+
+    @pytest.mark.asyncio
+    async def test_a_note_is_required(self, chat):
+        with pytest.raises(sp.ScreenplayError):
+            await sp.revise_screenplay(_written(), "  ", site_config=_sc())
+        assert chat.await_count == 0

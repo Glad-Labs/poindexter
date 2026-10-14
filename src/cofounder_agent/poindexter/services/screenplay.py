@@ -573,6 +573,94 @@ async def write_screenplay(
     return screenplay
 
 
+def _request_from(screenplay: dict[str, Any]) -> ScreenplayRequest:
+    """The request a finished screenplay was written for, from its own fields."""
+    return ScreenplayRequest(
+        topic=str(screenplay.get("topic") or screenplay.get("title") or ""),
+        format=str(screenplay.get("format") or "story"),
+        cast=tuple(_csv_or_list(screenplay.get("cast"))),
+        narrator=bool(screenplay.get("narrator", True)),
+        narrator_persona=str(screenplay.get("narrator_persona") or ""),
+        target_seconds=float(screenplay.get("target_seconds") or 90.0),
+    )
+
+
+def normalize_screenplay(raw: dict[str, Any]) -> dict[str, Any]:
+    """A whole screenplay reply: the outline fields plus each scene's beats."""
+    outline = normalize_outline(raw)
+    raw_scenes = [s for s in raw.get("scenes") or [] if isinstance(s, dict)]
+    for scene, raw_scene in zip(outline["scenes"], raw_scenes, strict=False):
+        scene["beats"] = normalize_beats(raw_scene.get("beats"))
+    return outline
+
+
+def _core(screenplay: dict[str, Any]) -> dict[str, Any]:
+    """The parts of a screenplay the writer edits, without bookkeeping fields."""
+    return {
+        "title": screenplay.get("title", ""),
+        "logline": screenplay.get("logline", ""),
+        "spine": screenplay.get("spine") or {},
+        "scenes": [
+            {k: scene.get(k) for k in ("scene_id", "setting", "summary", "turn", "characters", "beats")}
+            for scene in screenplay.get("scenes") or []
+        ],
+    }
+
+
+async def revise_screenplay(
+    screenplay: dict[str, Any],
+    instruction: str,
+    *,
+    site_config: Any,
+    pool: Any = None,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    """Rewrite ``screenplay`` to address one note (chat drafting).
+
+    One call returns the whole revised screenplay, checked exactly like a new
+    one (outline, cast-only speakers, beats), with one FIX repair. Fields the
+    writer does not own (cast, format, narrator, length) carry over.
+    Raises ScreenplayError when the revision cannot be made valid.
+    """
+    note = (instruction or "").strip()
+    if not note:
+        raise ScreenplayError("a revision needs a note saying what to change")
+    request = _request_from(screenplay)
+    personas = resolve_cast(site_config, request.cast)
+    budget = word_budget(request.target_seconds, site_config)
+    model = _resolve_model(site_config)
+
+    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
+        return validate(normalize_screenplay(reply), request, site_config), []
+
+    reply, _ = await _ask_validated(
+        "story.screenplay_revise",
+        {
+            "site_name": str(site_config.get("site_name", "") or "the studio"),
+            "current": json.dumps(_core(screenplay), ensure_ascii=False, indent=1)[:24000],
+            "instruction": note[:2000],
+            "cast_block": cast_block(personas),
+            "narrator_available": "yes" if request.narrator else "no",
+            "word_budget": budget,
+        },
+        _check, model=model, site_config=site_config, pool=pool, task_id=task_id,
+        what="revision", phase="story_revise_screenplay",
+    )
+    revised = normalize_screenplay(reply)
+    words = spoken_words(revised)
+    total = length_problem(words, budget, site_config)
+    carried = {k: v for k, v in screenplay.items() if k not in ("title", "logline", "spine", "scenes")}
+    revised.update({
+        **carried,
+        "spoken_words": words,
+        "writer_model": model,
+        "notes": [f"whole piece: {total}"] if total else [],
+        "revised_with": note[:500],
+    })
+    logger.info("[screenplay] revised %r for note %r: %d spoken words", revised["title"], note[:80], words)
+    return revised
+
+
 __all__ = [
     "BEAT_KINDS",
     "INTENSITIES",
@@ -588,6 +676,8 @@ __all__ = [
     "length_problem",
     "normalize_beats",
     "normalize_outline",
+    "normalize_screenplay",
+    "revise_screenplay",
     "resolve_cast",
     "scene_count",
     "spoken_words",

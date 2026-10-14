@@ -383,6 +383,97 @@ async def _plan_pipeline(
     )
 
 
+# --- Creative drafts (chat drafting, phase 1) -------------------------------
+
+
+def _story_inputs(
+    *, topic: str, brief: str = "", style: str = "", story_format: str = "",
+    cast: str = "", narrator: str = "", target_seconds: int = 0, tone: str = "",
+    niche_slug: str = "",
+) -> dict[str, Any]:
+    """Tool arguments as the atom input keys casting and the writer read."""
+    inputs: dict[str, Any] = {"topic": topic.strip()}
+    for key, value in (
+        ("screenplay_brief", brief), ("screenplay_visual_style", style),
+        ("screenplay_format", story_format), ("screenplay_cast", cast),
+        ("screenplay_narrator", narrator), ("screenplay_tone", tone), ("niche_slug", niche_slug),
+    ):
+        if str(value or "").strip():
+            inputs[key] = str(value).strip()
+    if target_seconds:
+        inputs["screenplay_target_seconds"] = int(target_seconds)
+    return inputs
+
+
+async def _start_draft(ctx: ChatToolContext, kind: str, inputs: dict[str, Any]) -> str:
+    from poindexter.services import creative_drafts as cd
+
+    try:
+        draft = await cd.start_draft(
+            ctx.pool, kind=kind, request=inputs, site_config=ctx.site_config,
+            conversation_id=ctx.conversation_id or None,
+        )
+    except cd.DraftError as exc:
+        raise ChatToolError(str(exc)) from exc
+    ctx.emitted_cards.append(cd.card(draft))
+    took = "a minute or two, longer while a video renders" if kind == "cast" else "about a minute"
+    return (
+        f"Started {kind} draft {draft['id'][:8]} (v1). It takes {took}; the draft "
+        "card fills in when it is ready. Tell the operator it is on its way and stop; "
+        "read it later with show_draft."
+    )
+
+
+async def _draft_cast(
+    ctx: ChatToolContext, *, topic: str, brief: str = "", style: str = "",
+    story_format: str = "story", characters: str = "", narrator: str = "",
+    target_seconds: int = 0, niche_slug: str = "",
+) -> str:
+    inputs = _story_inputs(
+        topic=topic, brief=brief, style=style, story_format=story_format, cast=characters,
+        narrator=narrator, target_seconds=target_seconds, niche_slug=niche_slug,
+    )
+    return await _start_draft(ctx, "cast", inputs)
+
+
+async def _draft_screenplay(
+    ctx: ChatToolContext, *, topic: str, cast: str, brief: str = "",
+    story_format: str = "story", narrator: str = "", target_seconds: int = 0, tone: str = "",
+) -> str:
+    inputs = _story_inputs(
+        topic=topic, brief=brief, story_format=story_format, cast=cast,
+        narrator=narrator, target_seconds=target_seconds, tone=tone,
+    )
+    return await _start_draft(ctx, "screenplay", inputs)
+
+
+async def _revise_draft(ctx: ChatToolContext, *, draft_id: str, instruction: str) -> str:
+    from poindexter.services import creative_drafts as cd
+
+    try:
+        draft = await cd.revise_draft(
+            ctx.pool, draft_id, instruction, site_config=ctx.site_config,
+            conversation_id=ctx.conversation_id or None,
+        )
+    except cd.DraftError as exc:
+        raise ChatToolError(str(exc)) from exc
+    ctx.emitted_cards.append(cd.card(draft))
+    return (
+        f"Started {draft['kind']} draft {draft['id'][:8]} v{draft['version']}, revising "
+        f"v{draft['version'] - 1} for: {instruction[:200]}. The new card fills in when "
+        "it is ready. Say so and stop."
+    )
+
+
+async def _show_draft(ctx: ChatToolContext, *, draft_id: str) -> str:
+    from poindexter.services import creative_drafts as cd
+
+    draft = await cd.get_draft(ctx.pool, draft_id, site_config=ctx.site_config)
+    if draft is None:
+        raise ChatToolError(f"No draft {draft_id!r}; use the 8-character id from a draft card.")
+    return cd.describe(draft)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -497,6 +588,68 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         parameters=_params({"intent": _STR, "topic": _STR}, ["intent"]),
         tier="read",
         handler=_plan_pipeline,
+    ),
+    ChatToolSpec(
+        name="draft_cast",
+        description=(
+            "Draft the characters for an animated piece: designs them (looks, "
+            "personality, voice), draws each a portrait and voices a sample line, "
+            "WITHOUT saving them. Returns at once; a draft card fills in a minute "
+            "or two later with faces and playable voices, plus Keep / Discard "
+            "buttons. Pass the story as topic; style is the look the operator asks "
+            "for (leave it out for the house style); characters lists existing "
+            "character ids that must be in it."
+        ),
+        parameters=_params(
+            {
+                "topic": _STR, "brief": _STR, "style": _STR, "story_format": _STR,
+                "characters": _STR, "narrator": _STR, "target_seconds": _INT, "niche_slug": _STR,
+            },
+            ["topic"],
+        ),
+        tier="read",
+        handler=_draft_cast,
+    ),
+    ChatToolSpec(
+        name="draft_screenplay",
+        description=(
+            "Draft a short animated screenplay for existing characters (kept cast "
+            "drafts count). Returns at once; a draft card fills in about a minute "
+            "later with the script. cast is a comma-separated list of character "
+            "ids; story_format is story, explainer, dialogue or sketch."
+        ),
+        parameters=_params(
+            {
+                "topic": _STR, "cast": _STR, "brief": _STR, "story_format": _STR,
+                "narrator": _STR, "target_seconds": _INT, "tone": _STR,
+            },
+            ["topic", "cast"],
+        ),
+        tier="read",
+        handler=_draft_screenplay,
+    ),
+    ChatToolSpec(
+        name="revise_draft",
+        description=(
+            "Make the next version of a cast or screenplay draft from the "
+            "operator's note (e.g. 'make the wolf scarier', 'cut scene 2', "
+            "'give Ruby a green cloak'). Untouched parts carry over; a cast "
+            "revision redraws only the characters whose looks changed. Returns "
+            "at once; the new card fills in when ready."
+        ),
+        parameters=_params({"draft_id": _STR, "instruction": _STR}, ["draft_id", "instruction"]),
+        tier="read",
+        handler=_revise_draft,
+    ),
+    ChatToolSpec(
+        name="show_draft",
+        description=(
+            "Read a cast or screenplay draft as text (status, characters or the "
+            "script) by its 8-character id, to discuss or revise it."
+        ),
+        parameters=_params({"draft_id": _STR}, ["draft_id"]),
+        tier="read",
+        handler=_show_draft,
     ),
     ChatToolSpec(
         name="set_setting",

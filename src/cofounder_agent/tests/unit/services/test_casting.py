@@ -175,7 +175,11 @@ def studio(monkeypatch, tmp_path):
     monkeypatch.setattr(casting, "_fetch", fake_fetch)
     monkeypatch.setattr(ps, "upload_portrait", fake_upload)
     monkeypatch.setattr(slr, "_clear_image_gen_for_hero", AsyncMock())
-    return SimpleNamespace(drawn=drawn)
+    from poindexter.services.gpu_scheduler import gpu
+
+    freed = AsyncMock()
+    monkeypatch.setattr(gpu, "_unload_comfyui", freed)
+    return SimpleNamespace(drawn=drawn, freed=freed)
 
 
 class TestCastCharacters:
@@ -199,6 +203,8 @@ class TestCastCharacters:
         # Dex's face anchors the first new portrait; each new face anchors the next.
         assert [Path(a).name for a in studio.drawn[0]["anchors"]] == ["anchor_dex.png"]
         assert [Path(a).name for a in studio.drawn[1]["anchors"]] == ["anchor_dex.png", "wren.png"]
+        # The image-edit model is released before the voices are made.
+        studio.freed.assert_awaited_once_with(hard=False)
         assert chat.await_args.kwargs["phase"] == "story_cast_characters"
 
     @pytest.mark.asyncio
@@ -479,3 +485,108 @@ class TestAtom:
                               "screenplay_visual_style": "ink"})
         assert out["screenplay_cast"] == ["wren"]
         assert seen["request"].style_hint == "ink" and seen["task_id"] == "t1"
+
+
+# --- Drafts (chat drafting) ------------------------------------------------------
+
+
+@pytest.fixture
+def drafting(monkeypatch, studio):
+    """Stub storage and voice previews on top of the GPU stubs."""
+    uploads: list[str] = []
+    previews: list[str] = []
+
+    async def fake_file(local, key, mime, *, site_config):
+        uploads.append(key)
+        return f"https://cdn.example/{key}"
+
+    async def fake_preview(ch, *, key, site_config):
+        previews.append(ch["slug"])
+        return f"https://cdn.example/{key}.mp3"
+
+    monkeypatch.setattr(casting, "_upload_file", fake_file)
+    monkeypatch.setattr(casting, "_voice_preview", fake_preview)
+    monkeypatch.setattr(casting, "_ensure_voice_headroom", AsyncMock())
+    return SimpleNamespace(uploads=uploads, previews=previews, drawn=studio.drawn)
+
+
+class TestDrafts:
+    @pytest.mark.asyncio
+    async def test_a_preview_draws_and_voices_but_saves_no_persona(self, chat, drafting):
+        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, _new("wren")))]
+        design = await casting.design_cast(casting.CastingRequest(topic="a fable"), site_config=_sc(), pool=None)
+        settings = FakeSettings()
+        payload = await casting.preview_cast(design, site_config=_sc(), pool=None, upload_prefix="drafts/d1")
+        assert settings.rows == {}  # nothing saved
+        assert drafting.uploads == ["drafts/d1/wren.png"] and drafting.previews == ["wren"]
+        dex, wren = payload["characters"]
+        assert dex["reused"] and dex["portrait_url"] == "https://cdn.example/personas/dex.png"
+        assert not wren["reused"] and wren["portrait_url"] == "https://cdn.example/drafts/d1/wren.png"
+        assert wren["voice_url"] == "https://cdn.example/drafts/d1/wren.mp3"
+        assert payload["request"]["topic"] == "a fable" and payload["narrator"]["slug"] == "none"
+
+    @pytest.mark.asyncio
+    async def test_a_revision_redraws_only_what_changed(self, chat, drafting):
+        chat.side_effect = [json.dumps(_reply(_new("wren"), _new("tom", voice="bm_george")))]
+        design = await casting.design_cast(casting.CastingRequest(topic="t"), site_config=_sc(), pool=None)
+        v1 = await casting.preview_cast(design, site_config=_sc(), pool=None, upload_prefix="drafts/d1")
+        # The note changes Tom's looks and Wren's line; ids stay.
+        chat.side_effect = [json.dumps(_reply(
+            _new("wren", sample_line="Hello, wolf."),
+            _new("tom", voice="bm_george", appearance="an old man in a green coat"),
+        ))]
+        design2 = await casting.revise_cast_design(v1, "green coat for Tom", site_config=_sc(), pool=None)
+        assert [c["slug"] for c in design2.new] == ["wren", "tom"]
+        drafting.uploads.clear()
+        drafting.previews.clear()
+        v2 = await casting.preview_cast(design2, site_config=_sc(), pool=None, upload_prefix="drafts/d2", previous=v1)
+        assert drafting.uploads == ["drafts/d2/tom.png"]  # Wren's face kept
+        assert drafting.previews == ["wren"]  # Tom's voice kept
+        wren, tom = v2["characters"]
+        assert wren["portrait_url"] == v1["characters"][0]["portrait_url"]
+        assert tom["voice_url"] == v1["characters"][1]["voice_url"]
+        assert "green coat for Tom" in chat.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_keep_saves_the_drafted_faces_without_redrawing(self, chat, drafting):
+        chat.side_effect = [json.dumps(_reply(_new("wren")))]
+        design = await casting.design_cast(casting.CastingRequest(topic="t"), site_config=_sc(), pool=None)
+        payload = await casting.preview_cast(design, site_config=_sc(), pool=None, upload_prefix="drafts/d1")
+        drawn_before = len(drafting.drawn)
+        settings = FakeSettings()
+        out = await casting.keep_cast(payload, site_config=_sc(), pool=None, settings=settings)
+        assert len(drafting.drawn) == drawn_before
+        assert settings.rows["persona.wren.portrait_url"] == "https://cdn.example/drafts/d1/wren.png"
+        assert settings.rows["persona.wren.voice_provider"] == "chatterbox"
+        assert out["screenplay_cast"] == ["wren"]
+
+    @pytest.mark.asyncio
+    async def test_keep_refuses_a_slug_saved_since(self, chat, drafting):
+        chat.side_effect = [json.dumps(_reply(_new("wren")))]
+        design = await casting.design_cast(casting.CastingRequest(topic="t"), site_config=_sc(), pool=None)
+        payload = await casting.preview_cast(design, site_config=_sc(), pool=None, upload_prefix="drafts/d1")
+        later = _sc(**{"persona.wren.display_name": "Wren", "persona.wren.enabled": "true"})
+        with pytest.raises(casting.CastingError, match="saved since"):
+            await casting.keep_cast(payload, site_config=later, pool=None, settings=FakeSettings())
+
+
+class TestVoiceHeadroom:
+    @pytest.mark.asyncio
+    async def test_a_full_card_reclaims_comfyui_hard(self, monkeypatch):
+        from poindexter.services.gpu_scheduler import gpu
+
+        unload = AsyncMock()
+        monkeypatch.setattr(gpu, "_render_free_vram_gb", AsyncMock(return_value=0.05))
+        monkeypatch.setattr(gpu, "_unload_comfyui", unload)
+        await casting._ensure_voice_headroom(_sc())
+        unload.assert_awaited_once_with(hard=True)
+
+    @pytest.mark.asyncio
+    async def test_room_enough_touches_nothing(self, monkeypatch):
+        from poindexter.services.gpu_scheduler import gpu
+
+        unload = AsyncMock()
+        monkeypatch.setattr(gpu, "_render_free_vram_gb", AsyncMock(return_value=12.0))
+        monkeypatch.setattr(gpu, "_unload_comfyui", unload)
+        await casting._ensure_voice_headroom(_sc())
+        unload.assert_not_awaited()

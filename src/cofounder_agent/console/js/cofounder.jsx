@@ -308,6 +308,211 @@ function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
   );
 }
 
+// Chat drafting: a cast or screenplay draft (creative_drafts). The card part
+// carries only the id; the draft itself is fetched, and polled while it is
+// still being made (drawing a cast outlasts a chat turn).
+function CfDraftCard({ card, pushToast }) {
+  const [draft, setDraft] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const load = React.useCallback(async () => {
+    try {
+      setDraft(await PX.api.chatDraft(card.draft_id));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  }, [card.draft_id]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const working = !draft || draft.status === 'working';
+  React.useEffect(() => {
+    if (!working) return undefined;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [working, load]);
+  const act = async (fn, label) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setDraft(await fn(card.draft_id));
+    } catch (e) {
+      pushToast && pushToast(`${label} failed — ${e.message}`, 'red', '✕');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const kind = card.draft_kind === 'cast' ? 'Cast' : 'Script';
+  const status = draft ? draft.status : 'working';
+  const payload = (draft && draft.payload) || {};
+  return (
+    <div className={`cf-plan cf-draft cf-draft--${status}`}>
+      <div className="cf-plan__head">
+        <Icon name={card.draft_kind === 'cast' ? 'image' : 'doc'} size={13} />
+        <span className="cf-plan__title">
+          {kind} draft · v{card.version}
+          {payload.title ? ` — ${payload.title}` : ''}
+        </span>
+        <span className="cf-plan__slug tnum">
+          {String(card.draft_id).slice(0, 8)} · {status}
+        </span>
+      </div>
+      {error && <div className="cf-draft__note">Could not load: {error}</div>}
+      {working && (
+        <div className="cf-draft__note">
+          {(draft && draft.note) ||
+            (card.draft_kind === 'cast'
+              ? 'Designing the characters, drawing their portraits and voicing them…'
+              : 'Writing the script…')}
+        </div>
+      )}
+      {status === 'failed' && (
+        <div className="cf-draft__note cf-draft__note--bad">
+          {draft.error || 'The draft failed.'}
+        </div>
+      )}
+      {!working && status !== 'failed' && card.draft_kind === 'cast' && (
+        <CfDraftCast payload={payload} />
+      )}
+      {!working && status !== 'failed' && card.draft_kind === 'screenplay' && (
+        <CfDraftScript payload={payload} />
+      )}
+      {status === 'ready' && (
+        <div className="cf-plan__actions">
+          <button
+            className="mbtn mbtn--primary"
+            disabled={busy}
+            onClick={() => act(PX.api.chatDraftKeep, 'Keep')}
+            title={
+              card.draft_kind === 'cast'
+                ? 'Save these characters as personas'
+                : 'Keep this script'
+            }
+          >
+            <Icon name="check" size={12} />
+            {busy ? 'SAVING…' : 'Keep'}
+          </button>
+          <button
+            className="mbtn"
+            disabled={busy}
+            onClick={() => act(PX.api.chatDraftDiscard, 'Discard')}
+          >
+            Discard
+          </button>
+          <span className="cf-draft__hint">or type a note to revise it</span>
+        </div>
+      )}
+      {(status === 'kept' || status === 'discarded') && (
+        <div className="cf-draft__note">
+          {status === 'kept'
+            ? card.draft_kind === 'cast'
+              ? 'Kept: these characters are saved and can be cast.'
+              : 'Kept.'
+            : 'Discarded.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CfDraftCast({ payload }) {
+  const people = payload.characters || [];
+  const narrator = payload.narrator || {};
+  return (
+    <div className="cf-draft__cast">
+      {payload.style && (
+        <div className="cf-draft__style">Style: {payload.style}</div>
+      )}
+      <div className="cf-draft__grid">
+        {people.map((ch) => (
+          <div key={ch.slug} className="cf-draft__person">
+            {ch.portrait_url ? (
+              <img
+                className="cf-draft__portrait"
+                src={ch.portrait_url}
+                alt={`${ch.name} portrait`}
+                loading="lazy"
+              />
+            ) : (
+              <div className="cf-draft__portrait cf-draft__portrait--none">
+                no portrait
+              </div>
+            )}
+            <div className="cf-draft__name">
+              {ch.name}
+              {ch.reused ? (
+                <span className="cf-draft__tag">existing</span>
+              ) : null}
+            </div>
+            {ch.role && <div className="cf-draft__role">{ch.role}</div>}
+            {ch.appearance && (
+              <div className="cf-draft__looks">{ch.appearance}</div>
+            )}
+            {ch.voice_url && (
+              <audio
+                className="cf-draft__voice"
+                controls
+                preload="none"
+                src={ch.voice_url}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      {narrator.slug && narrator.slug !== 'none' && (
+        <div className="cf-draft__narrator">
+          Narrator: {narrator.name || narrator.slug}
+          {narrator.voice_url && (
+            <audio
+              className="cf-draft__voice"
+              controls
+              preload="none"
+              src={narrator.voice_url}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CfDraftScript({ payload }) {
+  const [open, setOpen] = React.useState(false);
+  const scenes = payload.scenes || [];
+  return (
+    <div className="cf-draft__script">
+      {payload.logline && (
+        <div className="cf-draft__style">{payload.logline}</div>
+      )}
+      {(open ? scenes : scenes.slice(0, 1)).map((scene) => (
+        <div key={scene.scene_id} className="cf-draft__scene">
+          <div className="cf-draft__setting">{scene.setting}</div>
+          {(scene.beats || []).map((b, i) =>
+            b.kind === 'line' ? (
+              <div key={i} className="cf-draft__line">
+                <b>{b.speaker}</b> {b.text}
+              </div>
+            ) : (
+              <div key={i} className="cf-draft__action">
+                {b.text}
+              </div>
+            )
+          )}
+        </div>
+      ))}
+      {scenes.length > 1 && (
+        <button
+          className="mbtn mbtn--ghost cf-plan__detail"
+          onClick={() => setOpen(!open)}
+        >
+          {open ? 'show less' : `show all ${scenes.length} scenes`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
   if (card.kind === 'plan')
     return (
@@ -319,6 +524,8 @@ function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
         pushToast={pushToast}
       />
     );
+  if (card.kind === 'draft')
+    return <CfDraftCard card={card} pushToast={pushToast} />;
   if (card.kind === 'approval')
     return (
       <CfApprovalCard

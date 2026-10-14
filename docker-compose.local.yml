@@ -719,6 +719,11 @@ services:
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
       - ${USERPROFILE:-${HOME}}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+      # Chat drafting runs casting in this process (services/creative_drafts.py):
+      # keeping a cast draft writes each character's Chatterbox clone reference
+      # here, the same cast/ subfolder prefect-worker writes. Never tts-voices
+      # itself: hand-made references stay out of reach of LLM-driven code.
+      - ${USERPROFILE:-${HOME}}/.poindexter/tts-voices/cast:/home/appuser/.poindexter/cast-voices
       # DbBackupJob writes pg_dumps here. Without this mount the script's
       # mkdir at ${HOME}/.poindexter/backups fails Permission denied — the
       # /home/appuser/.poindexter dir created implicitly by Docker is

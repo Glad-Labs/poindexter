@@ -337,3 +337,56 @@ async def _load_conversation(
             status_code=404, detail=f"Unknown conversation: {conversation_id!r}",
         )
     return conversation
+
+
+# --- Creative drafts (chat drafting, phase 1) ---------------------------------
+
+
+async def _draft_action(
+    action: str, draft_id: str, db_service: DatabaseService, site_config: SiteConfig,
+) -> dict[str, Any]:
+    _require_enabled(site_config)
+    from poindexter.services import creative_drafts as cd
+
+    pool = db_service.pool
+    try:
+        if action == "get":
+            draft = await cd.get_draft(pool, draft_id, site_config=site_config)
+            if draft is None:
+                raise HTTPException(status_code=404, detail=f"Unknown draft: {draft_id!r}")
+            return draft
+        if action == "keep":
+            return await cd.keep_draft(pool, draft_id, site_config=site_config)
+        return await cd.discard_draft(pool, draft_id, site_config=site_config)
+    except cd.DraftError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/drafts/{draft_id}")
+async def get_draft_route(
+    draft_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """A cast or screenplay draft; the draft card polls this while it is working."""
+    return await _draft_action("get", draft_id, db_service, site_config)
+
+
+@router.post("/drafts/{draft_id}/keep")
+async def keep_draft_route(
+    draft_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Keep a ready draft: a cast's characters become personas."""
+    return await _draft_action("keep", draft_id, db_service, site_config)
+
+
+@router.post("/drafts/{draft_id}/discard")
+async def discard_draft_route(
+    draft_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """Discard a draft; nothing it drew or voiced is saved as a persona."""
+    return await _draft_action("discard", draft_id, db_service, site_config)

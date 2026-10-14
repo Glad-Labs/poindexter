@@ -36,12 +36,14 @@ director read, so no node config has to repeat them.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import logging
 import os
 import re
 import tempfile
 import zlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -322,36 +324,37 @@ async def draw_portrait(
     return (local if drawn else None), prompt
 
 
-async def cast_characters(
-    request: CastingRequest,
-    *,
-    site_config: Any,
-    pool: Any,
-    task_id: str | None = None,
-    settings: Any = None,
-) -> dict[str, Any]:
-    """Decide, draw and voice the cast. Raises CastingError on a hard failure."""
-    from poindexter.services.persona_service import (
-        Persona,
-        list_personas,
-        upload_portrait,
-        upsert_persona,
-    )
-    from poindexter.services.screenplay import _ask_validated, _resolve_model
+@dataclass
+class CastDesign:
+    """A decided cast, before anything is drawn, voiced or saved.
 
-    if settings is None:
-        from poindexter.services.settings_service import SettingsService
+    ``roster`` holds the characters this piece may reuse, ``everyone`` every
+    enabled persona (new ids never take one of their slugs). ``new`` holds
+    each new character's design with its assigned ``slug`` and ``energy``.
+    """
 
-        settings = SettingsService(pool)
+    request: CastingRequest
+    style: str
+    asked: bool
+    asked_style: str
+    roster: dict[str, Any]
+    everyone: dict[str, Any]
+    cast: list[str]
+    new: list[dict[str, Any]]
+    narrator_slug: str
+    narrator_new: dict[str, Any] | None = None
+
+
+def _reusable(site_config: Any, request: CastingRequest) -> tuple[dict[str, Any], dict[str, Any], str, bool]:
+    """``(roster, everyone, asked_style, asked)`` for this request."""
+    from poindexter.services.media_subject_policy import story_visual_style
+    from poindexter.services.persona_service import list_personas
+
     personas = [p for p in list_personas(site_config) if p.enabled]
     everyone = {p.slug: p for p in personas}
-    catalog = voice_catalog(site_config)
-    max_new = int(float(_setting(site_config, "story_cast_max_new")))
     missing = [s for s in request.required if s not in everyone]
     if missing:
         raise CastingError(f"required cast {missing} are not enabled personas")
-    from poindexter.services.media_subject_policy import story_visual_style
-
     # A look the request asked for, or the niche's house style. Never a free
     # pick: an unasked-for piece is drawn in the company's style.
     asked_style, asked = story_visual_style(site_config, request.niche_slug, request.style_hint)
@@ -361,39 +364,17 @@ async def cast_characters(
     # three came out in three different styles, "they should really be new
     # characters". Everyone else is designed fresh, and the new faces are
     # drawn as one set, each anchored on the ones before it.
-    personas = [
-        p for p in personas
+    roster = {
+        p.slug: p for p in personas
         if not p.has_portrait or _drawn_in(p, asked_style) or p.slug in request.required
-    ]
-    roster = {p.slug: p for p in personas}
+    }
+    return roster, everyone, asked_style, asked
 
-    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
-        return check_cast(
-            reply, roster=roster, catalog=catalog, required=request.required,
-            max_new=max_new, style_hint=asked_style,
-        ), []
 
-    try:
-        reply, _ = await _ask_validated(
-            "story.casting",
-            {
-                "site_name": str(site_config.get("site_name", "") or "the studio"),
-                "topic": request.topic,
-                "brief": request.brief or "(none)",
-                "format_name": request.format,
-                "target_seconds": int(round(request.target_seconds)),
-                "roster_block": roster_text(personas),
-                "required": ", ".join(request.required) or "(nobody in particular)",
-                "style_hint": asked_style,
-                "voice_catalog": "\n".join(f"- {k}: {v}" for k, v in catalog.items()),
-                "max_new": max_new,
-            },
-            _check, model=_resolve_model(site_config), site_config=site_config, pool=pool,
-            task_id=task_id, what="cast", phase="story_cast_characters",
-        )
-    except Exception as exc:  # noqa: BLE001 — the library's own error names the FIX lines
-        raise CastingError(str(exc)) from exc
-
+def _design_from_reply(
+    reply: dict[str, Any], request: CastingRequest, *, roster: dict[str, Any],
+    everyone: dict[str, Any], asked_style: str, asked: bool,
+) -> CastDesign:
     # A requested look comes back written out in words a painter can follow,
     # and that phrase wins. The house style is used exactly as configured.
     style = (str(reply.get("style") or "").strip() or asked_style) if asked else asked_style
@@ -410,17 +391,6 @@ async def cast_characters(
         taken.add(slug)
         new.append({**ch, "slug": slug, "energy": _energy(ch.get("energy"))})
         cast.append(slug)
-
-    for ch in new:
-        await upsert_persona(settings, ch["slug"], {
-            "display_name": str(ch.get("name") or ch["slug"]).strip(),
-            "description": str(ch.get("role") or "").strip(),
-            "appearance": str(ch.get("appearance") or "").strip(),
-            "personality": str(ch.get("personality") or "").strip(),
-            "style_policy": "stylized", "enabled": "true",
-            "voice_provider": "kokoro", "voice_id": str(ch.get("voice") or "").strip(),
-        })
-
     narrator_slug = request.narrator
     narrator_new: dict[str, Any] | None = None
     got = reply.get("narrator")
@@ -433,30 +403,104 @@ async def cast_characters(
             narrator_slug = _unique_slug(_new_id({"name": raw_narrator.get("name") or "storyteller"}), taken)
             taken.add(narrator_slug)
             narrator_new = {**raw_narrator, "slug": narrator_slug, "energy": _energy(raw_narrator.get("energy"))}
-            await upsert_persona(settings, narrator_slug, {
-                "display_name": str(raw_narrator.get("name") or "Narrator").strip(),
-                "description": "the narrator, heard and never seen",
-                "style_policy": "stylized", "enabled": "true",
-                "voice_provider": "kokoro", "voice_id": str(raw_narrator.get("voice") or "").strip(),
-            })
     elif not narrator_slug:
         narrator_slug = NO_NARRATOR
+    return CastDesign(
+        request=request, style=style, asked=asked, asked_style=asked_style, roster=roster,
+        everyone=everyone, cast=cast, new=new, narrator_slug=narrator_slug, narrator_new=narrator_new,
+    )
 
-    # Portraits. Reused faces already drawn in this look anchor the new ones,
-    # so the cast is one set.
+
+async def _ask_cast(
+    key: str, kwargs: dict[str, Any], *, roster: dict[str, Any], request: CastingRequest,
+    asked_style: str, site_config: Any, pool: Any, task_id: str | None,
+) -> dict[str, Any]:
+    from poindexter.services.screenplay import _ask_validated, _resolve_model
+
+    catalog = voice_catalog(site_config)
+    max_new = int(float(_setting(site_config, "story_cast_max_new")))
+
+    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
+        return check_cast(
+            reply, roster=roster, catalog=catalog, required=request.required,
+            max_new=max_new, style_hint=asked_style,
+        ), []
+
+    try:
+        reply, _ = await _ask_validated(
+            key,
+            {
+                **kwargs,
+                "site_name": str(site_config.get("site_name", "") or "the studio"),
+                "roster_block": roster_text(list(roster.values())),
+                "style_hint": asked_style,
+                "voice_catalog": "\n".join(f"- {k}: {v}" for k, v in catalog.items()),
+                "max_new": max_new,
+            },
+            _check, model=_resolve_model(site_config), site_config=site_config, pool=pool,
+            task_id=task_id, what="cast", phase="story_cast_characters",
+        )
+    except Exception as exc:  # noqa: BLE001 — the library's own error names the FIX lines
+        raise CastingError(str(exc)) from exc
+    return reply
+
+
+async def design_cast(
+    request: CastingRequest, *, site_config: Any, pool: Any, task_id: str | None = None,
+) -> CastDesign:
+    """Decide who is in the piece and how it looks. Saves and draws nothing."""
+    roster, everyone, asked_style, asked = _reusable(site_config, request)
+    reply = await _ask_cast(
+        "story.casting",
+        {
+            "topic": request.topic,
+            "brief": request.brief or "(none)",
+            "format_name": request.format,
+            "target_seconds": int(round(request.target_seconds)),
+            "required": ", ".join(request.required) or "(nobody in particular)",
+        },
+        roster=roster, request=request, asked_style=asked_style,
+        site_config=site_config, pool=pool, task_id=task_id,
+    )
+    return _design_from_reply(
+        reply, request, roster=roster, everyone=everyone, asked_style=asked_style, asked=asked,
+    )
+
+
+async def draw_cast(
+    design: CastDesign,
+    *,
+    site_config: Any,
+    pool: Any,
+    upload: Any,
+    keep: dict[str, dict[str, Any]] | None = None,
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """Draw the new characters' portraits, and any named character in another look.
+
+    ``upload(slug, local_path, seed) -> url`` stores each picture.
+    ``keep`` maps a slug to ``{"portrait_url", "portrait_prompt"}`` already
+    drawn for an unchanged character (a revised draft): it is reused and
+    anchors the others instead of being redrawn. Returns ``(drawn, restyled)``:
+    ``drawn[slug] = {"portrait_url", "portrait_prompt"}`` for new characters,
+    ``restyled[slug] = url`` for named characters redrawn for this piece.
+    """
+    from poindexter.services import reference_frames as rf
+    from poindexter.services.persona_service import PersonaError
+
+    keep = keep or {}
+    style = design.style
     work = Path(tempfile.mkdtemp(prefix="casting-"))
+    # Reused faces already drawn in this look anchor the new ones, so the
+    # cast is one set.
     anchors: list[str] = []
-    for slug in cast:
-        persona = roster.get(slug)
+    for slug in design.cast:
+        persona = design.roster.get(slug)
         if persona is not None and persona.has_portrait and (
-            _drawn_in(persona, asked_style) or _drawn_in(persona, style)
+            _drawn_in(persona, design.asked_style) or _drawn_in(persona, style)
         ):
             got = await _fetch(persona.portrait_url, work / f"anchor_{slug}.png")
             if got:
                 anchors.append(got)
-    from poindexter.services import reference_frames as rf
-    from poindexter.services.persona_service import PersonaError
-
     use_refs = rf.enabled(site_config)
     cleared = False
 
@@ -476,13 +520,19 @@ async def cast_characters(
     # redrawn in this one, for this piece only (the shot list carries it as
     # cast_portraits): every frame is drawn from the portraits. The persona
     # keeps its own portrait. Unnamed characters in another look are never
-    # offered for reuse in the first place (see ``personas`` above).
+    # offered for reuse in the first place (see ``_reusable``).
     restyled: dict[str, str] = {}
-    for slug in cast if use_refs else []:
-        persona = roster.get(slug)
+    for slug in design.cast if use_refs else []:
+        persona = design.roster.get(slug)
         if persona is None or not persona.has_portrait:
             continue
-        if _drawn_in(persona, asked_style) or _drawn_in(persona, style):
+        if _drawn_in(persona, design.asked_style) or _drawn_in(persona, style):
+            continue
+        if slug in keep and keep[slug].get("restyled_url"):
+            restyled[slug] = keep[slug]["restyled_url"]
+            got = await _fetch(restyled[slug], work / f"kept_{slug}.png")
+            if got:
+                anchors.append(got)
             continue
         own = await _fetch(persona.portrait_url, work / f"own_{slug}.png")
         if not own:
@@ -496,15 +546,21 @@ async def cast_characters(
         try:
             if not local:
                 raise PersonaError("no restyled portrait could be drawn")
-            seeded = Persona(slug=slug, portrait_seed=zlib.crc32(style.encode("utf-8")))
-            restyled[slug] = await upload_portrait(seeded, local, site_config=site_config)
+            restyled[slug] = await upload(slug, local, zlib.crc32(style.encode("utf-8")))
         except PersonaError as exc:
             logger.warning("[casting] %s keeps its own portrait (%s)", slug, exc)
             continue
         anchors.append(local)
 
-    drawn: dict[str, str] = {}
-    for ch in new:
+    drawn: dict[str, dict[str, Any]] = {}
+    for ch in design.new:
+        kept = keep.get(ch["slug"])
+        if kept and kept.get("portrait_url"):
+            drawn[ch["slug"]] = {"portrait_url": kept["portrait_url"], "portrait_prompt": kept.get("portrait_prompt", "")}
+            got = await _fetch(kept["portrait_url"], work / f"kept_{ch['slug']}.png")
+            if got:
+                anchors.append(got)
+            continue
         refs = anchors[-rf.MAX_REFERENCES:] if use_refs else []
         if refs:
             await _free_card()
@@ -516,54 +572,366 @@ async def cast_characters(
         try:
             if not local:
                 raise PersonaError("no portrait could be drawn")
-            url = await upload_portrait(Persona(slug=ch["slug"]), local, site_config=site_config)
+            url = await upload(ch["slug"], local, None)
         except PersonaError as exc:
             logger.warning("[casting] %s has no portrait (%s); it can speak only over stills", ch["slug"], exc)
             continue
-        await upsert_persona(settings, ch["slug"], {"portrait_url": url, "portrait_prompt": prompt})
-        drawn[ch["slug"]] = url
+        drawn[ch["slug"]] = {"portrait_url": url, "portrait_prompt": prompt}
         anchors.append(local)
+    if cleared:
+        # The image-edit model stays resident in ComfyUI after the last draw,
+        # and the voices come next: a live draft's Chatterbox previews ran out
+        # of card with it loaded (2026-10-14). Soft /free only, never a restart.
+        try:
+            from poindexter.services.gpu_scheduler import gpu
 
+            await gpu._unload_comfyui(hard=False)
+        except Exception as exc:  # noqa: BLE001  # silent-ok: best effort, logged; voices are attempted regardless
+            logger.warning("[casting] could not free ComfyUI after drawing: %s", exc)
+    return drawn, restyled
+
+
+def _persona_fields(ch: dict[str, Any], *, narrator: bool = False) -> dict[str, str]:
+    if narrator:
+        return {
+            "display_name": str(ch.get("name") or "Narrator").strip(),
+            "description": "the narrator, heard and never seen",
+            "style_policy": "stylized", "enabled": "true",
+            "voice_provider": "kokoro", "voice_id": str(ch.get("voice") or "").strip(),
+        }
+    return {
+        "display_name": str(ch.get("name") or ch["slug"]).strip(),
+        "description": str(ch.get("role") or "").strip(),
+        "appearance": str(ch.get("appearance") or "").strip(),
+        "personality": str(ch.get("personality") or "").strip(),
+        "style_policy": "stylized", "enabled": "true",
+        "voice_provider": "kokoro", "voice_id": str(ch.get("voice") or "").strip(),
+    }
+
+
+async def _save_cast(
+    design: CastDesign, drawn: dict[str, dict[str, Any]], *, site_config: Any, pool: Any, settings: Any,
+) -> dict[str, str]:
+    """Write the new characters (and a new narrator) as personas, with voices."""
+    from poindexter.services.persona_service import upsert_persona
+
+    for ch in design.new:
+        await upsert_persona(settings, ch["slug"], _persona_fields(ch))
+        if ch["slug"] in drawn:
+            await upsert_persona(settings, ch["slug"], drawn[ch["slug"]])
+    if design.narrator_new:
+        await upsert_persona(settings, design.narrator_new["slug"], _persona_fields(design.narrator_new, narrator=True))
     voices: dict[str, str] = {}
-    for ch in [*new, *([narrator_new] if narrator_new else [])]:
+    for ch in [*design.new, *([design.narrator_new] if design.narrator_new else [])]:
         fields = await build_voice(
             ch["slug"], str(ch.get("voice") or ""), ch["energy"],
             str(ch.get("sample_line") or ""), site_config=site_config,
         )
         await upsert_persona(settings, ch["slug"], fields)
         voices[ch["slug"]] = fields.get("voice_provider", "kokoro")
-
     reload = getattr(site_config, "reload", None)
     if reload is not None and pool is not None:
         await reload(pool)
+    return voices
+
+
+def _outputs(design: CastDesign, drawn: dict[str, dict[str, Any]], restyled: dict[str, str],
+             voices: dict[str, str]) -> dict[str, Any]:
     sheet = {
-        "style": style,
-        "cast": cast,
-        "reused": [s for s in cast if s in roster],
-        "created": [ch["slug"] for ch in new],
-        "portraits": drawn,
+        "style": design.style,
+        "cast": design.cast,
+        "reused": [s for s in design.cast if s in design.roster],
+        "created": [ch["slug"] for ch in design.new],
+        "portraits": {slug: d["portrait_url"] for slug, d in drawn.items()},
         "restyled": restyled,
         "voices": voices,
-        "narrator": narrator_slug,
+        "narrator": design.narrator_slug,
     }
     logger.info("[casting] %s", sheet)
     return {
-        "screenplay_cast": cast,
-        "screenplay_visual_style": style,
-        "screenplay_narrator": narrator_slug,
+        "screenplay_cast": design.cast,
+        "screenplay_visual_style": design.style,
+        "screenplay_narrator": design.narrator_slug,
         "cast_sheet": sheet,
         "cast_portraits": restyled,
     }
 
 
+async def cast_characters(
+    request: CastingRequest,
+    *,
+    site_config: Any,
+    pool: Any,
+    task_id: str | None = None,
+    settings: Any = None,
+) -> dict[str, Any]:
+    """Decide, draw and voice the cast, and save it. Raises CastingError on a hard failure."""
+    from poindexter.services.persona_service import Persona, upload_portrait
+
+    if settings is None:
+        from poindexter.services.settings_service import SettingsService
+
+        settings = SettingsService(pool)
+    design = await design_cast(request, site_config=site_config, pool=pool, task_id=task_id)
+
+    async def _upload(slug: str, local: str, seed: int | None) -> str:
+        return await upload_portrait(Persona(slug=slug, portrait_seed=seed), local, site_config=site_config)
+
+    drawn, restyled = await draw_cast(design, site_config=site_config, pool=pool, upload=_upload)
+    voices = await _save_cast(design, drawn, site_config=site_config, pool=pool, settings=settings)
+    return _outputs(design, drawn, restyled, voices)
+
+
+# --- Drafts (chat drafting, services/creative_drafts.py) ----------------------
+
+
+async def _upload_file(local: str, key: str, mime: str, *, site_config: Any) -> str:
+    from poindexter.services.r2_upload_service import R2UploadService
+
+    url = await R2UploadService(site_config=site_config).upload_to_r2(local, key, mime)
+    if not url:
+        raise CastingError(f"upload failed for {key} (check the storage_* settings)")
+    return url
+
+
+async def _ensure_voice_headroom(site_config: Any) -> None:
+    """Make room on the render card for the Chatterbox previews.
+
+    ComfyUI keeps the image-edit model (~27 GB) resident after a cast or a
+    render, and a soft ``/free`` often releases nothing, so a preview right
+    after left Chatterbox ~50 MB short (2026-10-14). Below
+    ``story_cast_preview_min_free_gb``, ask for the hard reclaim, which
+    restarts ComfyUI only when /free released nothing and declines while a
+    render is running.
+    """
+    try:
+        from poindexter.services.gpu_scheduler import gpu
+
+        floor = float(_setting(site_config, "story_cast_preview_min_free_gb"))
+        free = await gpu._render_free_vram_gb()
+        if free is None or free >= floor:
+            return
+        logger.info("[casting] %.1f GB free on the render card (< %.1f): reclaiming ComfyUI", free, floor)
+        await gpu._unload_comfyui(hard=True)
+    except Exception as exc:  # noqa: BLE001  # silent-ok: best effort, logged; previews are attempted regardless
+        logger.warning("[casting] could not make room for voice previews: %s", exc)
+
+
+async def _voice_preview(
+    ch: dict[str, Any], *, key: str, site_config: Any,
+) -> str | None:
+    """The character's sample line in the voice keeping would give it, uploaded."""
+    from poindexter.services.persona_service import Persona
+    from poindexter.services.podcast_service import PodcastService
+
+    line = str(ch.get("sample_line") or "").strip()
+    if not line:
+        return None
+    ref_name = f"draft-{key.replace('/', '-')}"
+    fields = await build_voice(
+        ref_name, str(ch.get("voice") or ""), ch["energy"], line, site_config=site_config,
+    )
+    speaker = Persona(
+        slug=ch["slug"], voice_provider=fields.get("voice_provider", "kokoro"),
+        voice_id=fields.get("voice_id", ""), voice_ref_audio_url=fields.get("voice_ref_audio_url", ""),
+        voice_exaggeration=float(fields["voice_exaggeration"]) if fields.get("voice_exaggeration") else None,
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="cast-preview-") as tmp:
+            path = await PodcastService(site_config=site_config).synthesize_line(
+                line, speaker, os.path.join(tmp, "preview.mp3"),
+            )
+            return await _upload_file(path, f"{key}.mp3", "audio/mpeg", site_config=site_config)
+    except (OSError, RuntimeError, CastingError) as exc:
+        logger.warning("[casting] no voice preview for %s: %s", ch["slug"], exc)
+        return None
+    finally:
+        # The clone reference was only for this preview; keeping makes its own.
+        with contextlib.suppress(OSError):
+            os.remove(Path(_setting(site_config, "story_cast_voice_dir")) / f"{ref_name}.wav")
+
+
+def _draft_character(ch: dict[str, Any]) -> dict[str, Any]:
+    return {k: ch.get(k) for k in (
+        "slug", "name", "role", "appearance", "personality", "voice", "energy", "sample_line",
+    )}
+
+
+async def preview_cast(
+    design: CastDesign,
+    *,
+    site_config: Any,
+    pool: Any,
+    upload_prefix: str,
+    previous: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Draw and voice a designed cast into ``upload_prefix`` storage, saving no persona.
+
+    ``previous`` is the draft this one revises: a character whose looks and
+    style did not change keeps its portrait, one whose voice, energy and
+    line did not change keeps its voice preview. Returns the draft payload.
+    """
+    prev: dict[str, Any] = previous or {}
+    before = {c.get("slug"): c for c in prev.get("characters") or []}
+    same_style = bool(prev) and str(prev.get("style") or "") == design.style
+    keep: dict[str, dict[str, Any]] = {}
+    for ch in design.new:
+        old = before.get(ch["slug"])
+        if old and same_style and old.get("portrait_url") and old.get("appearance") == ch.get("appearance"):
+            keep[ch["slug"]] = {"portrait_url": old["portrait_url"], "portrait_prompt": old.get("portrait_prompt", "")}
+    for slug, url in (prev.get("cast_portraits") or {}).items():
+        if same_style:
+            keep.setdefault(slug, {})["restyled_url"] = url
+
+    async def _upload(slug: str, local: str, seed: int | None) -> str:
+        name = f"{slug}-restyled" if seed is not None else slug
+        return await _upload_file(local, f"{upload_prefix}/{name}.png", "image/png", site_config=site_config)
+
+    # Voices before pictures: drawing leaves the image-edit model resident
+    # in ComfyUI, and ComfyUI's /free often releases nothing, so a Chatterbox
+    # preview made after the portraits ran out of card (2026-10-14 live run).
+    voice_urls: dict[str, str | None] = {}
+    if design.new or design.narrator_new:
+        await _ensure_voice_headroom(site_config)
+    for ch in design.new:
+        old = before.get(ch["slug"]) or {}
+        unchanged_voice = bool(old) and all(old.get(k) == ch.get(k) for k in ("voice", "energy", "sample_line"))
+        voice_urls[ch["slug"]] = old.get("voice_url") if unchanged_voice else await _voice_preview(
+            ch, key=f"{upload_prefix}/{ch['slug']}", site_config=site_config,
+        )
+    narrator_voice: str | None = None
+    if design.narrator_new:
+        nar = design.narrator_new
+        narrator_voice = await _voice_preview(nar, key=f"{upload_prefix}/{nar['slug']}", site_config=site_config)
+    drawn, restyled = await draw_cast(design, site_config=site_config, pool=pool, upload=_upload, keep=keep)
+    characters: list[dict[str, Any]] = []
+    for slug in design.cast:
+        persona = design.roster.get(slug)
+        if persona is not None:
+            characters.append({
+                "slug": slug, "name": persona.display_name or slug, "role": persona.description,
+                "appearance": persona.visual_description, "reused": True,
+                "portrait_url": restyled.get(slug) or persona.portrait_url or None,
+            })
+            continue
+        ch = next(c for c in design.new if c["slug"] == slug)
+        characters.append({
+            **_draft_character(ch), "reused": False,
+            "portrait_url": (drawn.get(slug) or {}).get("portrait_url"),
+            "portrait_prompt": (drawn.get(slug) or {}).get("portrait_prompt", ""),
+            "voice_url": voice_urls.get(slug),
+        })
+    narrator: dict[str, Any] = {"slug": design.narrator_slug, "reused": design.narrator_new is None}
+    if design.narrator_new:
+        narrator.update(_draft_character(design.narrator_new))
+        narrator["voice_url"] = narrator_voice
+    elif design.narrator_slug in design.roster:
+        narrator["name"] = design.roster[design.narrator_slug].display_name or design.narrator_slug
+    return {
+        "style": design.style,
+        "asked": design.asked,
+        "asked_style": design.asked_style,
+        "request": {**asdict(design.request), "required": list(design.request.required)},
+        "characters": characters,
+        "narrator": narrator,
+        "cast_portraits": restyled,
+    }
+
+
+def _design_from_payload(payload: dict[str, Any], site_config: Any) -> CastDesign:
+    raw = dict(payload.get("request") or {})
+    raw["required"] = tuple(raw.get("required") or ())
+    request = CastingRequest(**{k: v for k, v in raw.items() if k in CastingRequest.__dataclass_fields__})
+    roster, everyone, asked_style, asked = _reusable(site_config, request)
+    new = [
+        {**c, "energy": _energy(c.get("energy"))}
+        for c in payload.get("characters") or [] if not c.get("reused")
+    ]
+    nar = payload.get("narrator") or {}
+    narrator_new = None if nar.get("reused", True) else {**nar, "energy": _energy(nar.get("energy"))}
+    return CastDesign(
+        request=request, style=str(payload.get("style") or asked_style),
+        asked=bool(payload.get("asked", asked)), asked_style=str(payload.get("asked_style") or asked_style),
+        roster=roster, everyone=everyone,
+        cast=[c["slug"] for c in payload.get("characters") or []], new=new,
+        narrator_slug=str(nar.get("slug") or NO_NARRATOR), narrator_new=narrator_new,
+    )
+
+
+async def revise_cast_design(
+    payload: dict[str, Any], instruction: str, *, site_config: Any, pool: Any,
+) -> CastDesign:
+    """The next cast design, addressing one note on a draft (chat drafting)."""
+    note = (instruction or "").strip()
+    if not note:
+        raise CastingError("a revision needs a note saying what to change")
+    current = _design_from_payload(payload, site_config)
+    shown = {
+        "style": current.style,
+        "characters": [
+            {"reuse": c["slug"]} if c.get("reused") else {"id": c["slug"], **{
+                k: c.get(k) for k in ("name", "role", "appearance", "personality", "voice", "energy", "sample_line")
+            }}
+            for c in payload.get("characters") or []
+        ],
+        "narrator": (
+            {"use": current.narrator_slug != NO_NARRATOR,
+             "reuse": "" if current.narrator_new else (current.narrator_slug if current.narrator_slug != NO_NARRATOR else ""),
+             **({k: current.narrator_new.get(k) for k in ("name", "voice", "energy", "sample_line")} if current.narrator_new else {})}
+        ),
+    }
+    reply = await _ask_cast(
+        "story.casting_revise",
+        {"current": json.dumps(shown, ensure_ascii=False, indent=1), "instruction": note[:2000]},
+        roster=current.roster, request=current.request, asked_style=current.style if current.asked else current.asked_style,
+        site_config=site_config, pool=pool, task_id=None,
+    )
+    # Characters the draft already designed keep their ids; they are not
+    # personas yet, so nothing else holds those slugs.
+    everyone = dict(current.everyone)
+    design = _design_from_reply(
+        reply, current.request, roster=current.roster, everyone=everyone,
+        asked_style=current.asked_style, asked=current.asked,
+    )
+    if not current.asked:
+        design.style = current.style
+    return design
+
+
+async def keep_cast(
+    payload: dict[str, Any], *, site_config: Any, pool: Any, settings: Any = None,
+) -> dict[str, Any]:
+    """Save a cast draft: its new characters become personas, portraits and voices included."""
+    if settings is None:
+        from poindexter.services.settings_service import SettingsService
+
+        settings = SettingsService(pool)
+    design = _design_from_payload(payload, site_config)
+    clash = [c["slug"] for c in design.new if c["slug"] in design.everyone]
+    if clash:
+        raise CastingError(f"characters {clash} were saved since this draft; draft the cast again")
+    drawn = {
+        c["slug"]: {"portrait_url": c["portrait_url"], "portrait_prompt": c.get("portrait_prompt") or ""}
+        for c in payload.get("characters") or [] if not c.get("reused") and c.get("portrait_url")
+    }
+    voices = await _save_cast(design, drawn, site_config=site_config, pool=pool, settings=settings)
+    return _outputs(design, drawn, dict(payload.get("cast_portraits") or {}), voices)
+
+
 __all__ = [
+    "CastDesign",
     "CastingError",
     "CastingRequest",
     "build_casting_request",
     "build_voice",
     "cast_characters",
     "check_cast",
+    "design_cast",
+    "draw_cast",
     "draw_portrait",
+    "keep_cast",
+    "preview_cast",
+    "revise_cast_design",
     "roster_text",
     "voice_catalog",
 ]

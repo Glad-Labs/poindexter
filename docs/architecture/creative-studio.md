@@ -344,3 +344,55 @@ GPU time.
 
 - A music-bed atom.
 - Two characters lip-synced in one shot. Dialogue cuts between speakers.
+
+## Drafting in the chat
+
+The console chat can draft a piece before anything renders
+(`services/creative_drafts.py`, phase 1 of chat drafting). It has four
+tools:
+
+- `draft_cast` designs the characters, draws their portraits and voices a
+  sample line for each, without saving anything.
+- `draft_screenplay` writes a script for existing characters.
+- `revise_draft` makes the next version from a note ("make the wolf
+  scarier", "cut scene 2").
+- `show_draft` reads a draft back to the model.
+
+Each draft is a row in `creative_drafts`, one row per version (`parent_id`
+points at the version it revises). It is built in the background, because
+drawing a cast outlasts a chat turn's deadline. The chat card polls
+`GET /api/chat/drafts/{id}` until the draft is `ready` or `failed`. A ready
+card shows the portraits with playable voices, or the script, and has Keep
+and Discard buttons.
+
+**Keep** (`POST /api/chat/drafts/{id}/keep`) saves the cast's characters as
+personas, using the portraits already drawn (`casting.keep_cast`). Nothing
+before that touches `persona.*`. A script draft is marked kept for the render
+step (phase 3). A draft card adds a `[cast draft <id> v<n>]` line to the
+model's context, so a note in a later turn can name it.
+
+Casting is split so a draft can stop short of saving:
+
+1. `design_cast` decides who is in the piece and how it looks.
+2. `draw_cast` draws the portraits through an upload callback.
+3. `preview_cast` stores a draft under `drafts/<id>/`.
+4. `keep_cast` and `cast_characters` save.
+
+A revision (`revise_cast_design`, prompt `story.casting_revise`) keeps every
+character the note does not touch under the same id, and `preview_cast`
+redraws only those whose looks or style changed. It re-voices only those
+whose voice, energy or line changed. Scripts revise in one call
+(`screenplay.revise_screenplay`, prompt `story.screenplay_revise`) and are
+checked exactly like a new script.
+
+Two GPU rules came from the first live drafts:
+
+- A cast draft waits while a pipeline task runs a GPU stage
+  (`creative_draft_gpu_busy_stages`, up to `creative_draft_gpu_wait_minutes`).
+- The voice previews are made before the portraits, with ComfyUI reclaimed
+  first when the render card has under `story_cast_preview_min_free_gb` free.
+  ComfyUI keeps the ~27 GB image-edit model resident after drawing, and its
+  `/free` often releases nothing, so a Chatterbox preview right after the
+  portraits ran out of card.
+
+`draw_cast` also soft-frees ComfyUI after it draws.

@@ -209,7 +209,8 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("media", "media"),
     # presenter personas (persona.<slug>.*) are media-lane records
     ("persona", "media"),
-    ("story", "media"),  # creative studio writer/dialogue/director (poindexter#1134)
+    ("story", "media"),
+    ("creative_draft", "media"),  # chat drafting (services/creative_drafts.py)  # creative studio writer/dialogue/director (poindexter#1134)
     ("image", "media"),
     # charts are images — same subsystem, same bucket (chart_catalog_*,
     # plugin.image_provider.chart.* already lands here via the plugin rule)

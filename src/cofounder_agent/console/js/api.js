@@ -2580,6 +2580,31 @@
         () => window.PX.chatMock.resolveApproval(approvalId, false)
       );
     },
+    // Chat drafting: a cast or screenplay draft (creative_drafts). The
+    // draft card polls chatDraft while the draft is working.
+    chatDraft(draftId) {
+      return pick(
+        () => http('GET', `/api/chat/drafts/${encodeURIComponent(draftId)}`),
+        () => window.PX.chatMock.getDraft(draftId)
+      );
+    },
+    chatDraftKeep(draftId) {
+      return pick(
+        () =>
+          http('POST', `/api/chat/drafts/${encodeURIComponent(draftId)}/keep`),
+        () => window.PX.chatMock.setDraftStatus(draftId, 'kept')
+      );
+    },
+    chatDraftDiscard(draftId) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/chat/drafts/${encodeURIComponent(draftId)}/discard`
+          ),
+        () => window.PX.chatMock.setDraftStatus(draftId, 'discarded')
+      );
+    },
     // Architect plan card: one-shot Run (P4 poindexter#950). Creates the
     // pipeline task from the cached plan template; the thread reload picks
     // up the stamped card + system message, and the watch rail follows the

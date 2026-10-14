@@ -178,6 +178,13 @@ def _content_of(message_row: dict[str, Any]) -> str:
         kind = part.get("type")
         if kind == "markdown":
             chunks.append(part.get("text") or "")
+        elif kind == "card" and (part.get("card") or {}).get("kind") == "draft":
+            # A draft card is how the operator and the model name a draft;
+            # without this line the model loses the id after the turn.
+            c = part["card"]
+            chunks.append(
+                f"[{c.get('draft_kind')} draft {str(c.get('draft_id', ''))[:8]} v{c.get('version')}]"
+            )
         elif kind == "tool_call":
             # Context tail keeps a one-line trace of past tool activity so the
             # model remembers WHAT it did without re-carrying full results.
