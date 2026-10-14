@@ -57,6 +57,7 @@ FIELDS: tuple[str, ...] = (
     "render_prompt_suffix",
     "appearance",
     "personality",
+    "turnaround_url",
 )
 VOICE_PROVIDERS: tuple[str, ...] = ("kokoro", "chatterbox")
 STYLE_POLICIES: tuple[str, ...] = ("photoreal", "stylized")
@@ -95,6 +96,11 @@ class Persona:
     # screenplay writer reads it.
     appearance: str = ""
     personality: str = ""
+    # Model sheet (2026-10-14): the character from the front, three-quarter
+    # and side on one sheet, drawn from the portrait (services/model_sheets).
+    # Wide shots and stills draw the character from one full-body view cut
+    # out of it; talking close-ups keep the portrait. A new portrait clears it.
+    turnaround_url: str = ""
 
     @property
     def has_portrait(self) -> bool:
@@ -195,6 +201,7 @@ def _parse(slug: str, raw: dict[str, str]) -> Persona:
         render_prompt_suffix=raw.get("render_prompt_suffix", "") or "",
         appearance=(raw.get("appearance") or "").strip(),
         personality=(raw.get("personality") or "").strip(),
+        turnaround_url=(raw.get("turnaround_url") or "").strip(),
     )
 
 
@@ -335,9 +342,18 @@ async def upsert_persona(
 
     ``settings_service`` is anything with ``async set(key, value, category=,
     description=)`` — ``SettingsService`` in production.
+
+    A new portrait clears the model sheet drawn from the old one
+    (``turnaround_url``), so the next story redraws it rather than keep a
+    character on a sheet of how they used to look.
     """
     slug = validate_slug(slug)
     stored: dict[str, str] = {}
+    if "portrait_url" in fields and "turnaround_url" not in fields and hasattr(settings_service, "get"):
+        before = await settings_service.get(persona_key(slug, "portrait_url"), None, env_fallback=False)
+        sheet = await settings_service.get(persona_key(slug, "turnaround_url"), None, env_fallback=False)
+        if sheet and (before or "").strip() != str(fields["portrait_url"] or "").strip():
+            fields = {**fields, "turnaround_url": ""}
     for field, value in fields.items():
         text = validate_field(field, value)
         await settings_service.set(

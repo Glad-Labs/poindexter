@@ -32,6 +32,9 @@ def harness(monkeypatch):
     })
     settings = MagicMock()
     settings.set = AsyncMock()
+    # SettingsService.get is async; upsert_persona reads the stored portrait
+    # and sheet to clear a sheet drawn from an old portrait.
+    settings.get = AsyncMock(return_value=None)
 
     def fake_run_service(factory):
         return asyncio.run(factory(object()))

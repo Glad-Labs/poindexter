@@ -229,6 +229,9 @@ async def _draw_shots(
     ctx = slr.reference_context_for(shot_list)
     if ctx is not None:
         ctx.pool = pool
+        from poindexter.services.model_sheets import ensure_turnarounds
+
+        await ensure_turnarounds(list(ctx.cast), site_config=site_config, pool=pool)
         if plates:
             await _seed_plates(ctx, plates, work)
         if indices is not None and existing:

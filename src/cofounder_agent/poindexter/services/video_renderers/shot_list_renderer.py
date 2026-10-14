@@ -3065,9 +3065,18 @@ async def _place_for(
 
 async def _reference_portraits(
     slugs: list[str], ctx: ReferenceContext, *, work_dir: Path,
-    site_config: Any, http_client_factory: Any,
+    site_config: Any, http_client_factory: Any, sheets: bool = False,
 ) -> tuple[list[str], list[str]]:
-    """Local portrait paths + display names for the slugs that have one."""
+    """Local reference paths + the names the prompt calls them, for the slugs that have one.
+
+    ``sheets``: a character with a model sheet (``turnaround_url``) is drawn
+    from one full-body view cut out of it (``model_sheets.crop_sheet_panel``;
+    the whole sheet made the model draw the character more than once), so a
+    wide shot shows the whole costume on-model; the prompt names it with
+    ``video_reference_sheet_name_template``. A character redrawn for
+    this piece (``cast_portraits``) keeps that portrait: its sheet is in
+    another style. Talking close-ups face the viewer and keep the portrait.
+    """
     from poindexter.services.persona_service import get_persona
 
     paths: list[str] = []
@@ -3077,14 +3086,42 @@ async def _reference_portraits(
         url = _portrait_url(persona, ctx) if persona is not None else ""
         if persona is None or not persona.enabled or not url:
             continue
+        name = persona.display_name or slug
+        sheet = str(getattr(persona, "turnaround_url", "") or "")
+        if sheets and sheet and not ctx.portrait_urls.get(slug):
+            key = f"{slug}#sheet"
+            if key not in ctx.portraits:
+                from poindexter.services.model_sheets import crop_sheet_panel, sheet_panel_settings
+
+                whole = await _fetch_presenter_portrait(
+                    sheet, work_dir / f"reference_{slug}_sheet.png", http_client_factory,
+                )
+                panel, panels = sheet_panel_settings(site_config)
+                ctx.portraits[key] = (
+                    crop_sheet_panel(str(whole), str(work_dir / f"reference_{slug}_view.png"),
+                                     panel=panel, panels=panels)
+                    if whole else None
+                )
+            if ctx.portraits[key]:
+                paths.append(str(ctx.portraits[key]))
+                names.append(_sheet_name(name, site_config))
+                continue
         if slug not in ctx.portraits:
             ctx.portraits[slug] = await _fetch_presenter_portrait(
                 url, work_dir / f"reference_{slug}.png", http_client_factory,
             )
         if ctx.portraits[slug]:
             paths.append(str(ctx.portraits[slug]))
-            names.append(persona.display_name or slug)
+            names.append(name)
     return paths, names
+
+
+def _sheet_name(name: str, site_config: Any) -> str:
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    raw = site_config.get("video_reference_sheet_name_template", None) if site_config is not None else None
+    template = str(DEFAULTS["video_reference_sheet_name_template"] if raw in (None, "") else raw)
+    return template.replace("{name}", name)
 
 
 async def _render_reference_still(
@@ -3138,6 +3175,9 @@ async def _render_reference_still(
     paths, names = await _reference_portraits(
         (wanted or list(ctx.cast))[: rf.MAX_REFERENCES], ctx,
         work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
+        # A still is drawn from the characters' model sheets; a talking frame
+        # (speakers) faces the viewer and keeps the front portrait.
+        sheets=not speakers and bool(wanted),
     )
     if not paths and wanted and not speakers:
         # Nobody the shot names can be drawn (no portrait): draw it in the
@@ -6014,6 +6054,11 @@ async def render_shot_list(
     reference_ctx = reference_context_for(shot_list)
     if reference_ctx is not None:
         reference_ctx.pool = pool
+        from poindexter.services.model_sheets import ensure_turnarounds
+
+        # Each cast member's model sheet, drawn once (a character the story
+        # has used before already has one).
+        await ensure_turnarounds(list(reference_ctx.cast), site_config=site_config, pool=pool)
     render_kwargs = dict(
         work_dir=work_dir,
         image_gen_url=image_gen_url,
