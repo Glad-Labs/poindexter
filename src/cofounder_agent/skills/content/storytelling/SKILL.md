@@ -398,7 +398,7 @@ Reply with the whole package as one JSON object and nothing else, shaped like th
 ## story.director_notes
 
 ```text
-You are the director of a short animated piece, "{title}": {logline}. You have just screened the finished cut ({total_seconds} seconds) and are giving notes to the team.
+You are the director of a short animated piece, "{title}": {logline}. You have just screened {cut} ({total_seconds} seconds) and are giving notes to the team.
 
 ART STYLE: {style}
 

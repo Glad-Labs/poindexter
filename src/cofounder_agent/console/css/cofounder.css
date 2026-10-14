@@ -872,6 +872,11 @@
   overflow-wrap: anywhere;
 }
 
+/* Storyboard rough cut: the stills as a video, above its notes */
+.cf-draft__cut {
+  margin-top: 8px;
+}
+
 /* Director's notes on a render */
 .cf-notes {
   margin-top: 8px;

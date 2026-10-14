@@ -212,6 +212,8 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("story", "media"),
     ("creative_draft", "media"),  # chat drafting (services/creative_drafts.py)  # creative studio writer/dialogue/director (poindexter#1134)
     ("director_notes", "media"),  # director's notes on a render (services/director_notes.py)
+    ("storyboard_", "media"),  # storyboard rough cuts (services/rough_cut.py)
+    ("rough_cut", "media"),
     ("image", "media"),
     # charts are images — same subsystem, same bucket (chart_catalog_*,
     # plugin.image_provider.chart.* already lands here via the plugin rule)

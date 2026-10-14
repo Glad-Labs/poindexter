@@ -6,7 +6,8 @@ own timeline into one track, which ``media.render_long_video`` mixes under
 the dialogue as the video's soundtrack (``video_ambient_audio_path``).
 
 Best-effort: no audio engine, a planning failure or nothing generated leaves
-the soundtrack unset, and the video renders voices-only as before.
+the soundtrack unset, and the video renders voices-only as before. A
+soundtrack already in state (a storyboard's rough-cut score) is kept.
 """
 
 from __future__ import annotations
@@ -53,6 +54,12 @@ ATOM_META = AtomMeta(
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     from poindexter.services.dialogue_audio import probe_seconds
     from poindexter.services.score import score_screenplay
+
+    if str(state.get("video_ambient_audio_path") or "").strip():
+        # A soundtrack chosen earlier (a storyboard's rough-cut score, chat
+        # drafting phase 9) is the one the operator heard and approved.
+        logger.info("[media.score_screenplay] keeping the soundtrack already set")
+        return {}
 
     site_config = state.get("site_config")
     database_service = state.get("database_service")

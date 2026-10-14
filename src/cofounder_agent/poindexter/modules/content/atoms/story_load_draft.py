@@ -27,7 +27,8 @@ ATOM_META = AtomMeta(
         "render. INPUT node config creative_draft (the draft id) and optional "
         "cast_draft. OUTPUT screenplay, screenplay_visual_style, "
         "cast_portraits, and for a storyboard also dialogue_timeline, "
-        "video_shot_list, video_long_script and long_narration_audio_path. "
+        "video_shot_list, video_long_script and long_narration_audio_path "
+        "(plus video_ambient_audio_path when its rough cut was scored). "
         "Only used by plans built from a draft."
     ),
     inputs=(
@@ -48,11 +49,13 @@ ATOM_META = AtomMeta(
                   description="a storyboard's spoken script, for captions"),
         FieldSpec(name="long_narration_audio_path", type="str", required=False,
                   description="a storyboard's dialogue track, downloaded"),
+        FieldSpec(name="video_ambient_audio_path", type="str", required=False,
+                  description="a storyboard's rough-cut score, downloaded, kept as the video's soundtrack"),
     ),
     requires=("creative_draft",),
     produces=(
         "screenplay", "screenplay_visual_style", "cast_portraits", "dialogue_timeline",
-        "video_shot_list", "video_long_script", "long_narration_audio_path",
+        "video_shot_list", "video_long_script", "long_narration_audio_path", "video_ambient_audio_path",
     ),
     capability_tier="standard",
     cost_class="free",

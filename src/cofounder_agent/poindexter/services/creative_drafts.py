@@ -14,6 +14,8 @@ about and revise, and only "keep" makes it real.
 - A **storyboard** draft (phase 2) voices scenes of a script draft and draws
   a still per shot with the renderer's own functions
   (``services/storyboard.py``). A note redraws only the shots it changes.
+  Since phase 9 it also cuts a rough cut (``services/rough_cut.py``): the
+  stills timed to the voices, scored and captioned, with director's notes.
 - A **package** draft (phase 7) writes a finished cartoon's YouTube title,
   description and tags and composes its thumbnail from a frame
   (``services/video_package.py``). Keep stores it on the video, so it is
@@ -171,12 +173,18 @@ async def _build(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None
         )
     if draft["kind"] == "storyboard":
         from poindexter.services import storyboard as sb
+        from poindexter.services.rough_cut import add_rough_cut
 
         await _wait_for_gpu(pool, draft["id"], site_config)
         prefix = f"drafts/{draft['id']}"
         if parent is not None:
-            return await sb.revise_storyboard(
+            revised = await sb.revise_storyboard(
                 parent["payload"], instruction, site_config=site_config, pool=pool, upload_prefix=prefix,
+            )
+            await _note(pool, draft["id"], "cutting the rough cut")
+            # Only pictures changed: the voices, timing and score carry over.
+            return await add_rough_cut(
+                revised, site_config=site_config, pool=pool, upload_prefix=prefix, previous=parent["payload"],
             )
         script = await get_draft(pool, str(request["screenplay_draft"]), site_config=site_config)
         if script is None or script["kind"] != "screenplay" or script["status"] not in ("ready", "kept"):
@@ -185,13 +193,15 @@ async def _build(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None
         if request.get("cast_draft"):
             cast = await get_draft(pool, str(request["cast_draft"]), site_config=site_config)
         cast_payload = (cast or {}).get("payload") or {}
-        return await sb.build_storyboard(
+        board = await sb.build_storyboard(
             script["payload"], scenes=list(request.get("scenes") or []), site_config=site_config,
             pool=pool, upload_prefix=prefix,
             style=str(request.get("style") or cast_payload.get("style") or ""),
             niche_slug=request.get("niche_slug"),
             cast_portraits=dict(cast_payload.get("cast_portraits") or {}),
         )
+        await _note(pool, draft["id"], "scoring and cutting the rough cut")
+        return await add_rough_cut(board, site_config=site_config, pool=pool, upload_prefix=prefix)
     if draft["kind"] == "screenplay":
         from poindexter.services import screenplay as sp
 
@@ -418,6 +428,10 @@ async def load_for_render(
         "cast_portraits": dict(listing.get("cast_portraits") or {}),
         "long_narration_audio_path": await _download(payload["audio_master_url"], os.path.join(work, "dialogue.wav")),
     })
+    if payload.get("score_url"):
+        # The rough cut's score: the music approved there is the music in
+        # the video (media.score_screenplay keeps a soundtrack already set).
+        out["video_ambient_audio_path"] = await _download(payload["score_url"], os.path.join(work, "score.wav"))
     return out
 
 
@@ -535,6 +549,15 @@ def describe(draft: dict[str, Any], *, max_chars: int = 6000) -> str:
             lines.append("notes: " + " ".join(payload["notes"]))
     elif draft["kind"] == "storyboard":
         lines.append(f"storyboard of {payload.get('title', '')}, scenes {payload.get('scenes')}, style: {payload.get('style', '')}")
+        if payload.get("rough_cut_url"):
+            lines.append(f"rough cut: {payload.get('rough_cut_seconds')}s, with {'its score' if payload.get('score_url') else 'no score'}")
+        elif payload.get("rough_cut_error"):
+            lines.append(f"rough cut failed: {payload['rough_cut_error']}")
+        notes = payload.get("rough_cut_notes") or {}
+        if notes.get("status") == "ready":
+            from poindexter.services.director_notes import describe as describe_notes
+
+            lines.append(describe_notes(notes))
         for row in payload.get("shots") or []:
             drawn = "drawn" if row.get("image_url") else "not drawn"
             lines.append(

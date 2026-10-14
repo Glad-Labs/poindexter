@@ -47,6 +47,14 @@ NOTES_KEY = "director_notes"
 NOTE_KINDS = ("redo", "story", "pacing", "sound")
 _JOBS: set[asyncio.Task[Any]] = set()
 
+#: How each kind of cut is described to the judge and the writer. A rough
+#: cut is still pictures timed to the voices, so "nothing moves" is not a
+#: flaw there and is never reported.
+CUT_KINDS = {
+    "final": "the finished cut",
+    "rough": "a rough cut: still pictures timed to the voices and music, before anything is animated",
+}
+
 #: Judge check -> the flaw named when it fails.
 _CHECKS = {
     "hands_ok": "hands",
@@ -78,8 +86,11 @@ def _on(site_config: Any, key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def parse_shot_look(text: str) -> dict[str, Any]:
-    """The judge's reply as ``{read, flaws, strangers, note}``; ``read=False`` when unusable."""
+def parse_shot_look(text: str, *, rough: bool = False) -> dict[str, Any]:
+    """The judge's reply as ``{read, flaws, strangers, note}``; ``read=False`` when unusable.
+
+    ``rough``: the shot is a still in a rough cut, so it is meant not to move.
+    """
     m = re.search(r"\{.*\}", text or "", re.DOTALL)
     try:
         parsed = json.loads(m.group(0)) if m else None
@@ -87,7 +98,10 @@ def parse_shot_look(text: str) -> dict[str, Any]:
         parsed = None
     if not isinstance(parsed, dict):
         return {"read": False, "flaws": [], "strangers": 0, "note": "unreadable judge reply"}
-    flaws = [name for key, name in _CHECKS.items() if parsed.get(key) is False]
+    flaws = [
+        name for key, name in _CHECKS.items()
+        if parsed.get(key) is False and not (rough and key == "moves_ok")
+    ]
     strangers = parsed.get("strangers")
     strangers = strangers if isinstance(strangers, int) and not isinstance(strangers, bool) else 0
     if strangers > 0:
@@ -132,7 +146,7 @@ def shot_lines(shot_list: dict[str, Any], timeline: list[dict[str, Any]]) -> dic
 
 async def look_at_shots(
     *, video_path: str, rows: list[dict[str, Any]], lines: dict[int, str], planned_s: float,
-    site_config: Any, pool: Any,
+    site_config: Any, pool: Any, cut: str = "final",
 ) -> dict[int, dict[str, Any]]:
     """The judge's look at each drawn shot, by shot number."""
     from poindexter.services.prompt_manager import get_prompt_manager
@@ -156,11 +170,11 @@ async def look_at_shots(
             continue
         prompt = get_prompt_manager().get_prompt(
             "qa.director_shot", frames=frames, who=row["who"], picture=row["picture"],
-            line=lines.get(row["idx"]) or "(no one speaks)",
+            line=lines.get(row["idx"]) or "(no one speaks)", cut=CUT_KINDS[cut],
         )
         text, why = await sq._vision_text(sheet, prompt=prompt, model=model, pool=pool, shot_idx=row["idx"])
         sq._remove_quietly(sheet)
-        looks[row["idx"]] = parse_shot_look(text) if text else {
+        looks[row["idx"]] = parse_shot_look(text, rough=cut == "rough") if text else {
             "read": False, "flaws": [], "strangers": 0, "note": why,
         }
     return looks
@@ -255,6 +269,7 @@ def shot_table(rows: list[dict[str, Any]], all_shots: list[dict[str, Any]], line
 async def write_notes(
     *, screenplay: dict[str, Any], story: str, table: str, style: str, shot_ids: set[int],
     drawn_ids: set[int], total_s: float, site_config: Any, pool: Any, task_id: str | None,
+    cut: str = "final",
 ) -> dict[str, Any]:
     from poindexter.services.screenplay import ScreenplayError, _ask_validated, _resolve_model
 
@@ -268,7 +283,7 @@ async def write_notes(
             "story.director_notes",
             {"title": screenplay.get("title") or "", "logline": screenplay.get("logline") or "",
              "style": style or "(as drawn)", "story": story, "shot_table": table,
-             "total_seconds": round(total_s), "max_notes": max_notes},
+             "total_seconds": round(total_s), "max_notes": max_notes, "cut": CUT_KINDS[cut]},
             _check, model=_resolve_model(site_config), site_config=site_config, pool=pool,
             task_id=task_id, what="director's notes", phase="story_director_notes",
         )
@@ -282,26 +297,24 @@ async def write_notes(
 # ---------------------------------------------------------------------------
 
 
-async def review_render(pool: Any, *, task_id: str, site_config: Any) -> dict[str, Any]:
-    """Look at every drawn shot, then write the notes. Returns the review (not stored)."""
+async def review_cut(
+    *, video_path: str, screenplay: dict[str, Any], shot_list: dict[str, Any],
+    timeline: list[dict[str, Any]], site_config: Any, pool: Any, task_id: str | None = None,
+    cut: str = "final",
+) -> dict[str, Any]:
+    """Look at every drawn shot of a cut, then write the notes. Returns the review (not stored)."""
     from poindexter.services import video_package as vp
     from poindexter.services.video_renderers import shot_vision_qa as sq
 
-    try:
-        video = await vp.load_video(pool, task_id)
-    except vp.PackageError as exc:
-        raise ReviewError(str(exc)) from exc
-    kept = vp._kept_render(task_id, site_config)
-    screenplay, shot_list = vp._source(video, kept)
     rows = vp.shot_rows(shot_list)
     if not rows:
-        raise ReviewError("the video kept no drawn shots to review")
-    video_path = str(video.get("storage_path") or "")
+        raise ReviewError("the cut has no drawn shots to review")
     all_shots = [s for s in shot_list.get("shots") or [] if s.get("idx") is not None]
     planned = sum(float(s.get("duration_s") or 0) for s in all_shots)
-    lines = shot_lines(shot_list, list((kept or {}).get("timeline") or []))
+    lines = shot_lines(shot_list, timeline)
     looks = await look_at_shots(
-        video_path=video_path, rows=rows, lines=lines, planned_s=planned, site_config=site_config, pool=pool,
+        video_path=video_path, rows=rows, lines=lines, planned_s=planned, site_config=site_config,
+        pool=pool, cut=cut,
     )
     duration = await sq._probe_seconds(video_path) or planned
     scale = (duration / planned) if planned > 0 else 1.0
@@ -309,17 +322,37 @@ async def review_render(pool: Any, *, task_id: str, site_config: Any) -> dict[st
     notes = await write_notes(
         screenplay=screenplay, story=story, table=shot_table(rows, all_shots, lines, looks, scale),
         style=str(shot_list.get("style") or ""), shot_ids={int(s["idx"]) for s in all_shots},
-        drawn_ids={r["idx"] for r in rows}, total_s=duration, site_config=site_config, pool=pool, task_id=task_id,
+        drawn_ids={r["idx"] for r in rows}, total_s=duration, site_config=site_config, pool=pool,
+        task_id=task_id, cut=cut,
     )
     flawed = {idx: look["flaws"] for idx, look in looks.items() if look["read"] and look["flaws"]}
     return {
         **notes,
-        "task_id": task_id,
-        "title": screenplay.get("title") or video.get("title") or "",
+        "cut": cut,
+        "title": screenplay.get("title") or "",
         "shots_reviewed": sum(1 for look in looks.values() if look["read"]),
         "shots_unread": sum(1 for look in looks.values() if not look["read"]),
         "flawed_shots": {str(k): v for k, v in sorted(flawed.items())},
     }
+
+
+async def review_render(pool: Any, *, task_id: str, site_config: Any) -> dict[str, Any]:
+    """Review a finished render's video. Returns the review (not stored)."""
+    from poindexter.services import video_package as vp
+
+    try:
+        video = await vp.load_video(pool, task_id)
+    except vp.PackageError as exc:
+        raise ReviewError(str(exc)) from exc
+    kept = vp._kept_render(task_id, site_config)
+    screenplay, shot_list = vp._source(video, kept)
+    if not vp.shot_rows(shot_list):
+        raise ReviewError("the video kept no drawn shots to review")
+    review = await review_cut(
+        video_path=str(video.get("storage_path") or ""), screenplay=screenplay, shot_list=shot_list,
+        timeline=list((kept or {}).get("timeline") or []), site_config=site_config, pool=pool, task_id=task_id,
+    )
+    return {**review, "task_id": task_id, "title": review["title"] or video.get("title") or ""}
 
 
 async def _store(pool: Any, task_id: str, value: dict[str, Any]) -> None:
@@ -435,6 +468,7 @@ def describe(review: dict[str, Any] | None) -> str:
 
 
 __all__ = [
+    "CUT_KINDS",
     "NOTES_KEY",
     "NOTE_KINDS",
     "ReviewError",
@@ -443,6 +477,7 @@ __all__ = [
     "get_review",
     "look_at_shots",
     "parse_shot_look",
+    "review_cut",
     "review_render",
     "revision_instruction",
     "run_review",

@@ -3202,6 +3202,14 @@ DEFAULTS: dict[str, str] = {
     'director_notes_max_notes': '8',
     'director_notes_caption_crop': '0.22',
     'director_notes_stale_minutes': '45',
+    # Chat drafting phase 9: a storyboard draft's rough cut
+    # (services/rough_cut.py): its stills timed to the voices, scored and
+    # captioned, composed at width x height by the renderer's compositor,
+    # with director's notes on it when notes_enabled.
+    'storyboard_rough_cut_enabled': 'true',
+    'rough_cut_width': '1280',
+    'rough_cut_height': '720',
+    'rough_cut_notes_enabled': 'true',
     # A cast draft's voice previews load Chatterbox on the render card; below
     # this much free VRAM, ComfyUI's resident image-edit model is reclaimed first.
     'story_cast_preview_min_free_gb': '3',
@@ -6716,6 +6724,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'director_notes_max_notes': {'owner': 'director_notes', 'value_type': 'integer'},
     'director_notes_caption_crop': {'owner': 'director_notes', 'value_type': 'float'},
     'director_notes_stale_minutes': {'owner': 'director_notes', 'value_type': 'float'},
+    'storyboard_rough_cut_enabled': {'owner': 'rough_cut', 'value_type': 'boolean'},
+    'rough_cut_width': {'owner': 'rough_cut', 'value_type': 'integer'},
+    'rough_cut_height': {'owner': 'rough_cut', 'value_type': 'integer'},
+    'rough_cut_notes_enabled': {'owner': 'rough_cut', 'value_type': 'boolean'},
     'story_cast_preview_min_free_gb': {'owner': 'casting', 'value_type': 'float'},
     'creative_draft_gpu_busy_stages': {'owner': 'creative_drafts', 'value_type': 'csv'},
     'creative_draft_gpu_wait_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},

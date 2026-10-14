@@ -204,9 +204,15 @@ class TestAsADraft:
         monkeypatch.setattr(cd, "_wait_for_gpu", AsyncMock())
         build = AsyncMock(return_value={"shots": []})
         monkeypatch.setattr(sb, "build_storyboard", build)
+        monkeypatch.setattr(cd, "_note", AsyncMock())
+        import poindexter.services.rough_cut as rc
+
+        cut = AsyncMock(side_effect=lambda board, **kw: {**board, "rough_cut_url": "u"})
+        monkeypatch.setattr(rc, "add_rough_cut", cut)
         draft = {"id": "b-1", "kind": "storyboard", "version": 1,
                  "request": {"screenplay_draft": "script-1", "cast_draft": "cast-1", "scenes": ["s1"]}}
-        await cd._build(None, draft, None, _sc())
+        out = await cd._build(None, draft, None, _sc())
+        assert out["rough_cut_url"] == "u" and cut.await_args.kwargs["upload_prefix"] == "drafts/b-1"
         kwargs = build.await_args.kwargs
         assert kwargs["style"] == "ink wash" and kwargs["cast_portraits"] == {"fox": "u"}
         assert kwargs["scenes"] == ["s1"] and kwargs["upload_prefix"] == "drafts/b-1"

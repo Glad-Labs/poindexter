@@ -311,7 +311,7 @@ function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
 // Chat drafting: a cast or screenplay draft (creative_drafts). The card part
 // carries only the id; the draft itself is fetched, and polled while it is
 // still being made (drawing a cast outlasts a chat turn).
-function CfDraftCard({ card, pushToast }) {
+function CfDraftCard({ card, onAdjust, pushToast }) {
   const [draft, setDraft] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -406,7 +406,11 @@ function CfDraftCard({ card, pushToast }) {
         <CfDraftScript payload={payload} />
       )}
       {!working && status !== 'failed' && card.draft_kind === 'storyboard' && (
-        <CfDraftStoryboard payload={payload} />
+        <CfDraftStoryboard
+          payload={payload}
+          draftId={card.draft_id}
+          onAdjust={onAdjust}
+        />
       )}
       {!working && status !== 'failed' && card.draft_kind === 'package' && (
         <CfDraftPackage payload={payload} />
@@ -725,7 +729,6 @@ function CfRenderCard({ card, onAdjust, pushToast }) {
 // a request, so the operator sends it and the chat runs the revision.
 function CfNotes({ taskId, onAdjust, pushToast }) {
   const [review, setReview] = React.useState(null);
-  const [picked, setPicked] = React.useState({});
   const [busy, setBusy] = React.useState(false);
   const load = React.useCallback(async () => {
     try {
@@ -780,13 +783,37 @@ function CfNotes({ taskId, onAdjust, pushToast }) {
         </div>
       </div>
     );
+  return (
+    <CfNotesBody
+      review={review}
+      redoLabel="Redo picked shots"
+      onRedo={(picks) =>
+        onAdjust &&
+        onAdjust(
+          `Apply director's notes ${picks.map((n) => n.n).join(', ')} to render ${String(taskId).slice(0, 8)}`
+        )
+      }
+      extra={
+        <button className="mbtn" disabled={busy} onClick={start}>
+          Review again
+        </button>
+      }
+    />
+  );
+}
+
+// The notes themselves: verdict, what works, and ranked notes with a
+// checkbox on each redo note. onRedo gets the picked redo notes; the caller
+// decides what a redo means (a render revision, or a storyboard revision).
+function CfNotesBody({ review, redoLabel, onRedo, extra }) {
+  const [picked, setPicked] = React.useState({});
   const notes = review.notes || [];
-  const picks = notes
-    .filter((n) => n.kind === 'redo' && picked[n.n])
-    .map((n) => n.n);
+  const picks = notes.filter((n) => n.kind === 'redo' && picked[n.n]);
   return (
     <div className="cf-notes">
-      <div className="cf-notes__head">Director's notes</div>
+      <div className="cf-notes__head">
+        Director's notes{review.cut === 'rough' ? ' on the rough cut' : ''}
+      </div>
       <div className="cf-notes__verdict">{review.verdict}</div>
       {(review.strengths || []).length > 0 && (
         <div className="cf-notes__works">
@@ -825,20 +852,13 @@ function CfNotes({ taskId, onAdjust, pushToast }) {
           <button
             className="mbtn mbtn--primary"
             disabled={!picks.length}
-            onClick={() =>
-              onAdjust &&
-              onAdjust(
-                `Apply director's notes ${picks.join(', ')} to render ${String(taskId).slice(0, 8)}`
-              )
-            }
+            onClick={() => onRedo && onRedo(picks)}
             title="Puts the request in the message box; send it to redo those shots"
           >
-            Redo picked shots
+            {redoLabel}
           </button>
         )}
-        <button className="mbtn" disabled={busy} onClick={start}>
-          Review again
-        </button>
+        {extra}
         <span className="cf-draft__hint">
           {review.shots_reviewed || 0} shots screened
           {review.shots_unread ? `, ${review.shots_unread} unread` : ''}
@@ -850,7 +870,8 @@ function CfNotes({ taskId, onAdjust, pushToast }) {
 
 // A storyboard plays as an animatic: the voiced track, with the picture of
 // whichever shot is on screen at that moment; any thumbnail seeks to its shot.
-function CfDraftStoryboard({ payload }) {
+function CfDraftStoryboard({ payload, draftId, onAdjust }) {
+  const notes = payload.rough_cut_notes || {};
   const shots = payload.shots || [];
   const audio = React.useRef(null);
   const [current, setCurrent] = React.useState(0);
@@ -911,6 +932,43 @@ function CfDraftStoryboard({ payload }) {
           </button>
         ))}
       </div>
+      {payload.rough_cut_url && (
+        <div className="cf-draft__cut">
+          <div className="cf-notes__head">
+            Rough cut · {payload.rough_cut_seconds}s
+            {payload.score_url ? ' · with its score' : ''}
+          </div>
+          <video
+            className="cf-draft__video"
+            controls
+            preload="none"
+            src={payload.rough_cut_url}
+          />
+        </div>
+      )}
+      {payload.rough_cut_error && (
+        <div className="cf-draft__note cf-draft__note--bad">
+          No rough cut: {payload.rough_cut_error}
+        </div>
+      )}
+      {notes.status === 'ready' && (
+        <CfNotesBody
+          review={notes}
+          redoLabel="Redraw picked shots"
+          onRedo={(picks) =>
+            onAdjust &&
+            onAdjust(
+              `Revise storyboard draft ${String(draftId).slice(0, 8)}: ` +
+                picks
+                  .map(
+                    (n) =>
+                      `shot${n.shots.length > 1 ? 's' : ''} ${n.shots.join(', ')}: ${n.problem} Fix: ${n.fix}`
+                  )
+                  .join(' ')
+            )
+          }
+        />
+      )}
     </div>
   );
 }
@@ -963,7 +1021,9 @@ function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
       />
     );
   if (card.kind === 'draft')
-    return <CfDraftCard card={card} pushToast={pushToast} />;
+    return (
+      <CfDraftCard card={card} onAdjust={onAdjust} pushToast={pushToast} />
+    );
   if (card.kind === 'render')
     return (
       <CfRenderCard card={card} onAdjust={onAdjust} pushToast={pushToast} />

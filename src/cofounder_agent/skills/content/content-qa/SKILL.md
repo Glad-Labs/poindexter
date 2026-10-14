@@ -627,9 +627,9 @@ Output EXACTLY one JSON object, no prose, no code fences:
 ## qa.director_shot
 
 ```text
-You are the director screening a finished cartoon, one shot at a time. The
-picture is a contact sheet: {frames} moments from this shot, in order, left to
-right and top to bottom.
+You are the director screening a cartoon, one shot at a time. You are
+watching {cut}. The picture is a contact sheet: {frames} moments from this
+shot, in order, left to right and top to bottom.
 
 WHAT THE SHOT IS MEANT TO SHOW
 Who: {who}

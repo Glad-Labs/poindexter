@@ -419,7 +419,8 @@ async def _start_draft(ctx: ChatToolContext, kind: str, inputs: dict[str, Any]) 
     ctx.emitted_cards.append(cd.card(draft))
     took = {
         "cast": "a minute or two, longer while a video renders",
-        "storyboard": "a few minutes (it voices the lines and draws every shot), longer while a video renders",
+        "storyboard": "a few minutes (it voices the lines, draws every shot, scores them and cuts a rough cut "
+                      "with director's notes), longer while a video renders",
     }.get(kind, "about a minute")
     return (
         f"Started {kind} draft {draft['id'][:8]} (v1). It takes {took}; the draft "
@@ -776,7 +777,9 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         description=(
             "Storyboard scenes of a script draft before anything is animated: "
             "voices the lines and draws a still for every shot, exactly as the "
-            "render will start them, so a shot can be fixed as a picture. "
+            "render will start them, so a shot can be fixed as a picture, "
+            "then cuts them into a rough-cut video with music and captions and "
+            "gives director's notes on it, all before anything is animated. "
             "screenplay_draft is the script draft's id; scenes is a comma list "
             "of scene ids or numbers ('2', 's1,s3'; empty = all); cast_draft "
             "(the cast draft's id) carries the art style. Returns at once; the "
