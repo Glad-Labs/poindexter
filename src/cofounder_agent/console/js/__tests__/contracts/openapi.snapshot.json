@@ -108,6 +108,17 @@
     "schemas": {
       "MediaApprovalItem": {
         "properties": {
+          "subject_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          },
           "post_id": {
             "anyOf": [
               {
@@ -118,6 +129,22 @@
               }
             ],
             "title": "Post Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "standalone": {
+            "type": "boolean",
+            "title": "Standalone",
+            "default": false
           },
           "medium": {
             "anyOf": [
@@ -174,11 +201,33 @@
               }
             ],
             "title": "Created At"
+          },
+          "youtube_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Youtube Title"
+          },
+          "youtube_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Youtube Description"
           }
         },
         "type": "object",
         "title": "MediaApprovalItem",
-        "description": "One row in the Gate-2 media-approval queue (#1343).\n\nThe operator-facing projection joined with the post's title/slug. The\ninternal scoring columns (``quality_signals`` / ``quality_evaluated_at``)\nare intentionally not surfaced over HTTP — the ``poindexter media pending``\nCLI reads those straight from the service, not this endpoint."
+        "description": "One row in the Gate-2 media-approval queue (#1343).\n\nThe operator-facing projection joined with the post's title/slug. The\ninternal scoring columns (``quality_signals`` / ``quality_evaluated_at``)\nare intentionally not surfaced over HTTP — the ``poindexter media pending``\nCLI reads those straight from the service, not this endpoint.\n\n``subject_id`` is the id the item is decided, previewed and opened by:\nthe post id, or for a standalone video with no post (poindexter#1140)\nits pipeline task id. ``post_id`` is then None and ``standalone`` true."
       },
       "MediaApprovalListResponse": {
         "properties": {
