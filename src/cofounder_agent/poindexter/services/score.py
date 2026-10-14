@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import uuid
 from pathlib import Path
@@ -140,7 +141,12 @@ async def plan_score(
         task_id=task_id, what="score", phase="story_score",
     )
     cap = int(float(_setting(site_config, "story_score_max_sounds")))
-    return {"music": reply["music"], "sounds": list(reply.get("sounds") or [])[:cap]}
+    # One sound per action beat: several on one moment pile into noise.
+    sounds: list[dict[str, Any]] = []
+    for item in reply.get("sounds") or []:
+        if str(item.get("beat")) not in {str(x.get("beat")) for x in sounds}:
+            sounds.append(item)
+    return {"music": reply["music"], "sounds": sounds[:cap]}
 
 
 async def _ffmpeg(*args: str) -> bool:
@@ -165,32 +171,85 @@ async def _generate(prompt: str, kind: str, seconds: float, stem: str, out_dir: 
     return path if path and os.path.exists(path) else None
 
 
+def _music_chain(
+    inputs: list[int], length: float, clip_s: float, out: str, *, fade_s: float, keep: float, lufs: float,
+) -> tuple[list[str], int]:
+    """One music piece filling ``length`` seconds from the steady part of its clip.
+
+    Generated music fades out over its last stretch (the Midnight Patch score
+    fell from -23 to -56 dB RMS in its last 15 s, 2026-10-14), so only the
+    first ``keep`` of the clip is used, crossfaded into itself to fill a long
+    scene. Each repeat is its own input (``inputs``, the input index for every
+    repeat the caller provides): ``asplit`` cannot feed both sides of an
+    ``acrossfade``, whose second side then came out empty and left the music
+    silent from the first seam. ``loudnorm`` holds the piece at ``lufs``.
+    Returns ``(chains, repeats needed)``; with fewer ``inputs`` than repeats
+    the caller asks again.
+    """
+    clip = max(0.1, clip_s or length)
+    steady = min(clip, max(6.0, clip * keep)) if clip > 6.0 else clip
+    xf = min(3.0, steady / 3)
+    reps = 1 if steady >= length else min(30, math.ceil((length - xf) / max(0.1, steady - xf)))
+    if len(inputs) < reps:
+        return [], reps
+    fade = min(fade_s, length / 3)
+    tail = (
+        f"atrim=0:{length:.3f},asetpts=PTS-STARTPTS,loudnorm=I={lufs:.1f}:TP=-3:LRA=7,aresample=44100,"
+        f"afade=t=in:d={fade:.2f},afade=t=out:st={max(0.0, length - fade):.3f}:d={fade:.2f}"
+    )
+    chains = [f"[{n}:a]atrim=0:{steady:.3f},asetpts=PTS-STARTPTS[{out}_r{i}]" for i, n in enumerate(inputs[:reps])]
+    current = f"{out}_r0"
+    for i in range(1, reps):
+        chains.append(f"[{current}][{out}_r{i}]acrossfade=d={xf:.2f}:c1=tri:c2=tri[{out}_x{i}]")
+        current = f"{out}_x{i}"
+    chains.append(f"[{current}]{tail}[{out}]")
+    return chains, reps
+
+
 def mix_graph(
     pieces: list[dict[str, Any]], *, duration_s: float, fade_s: float, sfx_gain_db: float,
-) -> str:
-    """The ffmpeg filter graph placing each piece at its moment and mixing them."""
-    chains = []
-    labels = []
+    music_lufs: float = -24.0, keep_fraction: float = 0.6, limit: float = 0.7,
+) -> tuple[str, list[str]]:
+    """``(filter graph, input paths)`` placing each piece at its moment and mixing them.
+
+    Every piece is loudness-normalized first: music to ``music_lufs``, a sound
+    effect ``sfx_gain_db`` above it. A raw Stable Audio effect could be far
+    louder than the music around it (the Midnight Patch score hit -1.4 dBFS on
+    one action beat, "a weird cacophony"). A limiter holds the mix's peaks at
+    ``limit``. A looped music piece is listed once per repeat in the inputs.
+    """
+    chains: list[str] = []
+    labels: list[str] = []
+    inputs: list[str] = []
     for k, p in enumerate(pieces):
         length = max(0.1, float(p["end"]) - float(p["start"]))
         delay = int(round(float(p["start"]) * 1000))
         if p["kind"] == "music":
-            fade = min(fade_s, length / 3)
-            chain = (
-                f"[{k}:a]aloop=loop=-1:size=2e9,atrim=0:{length:.3f},asetpts=PTS-STARTPTS,"
-                f"afade=t=in:d={fade:.2f},afade=t=out:st={max(0.0, length - fade):.3f}:d={fade:.2f},"
-                f"adelay={delay}|{delay}[p{k}]"
+            clip_s = float(p.get("clip_s") or 0.0)
+            _, reps = _music_chain([], length, clip_s, f"q{k}", fade_s=fade_s, keep=keep_fraction, lufs=music_lufs)
+            first = len(inputs)
+            inputs += [p["path"]] * reps
+            music, _ = _music_chain(
+                list(range(first, first + reps)), length, clip_s, f"q{k}",
+                fade_s=fade_s, keep=keep_fraction, lufs=music_lufs,
             )
+            chains += music
+            chains.append(f"[q{k}]adelay={delay}|{delay}[p{k}]")
         else:
-            chain = (
-                f"[{k}:a]atrim=0:{length:.3f},asetpts=PTS-STARTPTS,"
-                f"afade=t=out:st={max(0.0, length - 0.3):.3f}:d=0.3,volume={sfx_gain_db}dB,"
+            n = len(inputs)
+            inputs.append(p["path"])
+            chains.append(
+                f"[{n}:a]atrim=0:{length:.3f},asetpts=PTS-STARTPTS,"
+                f"loudnorm=I={music_lufs + sfx_gain_db:.1f}:TP=-3:LRA=7,aresample=44100,"
+                f"afade=t=out:st={max(0.0, length - 0.3):.3f}:d=0.3,"
                 f"adelay={delay}|{delay}[p{k}]"
             )
-        chains.append(chain)
         labels.append(f"[p{k}]")
-    mixed = f"{''.join(labels)}amix=inputs={len(pieces)}:normalize=0:duration=longest,atrim=0:{duration_s:.3f}[out]"
-    return ";".join([*chains, mixed])
+    mixed = (
+        f"{''.join(labels)}amix=inputs={len(pieces)}:normalize=0:duration=longest,"
+        f"alimiter=limit={limit:.3f}:level=disabled,atrim=0:{duration_s:.3f}[out]"
+    )
+    return ";".join([*chains, mixed]), inputs
 
 
 async def build_score(
@@ -210,12 +269,17 @@ async def build_score(
         if sid not in spans:
             continue
         start, end = spans[sid]
+        # Only the steady first part of a clip is used (see _music_chain), so
+        # a clip as long as the engine makes leaves the fewest loop seams.
         path = await _generate(
             _setting(site_config, "story_score_music_template").replace("{prompt}", str(item["prompt"])),
-            "ambient", min(max_clip, end - start + 2.0), f"{stem}_music_{sid}", out_dir, site_config,
+            "ambient", max_clip, f"{stem}_music_{sid}", out_dir, site_config,
         )
         if path:
-            pieces.append({"path": path, "kind": "music", "start": start, "end": end})
+            from poindexter.services.dialogue_audio import probe_seconds
+
+            clip_s = await probe_seconds(path)
+            pieces.append({"path": path, "kind": "music", "start": start, "end": end, "clip_s": clip_s})
             made_music += 1
     for item in plan.get("sounds") or []:
         beat = beats.get(int(str(item.get("beat"))))
@@ -233,13 +297,16 @@ async def build_score(
             made_sounds += 1
     if not pieces:
         return {"path": None, "music": 0, "sounds": 0}
-    graph = mix_graph(
+    graph, sources = mix_graph(
         pieces, duration_s=duration_s, fade_s=float(_setting(site_config, "story_score_fade_seconds")),
         sfx_gain_db=float(_setting(site_config, "story_score_sfx_gain_db")),
+        music_lufs=float(_setting(site_config, "story_score_music_lufs")),
+        keep_fraction=float(_setting(site_config, "story_score_music_keep_fraction")),
+        limit=float(_setting(site_config, "story_score_limit")),
     )
     inputs: list[str] = []
-    for p in pieces:
-        inputs += ["-i", p["path"]]
+    for source in sources:
+        inputs += ["-i", source]
     ok = await _ffmpeg(*inputs, "-filter_complex", graph, "-map", "[out]", "-ar", "44100", "-ac", "2", output_path)
     return {"path": output_path if ok and os.path.exists(output_path) else None,
             "music": made_music, "sounds": made_sounds}

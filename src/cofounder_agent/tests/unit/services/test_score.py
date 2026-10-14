@@ -75,23 +75,39 @@ class TestPlan:
             "music": [{"scene_id": "s1", "prompt": "soft pizzicato"}, {"scene_id": "s2", "prompt": "playful oboe"}],
             "sounds": [{"beat": 1, "prompt": "door slam"}, {"beat": 1, "prompt": "echo"}],
         })]
-        plan = await score.plan_score(SCRIPT, TIMELINE, style="ink", site_config=_sc(story_score_max_sounds="1"))
-        assert len(plan["sounds"]) == 1 and plan["music"][1]["prompt"] == "playful oboe"
+        plan = await score.plan_score(SCRIPT, TIMELINE, style="ink", site_config=_sc(story_score_max_sounds="5"))
+        # One sound per beat: two on beat 1 piled into noise.
+        assert plan["sounds"] == [{"beat": 1, "prompt": "door slam"}] and plan["music"][1]["prompt"] == "playful oboe"
         prompt = chat.await_args.args[0]
         assert "s1 | 5s | a wood" in prompt and "1 | s1 | A door slams." in prompt
         assert chat.await_args.kwargs["phase"] == "story_score"
 
 
 class TestMix:
-    def test_music_loops_to_its_scene_and_sounds_ride_louder(self):
-        graph = score.mix_graph(
-            [{"path": "m", "kind": "music", "start": 0.0, "end": 4.7},
+    def test_every_piece_is_levelled_and_the_mix_is_limited(self):
+        """The Midnight Patch score hit -1.4 dBFS on one action beat: a raw
+        sound effect far louder than the music around it (2026-10-14)."""
+        graph, sources = score.mix_graph(
+            [{"path": "m", "kind": "music", "start": 0.0, "end": 4.7, "clip_s": 30.0},
              {"path": "s", "kind": "sfx", "start": 2.4, "end": 5.4}],
-            duration_s=7.0, fade_s=1.5, sfx_gain_db=9.0,
+            duration_s=7.0, fade_s=1.5, sfx_gain_db=9.0, music_lufs=-24.0,
         )
-        assert "[0:a]aloop=loop=-1:size=2e9,atrim=0:4.700" in graph and "adelay=0|0[p0]" in graph
-        assert "volume=9.0dB,adelay=2400|2400[p1]" in graph
-        assert graph.endswith("amix=inputs=2:normalize=0:duration=longest,atrim=0:7.000[out]")
+        assert sources == ["m", "s"]
+        assert "loudnorm=I=-24.0:TP=-3" in graph and "loudnorm=I=-15.0:TP=-3" in graph
+        assert "adelay=2400|2400[p1]" in graph
+        assert graph.endswith("amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.700:level=disabled,"
+                              "atrim=0:7.000[out]")
+
+    def test_long_music_crossfades_its_steady_part_from_separate_inputs(self):
+        """Generated music fades out at its end, so only the first part is used,
+        looped; asplit cannot feed an acrossfade, so each repeat is an input."""
+        graph, sources = score.mix_graph(
+            [{"path": "m", "kind": "music", "start": 0.0, "end": 43.0, "clip_s": 45.0}],
+            duration_s=43.0, fade_s=1.5, sfx_gain_db=9.0, keep_fraction=0.6,
+        )
+        assert sources == ["m", "m"]
+        assert "[0:a]atrim=0:27.000" in graph and "[1:a]atrim=0:27.000" in graph
+        assert "acrossfade=d=3.00" in graph and "asplit" not in graph
 
 
 @pytest.fixture
@@ -108,8 +124,11 @@ def studio(monkeypatch, tmp_path):
         Path(args[-1]).write_bytes(b"score")
         return True
 
+    import poindexter.services.dialogue_audio as da
+
     monkeypatch.setattr(score, "_generate", fake_generate)
     monkeypatch.setattr(score, "_ffmpeg", fake_ffmpeg)
+    monkeypatch.setattr(da, "probe_seconds", AsyncMock(return_value=30.0))
     return made
 
 
@@ -123,7 +142,8 @@ class TestBuild:
         out = await score.build_score(PLAN, TIMELINE, duration_s=7.0, site_config=_sc(),
                                       output_path=str(tmp_path / "t_score.wav"))
         assert out == {"path": str(tmp_path / "t_score.wav"), "music": 2, "sounds": 1}
-        assert studio[0] == ("ambient", "soft pizzicato, instrumental music, no vocals, clean mix", 6.7)
+        # Music is made as long as the engine allows; only its steady part is used.
+        assert studio[0] == ("ambient", "soft pizzicato, instrumental music, no vocals, clean mix", 47.0)
         assert studio[2][0] == "sfx" and studio[2][1].startswith("sound effect: door slam")
 
     @pytest.mark.asyncio

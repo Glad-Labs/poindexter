@@ -3193,16 +3193,25 @@ DEFAULTS: dict[str, str] = {
     'creative_draft_stale_minutes': '45',
     # Chat drafting phase 6: a cartoon's soundtrack (services/score.py). The
     # writer plans music per scene and a sound for up to max_sounds action
-    # beats; Stable Audio makes each (music clips up to max_clip_seconds,
-    # looped to fill the scene; sounds up to max_sound_seconds); ffmpeg lays
-    # them on the dialogue timeline. Sounds sit sfx_gain_db above the music so
-    # they read through the soundtrack's attenuation under the dialogue.
+    # beats; Stable Audio makes each (music clips of max_clip_seconds, the
+    # steady part crossfaded to fill the scene; sounds up to max_sound_seconds);
+    # ffmpeg lays them on the dialogue timeline. Sounds sit sfx_gain_db (LU)
+    # above the music so they read through the soundtrack's attenuation under
+    # the dialogue.
     'story_score_enabled': 'true',
     'story_score_max_sounds': '6',
     'story_score_max_clip_seconds': '47',
     'story_score_max_sound_seconds': '4',
     'story_score_fade_seconds': '1.5',
     'story_score_sfx_gain_db': '9',
+    # Levels (2026-10-14, "a weird cacophony of sound"): every piece is
+    # loudness-normalized before mixing, music to music_lufs and a sound
+    # effect sfx_gain_db above it; only the first music_keep_fraction of a
+    # generated music clip is used (the rest fades out) and crossfaded into
+    # itself to fill a scene; a limiter holds the mix's peaks at limit (linear).
+    'story_score_music_lufs': '-24',
+    'story_score_music_keep_fraction': '0.6',
+    'story_score_limit': '0.7',
     'story_score_music_template': '{prompt}, instrumental music, no vocals, clean mix',
     'story_score_sound_template': 'sound effect: {prompt}, isolated, no music, no voices',
     'story_score_dir': '~/.poindexter/video/scores',
@@ -6790,6 +6799,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_score_max_sound_seconds': {'owner': 'score', 'value_type': 'float'},
     'story_score_fade_seconds': {'owner': 'score', 'value_type': 'float'},
     'story_score_sfx_gain_db': {'owner': 'score', 'value_type': 'float'},
+    'story_score_music_lufs': {'owner': 'score', 'value_type': 'float'},
+    'story_score_music_keep_fraction': {'owner': 'score', 'value_type': 'float'},
+    'story_score_limit': {'owner': 'score', 'value_type': 'float'},
     'story_score_music_template': {'owner': 'score', 'value_type': 'string'},
     'story_score_sound_template': {'owner': 'score', 'value_type': 'string'},
     'story_score_dir': {'owner': 'score', 'value_type': 'string'},
