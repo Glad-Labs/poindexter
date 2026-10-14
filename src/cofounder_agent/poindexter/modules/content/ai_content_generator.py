@@ -1309,7 +1309,7 @@ class AIContentGenerator:
         # Capture in Sentry as a distinct message so alert rules can target it.
         # Generated content will be a stub template, not AI output (issue #556).
         try:
-            import sentry_sdk  # pylint: disable=import-outside-toplevel
+            import sentry_sdk
 
             if sentry_sdk.is_initialized():  # type: ignore[attr-defined]
                 sentry_sdk.capture_message(  # type: ignore[attr-defined]
@@ -1317,7 +1317,7 @@ class AIContentGenerator:
                     level="error",
                     extras={"attempts": [{"provider": p, "error": e} for p, e in attempts]},
                 )
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             # Never let Sentry integration block content delivery, but do log the failure
             logger.error(
                 "[ai_content_generator] Failed to capture all-models-failed event in Sentry",

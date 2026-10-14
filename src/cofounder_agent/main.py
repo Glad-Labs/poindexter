@@ -67,7 +67,7 @@ _LIFESPAN_TASKS: set = set()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
+async def lifespan(app: FastAPI):
     """
     Application lifespan manager - handles startup and shutdown.
 
@@ -1137,7 +1137,7 @@ async def api_health():
             try:
                 db_health = await database_service.health_check()
                 health_data["components"]["database"] = db_health.get("status", "unknown")
-            except Exception as e:  # pylint: disable=broad-except
+            except Exception as e:
                 logger.warning(
                     "Database health check failed in /api/health: %s", str(e), exc_info=True
                 )
@@ -1180,7 +1180,7 @@ async def api_health():
                     task_counts = await database_service.tasks.get_task_counts()
                     pending_count = getattr(task_counts, "pending", 0)
                     in_progress_count = getattr(task_counts, "in_progress", 0)
-                except Exception as e:  # pylint: disable=broad-except
+                except Exception as e:
                     logger.warning(
                         "[health] task_counts DB read failed (queue-depth "
                         "metrics will read as 0): %s", e,
@@ -1194,7 +1194,7 @@ async def api_health():
                 "success_count": 0,
                 "error_count": 0,
             }
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:
             logger.warning("Task queue health check failed: %s", str(e), exc_info=True)
             health_data["components"]["task_executor"] = "unavailable"
 
@@ -1213,7 +1213,7 @@ async def api_health():
 
             pool = getattr(database_service, "pool", None) if database_service else None
             health_data["components"]["migrations"] = await get_migration_status(pool)
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:
             logger.warning(
                 "Migrations health probe failed: %s", str(e), exc_info=True,
             )
@@ -1271,7 +1271,7 @@ async def api_health():
             ollama_snapshot = per_provider.get("ollama")
             if ollama_snapshot is not None:
                 health_data["components"]["ollama_resilience"] = ollama_snapshot
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:
             logger.warning(
                 "LLM resilience health probe failed: %s", e, exc_info=True,
             )
@@ -1291,7 +1291,7 @@ async def api_health():
         try:
             from poindexter.services.gpu_scheduler import gpu
             health_data["components"]["gpu"] = gpu.status
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:
             logger.warning("GPU scheduler status probe failed: %s", e, exc_info=True)
             health_data["components"]["gpu"] = {
                 "status": "error",
@@ -1312,7 +1312,7 @@ async def api_health():
             else 200
         )
         return JSONResponse(content=health_data, status_code=status_code)
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:
         logger.error("Health check failed: %s", str(e), exc_info=True)
         return JSONResponse(
             content={"status": "unhealthy", "service": "poindexter", "error": "health_check_failed"},
@@ -1417,7 +1417,7 @@ async def get_metrics_endpoint(token: str = Depends(verify_api_token)):
         return metrics
     except HTTPException:
         raise
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:
         logger.error("Metrics retrieval failed: %s", str(e), exc_info=True)
         raise HTTPException(status_code=503, detail="metrics_unavailable") from e
 
@@ -1471,7 +1471,7 @@ async def process_command(
     command: CommandRequest,
     background_tasks: BackgroundTasks,
     token: str = Depends(verify_api_token),
-):  # pylint: disable=unused-argument
+):
     """
     Processes a command sent to the Co-Founder agent.
 
@@ -1498,7 +1498,7 @@ async def process_command(
         # other intentional HTTP status — the broad handler below would
         # otherwise collapse it into a generic 500 (poindexter#741).
         raise
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:
         logger.error(
             f"Error processing command: {e!s} | command={command.command}", exc_info=True
         )
