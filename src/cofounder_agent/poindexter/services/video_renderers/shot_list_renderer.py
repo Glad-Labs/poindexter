@@ -2656,6 +2656,11 @@ async def _backfill_pass(
     """
     card_ok = _card_enabled(site_config)
     work_dir: Path = render_kwargs["work_dir"]
+    # A screenplay video (a cartoon) draws every picture from its cast. Stock
+    # footage in it is a different film: the cyberpunk Cinderella (2026-10-14)
+    # cut to real women reading in a bedroom when two stills failed. Its failed
+    # slot holds a picture of its own instead (``_held_picture``).
+    reference_ctx = render_kwargs.get("reference_ctx")
     house_style = ""
     if site_config is not None:
         from poindexter.services.media_subject_policy import resolve_media_policy
@@ -2669,7 +2674,19 @@ async def _backfill_pass(
         # with its own success row, which carries no error, so reading it after
         # the swap would always report an empty reason.
         primary_error = st.result.error or ""
-        if st.shot.source in _IMAGE_GEN_FAMILY:
+        if reference_ctx is not None:
+            held = await _held_picture(st, states, reference_ctx)
+            if held:
+                st.result = ShotRenderResult(
+                    idx=st.shot.idx, source=st.shot.source, success=True,
+                    clip_path=held, duration_s=st.shot.duration_s,
+                )
+                st.rung = "hold"
+                _emit_shot_fallback_finding(
+                    shot=st.shot, post_id=post_id, rung="hold", reason=primary_error,
+                )
+                continue
+        if st.shot.source in _IMAGE_GEN_FAMILY and reference_ctx is None:
             sub_path = await _substitute_failed_shot(
                 st.shot,
                 work_dir=work_dir,
@@ -2705,6 +2722,35 @@ async def _backfill_pass(
                 )
                 continue
         st.rung = "dropped"
+
+
+_STILL_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
+
+
+async def _held_picture(st: _ShotState, states: list[_ShotState], ctx: ReferenceContext) -> str | None:
+    """A failed cartoon shot's stand-in: its scene's place, else the picture before it.
+
+    The scene's establishing picture keeps the slot in the right place; the
+    previous filled shot (its last frame, when it is a clip) keeps the cut
+    continuous. ``None`` when neither exists, and the slot falls to the card.
+    """
+    from poindexter.services.video_renderers.shot_vision_qa import _final_frame
+
+    scene = getattr(st.shot, "scene_id", None)
+    place = ctx.places.get(str(scene)) if scene else None
+    if place and os.path.exists(place):
+        return place
+    before = [s for s in states if s.shot.idx < st.shot.idx and s.result.success and s.result.clip_path]
+    for prev in reversed(before):
+        path = str(prev.result.clip_path)
+        if not os.path.exists(path):
+            continue
+        if path.lower().endswith(_STILL_SUFFIXES):
+            return path
+        frame = await _final_frame(path)
+        if frame:
+            return frame
+    return None
 
 
 async def _resolve_demo_clip(
@@ -2938,6 +2984,15 @@ async def _render_reference_still(
         (wanted or list(ctx.cast))[: rf.MAX_REFERENCES], ctx,
         work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
     )
+    if not paths and wanted and not speakers:
+        # Nobody the shot names can be drawn (no portrait): draw it in the
+        # cast's style rather than leave the reference path, whose fallback is
+        # a text-to-image still in another style.
+        wanted, style_only = [], True
+        paths, names = await _reference_portraits(
+            list(ctx.cast)[: rf.MAX_REFERENCES], ctx,
+            work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
+        )
     if not paths:
         return False
     place = None

@@ -507,3 +507,64 @@ class TestWritingCheck:
         still = sq._parse_cast_frame(
             '{"people": 2, "strangers": 0, "all_present": true, "writing_ok": false, "reason": "neon RUBY"}', 2)
         assert still.ok is False
+
+
+class TestCartoonBackfill:
+    """A cartoon's failed shot never becomes stock footage (2026-10-14: the
+    cyberpunk Cinderella cut to real women reading in a bedroom)."""
+
+    @staticmethod
+    def _state(idx, *, ok, clip=None, scene="s1"):
+        shot = Shot(**{**_shot(idx, source="image_gen").model_dump(), "scene_id": scene})
+        res = slr.ShotRenderResult(idx=idx, source="image_gen", success=ok, clip_path=clip,
+                                   error=None if ok else "image-gen 503 CUDA out of memory")
+        return slr._ShotState(shot=shot, result=res, is_reused=False)
+
+    @staticmethod
+    def _kwargs(tmp_path, ctx):
+        return dict(work_dir=tmp_path, image_gen_url="", site_config=None, http_client_factory=None,
+                    pexels_key="KEY", orientation="landscape", post_id="t1", reference_ctx=ctx)
+
+    @pytest.mark.asyncio
+    async def test_a_failed_shot_holds_its_scenes_place_and_never_searches_stock(self, tmp_path, monkeypatch):
+        stock = AsyncMock(return_value=True)
+        monkeypatch.setattr(slr, "_render_pexels_video", stock)
+        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
+        place = tmp_path / "place_s1.png"
+        place.write_bytes(b"PNG")
+        ctx = slr.ReferenceContext(cast=("dex",), places={"s1": str(place)})
+        st = self._state(3, ok=False)
+        await slr._backfill_pass([st], render_kwargs=self._kwargs(tmp_path, ctx), site_config=None,
+                                 post_id="t1", width=8, height=8, wordmark="x")
+        assert st.rung == "hold" and st.result.clip_path == str(place) and st.result.duration_s == 3.0
+        assert stock.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_without_a_place_it_holds_the_picture_before(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
+        before = tmp_path / "shot_02.png"
+        before.write_bytes(b"PNG")
+        ctx = slr.ReferenceContext(cast=("dex",))
+        states = [self._state(2, ok=True, clip=str(before), scene="s0"), self._state(3, ok=False)]
+        await slr._backfill_pass(states, render_kwargs=self._kwargs(tmp_path, ctx), site_config=None,
+                                 post_id="t1", width=8, height=8, wordmark="x")
+        assert states[1].rung == "hold" and states[1].result.clip_path == str(before)
+
+    @pytest.mark.asyncio
+    async def test_nothing_to_hold_falls_to_the_card_not_stock(self, tmp_path, monkeypatch):
+        stock = AsyncMock(return_value=True)
+        monkeypatch.setattr(slr, "_render_pexels_video", stock)
+        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
+        st = self._state(0, ok=False)
+        await slr._backfill_pass([st], render_kwargs=self._kwargs(tmp_path, slr.ReferenceContext(cast=("dex",))),
+                                 site_config=None, post_id="t1", width=64, height=36, wordmark="x")
+        assert st.rung == "card" and stock.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_a_shot_of_only_portraitless_characters_is_drawn_in_the_cast_style(self, stub_refs, tmp_path):
+        ctx = slr.ReferenceContext(cast=("dex", "nova"))
+        ok = await slr._render_reference_still(
+            _shot(characters=["pip"]), prompt="pip by the window", output_path=str(tmp_path / "s.png"),
+            width=8, height=8, ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        call = stub_refs["calls"][0]
+        assert ok and "without the characters" in call["prompt"] and len(call["reference_paths"]) == 2

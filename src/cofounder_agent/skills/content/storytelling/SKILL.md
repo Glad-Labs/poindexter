@@ -178,6 +178,7 @@ FOR EVERY SHOT
 - A reaction row shows the listed characters listening to the speaker: their face and body answering what was just said. The speaker's words stay spoken; the picture shows the people in the room.
 - When a line uses a comparison or an analogy, picture the characters talking it through in the scene, with at most one prop from it in their hands or on a surface.
 - Name visible characters by their id; their looks and the art style are added later, so describe only composition and action.
+- Draw only the characters a row lists as visible. Anyone else the row names, such as a narrator, is a voice heard over the picture.
 - Vary the framing from shot to shot (wide, medium, close-up, over the shoulder) while the place stays the same.
 - Keep pictures free of written words, signs and screens with text.
 - "motion": for an animated shot, one sentence on how the camera moves and what moves in the picture. For a still, an empty string.

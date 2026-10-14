@@ -104,8 +104,12 @@ class TestTiling:
         # scene's master shot, which shows the scene's whole cast.
         assert by_text["Nova taps the GPU"]["kind"] == "master"
         assert by_text["Nova taps the GPU"]["characters"] == ["dex", "nova"]
+        # Pip has no portrait, so Pip cannot be drawn: the line plays over the
+        # scene's drawable cast. Putting Pip in the picture sent the still to
+        # the text path and, when that failed, to stock footage (2026-10-14).
         pip = by_text["Pip has no portrait."]
-        assert pip["source"] != "presenter" and pip["characters"] == ["pip"]
+        assert pip["source"] != "presenter" and "pip" not in pip["characters"]
+        assert all("pip" not in s["characters"] for s in plan)
 
     def test_delivery_note_and_setting_ride_on_the_talking_shot(self):
         dex = next(s for s in _plan() if s.get("speaker") == "dex")

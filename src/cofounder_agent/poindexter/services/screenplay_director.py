@@ -103,6 +103,11 @@ def plan_shots(
         slug for slug in cast
         if (p := get_persona(site_config, slug)) is not None and p.enabled and p.has_portrait
     }
+    # Only a character with a portrait can be drawn, so only they are on
+    # screen. A voice-only narrator (the cyberpunk Cinderella's Storyteller)
+    # put in a picture has nothing to be drawn from: the still fell back to
+    # the text-to-image path, that failed, and the slot became stock footage.
+    cast = talkable
 
     plan: list[dict[str, Any]] = []
     talking = 0
