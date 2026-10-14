@@ -3,7 +3,7 @@
  * ==============================================================
  *
  * The one place the API base URL is resolved. auth, task-workflow,
- * workflow-capability and manual-publish-pipeline read API_URL from here;
+ * task-workflow and manual-publish-pipeline read API_URL from here;
  * integration-tests and fixtures-validation reach it through fixtures.ts's
  * APIClient; global-setup.ts reads it too. Before this module, five of those
  * specs hardcoded http://localhost:8000 and ignored PLAYWRIGHT_API_URL, so

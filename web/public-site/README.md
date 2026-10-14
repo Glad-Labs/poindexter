@@ -145,9 +145,9 @@ Each spec that calls the backend checks it first (`requireBackend` in
 whenever `PLAYWRIGHT_API_URL`, `SKIP_SERVER_START` or `CI` is set. They skip,
 with the reason, only on a bare local run with none of those set.
 
-The dev-token specs (`task-workflow`, `manual-publish-pipeline`,
-`workflow-capability`, and the `apiClient` tests in `integration-tests` /
-`fixtures-validation`) authenticate as `Bearer dev-token`. They need a
+The dev-token specs (`task-workflow`, `manual-publish-pipeline`, and the
+`apiClient` tests in `integration-tests` / `fixtures-validation`) authenticate
+as `Bearer dev-token`. They need a
 DEVELOPMENT_MODE backend and write to it. Production refuses dev-token, so the
 same check stops them there before they send anything. Never aim them at
 production. `auth.spec.ts` sends no credentialed writes and passes against

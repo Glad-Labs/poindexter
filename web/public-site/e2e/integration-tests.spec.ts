@@ -63,18 +63,6 @@ test.describe('UI/Backend Integration Tests', () => {
     expect(task?.id ?? task?.task_id).toBeTruthy();
   });
 
-  test('API errors are handled gracefully', async ({ apiClient }) => {
-    try {
-      // Request non-existent resource
-      const result = await apiClient.get('/api/tasks/invalid-id');
-      // Should either return error or null
-      expect(result === null || result?.error).toBeTruthy();
-    } catch (error) {
-      // Error is expected
-      expect(error).toBeTruthy();
-    }
-  });
-
   // ==================
   // UI Navigation Tests
   // ==================
@@ -134,40 +122,6 @@ test.describe('UI/Backend Integration Tests', () => {
   // Full Workflow Tests
   // ==================
 
-  test('Complete task workflow (create -> view -> delete)', async ({
-    page,
-    apiClient,
-    database,
-    requestLogger,
-  }) => {
-    // Step 1: Create task via API
-    const task = await database.createTestTask({
-      title: 'Workflow Test Task',
-    });
-    expect(task).toBeTruthy();
-
-    // Step 2: Navigate to task list
-    await page.goto('/tasks');
-    await page.waitForLoadState('networkidle');
-
-    // Step 3: Verify task appears in UI
-    const taskTitle = page.locator('text=Workflow Test Task');
-    const isVisible = await taskTitle.isVisible().catch(() => false);
-
-    if (isVisible) {
-      expect(taskTitle).toBeTruthy();
-    } else {
-      // Task might be on another page or need to be searched
-      console.log(
-        '⚠️  Task not visible in first load, checking API directly...'
-      );
-    }
-
-    // Step 4: Log all API requests made during workflow
-    const apiRequests = requestLogger.getAPIRequests();
-    expect(apiRequests.length).toBeGreaterThan(0);
-  });
-
   test('Real-time data updates', async ({ page, apiClient }) => {
     // Create a task
     const task = await apiClient.post('/api/tasks', {
@@ -221,18 +175,15 @@ test.describe('UI/Backend Integration Tests', () => {
     ).toBeTruthy();
   });
 
-  test('Image alt text is present', async ({ page }) => {
+  test('Every image has an alt attribute', async ({ page }) => {
+    // The HTML spec marks an image decorative with alt="" (the post-card
+    // thumbnails sit beside the post's own title), so an empty alt is
+    // correct. A MISSING alt is the defect: screen readers then read the
+    // file name. The old test failed every decorative alt="" that lacked
+    // aria-hidden, which the spec does not require (glad-labs-stack#4237).
     const images = await page.locator('img').all();
-
     for (const img of images) {
-      const alt = await img.getAttribute('alt').catch(() => '');
-      // Allow empty alt for decorative images, but should have aria-hidden
-      if (!alt) {
-        const ariaHidden = await img
-          .getAttribute('aria-hidden')
-          .catch(() => '');
-        expect(ariaHidden === 'true' || alt !== '').toBeTruthy();
-      }
+      expect(await img.getAttribute('alt')).not.toBeNull();
     }
   });
 

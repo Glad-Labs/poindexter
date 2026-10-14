@@ -237,7 +237,7 @@ jobs:
           web/public-site/e2e/tag.spec.ts
 
       - name: Run full backend-dependent specs (lane=full)
-        # Only a dispatch with lane=full. All eight specs. Point the repo
+        # Only a dispatch with lane=full. All seven specs. Point the repo
         # variables PLAYWRIGHT_TEST_BASE_URL (the site) and PLAYWRIGHT_API_URL
         # (the FastAPI backend) at a stack this runner can reach.
         # Every backend-calling spec (and fixtures.ts's APIClient) takes its
@@ -247,8 +247,8 @@ jobs:
         # checks the probe global-setup made, and because this job sets CI and
         # SKIP_SERVER_START, an unusable backend FAILS the test. Nothing in
         # this lane can skip to green. The dev-token specs (task-workflow,
-        # manual-publish-pipeline, workflow-capability, and the apiClient
-        # tests in integration-tests / fixtures-validation) also fail unless
+        # manual-publish-pipeline, and the apiClient tests in
+        # integration-tests / fixtures-validation) also fail unless
         # the backend accepts `Bearer dev-token`, which only a DEVELOPMENT_MODE
         # backend does. Use a throwaway dev stack, never production:
         # manual-publish-pipeline creates, approves and publishes a real post.
@@ -256,10 +256,9 @@ jobs:
         # With the variables unset, as they are today, the site is production
         # and the API a localhost this runner does not have, so the lane fails
         # at requireBackend() until they are set.
-        # Stale specs, not a config problem: workflow-capability and
-        # task-workflow's bulk tests call routes deleted in April 2026
-        # (5eb26b517, d96f43c7a), so they fail against any real backend until
-        # they are rewritten or retired.
+        # workflow-capability.spec.ts and task-workflow's nine bulk-route
+        # tests were retired (glad-labs-stack#4237): they called routes
+        # deleted in April 2026 (5eb26b517, d96f43c7a) and could only fail.
         if: ${{ env.E2E_LANE == 'full' }}
         env:
           PLAYWRIGHT_TEST_BASE_URL: ${{ vars.PLAYWRIGHT_TEST_BASE_URL || 'https://www.gladlabs.io' }}
@@ -271,7 +270,6 @@ jobs:
           web/public-site/e2e/author.spec.ts
           web/public-site/e2e/task-workflow.spec.ts
           web/public-site/e2e/manual-publish-pipeline.spec.ts
-          web/public-site/e2e/workflow-capability.spec.ts
           web/public-site/e2e/integration-tests.spec.ts
           web/public-site/e2e/fixtures-validation.spec.ts
           web/public-site/e2e/tag.spec.ts

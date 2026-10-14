@@ -28,29 +28,6 @@ test.describe('Fixtures Validation', () => {
     expect(apiClient.baseUrl).toBeTruthy();
   });
 
-  test('apiClient.get() method works', async ({ apiClient }) => {
-    try {
-      const result = await apiClient.get('/health');
-      // Should return status and data
-      expect(result).toHaveProperty('status');
-      expect(result).toHaveProperty('data');
-    } catch (error) {
-      // Health endpoint may not exist, that's OK for this test
-      expect(error).toBeDefined();
-    }
-  });
-
-  test('apiClient.post() method works', async ({ apiClient }) => {
-    try {
-      const result = await apiClient.post('/api/tasks', { title: 'Test' });
-      // Should return response object
-      expect(result).toHaveProperty('status');
-    } catch (error) {
-      // API may reject invalid data, that's OK for this test
-      expect(error).toBeDefined();
-    }
-  });
-
   test('apiClient handles request errors', async ({ apiClient }) => {
     const result = await apiClient.request('GET', '/invalid-endpoint');
     // Should handle error gracefully
@@ -274,20 +251,6 @@ test.describe('Fixtures Edge Cases', () => {
     // Duration should be very small (near zero)
     expect(duration).toBeGreaterThanOrEqual(0);
     expect(duration).toBeLessThan(10); // Should be near 0
-  });
-
-  test('database factory handles missing API', async ({ database }) => {
-    // If API is not available, factory should handle gracefully
-    try {
-      const task = await database.createTestTask({ title: 'No API Test' });
-      // If API available, task should exist
-      if (task) {
-        expect(task).toBeDefined();
-      }
-    } catch (error) {
-      // If API not available, should throw or return null
-      expect(error).toBeDefined();
-    }
   });
 
   test('requestLogger with no requests', async ({ requestLogger }) => {

@@ -14,7 +14,7 @@
  * ✅ Screenshot/video capture on failure
  * ✅ HTML, JSON, JUnit, Markdown reporting
  * ✅ Trace collection for debugging
- * ✅ Global setup/teardown hooks
+ * ✅ Global setup hook
  * ✅ Environment-specific configuration
  * ✅ CI/CD optimizations
  *
@@ -283,7 +283,6 @@ export default defineConfig({
   // ========================
 
   globalSetup: './web/public-site/e2e/global-setup.ts',
-  globalTeardown: './web/public-site/e2e/global-teardown.ts',
 
   // ========================
   // Output Configuration
