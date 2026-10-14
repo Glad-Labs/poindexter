@@ -51,6 +51,24 @@ class TestOutline:
         assert any("'s2'" in e and '"palette"' in e for e in errors)
         assert not [e for e in sp.check_outline(sp.normalize_outline(_outline("", "")), request) if "palette" in e]
 
+    def test_a_palette_names_no_character(self):
+        """Naming Bolt in the palette drew him into every one of Cinder's frames."""
+        sc = _sc(**{"persona.bolt.display_name": "Bolt", "persona.bolt.enabled": "true"})
+        request = sp.build_request({"topic": "t", "screenplay_cast": ["dex", "bolt"]}, sc)
+        outline = sp.normalize_outline(_outline("cold blue light matching Bolt's jitters", DUSK))
+        errors = sp.check_outline(outline, request, sc)
+        assert any("'s1'" in e and "names Bolt" in e for e in errors)
+        assert not [e for e in errors if "'s2'" in e and "palette" in e]
+        by_slug = sp.check_outline(sp.normalize_outline(_outline("grey around dex", DUSK)), request)
+        assert any("names dex" in e for e in by_slug)
+
+    def test_a_palette_is_one_short_phrase(self):
+        request = sp.build_request({"topic": "t"}, _sc())
+        long = sp.normalize_outline(_outline("warm amber light " * 12, DUSK))
+        assert any("'s1'" in e and "at most 160" in e for e in sp.check_outline(long, request, _sc()))
+        off = _sc(story_palette_max_chars="0")
+        assert not [e for e in sp.check_outline(long, request, off) if "shorten" in e]
+
     def test_a_revision_sees_the_palettes(self):
         core = sp._core({"scenes": [{"scene_id": "s1", "palette": DUSK}]})
         assert core["scenes"][0]["palette"] == DUSK

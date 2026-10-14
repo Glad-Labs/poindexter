@@ -97,6 +97,7 @@ PLAN THE PLACES
 
 PLAN THE COLOUR
 - Paint a colour script: each scene gets a "palette", the colours and light it is painted in (the main hues, the time of day, where the light comes from and how warm or cold it is), in one short phrase.
+- A palette describes only colours and light. It is painted over every picture of the scene, the characters included, so the characters and what happens stay in the summary.
 - Plan the palettes together, as one strip across the whole story. Colour carries the feeling: let it shift when the story turns, contrast the low point with the payoff, and come back to a palette when the story comes back to a feeling.
 - Keep every palette inside the piece's art style; the style is the same throughout and only the colours and light change.
 

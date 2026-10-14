@@ -290,10 +290,55 @@ def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def check_outline(outline: dict[str, Any], request: ScreenplayRequest) -> list[str]:
+def _cast_names(request: ScreenplayRequest, site_config: Any) -> list[str]:
+    """Every name a cast member goes by: their id and, with settings, their display name."""
+    from poindexter.services.persona_service import get_persona
+
+    names: dict[str, str] = {}  # lowercased -> as written; a display name wins over its id
+    for slug in request.cast:
+        if slug:
+            names.setdefault(slug.lower(), slug)
+        persona = get_persona(site_config, slug) if site_config is not None and slug else None
+        if persona is not None and persona.display_name:
+            names[persona.display_name.lower()] = persona.display_name
+    return sorted(names.values(), key=len, reverse=True)
+
+
+def _palette_problems(sid: str, palette: str, names: list[str], site_config: Any) -> list[str]:
+    """A palette is painted over every picture of its scene, the characters included.
+
+    Naming a character in it put that character into every picture: the
+    Midnight Patch palette ("to match Cinder's tired, wistful mood and Bolt's
+    jitters. When Mara appears...") drew Bolt beside Cinder in each of her
+    talking frames, and its "slate greys" turned Bolt grey (2026-10-14). A long
+    palette told the scene's story and was cut mid-sentence.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    errors: list[str] = []
+    named = [n for n in names if re.search(rf"\b{re.escape(n)}\b", palette, re.IGNORECASE)]
+    if named:
+        errors.append(
+            f"FIX scene {sid!r}: the \"palette\" names {', '.join(named)}; describe only the "
+            "colours and light of the place, and keep the characters in the summary",
+        )
+    raw = site_config.get("story_palette_max_chars", None) if site_config is not None else None
+    limit = int(float(raw if raw not in (None, "") else DEFAULTS["story_palette_max_chars"]))
+    if limit > 0 and len(palette) > limit:
+        errors.append(
+            f"FIX scene {sid!r}: shorten the \"palette\" to one phrase of at most {limit} characters: "
+            "the main hues, the time of day and where the light comes from",
+        )
+    return errors
+
+
+def check_outline(
+    outline: dict[str, Any], request: ScreenplayRequest, site_config: Any = None,
+) -> list[str]:
     """Hard problems with a normalized outline."""
     errors: list[str] = []
     cast = set(request.cast)
+    names = _cast_names(request, site_config)
     if not outline["title"]:
         errors.append("FIX: add a non-empty \"title\"")
     if not outline["scenes"]:
@@ -316,6 +361,8 @@ def check_outline(outline: dict[str, Any], request: ScreenplayRequest) -> list[s
         sid = scene["scene_id"]
         if painted and not scene.get("palette"):
             errors.append(f"FIX scene {sid!r}: add a \"palette\": its colours and light in the colour script")
+        elif scene.get("palette"):
+            errors.extend(_palette_problems(sid, scene["palette"], names, site_config))
         if known and scene.get("location") not in known:
             errors.append(
                 f"FIX scene {sid!r}: set \"location\" to one of the location ids {sorted(known)}",
@@ -387,7 +434,7 @@ def validate(
 
     Length is not checked here — it is a soft problem, recorded in ``notes``.
     """
-    errors = check_outline(screenplay, request)
+    errors = check_outline(screenplay, request, site_config)
     lines = 0
     for scene in screenplay["scenes"]:
         errors.extend(check_beats(scene.get("beats") or [], scene["scene_id"], request))
@@ -538,7 +585,7 @@ async def write_screenplay(
     ask = {"model": model, "site_config": site_config, "pool": pool, "task_id": task_id}
 
     def _check_outline(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
-        return check_outline(normalize_outline(reply), request), []
+        return check_outline(normalize_outline(reply), request, site_config), []
 
     raw_outline, _ = await _ask_validated(
         "story.outline", {**common, "scene_count": scene_count(request.target_seconds, site_config)},

@@ -3250,6 +3250,9 @@ DEFAULTS: dict[str, str] = {
     # again in another palette has its plate relit from the first one
     # (story_relight_template), so the place keeps its buildings.
     'story_palette_template': 'Colour and light: {palette}.',
+    # A palette longer than this goes back to the writer (check_outline): it
+    # is a phrase about colour and light, not the scene's story. 0 = no limit.
+    'story_palette_max_chars': '160',
     'story_relight_template': (
         "Picture 1 is a place. Draw exactly the same place from the same "
         "viewpoint, with nobody in it: keep every building, object and the art "
@@ -6863,6 +6866,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reference_sheet_panel': {'owner': 'reference_frames', 'value_type': 'integer'},
     'video_reference_sheet_name_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'story_palette_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_palette_max_chars': {'owner': 'screenplay', 'value_type': 'integer'},
     'story_relight_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
     'story_plate_clear_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
     'story_min_reaction_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
