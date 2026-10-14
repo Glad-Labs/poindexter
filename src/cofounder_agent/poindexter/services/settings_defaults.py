@@ -3224,6 +3224,26 @@ DEFAULTS: dict[str, str] = {
     'video_clip_cache_enabled': 'true',
     'video_clip_cache_dir': '~/.poindexter/video/clips',
     'video_clip_cache_keep_days': '14',
+    # Colour script (2026-10-14): each screenplay scene has a palette, its
+    # colours and light, planned across the story in story.outline. Every
+    # picture of the scene ends with story_palette_template; a location seen
+    # again in another palette has its plate relit from the first one
+    # (story_relight_template), so the place keeps its buildings.
+    'story_palette_template': 'Colour and light: {palette}.',
+    'story_relight_template': (
+        "Picture 1 is a place. Draw exactly the same place from the same "
+        "viewpoint, with nobody in it: keep every building, object and the art "
+        "style, and change only the colours and light to {palette}."
+    ),
+    # A plate the judge (qa.empty_plate) finds a character in is cleared with
+    # this edit: drawn with the cast portraits as style references, the model
+    # drew a character into the "empty" dock on 3 of 3 draws (2026-10-14).
+    'story_plate_clear_template': (
+        "Picture 1 is a place. Remove every person, animal, robot and character "
+        "from it and fill in the place behind them, so the place is empty. Keep "
+        "everything else exactly the same: the buildings, objects, colours, light "
+        "and art style."
+    ),
     # Pacing (2026-10-14): a talking shot gives up part of a long line so the
     # cutaway that plays the rest is at least min_reaction_seconds, never a
     # 0.1 s flash. The scene's empty background plate is drawn from
@@ -6815,6 +6835,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
+    'story_palette_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_relight_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
+    'story_plate_clear_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
     'story_min_reaction_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_place_plate_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'video_scene_transition': {'owner': 'shot_list_renderer', 'value_type': 'string'},

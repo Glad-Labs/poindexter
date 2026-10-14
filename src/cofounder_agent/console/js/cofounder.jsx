@@ -927,6 +927,35 @@ function CfDraftStoryboard({ payload, draftId, onAdjust }) {
       {payload.style && (
         <div className="cf-draft__style">Style: {payload.style}</div>
       )}
+      {(payload.colour_script || []).length > 0 && (
+        <div className="cf-draft__colour">
+          <div className="cf-notes__head">Colour script</div>
+          <div className="cf-draft__strip">
+            {payload.colour_script.map((key) => (
+              <div
+                key={key.scene_id}
+                className="cf-draft__thumb"
+                title={key.palette}
+              >
+                {key.plate_url ? (
+                  <img
+                    src={key.plate_url}
+                    alt={`scene ${key.scene_id}`}
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="cf-draft__portrait--none">
+                    {key.palette}
+                  </span>
+                )}
+                <span className="cf-draft__thumb-tag">
+                  {key.scene_id} · {key.palette}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="cf-draft__screen">
         {shown.image_url ? (
           <img src={shown.image_url} alt={`shot ${shown.idx}`} />

@@ -2736,8 +2736,8 @@ async def _held_picture(st: _ShotState, states: list[_ShotState], ctx: Reference
     """
     from poindexter.services.video_renderers.shot_vision_qa import _final_frame
 
-    scene = _place_key(st.shot)
-    place = ctx.places.get(scene) if scene else None
+    scene = _plate_key(st.shot)
+    place = (ctx.places.get(scene) or _location_plate(ctx, _place_key(st.shot))) if scene else None
     if place and os.path.exists(place):
         return place
     before = [s for s in states if s.shot.idx < st.shot.idx and s.result.success and s.result.clip_path]
@@ -2882,10 +2882,120 @@ def _place_key(shot: Any) -> str:
     return str(getattr(shot, "location_id", None) or getattr(shot, "scene_id", None) or "")
 
 
+def _plate_key(shot: Any) -> str:
+    """The plate a shot is drawn in: its location in its scene's colour-script palette.
+
+    One location seen in two palettes (the rooftop at dusk, then at midnight)
+    has two plates, the second relit from the first, so the place stays the
+    same and only its colours and light change. Without a palette it is the
+    location's own key.
+    """
+    import hashlib
+
+    place = _place_key(shot)
+    palette = str(getattr(shot, "palette", None) or "").strip().lower()
+    if not place or not palette:
+        return place
+    return f"{place}@{hashlib.sha256(palette.encode('utf-8')).hexdigest()[:8]}"
+
+
+def _location_plate(ctx: ReferenceContext, place: str) -> str | None:
+    """Any plate already drawn for location ``place``, in whichever palette (first drawn wins)."""
+    for key, path in ctx.places.items():
+        if (key == place or key.startswith(f"{place}@")) and os.path.exists(path):
+            return path
+    return None
+
+
+async def _edit_plate(
+    base: str, prompt: str, *, output_path: str, ctx: ReferenceContext, site_config: Any,
+) -> bool:
+    """Redraw the plate ``base`` with the image-edit model, told ``prompt``.
+
+    Used to relight a plate into another palette (``story_relight_template``)
+    and to clear characters out of one (``story_plate_clear_template``); both
+    keep the place itself. ``output_path`` may be ``base``.
+    """
+    from poindexter.services import reference_frames as rf
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    def _dim(key: str) -> int:
+        value = site_config.get(key, None) if site_config is not None else None
+        return int(float(value if value not in (None, "") else DEFAULTS[key]))
+
+    if not ctx.card_cleared:
+        await _clear_image_gen_for_hero(site_config)
+        ctx.card_cleared = True
+    staged = f"{output_path}.edit.png"
+    ok, why = await rf.render_reference_frame(
+        prompt=f"{prompt} {_plate_text('video_reference_text_rule', site_config)}".strip(),
+        reference_paths=[base], output_path=staged,
+        width=_dim("video_reference_width"), height=_dim("video_reference_height"), site_config=site_config,
+    )
+    if not ok or not os.path.exists(staged):
+        logger.warning("[SHOT_LIST] editing plate %s failed: %s", base, why)
+        return False
+    os.replace(staged, output_path)
+    return True
+
+
+def _plate_text(key: str, site_config: Any) -> str:
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    value = site_config.get(key, None) if site_config is not None else None
+    return str(DEFAULTS[key] if value in (None, "") else value).strip()
+
+
+async def _relight_plate(
+    base: str, palette: str, *, output_path: str, ctx: ReferenceContext, site_config: Any,
+) -> bool:
+    """Draw ``base``, a location's plate, again in ``palette`` (``story_relight_template``)."""
+    prompt = _plate_text("story_relight_template", site_config).replace("{palette}", palette.strip().rstrip("."))
+    ok = await _edit_plate(base, prompt, output_path=output_path, ctx=ctx, site_config=site_config)
+    if not ok:
+        logger.warning("[SHOT_LIST] relighting plate %s failed; drawing it afresh", base)
+    return ok
+
+
+async def _empty_the_plate(path: str, key: str, ctx: ReferenceContext, site_config: Any) -> None:
+    """Make sure the plate at ``path`` has nobody in it, clearing out anyone the judge finds.
+
+    The plate is drawn with the cast's portraits as style references, and the
+    edit model drew a character into the "empty" place on every one of three
+    draws (Cinder on the dock, 2026-10-14) although the prompt said nobody was
+    there. Asked to remove them, it cleared the place and kept everything else.
+    So the judge looks (``qa.empty_plate``) and a plate with someone in it is
+    cleared (``story_plate_clear_template``), up to
+    ``video_cast_talking_frame_attempts`` times. Fail-soft: no judge, no pool
+    or a failed clear keeps the plate as drawn.
+    """
+    from poindexter.services.video_renderers.shot_vision_qa import check_empty_plate
+
+    if getattr(ctx, "pool", None) is None:
+        return
+    clear = _plate_text("story_plate_clear_template", site_config)
+    attempts = _talking_frame_attempts(site_config)
+    for attempt in range(1, attempts + 1):
+        verdict = await check_empty_plate(frame_path=path, site_config=site_config, pool=ctx.pool)
+        if verdict.ok is not False:
+            return
+        logger.warning(
+            "[SHOT_LIST] plate %s has %s character(s) in it (check %d/%d): %s; clearing them out",
+            key, verdict.people, attempt, attempts, verdict.reason,
+        )
+        if not clear or not await _edit_plate(path, clear, output_path=path, ctx=ctx, site_config=site_config):
+            return
+    logger.warning("[SHOT_LIST] plate %s still not confirmed empty after %d clears", key, attempts)
+
+
 async def _place_for(
     shot: Shot, ctx: ReferenceContext, *, work_dir: Path, site_config: Any, http_client_factory: Any,
 ) -> str | None:
     """The place reference for ``shot``'s scene, drawing it first if need be.
+
+    The plate is keyed by location and colour-script palette
+    (:func:`_plate_key`): a location already drawn in another palette is
+    relit from that plate rather than drawn again, so it keeps its buildings.
 
     A scene whose establishing shot carries ``place_prompt`` gets an empty
     background plate: the place drawn with nobody in it (style-only
@@ -2902,12 +3012,13 @@ async def _place_for(
     scene = _place_key(shot)
     if not scene:
         return None
+    key = _plate_key(shot)
     est = ctx.establishing.get(scene)
     plate = str(getattr(est, "place_prompt", "") or "") if est is not None else ""
     if getattr(shot, "establishing", False) and not plate:
         return None
-    if scene in ctx.places and os.path.exists(ctx.places[scene]):
-        return ctx.places[scene]
+    if key in ctx.places and os.path.exists(ctx.places[key]):
+        return ctx.places[key]
     # Without a plate, the establishing picture is drawn ahead of its turn
     # only as a still: a generative shot's first frame is drawn at the hero
     # size for the motion model, so it waits for its turn.
@@ -2918,11 +3029,20 @@ async def _place_for(
         raw = site_config.get(key, None) if site_config is not None else None
         return int(float(raw if raw not in (None, "") else DEFAULTS[key]))
 
-    out = str(work_dir / f"place_{re.sub(r'[^A-Za-z0-9_-]', '_', str(scene))}.png")
+    out = str(work_dir / f"place_{re.sub(r'[^A-Za-z0-9_-]', '_', key)}.png")
     if plate:
+        palette = str(getattr(shot, "palette", None) or "").strip()
+        base = _location_plate(ctx, scene) if palette else None
+        if base and await _relight_plate(base, palette, output_path=out, ctx=ctx, site_config=site_config):
+            ctx.places[key] = out
+            return out
+        if palette:
+            from poindexter.services.screenplay_director import _with_palette
+
+            plate = _with_palette(plate, palette, site_config, 1500)
         empty = est.model_copy(update={
             "characters": [], "speaker": None, "scene_id": None, "location_id": None,
-            "establishing": False, "prompt": plate, "frame_url": None,
+            "establishing": False, "prompt": plate, "frame_url": None, "palette": None,
         })
         drawn = await _render_reference_still(
             empty, prompt=plate, output_path=out,
@@ -2930,14 +3050,17 @@ async def _place_for(
             ctx=ctx, work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
         )
         if drawn:
-            ctx.places[str(scene)] = out
+            # A plate with someone in it would put them in every picture of
+            # the location.
+            await _empty_the_plate(out, key, ctx, site_config)
+            ctx.places[key] = out
         return out if drawn else None
     drawn = await _render_reference_still(
         est, prompt=est.prompt or "", output_path=out,
         width=_dim("video_reference_width"), height=_dim("video_reference_height"),
         ctx=ctx, work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
     )
-    return ctx.places.get(str(scene)) if drawn else None
+    return ctx.places.get(key) if drawn else None
 
 
 async def _reference_portraits(
@@ -3069,7 +3192,7 @@ async def _render_reference_still(
         )
     else:
         ctx.drawn[reuse_key] = output_path
-        scene = _place_key(shot)
+        scene = _plate_key(shot)
         if (getattr(shot, "establishing", False) and scene and scene not in ctx.places
                 and not getattr(shot, "place_prompt", None)):
             ctx.places[scene] = output_path

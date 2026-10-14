@@ -202,6 +202,13 @@ class Shot(BaseModel):
         None, max_length=64,
         description="The screenplay location this shot is set in; its scenes share one background plate",
     )
+    palette: str | None = Field(
+        None, max_length=300,
+        description=(
+            "The scene's colour-script entry: its colours and light. A location seen "
+            "in another palette has its plate relit to this one"
+        ),
+    )
     establishing: bool = Field(
         False,
         description="This shot's picture is its scene's place reference for the scene's other pictures",

@@ -129,6 +129,8 @@ def plan_shots(
             "scene_id": seg.get("scene_id"), "setting": setting,
             "location": str(scene.get("location") or seg.get("scene_id") or ""),
             "location_desc": places.get(str(scene.get("location") or "")) or setting,
+            # The scene's colour-script entry (screenplay ``palette``).
+            "palette": str(scene.get("palette") or "").strip(),
             "beat_text": seg.get("text", ""), "beat_kind": seg.get("kind"),
             "delivery": "", "scene_cast": scene_cast, "line_speaker": speaker,
         }
@@ -210,6 +212,23 @@ def _place_prompt(setting: str, style: str, site_config: Any) -> str:
     return (
         template.replace("{style}", style or "").replace("{setting}", setting or "the scene")
     ).strip(" ,")[:1500]
+
+
+def _with_palette(text: str, palette: str, site_config: Any, limit: int) -> str:
+    """``text`` painted in the scene's colour-script ``palette`` (``story_palette_template``).
+
+    The palette goes last and always fits: the picture is cut to make room.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    if not palette or not text:
+        return text[:limit]
+    template = str(
+        (site_config.get("story_palette_template", None) if site_config is not None else None)
+        or DEFAULTS["story_palette_template"]
+    )
+    line = template.replace("{palette}", palette.strip().rstrip("."))[: limit // 3].strip()
+    return f"{text[: limit - len(line) - 1].rstrip()} {line}"
 
 
 def _mark_establishing(
@@ -515,6 +534,9 @@ def build_shot_list(
     shots: list[dict[str, Any]] = []
     for i, s in enumerate(plan):
         duration = round(s["length"], 3)
+        # Every picture of a scene is painted in its colour-script palette;
+        # the renderer relights a returning location's plate to match it.
+        palette = str(s.get("palette") or "").strip()
         shot: dict[str, Any] = {
             "idx": i, "duration_s": duration, "source": s["source"],
             "narration_offset_s": round(s["start_s"], 3), "characters": list(s["characters"]),
@@ -532,22 +554,25 @@ def build_shot_list(
             note = "; ".join(p for p in (s.get("delivery"), s.get("setting")) if p)
             if note:
                 shot["prompt"] = note[:2000]
-            shot["frame_prompt"] = _talking_frame_prompt(s, style, site_config)
+            shot["frame_prompt"] = _with_palette(
+                _talking_frame_prompt(s, style, site_config), palette, site_config, 1500)
         elif s["kind"] == "master":
             picture = _scene_master_prompt(s, site_config)
             shot["intent"] = picture[:200]
-            shot["prompt"] = (f"{style}, {picture}" if style else picture)[:1500]
+            shot["prompt"] = _with_palette(f"{style}, {picture}" if style else picture, palette, site_config, 1500)
         else:
             seen = visuals.get(i) or {}
             picture = seen.get("prompt") or f"{s['setting']}. {s['beat_text']}".strip(". ")
             shot["intent"] = picture[:200] or "scene"
-            shot["prompt"] = (f"{style}, {picture}" if style else picture)[:1500]
+            shot["prompt"] = _with_palette(f"{style}, {picture}" if style else picture, palette, site_config, 1500)
             if s["source"] == "generative":
                 shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
         if s.get("scene_id"):
             shot["scene_id"] = str(s["scene_id"])[:64]
         if s.get("location"):
             shot["location_id"] = str(s["location"])[:64]
+        if palette:
+            shot["palette"] = palette[:300]
         shots.append(shot)
     _mark_establishing(shots, plan, lambda setting: _place_prompt(setting, style, site_config))
     try:

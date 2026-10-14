@@ -95,11 +95,17 @@ PLAN THE PLACES
 - List the story's locations once under "locations": each has a short "id" (lowercase words joined by hyphens) and a "description" of the place itself that a background artist could paint: its architecture, objects, scale and look. Leave the time of day and mood to the scenes.
 - A place the story returns to is the same location, so it is drawn the same way every time.
 
+PLAN THE COLOUR
+- Paint a colour script: each scene gets a "palette", the colours and light it is painted in (the main hues, the time of day, where the light comes from and how warm or cold it is), in one short phrase.
+- Plan the palettes together, as one strip across the whole story. Colour carries the feeling: let it shift when the story turns, contrast the low point with the payoff, and come back to a palette when the story comes back to a feeling.
+- Keep every palette inside the piece's art style; the style is the same throughout and only the colours and light change.
+
 PLAN THE SCENES
 - Give the piece about {scene_count} scene(s). Each scene is one step of the spine, and something is different at its end: a new understanding, a decision, a feeling.
 - Keep the characters in one main place unless the story has a reason to move. When it moves, the summary says why (they go to try something, or a demonstration takes them there).
 - "location": the id of the location the scene happens in.
 - "setting": that place at this moment, with its time of day and mood, in one sentence a background artist could paint.
+- "palette": the scene's entry in the colour script.
 - "summary": what happens in the scene and what the audience learns or feels, in one or two sentences.
 - "turn": what is different by the end of this scene, in one sentence.
 - "characters": the cast ids visible in the scene.
@@ -107,7 +113,7 @@ PLAN THE SCENES
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
+{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "palette": "deep blue night with warm amber lamplight from the bench", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
 ```
 
 ## story.scene
@@ -252,11 +258,12 @@ HOW TO REVISE
 - Keep everything the note does not touch: the same scenes, lines and order, word for word.
 - Keep the story spine (want, obstacle, turn, payoff). When the note changes one of them, update the spine to match.
 - Keep the "locations" and each scene's "location". A scene the note moves somewhere new uses a listed location, or a new one added to "locations" with an id and a description of the place.
+- Keep each scene's "palette" unless the note changes the scene's feeling; a scene whose feeling changes gets a palette that fits the colour script around it.
 - Every "line" beat has "speaker", "text", "delivery" and "intensity" ("low", "medium" or "high"). Every "action" beat has "text" and "characters".
 
 OUTPUT
 Reply with the whole revised screenplay as one JSON object and nothing else, in the same shape as THE SCREENPLAY NOW:
-{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"]}}]}}]}}
+{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "palette": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"]}}]}}]}}
 ```
 
 ## story.casting_revise

@@ -925,6 +925,46 @@ async def check_cast_frame(
     return _parse_cast_frame(text, len(everyone))
 
 
+def _parse_empty_plate(text: str) -> TalkingFrameVerdict:
+    """Pass when the judge counts no characters. A missing count is no verdict."""
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
+    try:
+        parsed = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
+    count = parsed.get("characters")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return TalkingFrameVerdict(ok=None, reason="vision response missing a count")
+    return TalkingFrameVerdict(ok=count == 0, people=count, reason=str(parsed.get("reason", "") or "")[:200])
+
+
+async def check_empty_plate(*, frame_path: str, site_config: Any, pool: Any) -> TalkingFrameVerdict:
+    """Is this background plate empty, with no character in it?
+
+    A plate is drawn with the cast's portraits as style references, and the
+    edit model drew a character into it although the prompt said nobody was
+    there (Cinder kneeling on the "empty" dock, 2026-10-14). Every picture of
+    the location is then drawn in that plate, so she would be in all of them.
+    Same fail-soft contract: ``ok=None`` when nothing can answer.
+    """
+    if site_config is None or pool is None:
+        return TalkingFrameVerdict(ok=None, reason="no site_config or pool")
+    model = (site_config.get("qa_vision_model", "") or "").strip()
+    if not model:
+        return TalkingFrameVerdict(ok=None, reason="no vision model configured")
+
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    text, why = await _vision_text(
+        frame_path, prompt=get_prompt_manager().get_prompt("qa.empty_plate"), model=model, pool=pool, shot_idx=-1,
+    )
+    if text is None:
+        return TalkingFrameVerdict(ok=None, reason=why)
+    return _parse_empty_plate(text)
+
+
 async def check_talking_frame(
     *,
     frame_path: str,

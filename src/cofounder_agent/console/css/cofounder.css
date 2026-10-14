@@ -978,6 +978,21 @@
   text-align: left;
 }
 
+/* Colour script: one key per scene, the scene's plate in its palette */
+.cf-draft__colour {
+  margin: 4px 0 8px;
+}
+.cf-draft__colour .cf-draft__thumb {
+  width: 144px;
+  cursor: default;
+}
+.cf-draft__colour .cf-draft__thumb-tag {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Plan-card absence warnings (informative amber, never blockers) */
 .cf-plan__warns {
   display: flex;

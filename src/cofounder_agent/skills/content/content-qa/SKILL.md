@@ -59,6 +59,9 @@ metadata:
     - key: qa.cast_frame
       output_format: json
       description: "Vision check on a cartoon still drawn from the cast portraits: how many people are in the picture, how many are strangers outside the cartoon's cast, is every character the shot needs there as their sheet describes them, and is any writing in it free of scrambled letters? Code accepts the still only with no strangers, no more people than the cast, everyone required present and no scrambled writing; otherwise it redraws. Used by services.video_renderers.shot_vision_qa.check_cast_frame."
+    - key: qa.empty_plate
+      output_format: json
+      description: 'Vision check on a cartoon background plate, the empty place every picture of a location is drawn in: how many characters are in it? Code redraws a plate with anyone in it, since the plate is drawn with the cast portraits as style references and the image model can draw one of them in. Used by services.video_renderers.shot_vision_qa.check_empty_plate.'
     - key: qa.video_stock_fit
       output_format: json
       description: 'Vision-QA for STOCK footage: does one frame of a Pexels clip fit the video topic and the narration spoken over it? Returns a fit label (fits / loose / off) and a 0-100 score; the label caps the score under the escalation threshold for loose and off. Used by services.video_renderers.shot_vision_qa.score_shot_frame for source=pexels.'
@@ -696,6 +699,21 @@ MUST APPEAR in this picture: {required}
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"people": <integer>, "strangers": <integer>, "all_present": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
+```
+
+## qa.empty_plate
+
+```text
+You are checking a background painting for a cartoon. It must be an empty
+place, with nobody in it: the characters are drawn into it later.
+
+Count every character you can see in the picture: people, and animals, robots
+and creatures that act like characters, including anyone small, half out of
+frame, behind glass or in the background. Pictures, posters and screens that
+show a face count only when the face is as large as a character's would be.
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"characters": <integer>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.deepeval_g_eval_criterion

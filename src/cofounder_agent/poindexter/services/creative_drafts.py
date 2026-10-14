@@ -616,6 +616,11 @@ def describe(draft: dict[str, Any], *, max_chars: int = 6000) -> str:
                 f"{last.get('shots_drawn')}, {last.get('lines_reused')} lines kept their takes; "
                 f"script now {str((payload.get('script_draft') or {}).get('id', ''))[:8]}"
             )
+        if payload.get("colour_script"):
+            lines.append("colour script: " + "; ".join(
+                f"{key.get('scene_id')} ({key.get('location')}): {key.get('palette')}"
+                for key in payload["colour_script"]
+            ))
         if payload.get("rough_cut_url"):
             lines.append(f"rough cut: {payload.get('rough_cut_seconds')}s, with {'its score' if payload.get('score_url') else 'no score'}")
         elif payload.get("rough_cut_error"):

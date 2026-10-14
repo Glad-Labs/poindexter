@@ -248,6 +248,11 @@ def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
     scene set there (a studio's background design, 2026-10-14). A reply with
     no locations, like every script written before them, gets one per scene
     from its setting, so older scripts keep working.
+
+    Each scene's ``palette`` is its entry in the colour script: the colours
+    and light the scene is painted in, planned across the whole story so the
+    colour follows its feeling. Empty in older scripts, which keep the style's
+    own colours.
     """
     locations: list[dict[str, str]] = []
     for item in raw.get("locations") or []:
@@ -265,6 +270,7 @@ def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
             "scene_id": str(scene.get("scene_id") or f"s{i}").strip() or f"s{i}",
             "location": _location_id(scene.get("location") or ""),
             "setting": str(scene.get("setting") or "").strip(),
+            "palette": str(scene.get("palette") or "").strip(),
             "summary": str(scene.get("summary") or "").strip(),
             "turn": str(scene.get("turn") or "").strip(),
             "characters": _csv_or_list(scene.get("characters")),
@@ -303,8 +309,13 @@ def check_outline(outline: dict[str, Any], request: ScreenplayRequest) -> list[s
     for loc in outline.get("locations") or []:
         if not loc.get("description"):
             errors.append(f"FIX location {loc['id']!r}: add a \"description\" of the place a background artist can paint")
+    # The colour script is all or nothing: a scene left out of it would be
+    # painted in whatever colours the model picks, breaking the arc.
+    painted = any(scene.get("palette") for scene in outline["scenes"])
     for scene in outline["scenes"]:
         sid = scene["scene_id"]
+        if painted and not scene.get("palette"):
+            errors.append(f"FIX scene {sid!r}: add a \"palette\": its colours and light in the colour script")
         if known and scene.get("location") not in known:
             errors.append(
                 f"FIX scene {sid!r}: set \"location\" to one of the location ids {sorted(known)}",
@@ -635,7 +646,7 @@ def _core(screenplay: dict[str, Any]) -> dict[str, Any]:
         "spine": screenplay.get("spine") or {},
         "locations": screenplay.get("locations") or [],
         "scenes": [
-            {k: scene.get(k) for k in ("scene_id", "location", "setting", "summary", "turn", "characters", "beats")}
+            {k: scene.get(k) for k in ("scene_id", "location", "setting", "palette", "summary", "turn", "characters", "beats")}
             for scene in screenplay.get("scenes") or []
         ],
     }

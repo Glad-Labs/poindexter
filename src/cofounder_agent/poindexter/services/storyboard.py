@@ -152,7 +152,9 @@ async def _seed_places(ctx: Any, shot_list: Any, indices: set[int], existing: di
         # picture would put its characters back into the place reference.
         if not (shot.establishing and shot.scene_id and url) or shot.idx in indices or shot.place_prompt:
             continue
-        key = str(shot.location_id or shot.scene_id)
+        from poindexter.services.video_renderers.shot_list_renderer import _plate_key
+
+        key = _plate_key(shot)
         try:
             raw = await _download(url, str(work / f"place_src_{shot.idx:02d}"))
             local = str(work / f"place_{shot.idx:02d}.png")
@@ -180,6 +182,31 @@ async def _seed_plates(ctx: Any, plates: dict[str, str], work: Path) -> None:
             ctx.places[key] = local
         except Exception as exc:  # noqa: BLE001 — without it the plate is drawn afresh
             logger.warning("[storyboard] could not fetch the plate for %s: %s", key, exc)
+
+
+def colour_script(listing: dict[str, Any], plates: dict[str, str]) -> list[dict[str, Any]]:
+    """The colour script: each scene's palette and its background plate, in story order.
+
+    A studio paints a strip of small keys, one per scene, to see the colour
+    move with the story before anything is animated. Ours is the plates the
+    storyboard drew: each scene's location in its palette. A scene with no
+    palette (an older script) is left out; an empty list means none.
+    """
+    from poindexter.schemas.video_shot_list import VideoShotList
+    from poindexter.services.video_renderers.shot_list_renderer import _place_key, _plate_key
+
+    strip: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for shot in VideoShotList.model_validate(listing).shots:
+        scene = str(shot.scene_id or "")
+        if not scene or scene in seen or not shot.palette:
+            continue
+        seen.add(scene)
+        strip.append({
+            "scene_id": scene, "location": shot.location_id or "", "palette": shot.palette,
+            "plate_url": plates.get(_plate_key(shot)) or plates.get(_place_key(shot)) or None,
+        })
+    return strip
 
 
 async def _draw_shots(
@@ -305,6 +332,7 @@ async def build_storyboard(
         "timeline": voiced["timeline"],
         "screenplay": sub,
         "plates": plates,
+        "colour_script": colour_script(listing, plates),
     }
 
 
@@ -381,6 +409,7 @@ async def revise_storyboard(
         "shot_list": listing,
         "shots": _rows(listing, list(payload.get("timeline") or []), merged),
         "plates": plates,
+        "colour_script": colour_script(listing, plates),
         "revisions": [*(payload.get("revisions") or []), {"note": note[:500], "shots": sorted(changed)}],
     }
 
@@ -534,6 +563,7 @@ async def restory_storyboard(
         "timeline": voiced["timeline"],
         "screenplay": sub,
         "plates": plates,
+        "colour_script": colour_script(listing, plates),
         "revisions": [*(previous.get("revisions") or []), {
             "note": note[:500], "story": True, "scenes_changed": changed,
             "shots_drawn": sorted(redraw), "lines_reused": voiced.get("lines_reused", 0),
