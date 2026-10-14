@@ -3423,10 +3423,12 @@ DEFAULTS: dict[str, str] = {
     # persona slug; empty = the house voice (podcast_tts_voice).
     'story_default_narrator_persona': '',
     # Silence between two lines in a scene, at a scene change, and for an
-    # action beat (so the shot showing the action has screen time).
+    # action beat (so the shot showing the action has screen time). 1.5 s
+    # left Midnight Patch's transformation a flash (2026-10-14); 3.0 gives an
+    # animated action shot time to play.
     'story_dialogue_gap_seconds': '0.35',
     'story_scene_gap_seconds': '0.8',
-    'story_action_beat_seconds': '1.5',
+    'story_action_beat_seconds': '3.0',
     # Screenplay director (poindexter#1138, services/screenplay_director.py).
     # Longest non-talking shot; shortest shot (slivers merge into a neighbour);
     # shortest non-talking shot that animates (0 = all of them) and how many

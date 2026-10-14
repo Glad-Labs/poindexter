@@ -154,11 +154,15 @@ def plan_shots(
             "palette": str(scene.get("palette") or "").strip(),
             "beat_text": seg.get("text", ""), "beat_kind": seg.get("kind"),
             "delivery": "", "scene_cast": scene_cast, "line_speaker": speaker,
-            # An entrance or exit is a moment to see, never folded into the
-            # scene's master shot (_mark_masters).
-            "moment": bool(seg.get("kind") == "action" and (seg.get("enters") or seg.get("exits"))),
+            # An action beat is a moment to see, never folded into the scene's
+            # master shot (_mark_masters): Midnight Patch's payoff (Mara's
+            # spell turning the jumpsuit into a gown, the hover-coach landing)
+            # was a 1.5 s still of the same wide as the rest (2026-10-14).
+            "moment": seg.get("kind") == "action",
         }
         length = seg["end_s"] - seg["start_s"]
+        # A scene that opens on an action shows the action, not a landscape
+        # over it.
         if establish > 0 and seg.get("scene_id") not in established and not base["moment"]:
             established.add(seg.get("scene_id"))
             # A beat too short to share keeps the wide for all of it.

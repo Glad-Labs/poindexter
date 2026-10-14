@@ -136,10 +136,10 @@ class TestTiling:
         plan = _plan()
         by_text = {s["beat_text"]: s for s in plan}
         assert by_text["In the lab."]["characters"] == ["dex", "nova"]  # narrator: the scene's cast
-        # A 1.5 s action beat is too short to establish anything: it is the
-        # scene's master shot, which shows the scene's whole cast.
-        assert by_text["Nova taps the GPU"]["kind"] == "master"
-        assert by_text["Nova taps the GPU"]["characters"] == ["dex", "nova"]
+        # An action is a moment to see, however short: its own shot of the
+        # characters doing it, never the scene's master (2026-10-14).
+        assert by_text["Nova taps the GPU"]["kind"] == "still"
+        assert by_text["Nova taps the GPU"]["characters"] == ["nova"]
         # Pip has no portrait, so Pip cannot be drawn: the line plays over the
         # scene's drawable cast. Putting Pip in the picture sent the still to
         # the text path and, when that failed, to stock footage (2026-10-14).
@@ -171,7 +171,7 @@ class TestSlivers:
             _line(2, "nova", "A long explanation.", 3.3, 6.0),
         ]
         plan = sd.plan_shots(SCREENPLAY, timeline, 6.0, _sc())
-        assert [s["kind"] for s in plan] == ["talk", "master", "talk"]
+        assert [s["kind"] for s in plan] == ["talk", "still", "talk"]
 
 
 class TestSources:
@@ -348,12 +348,12 @@ class TestCoverage:
 
     def test_every_master_shot_of_a_scene_is_the_same_picture(self):
         timeline = [
+            # A short narrator line is the scene's master (an action is
+            # always its own shot).
             _line(0, "dex", "Short line.", 0.0, 3.0),
-            {"beat_idx": 1, "scene_id": "s1", "kind": "action", "speaker": None, "text": "dex shrugs",
-             "characters": ["dex"], "start_s": 3.0, "end_s": 4.5},
+            _line(1, "narrator", "Meanwhile.", 3.0, 4.5),
             _line(2, "nova", "A long explanation.", 4.5, 7.5),
-            {"beat_idx": 3, "scene_id": "s1", "kind": "action", "speaker": None, "text": "nova taps",
-             "characters": ["nova"], "start_s": 7.5, "end_s": 9.0},
+            _line(3, "narrator", "Later.", 7.5, 9.0),
             _line(4, "dex", "Short line.", 9.0, 12.0),
         ]
         plan = _plan(timeline=timeline, track=12.0)
@@ -375,7 +375,12 @@ class TestCoverage:
         monkeypatch.setattr("poindexter.services.llm_text.ollama_chat_text", fake_chat)
         monkeypatch.setattr("poindexter.services.llm_text.resolve_local_writer_model",
                             lambda site_config=None: "m")
-        plan = _plan()
+        plan = _plan(timeline=[
+            _line(0, "dex", "Short line.", 0.0, 3.0),
+            _line(1, "narrator", "Meanwhile.", 3.0, 4.5),
+            _line(2, "nova", "A long explanation.", 4.5, 12.0),
+            _line(3, "dex", "Short line.", 12.0, 15.0),
+        ], track=15.0)
         await sd.write_visuals(plan, SCREENPLAY, site_config=_sc())
         rows = [line for line in seen["prompt"].splitlines() if line.startswith("- id ")]
         master_ids = {i for i, s in enumerate(plan) if s["kind"] == "master"}

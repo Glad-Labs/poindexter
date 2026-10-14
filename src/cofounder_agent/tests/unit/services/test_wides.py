@@ -104,8 +104,8 @@ class TestWides:
         assert any(s["kind"] == "reaction" for s in plan)
 
     def test_a_wide_is_a_camera_move_unless_animated(self):
-        timeline = [*_timeline()[:1], {"scene_id": "s1", "kind": "action", "speaker": None, "text": "they look out",
-                                       "characters": ["dex", "nova"], "start_s": 6.0, "end_s": 7.5},
+        timeline = [*_timeline()[:1], {"scene_id": "s1", "kind": "line", "speaker": "narrator", "text": "Later.",
+                                       "start_s": 6.0, "end_s": 7.5},
                     _line("s1", "nova", 7.5, 12.0)]
         for motion, source in (("camera", "image_kenburns"), ("animate", "generative")):
             sc = _sc(story_wide_motion=motion)
@@ -156,3 +156,22 @@ class TestPlateLettering:
         r = await sq.score_shot_frame(frame_path=judge, shot=_shot(scene_id="s1"),
                                       site_config=self._cfg(video_shot_qa_cap_plate_text="true"), pool=object())
         assert r.score == 45.0
+
+
+class TestActionMoments:
+    def test_an_action_is_its_own_animated_shot_never_the_wide(self):
+        """Midnight Patch's payoff (the spell, the gown, the coach) was a
+        1.5 s still of the scene's wide (2026-10-14)."""
+        timeline = [*_timeline()[:1], {"scene_id": "s1", "kind": "action", "speaker": None,
+                                       "text": "Light sweeps over Dex and his coat becomes a gown",
+                                       "characters": ["dex"], "start_s": 6.0, "end_s": 9.0},
+                    _line("s1", "nova", 9.0, 12.0)]
+        plan = sd.assign_sources(sd.plan_shots(SCREENPLAY, timeline, 12.0, _sc()), _sc())
+        action = next(s for s in plan if s["beat_kind"] == "action")
+        assert action["kind"] == "still" and action["source"] == "generative"
+        assert action["characters"] == ["dex"] and action["length"] == 3.0
+
+    def test_an_action_gets_three_seconds_on_the_track(self):
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        assert float(DEFAULTS["story_action_beat_seconds"]) == 3.0
