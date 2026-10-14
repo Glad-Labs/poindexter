@@ -203,7 +203,9 @@ def colour_script(listing: dict[str, Any], plates: dict[str, str]) -> list[dict[
     seen: set[str] = set()
     for shot in VideoShotList.model_validate(listing).shots:
         scene = str(shot.scene_id or "")
-        if not scene or scene in seen or not shot.palette:
+        # A scene's opening landscape is drawn on its own, outside the
+        # location's plate (no location_id), so its key is the next shot.
+        if not scene or scene in seen or not shot.palette or not shot.location_id:
             continue
         seen.add(scene)
         strip.append({

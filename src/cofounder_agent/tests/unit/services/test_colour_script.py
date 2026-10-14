@@ -209,6 +209,17 @@ class TestStrip:
         assert [(k["scene_id"], k["palette"], k["plate_url"]) for k in strip] == [
             ("s1", DUSK, "https://cdn/dusk.png"), ("s2", NIGHT, None)]
 
+    def test_the_opening_landscape_is_not_the_scenes_key(self):
+        landscape = _shot(0, "s1", DUSK).model_dump()
+        landscape.update(location_id=None, establishing=False, place_prompt=None)
+        shots = [landscape, _shot(1, "s1", DUSK).model_dump()]
+        listing = {"aspect": "16:9", "timing": "exact", "total_duration_s": 4.0, "shots": shots,
+                   "director_model": "m", "director_prompt_version": "v",
+                   "director_decided_at": "2026-10-14T00:00:00Z"}
+        plates = {slr._plate_key(_shot(1, "s1", DUSK)): "https://cdn/dusk.png"}
+        strip = sb.colour_script(listing, plates)
+        assert [(k["scene_id"], k["location"], k["plate_url"]) for k in strip] == [("s1", "dock", "https://cdn/dusk.png")]
+
     def test_the_chat_reads_the_colour_script(self):
         from poindexter.services.creative_drafts import describe
 
