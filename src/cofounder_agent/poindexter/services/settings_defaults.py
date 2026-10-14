@@ -5623,7 +5623,8 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'content_flow_stale_inprogress_minutes': '30',
 
     # ----- Title originality / SEO -----
-    'google_sitemap_ping_url': 'https://www.google.com/ping',
+    # Empty = off. Google retired its sitemap /ping endpoint (404 since 2024).
+    'google_sitemap_ping_url': '',
     'indexnow_key': '',
     'indexnow_ping_url': 'https://api.indexnow.org/indexnow',
     'title_originality_cache_ttl_hours': '24',

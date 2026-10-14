@@ -377,6 +377,31 @@ def _should_run_post_publish_hooks() -> bool:
     return os.getenv("DEPLOYMENT_MODE", "coordinator").lower() == "worker"
 
 
+#: Host suffixes that never name a public site (RFC 6761/6762/8375 and the
+#: common LAN conventions).
+_PRIVATE_HOST_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.arpa")
+
+
+def _is_public_site_url(site_url: str) -> bool:
+    """Whether a search engine could fetch ``site_url``.
+
+    False for loopback, private and link-local addresses, ``localhost`` and
+    the private suffixes above, and single-label names (a compose service
+    name like ``worker``). A fresh install in local storage mode has
+    ``site_url = http://localhost:8002/site`` (poindexter#1123).
+    """
+    import ipaddress
+    from urllib.parse import urlparse
+
+    host = (urlparse(site_url or "").hostname or "").strip(".").lower()
+    if not host or host == "localhost" or host.endswith(_PRIVATE_HOST_SUFFIXES):
+        return False
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        return "." in host
+
+
 async def _ping_search_engines(
     site_url: str,
     post_url: str,
@@ -388,10 +413,21 @@ async def _ping_search_engines(
     #272 Phase-2g: ``site_config`` is REQUIRED (keyword-only). The only
     callers are ``publish_post_from_task`` / ``fire_post_distribution_hooks``
     in this module, which thread their own required ``_sc``.
+
+    Nothing is sent for a ``site_url`` no search engine can reach, and the
+    IndexNow ping is skipped without a key, which IndexNow needs to prove the
+    host is ours. Until 2026-10-14 a fresh install told IndexNow and Google
+    about ``http://localhost:8002/site/...`` on every immediate publish, with
+    an empty key (poindexter#1123). Each skip logs one line saying why.
     """
     import httpx
 
     _sc = site_config
+    if not _is_public_site_url(site_url):
+        logger.info(
+            "[SEO] search-engine pings skipped: site_url %r is not a public address", site_url,
+        )
+        return
 
     # Tight caps on external SEO pings — they're fire-and-forget, we don't
     # want them to delay anything else if the target is slow.
@@ -408,7 +444,9 @@ async def _ping_search_engines(
         _indexnow_url = _sc.get(
             "indexnow_ping_url", "https://api.indexnow.org/indexnow"
         )
-        if _indexnow_url:
+        if _indexnow_url and not str(_indexnow_key or "").strip():
+            logger.info("[SEO] IndexNow ping skipped: indexnow_key is not set")
+        elif _indexnow_url:
             try:
                 await client.get(
                     _indexnow_url,
@@ -419,11 +457,10 @@ async def _ping_search_engines(
             except Exception as e:
                 logger.warning("[SEO] IndexNow ping failed (non-fatal): %s", e)
 
-        # Search-engine sitemap ping (Google's /ping endpoint by default;
-        # set google_sitemap_ping_url='' to skip).
-        _sitemap_ping = _sc.get(
-            "google_sitemap_ping_url", "https://www.google.com/ping"
-        )
+        # Search-engine sitemap ping, off by default: Google retired its
+        # /ping endpoint (HTTP 404 since 2024; checked 2026-10-14). Set
+        # google_sitemap_ping_url to an engine that still takes one.
+        _sitemap_ping = _sc.get("google_sitemap_ping_url", "")
         if _sitemap_ping:
             try:
                 await client.get(

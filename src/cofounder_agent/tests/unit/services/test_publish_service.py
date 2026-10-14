@@ -830,22 +830,55 @@ class TestSearchEnginePing:
             # Should not raise
             await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test", site_config=_TEST_SC)
 
-    @pytest.mark.asyncio
-    async def test_ping_success_completes(self):
-        """Successful pings complete without error."""
+    @staticmethod
+    async def _ping(site_url, *, key="k3y", sitemap_ping="https://engine.example/ping"):
         from poindexter.services.publish_service import _ping_search_engines
 
+        sc = SiteConfig(initial_config={"google_sitemap_ping_url": sitemap_ping})
+        sc.get_secret = AsyncMock(return_value=key)  # type: ignore[method-assign]
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=MagicMock(status_code=200))
-
         with patch("httpx.AsyncClient") as mock_cls:
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            await _ping_search_engines(site_url, f"{site_url}/posts/test", site_config=sc)
+        return [c.args[0] for c in mock_client.get.await_args_list]
 
-            await _ping_search_engines("https://gladlabs.io", "https://gladlabs.io/posts/test", site_config=_TEST_SC)
+    @pytest.mark.asyncio
+    async def test_a_public_site_with_a_key_pings_both(self):
+        urls = await self._ping("https://gladlabs.io")
+        assert urls == ["https://api.indexnow.org/indexnow", "https://engine.example/ping"]
 
-        # Both IndexNow and Google ping were attempted
-        assert mock_client.get.await_count == 2
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("site_url", [
+        "http://localhost:8002/site",
+        "http://127.0.0.1:8002",
+        "http://192.168.1.20",
+        "http://10.0.0.5:3000",
+        "http://[::1]:8002",
+        "http://worker:8002",
+        "http://nas.local",
+        "http://box.home.arpa",
+        "",
+    ])
+    async def test_a_site_no_engine_can_reach_is_never_announced(self, site_url):
+        """poindexter#1123: a fresh install's local preview URL went to
+        IndexNow and Google on every immediate publish."""
+        assert await self._ping(site_url) == []
+
+    @pytest.mark.asyncio
+    async def test_no_indexnow_key_skips_only_indexnow(self):
+        urls = await self._ping("https://gladlabs.io", key="")
+        assert urls == ["https://engine.example/ping"]
+
+    @pytest.mark.asyncio
+    async def test_the_sitemap_ping_is_off_by_default(self):
+        """Google's /ping answers 404; the default no longer calls it."""
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        assert DEFAULTS["google_sitemap_ping_url"] == ""
+        urls = await self._ping("https://gladlabs.io", sitemap_ping="")
+        assert urls == ["https://api.indexnow.org/indexnow"]
 
 
 # ---------------------------------------------------------------------------
