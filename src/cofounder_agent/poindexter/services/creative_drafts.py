@@ -468,7 +468,11 @@ async def load_for_render(
             out["screenplay_visual_style"] = cast_payload["style"]
         out["cast_portraits"] = dict(cast_payload.get("cast_portraits") or {})
         return out
-    listing = payload["shot_list"]
+    from poindexter.services.screenplay_director import prepare_storyboard_render
+
+    # The storyboard's own pictures are the video's first frames, and its
+    # stills animate under the cartoon budget (see prepare_storyboard_render).
+    listing = prepare_storyboard_render(payload["shot_list"], list(payload.get("shots") or []), site_config)
     timeline = list(payload.get("timeline") or [])
     if not payload.get("audio_master_url"):
         raise DraftError("this storyboard predates its full-quality track; storyboard the scenes again")

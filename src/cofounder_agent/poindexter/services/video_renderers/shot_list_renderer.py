@@ -2917,6 +2917,7 @@ async def _place_for(
     if plate:
         empty = est.model_copy(update={
             "characters": [], "speaker": None, "scene_id": None, "establishing": False, "prompt": plate,
+            "frame_url": None,
         })
         drawn = await _render_reference_still(
             empty, prompt=plate, output_path=out,
@@ -2979,6 +2980,11 @@ async def _render_reference_still(
     """
     from poindexter.services import reference_frames as rf
 
+    if getattr(shot, "frame_url", None) and await _approved_frame(
+        shot, Path(output_path), http_client_factory, width=width, height=height,
+    ):
+        # The storyboard's picture of this shot: the video starts from it.
+        return True
     if ctx is None or not rf.enabled(site_config):
         return False
     wanted = list(speakers or shot.characters or [])
@@ -3646,6 +3652,34 @@ def _presenter_negative_prompt(site_config: Any, *, cast: bool = False) -> dict[
     return {"negative_prompt": text} if text else {}
 
 
+async def _approved_frame(
+    shot: Shot, dest: Path, http_client_factory: Any, *, width: int, height: int,
+) -> str | None:
+    """The shot's approved first frame (``frame_url``) at ``width x height``, or ``None``.
+
+    A storyboard's picture of the shot: the render starts from it instead of
+    drawing the shot again, so the cartoon keeps the pictures and backgrounds
+    the operator approved (2026-10-14). Cropped to fill the frame, never
+    stretched. ``None`` (and the shot is drawn as before) when it cannot be had.
+    """
+    url = str(getattr(shot, "frame_url", "") or "")
+    if not url:
+        return None
+    raw = await _fetch_presenter_portrait(url, dest.with_name(f"{dest.stem}_src"), http_client_factory)
+    if not raw:
+        logger.warning("[SHOT_LIST] shot %d: approved frame %s could not be fetched; drawing it", shot.idx, url)
+        return None
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(raw) as img:
+            ImageOps.fit(img.convert("RGB"), (int(width), int(height)), method=Image.Resampling.LANCZOS).save(dest)
+    except Exception as exc:  # noqa: BLE001 — an unreadable frame is drawn instead
+        logger.warning("[SHOT_LIST] shot %d: approved frame unreadable (%s); drawing it", shot.idx, exc)
+        return None
+    return str(dest)
+
+
 async def _fetch_presenter_portrait(
     url: str, dest: Path, http_client_factory: Any,
 ) -> str | None:
@@ -3840,7 +3874,14 @@ async def _render_presenter_clip(
     )
     if not portrait:
         return _fail(f"could not fetch the persona portrait {portrait_url}")
-    if _is_cast_shot(shot) and shot.frame_prompt:
+    fw, fh, _ = _hero_render_dims(orientation, site_config)
+    approved = await _approved_frame(
+        shot, work_dir / f"approved_{shot.idx:02d}.png", http_client_factory, width=fw, height=fh,
+    )
+    if approved:
+        # The storyboard's talking frame, as approved: lip-synced as it is.
+        portrait = approved
+    elif _is_cast_shot(shot) and shot.frame_prompt:
         # The talking frame: the speaker drawn in THIS scene's setting and
         # style from their portrait, so the lip-synced shot matches the stills
         # around it instead of cutting back to the portrait's own background

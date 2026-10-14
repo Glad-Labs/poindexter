@@ -41,6 +41,7 @@ front, and the renderer adds each character's appearance
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -277,6 +278,43 @@ def _merge_slivers(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
     return out
 
 
+#: The motion an animated shot gets when the illustrator wrote none.
+DEFAULT_MOTION = "gentle camera push-in, subtle character motion"
+
+
+def prepare_storyboard_render(
+    listing: dict[str, Any], rows: list[dict[str, Any]], site_config: Any,
+) -> dict[str, Any]:
+    """A storyboard's shot list, ready to render as the cartoon the operator approved.
+
+    Every shot the storyboard drew carries that picture as ``frame_url``, so
+    the render starts from it (the talking face lip-syncs it, an animated shot
+    moves from it) instead of drawing the shot again. Matt, 2026-10-14: "I
+    wouldn't want the background to change scene to scene". And the stills a
+    storyboard planned before cartoons were animated throughout become
+    animated shots under the cartoon budget (story_max_animated_shots,
+    story_min_animated_shot_seconds), so an older storyboard renders without
+    still pans too. Returns a new listing; ``listing`` is left alone.
+    """
+    out = json.loads(json.dumps(listing))
+    frames = {int(r["idx"]): r.get("image_url") for r in rows if r.get("idx") is not None}
+    budget = site_config.get_int("story_max_animated_shots", -1) if site_config is not None else -1
+    floor = site_config.get_float("story_min_animated_shot_seconds", 0.0) if site_config is not None else 0.0
+    animated = sum(1 for sh in out.get("shots") or [] if sh.get("source") == "generative")
+    for shot in out.get("shots") or []:
+        url = frames.get(int(shot["idx"]))
+        if url:
+            shot["frame_url"] = url
+        if (
+            shot.get("source") in _STILL_SOURCES and shot.get("prompt")
+            and float(shot.get("duration_s") or 0.0) >= floor and (budget < 0 or animated < budget)
+        ):
+            shot["source"] = "generative"
+            shot["motion"] = (shot.get("motion") or DEFAULT_MOTION)[:500]
+            animated += 1
+    return out
+
+
 def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[str, Any]]:
     """Pick each shot's source. Talking shots are ``presenter``; a third
     consecutive talking shot by one speaker becomes a cutaway (the schema
@@ -497,7 +535,7 @@ def build_shot_list(
             shot["intent"] = picture[:200] or "scene"
             shot["prompt"] = (f"{style}, {picture}" if style else picture)[:1500]
             if s["source"] == "generative":
-                shot["motion"] = (seen.get("motion") or "gentle camera push-in, subtle character motion")[:500]
+                shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
         if s.get("scene_id"):
             shot["scene_id"] = str(s["scene_id"])[:64]
         shots.append(shot)

@@ -83,7 +83,8 @@ class TestLoad:
 
         monkeypatch.setattr(cd, "_download", fake_download)
         out = await cd.load_for_render(None, "b1", site_config=_sc())
-        assert out["video_shot_list"] is BOARD["shot_list"] and out["dialogue_timeline"] == BOARD["timeline"]
+        # A copy, prepared to render from the storyboard's own pictures (test_storyboard_frames).
+        assert out["video_shot_list"] == BOARD["shot_list"] and out["dialogue_timeline"] == BOARD["timeline"]
         assert out["video_long_script"] == "Hello." and out["screenplay_visual_style"] == "ink wash"
         assert out["cast_portraits"] == {"fox": "u"} and out["long_narration_audio_path"].endswith("dialogue.wav")
 

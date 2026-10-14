@@ -210,6 +210,15 @@ class Shot(BaseModel):
             "nobody in it), drawn once and used as every picture's place reference"
         ),
     )
+    frame_url: str | None = Field(
+        None,
+        max_length=1000,
+        description=(
+            "An approved first frame (a storyboard's picture of this shot). The renderer "
+            "starts from it instead of drawing the shot again, so the video keeps the "
+            "storyboard's pictures and backgrounds"
+        ),
+    )
 
     @field_validator("characters")
     @classmethod

@@ -98,6 +98,8 @@ async def plan_revision(
         if shot.get("idx") in changed:
             field = "frame_prompt" if shot.get("source") == "presenter" and shot.get("speaker") else "prompt"
             shot[field] = changed[shot["idx"]][:2000]
+            # A changed picture is drawn anew, not taken from the storyboard.
+            shot.pop("frame_url", None)
     name = f"revision-{uuid.uuid4().hex[:8]}.json"
     (cache_dir / "revisions").mkdir(parents=True, exist_ok=True)
     (cache_dir / "revisions" / name).write_text(json.dumps(listing, default=str))
