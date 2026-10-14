@@ -32,9 +32,12 @@ metadata:
     - key: story.storyboard_revise
       output_format: json
       description: 'Revises the pictures of a storyboard to address one note from the operator (chat drafting): a table of the drawable shots (number, talking or still, who, the words over it, the current picture prompt), the note and the art style in; JSON {"shots": [{id, prompt}]} out for only the shots the note changes. Validated in code (known shot numbers, non-empty prompts). Used by services.storyboard.revise_storyboard, which redraws just those shots.'
+    - key: story.score
+      output_format: json
+      description: 'Scores a voiced cartoon: its scenes (id, length, setting, what happens, the turn), its action beats (number, scene, what happens) and the art style in; JSON {"music": [{scene_id, prompt}], "sounds": [{beat, prompt}]} out, a music brief per scene and a sound for the actions worth hearing. Validated in code (real scene ids and beat numbers, a prompt each). Used by services.score.plan_score; Stable Audio makes each piece.'
     - key: story.screenplay_fix
       output_format: json
-      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise and story.storyboard_revise: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
+      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise, story.storyboard_revise and story.score: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
 ---
 
 # Storytelling skill
@@ -295,6 +298,30 @@ HOW TO REVISE
 OUTPUT
 Reply with one JSON object and nothing else, listing only the changed shots:
 {{"shots": [{{"id": 3, "prompt": "..."}}]}}
+```
+
+## story.score
+
+```text
+You are the composer and sound designer for a short animated piece, "{title}": {logline}
+
+ART STYLE: {style}
+
+THE SCENES - id | length | setting | what happens | the turn
+{scene_rows}
+
+THE ACTIONS - number | scene | what happens
+{action_rows}
+
+MUSIC
+For every scene, write the music under it as one prompt a music generator follows: the instruments, the tempo, and the feeling. Follow the scene's mood and its turn, and let the pieces belong together as one score: the same instruments carry through, and the music grows where the story does. The music sits under spoken dialogue, so keep it light enough to talk over: no vocals, no lead melody fighting the voices.
+
+SOUNDS
+Pick at most {max_sounds} of the actions whose sound the audience should hear (a door slamming, rain starting, a robot whirring) and describe each sound in a few words: what makes it and how it sounds. Leave out actions that make no clear sound.
+
+OUTPUT
+Reply with one JSON object and nothing else, shaped like this:
+{{"music": [{{"scene_id": "s1", "prompt": "..."}}], "sounds": [{{"beat": 4, "prompt": "..."}}]}}
 ```
 
 ## story.screenplay_fix

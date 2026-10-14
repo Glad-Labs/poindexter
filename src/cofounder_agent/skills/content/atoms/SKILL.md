@@ -313,8 +313,9 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 - For a creative video (cartoon, animated explainer, sketch, a story
   with characters), use these steps in exactly this order:
   story.cast_characters -> story.write_screenplay -> media.render_dialogue
-  -> media.direct_screenplay -> media.transcribe_narration ->
-  media.render_long_video -> media.qa -> media.persist.
+  -> media.direct_screenplay -> media.score_screenplay ->
+  media.transcribe_narration -> media.render_long_video -> media.qa ->
+  media.persist.
   story.cast_characters comes first whenever the piece needs a character
   that is not in CHARACTERS below: a fairytale, a fable, a known story, or
   any request that describes people of its own. It designs those
@@ -325,6 +326,8 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   the render burns in the captions it makes, and media.persist comes last
   because it saves the video and puts it in the approval queue. That queue
   is where the video is reviewed, so the chain ends at media.persist.
+  media.score_screenplay adds the music and sound effects; include it in
+  every cartoon unless the intent asks for no music.
   Put the creative choices in config. On story.write_screenplay:
   screenplay_format ("sketch" for comedy, "story" for a narrative with a
   journey, "dialogue" for characters talking a topic through, "explainer"

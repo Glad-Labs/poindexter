@@ -3156,6 +3156,21 @@ DEFAULTS: dict[str, str] = {
     # after this many minutes without progress was interrupted (a worker
     # restart) and reads as failed.
     'creative_draft_stale_minutes': '45',
+    # Chat drafting phase 6: a cartoon's soundtrack (services/score.py). The
+    # writer plans music per scene and a sound for up to max_sounds action
+    # beats; Stable Audio makes each (music clips up to max_clip_seconds,
+    # looped to fill the scene; sounds up to max_sound_seconds); ffmpeg lays
+    # them on the dialogue timeline. Sounds sit sfx_gain_db above the music so
+    # they read through the soundtrack's attenuation under the dialogue.
+    'story_score_enabled': 'true',
+    'story_score_max_sounds': '6',
+    'story_score_max_clip_seconds': '47',
+    'story_score_max_sound_seconds': '4',
+    'story_score_fade_seconds': '1.5',
+    'story_score_sfx_gain_db': '9',
+    'story_score_music_template': '{prompt}, instrumental music, no vocals, clean mix',
+    'story_score_sound_template': 'sound effect: {prompt}, isolated, no music, no voices',
+    'story_score_dir': '~/.poindexter/video/scores',
     # Chat drafting phase 4: a screenplay video keeps its shot clips (plus its
     # dialogue track, captions, shot list, timeline and script) under
     # <dir>/<task>, so a note re-renders only the shots it changes. Caches
@@ -6655,6 +6670,15 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_line_exaggeration_max': {'owner': 'screenplay', 'value_type': 'float'},
     'story_cast_max_new': {'owner': 'casting', 'value_type': 'integer'},
     'creative_draft_stale_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},
+    'story_score_enabled': {'owner': 'score', 'value_type': 'boolean'},
+    'story_score_max_sounds': {'owner': 'score', 'value_type': 'integer'},
+    'story_score_max_clip_seconds': {'owner': 'score', 'value_type': 'float'},
+    'story_score_max_sound_seconds': {'owner': 'score', 'value_type': 'float'},
+    'story_score_fade_seconds': {'owner': 'score', 'value_type': 'float'},
+    'story_score_sfx_gain_db': {'owner': 'score', 'value_type': 'float'},
+    'story_score_music_template': {'owner': 'score', 'value_type': 'string'},
+    'story_score_sound_template': {'owner': 'score', 'value_type': 'string'},
+    'story_score_dir': {'owner': 'score', 'value_type': 'string'},
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},

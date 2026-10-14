@@ -39,10 +39,12 @@ class TestSpec:
         script = cd.render_spec("screenplay", "d1")
         board = cd.render_spec("storyboard", "d1")
         assert [n["atom"] for n in script["nodes"]] == [
-            "story.load_draft", "media.render_dialogue", "media.direct_screenplay",
+            "story.load_draft", "media.render_dialogue", "media.direct_screenplay", "media.score_screenplay",
             "media.transcribe_narration", "media.render_long_video", "media.qa", "media.persist",
         ]
-        assert [n["atom"] for n in board["nodes"]][:2] == ["story.load_draft", "media.transcribe_narration"]
+        assert [n["atom"] for n in board["nodes"]][:3] == [
+            "story.load_draft", "media.score_screenplay", "media.transcribe_narration",
+        ]
         assert board["edges"][-1] == {"from": "persist", "to": "END"}
 
     def test_both_plans_validate_against_the_real_atoms(self):

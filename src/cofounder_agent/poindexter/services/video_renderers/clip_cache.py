@@ -101,18 +101,21 @@ def save(cache_dir: str | None, pairs: list[tuple[Any, Any, str]]) -> int:
     return saved
 
 
-INPUTS = {"audio": "dialogue.wav", "captions": "captions.srt", "shot_list": "shot_list.json",
+INPUTS = {"audio": "dialogue.wav", "captions": "captions.srt", "score": "score.wav", "shot_list": "shot_list.json",
           "timeline": "timeline.json", "screenplay": "screenplay.json"}
 
 
 def save_inputs(
     cache_dir: str, *, audio_path: str | None, caption_path: str | None,
     shot_list: dict[str, Any], timeline: list[Any] | None, screenplay: dict[str, Any] | None,
+    score_path: str | None = None,
 ) -> None:
     """Keep what a revision re-renders against: the track, captions, plan and script."""
     root = Path(cache_dir)
     root.mkdir(parents=True, exist_ok=True)
-    for src, name in ((audio_path, INPUTS["audio"]), (caption_path, INPUTS["captions"])):
+    for src, name in (
+        (audio_path, INPUTS["audio"]), (caption_path, INPUTS["captions"]), (score_path, INPUTS["score"]),
+    ):
         if src and Path(src).is_file() and Path(src).resolve() != (root / name).resolve():
             shutil.copyfile(src, root / name)
     (root / INPUTS["shot_list"]).write_text(json.dumps(shot_list, default=str))
@@ -128,6 +131,7 @@ def load_inputs(cache_dir: str) -> dict[str, Any]:
     return {
         "audio_path": str(root / INPUTS["audio"]) if (root / INPUTS["audio"]).is_file() else None,
         "caption_path": str(root / INPUTS["captions"]) if (root / INPUTS["captions"]).is_file() else None,
+        "score_path": str(root / INPUTS["score"]) if (root / INPUTS["score"]).is_file() else None,
         "shot_list": json.loads((root / INPUTS["shot_list"]).read_text()),
         "timeline": json.loads((root / INPUTS["timeline"]).read_text() or "[]"),
         "screenplay": json.loads((root / INPUTS["screenplay"]).read_text() or "{}"),

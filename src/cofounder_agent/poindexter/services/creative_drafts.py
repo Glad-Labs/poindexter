@@ -382,6 +382,7 @@ async def load_for_render(
 
 
 _RENDER_TAIL = (
+    ("score", "media.score_screenplay"),
     ("transcribe", "media.transcribe_narration"),
     ("render", "media.render_long_video"),
     ("qa", "media.qa"),

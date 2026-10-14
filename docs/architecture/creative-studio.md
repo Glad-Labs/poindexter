@@ -9,7 +9,7 @@ blog → podcast → video path and reuses its renderer.
 
 ```text
 [story.cast_characters →] story.write_screenplay → media.render_dialogue → media.direct_screenplay
-    → media.transcribe_narration → media.render_long_video → media.qa → media.persist
+    → media.score_screenplay → media.transcribe_narration → media.render_long_video → media.qa → media.persist
 ```
 
 Every step is an atom, so the architect can compose part of the chain: a
@@ -182,6 +182,33 @@ Chatterbox garbles words). Kai sits at 0.9, so his outbursts read at 1.1 and
 his quiet lines at 0.7; a Whisper round trip of a voiced scene came back word
 for word. Kokoro has no emotion control, so a Kokoro character's lines are
 unchanged.
+
+## Scoring: music and sound on the same timeline
+
+`media.score_screenplay` (`services/score.py`, chat drafting phase 6)
+gives a cartoon a soundtrack. Before it, cartoons were voices only.
+
+1. One writer call (`story.score`) reads the scenes (length, setting, what
+   happens, the turn), the action beats and the art style. It returns a
+   music brief per scene (instruments, tempo, feeling, one score across the
+   piece, light enough to talk over) and a sound for up to
+   `story_score_max_sounds` actions worth hearing. Code checks the scene ids
+   and beat numbers against the timeline.
+2. Stable Audio makes each piece (`audio_gen_service`, under the render's
+   `video` GPU lock): music up to `story_score_max_clip_seconds`, looped to
+   fill its scene, and sounds up to `story_score_max_sound_seconds`.
+3. ffmpeg lays each piece on the dialogue timeline: music across its scene
+   with `story_score_fade_seconds` fades, and each sound at its action's
+   start, `story_score_sfx_gain_db` above the music. The result is one track
+   the length of the dialogue.
+
+That track becomes `video_ambient_audio_path`, which the renderer mixes
+under the dialogue as the soundtrack. Everything is best-effort: no engine, a
+failed plan or nothing generated renders voices-only, as before.
+`story_score_enabled` turns it off.
+
+Draft renders (phase 3) score too. A render revision (phase 4) reuses its
+source's score, since the dialogue track is the same.
 
 ## Directing: shots that tile the track
 

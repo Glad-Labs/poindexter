@@ -96,6 +96,7 @@ def _keep_render_inputs(
     try:
         clip_cache.save_inputs(
             cache_dir, audio_path=narration, caption_path=caption,
+            score_path=state.get("video_ambient_audio_path") or None,
             shot_list=shot_list.model_dump(mode="json"),
             timeline=state.get("dialogue_timeline") or [],
             screenplay=state.get("screenplay") or {},

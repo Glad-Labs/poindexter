@@ -150,6 +150,9 @@ def load_revision_state(render_source: str, shot_list_file: str, *, site_config:
         "dialogue_timeline": kept["timeline"],
         "screenplay": screenplay,
         "video_clip_cache_key": render_source,
+        # The source's soundtrack: the dialogue track is the same, so its
+        # music and sound effects still fit.
+        **({"video_ambient_audio_path": kept["score_path"]} if kept.get("score_path") else {}),
     }
 
 

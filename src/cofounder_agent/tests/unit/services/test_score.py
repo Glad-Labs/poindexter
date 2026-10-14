@@ -1,0 +1,191 @@
+"""Cartoon scores (services/score.py, chat drafting phase 6).
+
+Music per scene and sound effects on the actions worth hearing, planned by
+the writer, made by Stable Audio and laid on the dialogue's own timeline as
+one soundtrack. Best-effort throughout: no score renders voices-only.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+import pytest
+
+from poindexter.services import score
+from poindexter.services.site_config import SiteConfig
+
+
+def _sc(**extra):
+    return SiteConfig(initial_config={"audio_gen_engine": "stable-audio-open-1.0", **extra})
+
+
+TIMELINE = [
+    {"beat_idx": 0, "scene_id": "s1", "kind": "line", "speaker": "fox", "text": "Hello.", "start_s": 0.4, "end_s": 2.0},
+    {"beat_idx": 1, "scene_id": "s1", "kind": "action", "text": "A door slams.", "start_s": 2.4, "end_s": 3.9},
+    {"beat_idx": 2, "scene_id": "s2", "kind": "line", "speaker": "crow", "text": "Caw.", "start_s": 4.7, "end_s": 6.0},
+]
+SCRIPT = {"title": "The Fox and the Crow", "logline": "A fox flatters a crow.",
+          "scenes": [{"scene_id": "s1", "setting": "a wood", "summary": "fox arrives", "turn": "the crow listens"},
+                     {"scene_id": "s2", "setting": "a branch", "summary": "crow sings", "turn": "cheese falls"}]}
+
+
+class TestTimeline:
+    def test_scenes_tile_the_whole_track(self):
+        assert score.scene_spans(TIMELINE, 7.0) == [("s1", 0.0, 4.7), ("s2", 4.7, 7.0)]
+
+    def test_action_beats(self):
+        assert [b["beat_idx"] for b in score.action_beats(TIMELINE)] == [1]
+
+
+class TestCheck:
+    def test_a_good_plan(self):
+        plan = {"music": [{"scene_id": "s1", "prompt": "m"}, {"scene_id": "s2", "prompt": "m"}],
+                "sounds": [{"beat": 1, "prompt": "door slam"}]}
+        assert score.check_plan(plan, scene_ids={"s1", "s2"}, beat_ids={1}) == []
+
+    def test_each_problem_is_named(self):
+        plan = {"music": [{"scene_id": "s9", "prompt": ""}], "sounds": [{"beat": 7, "prompt": "x"}]}
+        errors = score.check_plan(plan, scene_ids={"s1", "s2"}, beat_ids={1})
+        text = " ".join(errors)
+        assert "'s9' is not one of" in text and '"prompt"' in text and "missing ['s1', 's2']" in text
+        assert "no action 7" in text
+
+    def test_music_is_required(self):
+        assert score.check_plan({}, scene_ids={"s1"}, beat_ids=set())[0].startswith('FIX: add "music"')
+
+
+@pytest.fixture
+def chat(monkeypatch):
+    import poindexter.services.llm_text as llm_text
+    import poindexter.services.screenplay as sp
+
+    mock = AsyncMock()
+    monkeypatch.setattr(llm_text, "ollama_chat_text", mock)
+    monkeypatch.setattr(sp, "_resolve_model", lambda sc: "ollama/test-writer")
+    return mock
+
+
+class TestPlan:
+    @pytest.mark.asyncio
+    async def test_the_writer_sees_scenes_and_actions_and_sounds_are_capped(self, chat):
+        chat.side_effect = [json.dumps({
+            "music": [{"scene_id": "s1", "prompt": "soft pizzicato"}, {"scene_id": "s2", "prompt": "playful oboe"}],
+            "sounds": [{"beat": 1, "prompt": "door slam"}, {"beat": 1, "prompt": "echo"}],
+        })]
+        plan = await score.plan_score(SCRIPT, TIMELINE, style="ink", site_config=_sc(story_score_max_sounds="1"))
+        assert len(plan["sounds"]) == 1 and plan["music"][1]["prompt"] == "playful oboe"
+        prompt = chat.await_args.args[0]
+        assert "s1 | 5s | a wood" in prompt and "1 | s1 | A door slams." in prompt
+        assert chat.await_args.kwargs["phase"] == "story_score"
+
+
+class TestMix:
+    def test_music_loops_to_its_scene_and_sounds_ride_louder(self):
+        graph = score.mix_graph(
+            [{"path": "m", "kind": "music", "start": 0.0, "end": 4.7},
+             {"path": "s", "kind": "sfx", "start": 2.4, "end": 5.4}],
+            duration_s=7.0, fade_s=1.5, sfx_gain_db=9.0,
+        )
+        assert "[0:a]aloop=loop=-1:size=2e9,atrim=0:4.700" in graph and "adelay=0|0[p0]" in graph
+        assert "volume=9.0dB,adelay=2400|2400[p1]" in graph
+        assert graph.endswith("amix=inputs=2:normalize=0:duration=longest,atrim=0:7.000[out]")
+
+
+@pytest.fixture
+def studio(monkeypatch, tmp_path):
+    made: list = []
+
+    async def fake_generate(prompt, kind, seconds, stem, out_dir, site_config):
+        made.append((kind, prompt, round(seconds, 1)))
+        path = Path(out_dir) / f"{stem}.wav"
+        path.write_bytes(b"wav")
+        return str(path)
+
+    async def fake_ffmpeg(*args):
+        Path(args[-1]).write_bytes(b"score")
+        return True
+
+    monkeypatch.setattr(score, "_generate", fake_generate)
+    monkeypatch.setattr(score, "_ffmpeg", fake_ffmpeg)
+    return made
+
+
+PLAN = {"music": [{"scene_id": "s1", "prompt": "soft pizzicato"}, {"scene_id": "s2", "prompt": "playful oboe"}],
+        "sounds": [{"beat": 1, "prompt": "door slam"}]}
+
+
+class TestBuild:
+    @pytest.mark.asyncio
+    async def test_each_piece_is_made_for_its_moment(self, studio, tmp_path):
+        out = await score.build_score(PLAN, TIMELINE, duration_s=7.0, site_config=_sc(),
+                                      output_path=str(tmp_path / "t_score.wav"))
+        assert out == {"path": str(tmp_path / "t_score.wav"), "music": 2, "sounds": 1}
+        assert studio[0] == ("ambient", "soft pizzicato, instrumental music, no vocals, clean mix", 6.7)
+        assert studio[2][0] == "sfx" and studio[2][1].startswith("sound effect: door slam")
+
+    @pytest.mark.asyncio
+    async def test_nothing_made_is_no_score(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(score, "_generate", AsyncMock(return_value=None))
+        out = await score.build_score(PLAN, TIMELINE, duration_s=7.0, site_config=_sc(),
+                                      output_path=str(tmp_path / "t.wav"))
+        assert out["path"] is None
+
+
+class TestScoreScreenplay:
+    @pytest.mark.asyncio
+    async def test_plans_then_builds_under_the_render_lock(self, studio, chat, monkeypatch, tmp_path):
+        from poindexter.services.gpu_scheduler import gpu
+
+        locks = []
+
+        @contextlib.asynccontextmanager
+        async def fake_lock(owner, **kw):
+            locks.append((owner, kw.get("phase")))
+            yield
+
+        monkeypatch.setattr(gpu, "lock", fake_lock)
+        chat.side_effect = [json.dumps(PLAN)]
+        out = await score.score_screenplay(SCRIPT, TIMELINE, duration_s=7.0, style="ink", site_config=_sc(),
+                                           task_id="t1", output_dir=str(tmp_path))
+        assert out["path"] and out["music"] == 2 and out["sounds"] == 1
+        assert locks == [("video", "video_score")]
+
+    @pytest.mark.asyncio
+    async def test_off_or_no_engine_or_no_timeline_is_skipped(self, chat):
+        for sc, timeline in ((_sc(story_score_enabled="false"), TIMELINE), (_sc(audio_gen_engine=""), TIMELINE),
+                             (_sc(), [])):
+            out = await score.score_screenplay(SCRIPT, timeline, duration_s=7.0, style="", site_config=sc)
+            assert out["path"] is None and out["skipped"]
+        assert chat.await_count == 0
+
+
+class TestAtom:
+    @pytest.mark.asyncio
+    async def test_the_score_becomes_the_soundtrack(self, monkeypatch):
+        import poindexter.services.dialogue_audio as da
+        from poindexter.modules.content.atoms import media_score_screenplay as atom
+
+        monkeypatch.setattr(da, "probe_seconds", AsyncMock(return_value=7.0))
+        monkeypatch.setattr(score, "score_screenplay", AsyncMock(return_value={"path": "/v/score.wav"}))
+        out = await atom.run({"site_config": _sc(), "screenplay": SCRIPT, "dialogue_timeline": TIMELINE,
+                              "long_narration_audio_path": "/t.wav"})
+        assert out == {"video_ambient_audio_path": "/v/score.wav"}
+
+    @pytest.mark.asyncio
+    async def test_a_failure_renders_voices_only(self, monkeypatch):
+        import poindexter.services.dialogue_audio as da
+        from poindexter.modules.content.atoms import media_score_screenplay as atom
+
+        monkeypatch.setattr(da, "probe_seconds", AsyncMock(return_value=7.0))
+        monkeypatch.setattr(score, "score_screenplay", AsyncMock(side_effect=RuntimeError("writer down")))
+        assert await atom.run({"site_config": _sc(), "screenplay": SCRIPT, "dialogue_timeline": TIMELINE,
+                               "long_narration_audio_path": "/t.wav"}) == {}
+
+    def test_outputs_are_declared_channels(self):
+        from poindexter.modules.content.atoms import media_score_screenplay as atom
+        from poindexter.services.template_runner import PipelineState
+
+        assert set(atom.ATOM_META.produces) <= set(PipelineState.__annotations__)
