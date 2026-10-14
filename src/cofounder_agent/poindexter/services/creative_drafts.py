@@ -11,6 +11,9 @@ about and revise, and only "keep" makes it real.
   writes the personas.
 - A **screenplay** draft runs the screenplay writer for an existing cast.
   Keep marks it kept; phase 3 renders from it.
+- A **storyboard** draft (phase 2) voices scenes of a script draft and draws
+  a still per shot with the renderer's own functions
+  (``services/storyboard.py``). A note redraws only the shots it changes.
 
 Every revision is a new row (``parent_id`` -> the version it revises,
 ``version`` + 1), so the chat can go back. Drafts are built in the
@@ -29,7 +32,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("cast", "screenplay")
+KINDS = ("cast", "screenplay", "storyboard")
 _JOBS: set[asyncio.Task[Any]] = set()
 
 
@@ -153,6 +156,29 @@ async def _wait_for_gpu(pool: Any, draft_id: str, site_config: Any) -> None:
 async def _build(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None, site_config: Any) -> dict[str, Any]:
     request = draft["request"]
     instruction = str(request.get("instruction") or "")
+    if draft["kind"] == "storyboard":
+        from poindexter.services import storyboard as sb
+
+        await _wait_for_gpu(pool, draft["id"], site_config)
+        prefix = f"drafts/{draft['id']}"
+        if parent is not None:
+            return await sb.revise_storyboard(
+                parent["payload"], instruction, site_config=site_config, pool=pool, upload_prefix=prefix,
+            )
+        script = await get_draft(pool, str(request["screenplay_draft"]), site_config=site_config)
+        if script is None or script["kind"] != "screenplay" or script["status"] not in ("ready", "kept"):
+            raise DraftError("the storyboard's script draft is gone or not ready")
+        cast = None
+        if request.get("cast_draft"):
+            cast = await get_draft(pool, str(request["cast_draft"]), site_config=site_config)
+        cast_payload = (cast or {}).get("payload") or {}
+        return await sb.build_storyboard(
+            script["payload"], scenes=list(request.get("scenes") or []), site_config=site_config,
+            pool=pool, upload_prefix=prefix,
+            style=str(request.get("style") or cast_payload.get("style") or ""),
+            niche_slug=request.get("niche_slug"),
+            cast_portraits=dict(cast_payload.get("cast_portraits") or {}),
+        )
     if draft["kind"] == "screenplay":
         from poindexter.services import screenplay as sp
 
@@ -190,6 +216,27 @@ async def _run(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None, 
     logger.info("[creative_drafts] %s draft %s v%s ready", draft["kind"], draft["id"][:8], draft["version"])
 
 
+async def _check_storyboard_request(pool: Any, request: dict[str, Any], site_config: Any) -> None:
+    """Fail in the chat turn on a storyboard that cannot be made."""
+    from poindexter.services import storyboard as sb
+
+    script = await get_draft(pool, str(request.get("screenplay_draft") or ""), site_config=site_config)
+    if script is None or script["kind"] != "screenplay":
+        raise DraftError("a storyboard needs a screenplay draft id (from a script draft card)")
+    if script["status"] not in ("ready", "kept"):
+        raise DraftError(f"script draft {script['id'][:8]} is {script['status']}; storyboard a ready script")
+    try:
+        sb.select_scenes(script["payload"], list(request.get("scenes") or []))
+    except sb.StoryboardError as exc:
+        raise DraftError(str(exc)) from exc
+    request["screenplay_draft"] = script["id"]
+    if request.get("cast_draft"):
+        cast = await get_draft(pool, str(request["cast_draft"]), site_config=site_config)
+        if cast is None or cast["kind"] != "cast":
+            raise DraftError("cast_draft must be a cast draft id")
+        request["cast_draft"] = cast["id"]
+
+
 def _spawn(coro: Any) -> None:
     task = asyncio.get_running_loop().create_task(coro)
     _JOBS.add(task)
@@ -203,7 +250,9 @@ async def start_draft(
     """Insert a ``working`` draft and build it in the background; returns the row."""
     if kind not in KINDS:
         raise DraftError(f"kind must be one of {KINDS}, not {kind!r}")
-    if not str(request.get("topic") or "").strip():
+    if kind == "storyboard":
+        await _check_storyboard_request(pool, request, site_config)
+    elif not str(request.get("topic") or "").strip():
         raise DraftError("a draft needs a topic: what the piece is about")
     if kind == "screenplay":
         # Fail now, in the chat turn, rather than in the background job.
@@ -276,7 +325,15 @@ def describe(draft: dict[str, Any], *, max_chars: int = 6000) -> str:
         return f"{head}: {draft.get('error') or 'failed'}"
     payload = draft.get("payload") or {}
     lines = [head]
-    if draft["kind"] == "cast":
+    if draft["kind"] == "storyboard":
+        lines.append(f"storyboard of {payload.get('title', '')}, scenes {payload.get('scenes')}, style: {payload.get('style', '')}")
+        for row in payload.get("shots") or []:
+            drawn = "drawn" if row.get("image_url") else "not drawn"
+            lines.append(
+                f"  shot {row['idx']} ({row['kind']}, {row.get('duration_s')}s, {drawn}): "
+                f"{row.get('words') or '-'} | picture: {str(row.get('picture') or '')[:160]}"
+            )
+    elif draft["kind"] == "cast":
         lines.append(f"style: {payload.get('style', '')}")
         for ch in payload.get("characters") or []:
             tag = "reused" if ch.get("reused") else "new"

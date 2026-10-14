@@ -396,3 +396,36 @@ Two GPU rules came from the first live drafts:
   portraits ran out of card.
 
 `draw_cast` also soft-frees ComfyUI after it draws.
+
+### Storyboards
+
+Phase 2 adds `storyboard_draft`, which turns scenes of a script draft
+(`scenes`: ids or numbers, or all) into the pictures and sound the render
+would start from, before any animation (`services/storyboard.py`). It runs
+the render's own steps and stops short of animating:
+
+1. `render_dialogue` voices the scenes into one track.
+2. `direct_screenplay` plans the shots against that track, with the cast
+   draft's style and per-piece portraits.
+3. Each shot is drawn with the renderer's functions:
+   - a talking shot gets its per-scene talking frame (`_draw_talking_frame`,
+     checked for exactly the speaker);
+   - a still is drawn from the cast's portraits (`_render_reference_still`).
+
+   Stock footage is listed, not drawn.
+
+So the preview is the frame the video will animate, not a look-alike. A
+talking shot costs about six minutes of GPU to animate and a still about ten
+seconds, so a still is the cheap place to fix a shot.
+
+The card plays an animatic: the voiced track, with the picture of whichever
+shot is on screen at that moment. Clicking any thumbnail seeks to that shot.
+
+A note on a storyboard goes to `revise_draft` (prompt
+`story.storyboard_revise`). It returns new picture prompts for only the
+shots the note is about, and only those are redrawn (into `-v<n>` files);
+every other shot keeps its picture. The payload keeps the shot list and the
+timeline, which phase 3 renders from.
+
+Storyboards wait for a running render like cast drafts, and voice before
+they draw (`_ensure_voice_headroom`).

@@ -29,9 +29,12 @@ metadata:
     - key: story.casting_revise
       output_format: json
       description: 'Revises a cast design to address one note from the operator (chat drafting): the current design JSON (style, characters, narrator), the note, the art style and the voice catalog in; the whole revised design out in the story.casting shape, with untouched characters kept under their ids. Validated in code like a new cast. Used by services.casting.revise_cast_design.'
+    - key: story.storyboard_revise
+      output_format: json
+      description: 'Revises the pictures of a storyboard to address one note from the operator (chat drafting): a table of the drawable shots (number, talking or still, who, the words over it, the current picture prompt), the note and the art style in; JSON {"shots": [{id, prompt}]} out for only the shots the note changes. Validated in code (known shot numbers, non-empty prompts). Used by services.storyboard.revise_storyboard, which redraws just those shots.'
     - key: story.screenplay_fix
       output_format: json
-      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene and story.screenplay_revise: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
+      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise and story.storyboard_revise: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
 ---
 
 # Storytelling skill
@@ -267,6 +270,31 @@ HOW TO REVISE
 OUTPUT
 Reply with the whole revised cast as one JSON object and nothing else, in the same shape as THE CAST NOW:
 {{"style": "...", "characters": [{{"reuse": "existing_id"}}, {{"id": "lowercase-id", "name": "...", "role": "...", "appearance": "...", "personality": "...", "voice": "voice_id", "energy": "medium", "sample_line": "..."}}], "narrator": {{"use": true, "reuse": "existing_id or empty", "name": "...", "voice": "voice_id", "energy": "low", "sample_line": "..."}}}}
+```
+
+## story.storyboard_revise
+
+```text
+You are the storyboard artist for a short animated piece. The operator has looked at the storyboard and left a note.
+
+THE NOTE
+{instruction}
+
+THE SHOTS - number | talking (a character speaking to camera) or still | who is in it | the words heard over it | the picture prompt now
+{shot_table}
+
+ART STYLE: {style}
+
+HOW TO REVISE
+- Change only the shots the note is about, and a shot next to them when the note needs it to stay consistent (the same place, light or prop).
+- Write each changed shot's whole new picture prompt: framing, where the characters are and what they do, the key objects, and the light and mood.
+- Keep the art style words at the start of a prompt that has them.
+- A talking shot shows the speaker alone in the frame with the hands out of it: change the place, framing or expression, never add people.
+- Keep pictures free of written words, signs and screens with text.
+
+OUTPUT
+Reply with one JSON object and nothing else, listing only the changed shots:
+{{"shots": [{{"id": 3, "prompt": "..."}}]}}
 ```
 
 ## story.screenplay_fix

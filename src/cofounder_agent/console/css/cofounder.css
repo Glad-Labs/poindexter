@@ -842,6 +842,69 @@
   overflow-wrap: anywhere;
 }
 
+/* Storyboard draft: an animatic screen above a strip of shots */
+.cf-draft__screen {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--gl-mint) 6%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cf-draft__screen img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cf-draft__caption {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.cf-draft__strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 0 2px;
+}
+.cf-draft__thumb {
+  flex: 0 0 auto;
+  width: 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+}
+.cf-draft__thumb.is-on {
+  border-color: var(--gl-mint);
+}
+.cf-draft__thumb img,
+.cf-draft__thumb .cf-draft__portrait--none {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.cf-draft__thumb-tag {
+  font-size: 10px;
+  color: var(--gl-text-muted);
+  text-align: left;
+}
+
 /* Plan-card absence warnings (informative amber, never blockers) */
 .cf-plan__warns {
   display: flex;

@@ -416,7 +416,10 @@ async def _start_draft(ctx: ChatToolContext, kind: str, inputs: dict[str, Any]) 
     except cd.DraftError as exc:
         raise ChatToolError(str(exc)) from exc
     ctx.emitted_cards.append(cd.card(draft))
-    took = "a minute or two, longer while a video renders" if kind == "cast" else "about a minute"
+    took = {
+        "cast": "a minute or two, longer while a video renders",
+        "storyboard": "a few minutes (it voices the lines and draws every shot), longer while a video renders",
+    }.get(kind, "about a minute")
     return (
         f"Started {kind} draft {draft['id'][:8]} (v1). It takes {took}; the draft "
         "card fills in when it is ready. Tell the operator it is on its way and stop; "
@@ -445,6 +448,20 @@ async def _draft_screenplay(
         narrator=narrator, target_seconds=target_seconds, tone=tone,
     )
     return await _start_draft(ctx, "screenplay", inputs)
+
+
+async def _storyboard_draft(
+    ctx: ChatToolContext, *, screenplay_draft: str, scenes: str = "", cast_draft: str = "",
+    style: str = "", niche_slug: str = "",
+) -> str:
+    inputs: dict[str, Any] = {
+        "screenplay_draft": screenplay_draft.strip(),
+        "scenes": [p.strip() for p in scenes.split(",") if p.strip() and p.strip().lower() != "all"],
+    }
+    for key, value in (("cast_draft", cast_draft), ("style", style), ("niche_slug", niche_slug)):
+        if value.strip():
+            inputs[key] = value.strip()
+    return await _start_draft(ctx, "storyboard", inputs)
 
 
 async def _revise_draft(ctx: ChatToolContext, *, draft_id: str, instruction: str) -> str:
@@ -627,6 +644,26 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         ),
         tier="read",
         handler=_draft_screenplay,
+    ),
+    ChatToolSpec(
+        name="storyboard_draft",
+        description=(
+            "Storyboard scenes of a script draft before anything is animated: "
+            "voices the lines and draws a still for every shot, exactly as the "
+            "render will start them, so a shot can be fixed as a picture. "
+            "screenplay_draft is the script draft's id; scenes is a comma list "
+            "of scene ids or numbers ('2', 's1,s3'; empty = all); cast_draft "
+            "(the cast draft's id) carries the art style. Returns at once; the "
+            "card fills in a few minutes later. A note on it ('shot 3 wider', "
+            "'make the alley darker') goes to revise_draft, which redraws only "
+            "those shots."
+        ),
+        parameters=_params(
+            {"screenplay_draft": _STR, "scenes": _STR, "cast_draft": _STR, "style": _STR, "niche_slug": _STR},
+            ["screenplay_draft"],
+        ),
+        tier="read",
+        handler=_storyboard_draft,
     ),
     ChatToolSpec(
         name="revise_draft",

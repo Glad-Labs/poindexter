@@ -343,7 +343,10 @@ function CfDraftCard({ card, pushToast }) {
       setBusy(false);
     }
   };
-  const kind = card.draft_kind === 'cast' ? 'Cast' : 'Script';
+  const kind =
+    { cast: 'Cast', screenplay: 'Script', storyboard: 'Storyboard' }[
+      card.draft_kind
+    ] || 'Draft';
   const status = draft ? draft.status : 'working';
   const payload = (draft && draft.payload) || {};
   return (
@@ -362,9 +365,11 @@ function CfDraftCard({ card, pushToast }) {
       {working && (
         <div className="cf-draft__note">
           {(draft && draft.note) ||
-            (card.draft_kind === 'cast'
-              ? 'Designing the characters, drawing their portraits and voicing them…'
-              : 'Writing the script…')}
+            {
+              cast: 'Designing the characters, drawing their portraits and voicing them…',
+              storyboard: 'Voicing the lines and drawing every shot…',
+            }[card.draft_kind] ||
+            'Writing the script…'}
         </div>
       )}
       {status === 'failed' && (
@@ -377,6 +382,9 @@ function CfDraftCard({ card, pushToast }) {
       )}
       {!working && status !== 'failed' && card.draft_kind === 'screenplay' && (
         <CfDraftScript payload={payload} />
+      )}
+      {!working && status !== 'failed' && card.draft_kind === 'storyboard' && (
+        <CfDraftStoryboard payload={payload} />
       )}
       {status === 'ready' && (
         <div className="cf-plan__actions">
@@ -473,6 +481,73 @@ function CfDraftCast({ payload }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// A storyboard plays as an animatic: the voiced track, with the picture of
+// whichever shot is on screen at that moment; any thumbnail seeks to its shot.
+function CfDraftStoryboard({ payload }) {
+  const shots = payload.shots || [];
+  const audio = React.useRef(null);
+  const [current, setCurrent] = React.useState(0);
+  const onTime = () => {
+    const t = audio.current ? audio.current.currentTime : 0;
+    let at = 0;
+    shots.forEach((s, i) => {
+      if (t >= s.start_s) at = i;
+    });
+    setCurrent(at);
+  };
+  const seek = (i) => {
+    setCurrent(i);
+    if (audio.current) audio.current.currentTime = shots[i].start_s || 0;
+  };
+  const shown = shots[current] || {};
+  return (
+    <div className="cf-draft__board">
+      {payload.style && (
+        <div className="cf-draft__style">Style: {payload.style}</div>
+      )}
+      <div className="cf-draft__screen">
+        {shown.image_url ? (
+          <img src={shown.image_url} alt={`shot ${shown.idx}`} />
+        ) : (
+          <div className="cf-draft__portrait--none">
+            {shown.kind === 'footage' ? 'stock footage' : 'not drawn'}
+          </div>
+        )}
+        {shown.words && <div className="cf-draft__caption">{shown.words}</div>}
+      </div>
+      {payload.audio_url && (
+        <audio
+          ref={audio}
+          className="cf-draft__voice"
+          controls
+          preload="none"
+          src={payload.audio_url}
+          onTimeUpdate={onTime}
+        />
+      )}
+      <div className="cf-draft__strip">
+        {shots.map((s, i) => (
+          <button
+            key={s.idx}
+            className={`cf-draft__thumb ${i === current ? 'is-on' : ''}`}
+            onClick={() => seek(i)}
+            title={s.words || s.picture}
+          >
+            {s.image_url ? (
+              <img src={s.image_url} alt={`shot ${s.idx}`} loading="lazy" />
+            ) : (
+              <span className="cf-draft__portrait--none">{s.kind}</span>
+            )}
+            <span className="cf-draft__thumb-tag tnum">
+              {s.idx} · {s.kind}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
