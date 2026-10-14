@@ -1381,7 +1381,7 @@ async def _render_attempts(
         # The only callers that sent one were stale: POST
         # /api/tasks/{id}/generate-image sent Stable Diffusion XL base's 50
         # (~5.5x the denoise time, on every OCR re-roll too) and
-        # scripts/backfill_awaiting_images.py sent Lightning's 4.
+        # the retired April backfill script sent Lightning's 4.
         if steps != config.default_steps:
             logger.info("Clamping steps %d -> %d for z_image_turbo",
                         steps, config.default_steps)

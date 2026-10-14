@@ -14,7 +14,7 @@ CFG 7.5 from before the model
 moved. The server zeroed the guidance but rendered all 50 steps: about 5.5x
 the denoise time per render (median 2.79 it/s on the live card, so ~18 s
 instead of ~3 s), paid again on every OCR-gate re-roll.
-``scripts/backfill_awaiting_images.py`` sent Lightning's 4.
+The retired April backfill script (removed in glad-labs-stack#4239) sent Lightning's 4.
 
 A model with real classifier-free guidance (Stable Diffusion XL base) is the
 negative control: a caller's numbers are legitimate there and must survive.
@@ -126,7 +126,7 @@ async def _render(server, model: str, **request):
     [
         # What POST /api/tasks/{id}/generate-image sent until 2026-09-28.
         pytest.param({"steps": 50, "guidance_scale": 7.5}, id="50-steps-cfg-7.5"),
-        # What scripts/backfill_awaiting_images.py sent until 2026-09-28.
+        # What the retired April backfill script sent until 2026-09-28.
         pytest.param({"steps": 4, "guidance_scale": 1.0}, id="4-steps-cfg-1"),
         # What every pipeline render path sends.
         pytest.param({}, id="neither"),
