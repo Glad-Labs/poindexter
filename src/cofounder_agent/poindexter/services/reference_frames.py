@@ -70,24 +70,33 @@ def enabled(site_config: Any) -> bool:
 
 
 def compose_reference_prompt(
-    prompt: str, names: list[str], *, style_only: bool, site_config: Any,
+    prompt: str, names: list[str], *, style_only: bool, site_config: Any, place: bool = False,
 ) -> str:
     """Tell the edit model what each reference picture is, then the shot.
 
     ``names`` are the display names of the reference pictures, in order.
     ``style_only``: the pictures set the look, but nobody in them is in this
-    shot.
+    shot. ``place``: one more reference follows the named ones, the scene's
+    establishing picture, whose background the new picture keeps
+    (``video_reference_place_template``). ``video_reference_text_rule`` is
+    appended to every picture.
     """
     if style_only:
-        return _cfg(site_config, "video_reference_style_only_template").replace("{prompt}", prompt)
-    line = _cfg(site_config, "video_reference_name_template")
-    refs = ". ".join(
-        line.replace("{n}", str(i + 1)).replace("{name}", name) for i, name in enumerate(names)
-    )
-    return (
-        _cfg(site_config, "video_reference_prompt_template")
-        .replace("{references}", refs).replace("{prompt}", prompt)
-    )
+        text = _cfg(site_config, "video_reference_style_only_template").replace("{prompt}", prompt)
+    else:
+        line = _cfg(site_config, "video_reference_name_template")
+        refs = ". ".join(
+            line.replace("{n}", str(i + 1)).replace("{name}", name) for i, name in enumerate(names)
+        )
+        text = (
+            _cfg(site_config, "video_reference_prompt_template")
+            .replace("{references}", refs).replace("{prompt}", prompt)
+        )
+    if place:
+        where = _cfg(site_config, "video_reference_place_template").replace("{n}", str(len(names) + 1))
+        text = f"{where}. {text}"
+    rule = _cfg(site_config, "video_reference_text_rule").strip()
+    return f"{text.rstrip()} {rule}" if rule else text
 
 
 def build_reference_graph(

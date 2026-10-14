@@ -139,11 +139,35 @@ async def _draw(
     return None
 
 
+async def _seed_places(ctx: Any, shot_list: Any, indices: set[int], existing: dict[int, str | None], work: Path) -> None:
+    """A partial redraw keeps each scene's existing establishing picture as its place."""
+    from PIL import Image
+
+    from poindexter.services.creative_drafts import _download
+
+    for shot in shot_list.shots:
+        url = existing.get(shot.idx)
+        if not (shot.establishing and shot.scene_id and url) or shot.idx in indices:
+            continue
+        try:
+            raw = await _download(url, str(work / f"place_src_{shot.idx:02d}"))
+            local = str(work / f"place_{shot.idx:02d}.png")
+            with Image.open(raw) as img:
+                img.convert("RGB").save(local)
+            ctx.places[str(shot.scene_id)] = local
+        except Exception as exc:  # noqa: BLE001 — without it the scene's place is drawn afresh
+            logger.warning("[storyboard] could not fetch the place picture of shot %d: %s", shot.idx, exc)
+
+
 async def _draw_shots(
     listing: dict[str, Any], indices: set[int] | None, *, work: Path, site_config: Any, pool: Any,
-    upload_prefix: str, version_tag: str,
+    upload_prefix: str, version_tag: str, existing: dict[int, str | None] | None = None,
 ) -> dict[int, str | None]:
-    """Draw ``indices`` (all when None) of a shot list; returns idx -> uploaded URL."""
+    """Draw ``indices`` (all when None) of a shot list; returns idx -> uploaded URL.
+
+    ``existing`` is the picture URL of each shot not being redrawn: a scene's
+    establishing picture among them stays the scene's place reference.
+    """
     from poindexter.schemas.video_shot_list import VideoShotList
     from poindexter.services.video_renderers import shot_list_renderer as slr
 
@@ -151,6 +175,8 @@ async def _draw_shots(
     ctx = slr.reference_context_for(shot_list)
     if ctx is not None:
         ctx.pool = pool
+        if indices is not None and existing:
+            await _seed_places(ctx, shot_list, indices, existing, work)
     portraits = dict(listing.get("cast_portraits") or {})
     urls: dict[int, str | None] = {}
     for shot in shot_list.shots:
@@ -304,11 +330,12 @@ async def revise_storyboard(
             key = "frame_prompt" if shot.get("source") == "presenter" and shot.get("speaker") else "prompt"
             shot[key] = changed[shot["idx"]][:2000]
     version = len(payload.get("revisions") or []) + 2
+    before = {r["idx"]: r.get("image_url") for r in rows}
     urls = await _draw_shots(
         listing, set(changed), work=Path(tempfile.mkdtemp(prefix="storyboard-")),
         site_config=site_config, pool=pool, upload_prefix=upload_prefix, version_tag=f"-v{version}",
+        existing=before,
     )
-    before = {r["idx"]: r.get("image_url") for r in rows}
     merged = {idx: (urls[idx] if idx in urls else before.get(idx)) for idx in before}
     return {
         **payload,
@@ -444,7 +471,7 @@ async def restory_storyboard(
     )
     drawn = await _draw_shots(
         listing, redraw, work=work, site_config=site_config, pool=pool,
-        upload_prefix=upload_prefix, version_tag=f"-v{version}",
+        upload_prefix=upload_prefix, version_tag=f"-v{version}", existing=urls,
     ) if redraw else {}
     merged = {**urls, **drawn}
     lines = sum(1 for b in voiced["timeline"] if b.get("kind") == "line")

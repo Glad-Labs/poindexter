@@ -67,18 +67,31 @@ class TestGraph:
             rf.build_reference_graph(prompt="p", references=[], width=8, height=8, seed=1, site_config=_sc())
 
 
+RULE = "never letters or words."
+
+
 class TestPrompt:
     def test_names_each_picture(self):
         text = rf.compose_reference_prompt("at a desk", ["Dex", "Nova"], style_only=False, site_config=_sc())
-        assert text.startswith("Picture 1 is Dex. Picture 2 is Nova.") and text.endswith("at a desk")
+        assert text.startswith("Picture 1 is Dex. Picture 2 is Nova.") and "at a desk Every sign" in text
 
     def test_style_only_keeps_the_characters_out(self):
         text = rf.compose_reference_prompt("an empty server aisle", [], style_only=True, site_config=_sc())
-        assert "without the characters" in text and text.endswith("an empty server aisle")
+        assert "without the characters" in text and text.endswith(RULE)
 
     def test_templates_are_settings(self):
-        sc = _sc(video_reference_name_template="#{n}={name}", video_reference_prompt_template="{references} | {prompt}")
+        sc = _sc(video_reference_name_template="#{n}={name}", video_reference_prompt_template="{references} | {prompt}",
+                 video_reference_text_rule="")
         assert rf.compose_reference_prompt("x", ["Dex"], style_only=False, site_config=sc) == "#1=Dex | x"
+
+    def test_every_picture_is_told_to_keep_writing_out(self):
+        for style_only in (True, False):
+            assert rf.compose_reference_prompt("a neon street", ["Dex"], style_only=style_only,
+                                               site_config=_sc()).endswith(RULE)
+
+    def test_the_place_is_the_picture_after_the_cast(self):
+        text = rf.compose_reference_prompt("Dex talks", ["Dex"], style_only=False, site_config=_sc(), place=True)
+        assert text.startswith("Picture 2 shows the place") and "Picture 1 is Dex" in text
 
     @pytest.mark.asyncio
     async def test_no_reference_on_disk_is_a_clean_miss(self, tmp_path):
@@ -440,3 +453,57 @@ class TestCastFrameParse:
         from poindexter.services.video_renderers.shot_vision_qa import _parse_cast_frame
 
         assert _parse_cast_frame(reply, cast_size=2).ok is ok
+
+
+class TestScenePlace:
+    """Backdrop continuity: a scene's establishing picture is the place
+    reference for its other pictures, so close-ups keep one background."""
+
+    @pytest.mark.asyncio
+    async def test_a_close_up_is_drawn_in_its_scenes_place(self, stub_refs, tmp_path):
+        est = Shot(**{**_shot(0, characters=["dex", "nova"]).model_dump(), "scene_id": "s1", "establishing": True,
+                      "prompt": "wide shot of the lab"})
+        close = Shot(**{**_shot(1, characters=["nova"]).model_dump(), "scene_id": "s1"})
+        ctx = slr.ReferenceContext(cast=("dex", "nova"), establishing={"s1": est})
+        await slr._render_reference_still(
+            close, prompt="nova frowns", output_path=str(tmp_path / "c.png"), width=8, height=8,
+            ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        first, second = stub_refs["calls"]
+        # The establishing picture was drawn first, without a place of its own.
+        assert "shows the place" not in first["prompt"] and first["prompt"].count("wide shot of the lab") == 1
+        assert Path(second["reference_paths"][-1]).name == "place_s1.png"
+        assert second["prompt"].startswith("Picture 2 shows the place")
+        assert ctx.places == {"s1": str(tmp_path / "place_s1.png")}
+        # The establishing shot's own turn reuses that picture instead of drawing again.
+        await slr._render_reference_still(
+            est, prompt=est.prompt, output_path=str(tmp_path / "e.png"), width=8, height=8,
+            ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        assert len(stub_refs["calls"]) == 2 and (tmp_path / "e.png").exists()
+
+    @pytest.mark.asyncio
+    async def test_no_scene_or_a_full_reference_set_means_no_place(self, stub_refs, tmp_path):
+        ctx = slr.ReferenceContext(cast=("dex", "nova"))
+        await slr._render_reference_still(
+            _shot(characters=["nova"]), prompt="p", output_path=str(tmp_path / "s.png"), width=8, height=8,
+            ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        assert "shows the place" not in stub_refs["calls"][0]["prompt"]
+
+    def test_the_director_marks_one_establishing_picture_per_scene_master_first(self):
+        shots = [{"source": "image_kenburns", "scene_id": "s1"}, {"source": "image_gen", "scene_id": "s1"},
+                 {"source": "presenter", "scene_id": "s2"}, {"source": "image_kenburns", "scene_id": "s2"},
+                 {"source": "image_gen", "scene_id": "s1"}]
+        plan = [{"kind": "still"}, {"kind": "master"}, {"kind": "talk"}, {"kind": "still"}, {"kind": "master"}]
+        sd._mark_establishing(shots, plan)
+        assert [bool(s.get("establishing")) for s in shots] == [False, True, False, True, False]
+
+
+class TestWritingCheck:
+    def test_scrambled_writing_fails_a_talking_frame_and_a_still(self):
+        from poindexter.services.video_renderers import shot_vision_qa as sq
+
+        frame = sq._parse_talking_frame('{"people": 1, "is_character": true, "writing_ok": false, "reason": "a sign"}')
+        assert frame.ok is False and frame.reason.startswith("scrambled writing")
+        assert sq._parse_talking_frame('{"people": 1, "is_character": true, "reason": "ok"}').ok is True
+        still = sq._parse_cast_frame(
+            '{"people": 2, "strangers": 0, "all_present": true, "writing_ok": false, "reason": "neon RUBY"}', 2)
+        assert still.ok is False

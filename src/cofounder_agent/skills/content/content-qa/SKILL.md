@@ -49,7 +49,7 @@ metadata:
       description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one frame of an AI shot 0-100 on topic and looks, and labels its large lettering none / readable / garbled; the label caps a garbled frame under the repair threshold. Hero clips are judged on their 1 s frame and on the final frame the compositor holds. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
     - key: qa.talking_frame
       output_format: json
-      description: 'Vision check on a cast talking frame before it is lip-synced: how many people are in the picture, and is the main figure the named speaker as their character sheet describes them? Code accepts the frame only for exactly one person who is the speaker, and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
+      description: 'Vision check on a cast talking frame before it is lip-synced: how many people are in the picture, is the main figure the named speaker as their character sheet describes them, and is any writing in it free of scrambled letters? Code accepts the frame only for exactly one person who is the speaker, with no scrambled writing, and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
     - key: qa.talking_clip
       output_format: json
       description: 'Vision check on a rendered cartoon talking clip, shown as a contact sheet of moments across the take: are the hands intact, is the mouth in proportion while speaking, does the face stay the same character, and did anyone else appear? Code passes a take only when all four hold, re-renders a failing take and keeps whichever has fewer problems. Used by services.video_renderers.shot_vision_qa.check_talking_clip.'
@@ -58,7 +58,7 @@ metadata:
       description: "Vision check on one shot of a FINISHED cartoon for the director's notes, shown as a contact sheet of moments across the shot: are hands, face and mouth intact, how many strangers, is there garbled writing, does anything move, and does it show what the shot was meant to (the picture prompt, who speaks, the line)? Countable checks plus a one-line note; code turns the failed checks into named flaws. Used by services.director_notes.look_at_shots."
     - key: qa.cast_frame
       output_format: json
-      description: "Vision check on a cartoon still drawn from the cast portraits: how many people are in the picture, how many are strangers outside the cartoon's cast, and is every character the shot needs there as their sheet describes them? Code accepts the still only with no strangers, no more people than the cast, and everyone required present; otherwise it redraws. Used by services.video_renderers.shot_vision_qa.check_cast_frame."
+      description: "Vision check on a cartoon still drawn from the cast portraits: how many people are in the picture, how many are strangers outside the cartoon's cast, is every character the shot needs there as their sheet describes them, and is any writing in it free of scrambled letters? Code accepts the still only with no strangers, no more people than the cast, everyone required present and no scrambled writing; otherwise it redraws. Used by services.video_renderers.shot_vision_qa.check_cast_frame."
     - key: qa.video_stock_fit
       output_format: json
       description: 'Vision-QA for STOCK footage: does one frame of a Pexels clip fit the video topic and the narration spoken over it? Returns a fit label (fits / loose / off) and a 0-100 score; the label caps the score under the escalation threshold for loose and off. Used by services.video_renderers.shot_vision_qa.score_shot_frame for source=pexels.'
@@ -591,8 +591,12 @@ THE SPEAKER: {name}, {appearance}
 2. CHARACTER - is the main figure {name} as described above: the same hair,
    clothing and look?
 
+3. WRITING - look at every sign, screen, label and hologram. Is the picture
+   free of letters and words that are scrambled, half-formed or meaningless?
+   A picture with no writing at all answers true.
+
 Output EXACTLY one JSON object, no prose, no code fences:
-{{"people": <integer>, "is_character": <true or false>, "reason": "<one short sentence>"}}
+{{"people": <integer>, "is_character": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.talking_clip
@@ -679,8 +683,12 @@ MUST APPEAR in this picture: {required}
 3. PRESENT - is every character under MUST APPEAR in the picture, looking as
    described?
 
+4. WRITING - look at every sign, screen, label and hologram. Is the picture
+   free of letters and words that are scrambled, half-formed or meaningless?
+   A picture with no writing at all answers true.
+
 Output EXACTLY one JSON object, no prose, no code fences:
-{{"people": <integer>, "strangers": <integer>, "all_present": <true or false>, "reason": "<one short sentence>"}}
+{{"people": <integer>, "strangers": <integer>, "all_present": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.deepeval_g_eval_criterion

@@ -2780,6 +2780,11 @@ class ReferenceContext:
     # Per-piece portraits (VideoShotList.cast_portraits): a reused character
     # drawn in this piece's style. Wins over the persona's own portrait_url.
     portrait_urls: dict[str, str] = field(default_factory=dict)
+    # Backdrop continuity: each scene's establishing shot, and its drawn
+    # picture once drawn. Every other picture of the scene takes that picture
+    # as a place reference, so the scene keeps one background.
+    establishing: dict[str, Any] = field(default_factory=dict)
+    places: dict[str, str] = field(default_factory=dict)
 
 
 def _portrait_url(persona: Any, ctx: ReferenceContext | None) -> str:
@@ -2816,9 +2821,50 @@ def reference_context_for(shot_list: Any) -> ReferenceContext | None:
             if slug not in cast:
                 cast.append(slug)
     overrides = getattr(shot_list, "cast_portraits", None) or {}
+    establishing = {
+        str(shot.scene_id): shot for shot in shot_list.shots
+        if getattr(shot, "establishing", False) and getattr(shot, "scene_id", None) and shot.prompt
+    }
     return ReferenceContext(
         cast=tuple(cast), portrait_urls={str(k): str(v) for k, v in overrides.items() if v},
+        establishing=establishing,
     )
+
+
+async def _place_for(
+    shot: Shot, ctx: ReferenceContext, *, work_dir: Path, site_config: Any, http_client_factory: Any,
+) -> str | None:
+    """The drawn picture of ``shot``'s scene establishing shot, drawing it first if need be.
+
+    ``None`` for the establishing shot itself, a shot with no scene, or a
+    scene whose establishing picture cannot be drawn. Drawn on demand into
+    the same work dir, so when the establishing shot's own turn comes the
+    same picture is reused rather than drawn again.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    scene = getattr(shot, "scene_id", None)
+    if not scene or getattr(shot, "establishing", False):
+        return None
+    if scene in ctx.places and os.path.exists(ctx.places[scene]):
+        return ctx.places[scene]
+    est = ctx.establishing.get(str(scene))
+    # Drawn ahead of its turn only as a still: a generative shot's first frame
+    # is drawn at the hero size for the motion model, so it waits for its turn.
+    if est is None or est.source not in ("image_gen", "image_kenburns"):
+        return None
+
+    def _dim(key: str) -> int:
+        raw = site_config.get(key, None) if site_config is not None else None
+        return int(float(raw if raw not in (None, "") else DEFAULTS[key]))
+
+    out = str(work_dir / f"place_{re.sub(r'[^A-Za-z0-9_-]', '_', str(scene))}.png")
+    drawn = await _render_reference_still(
+        est, prompt=est.prompt or "", output_path=out,
+        width=_dim("video_reference_width"), height=_dim("video_reference_height"),
+        ctx=ctx, work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
+    )
+    return ctx.places.get(str(scene)) if drawn else None
 
 
 async def _reference_portraits(
@@ -2894,6 +2940,12 @@ async def _render_reference_still(
     )
     if not paths:
         return False
+    place = None
+    if len(paths) < rf.MAX_REFERENCES:
+        place = await _place_for(
+            shot, ctx, work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
+        )
+    references = [*paths, place] if place else paths
     if not ctx.card_cleared:
         await _clear_image_gen_for_hero(site_config)
         ctx.card_cleared = True
@@ -2905,8 +2957,10 @@ async def _render_reference_still(
     ok, why = False, ""
     for attempt in range(1, attempts + 1):
         ok, why = await rf.render_reference_frame(
-            prompt=rf.compose_reference_prompt(prompt, names, style_only=style_only, site_config=site_config),
-            reference_paths=paths, output_path=output_path, width=width, height=height,
+            prompt=rf.compose_reference_prompt(
+                prompt, names, style_only=style_only, site_config=site_config, place=place is not None,
+            ),
+            reference_paths=references, output_path=output_path, width=width, height=height,
             site_config=site_config,
         )
         if not ok or not check:
@@ -2928,6 +2982,9 @@ async def _render_reference_still(
         )
     else:
         ctx.drawn[reuse_key] = output_path
+        scene = getattr(shot, "scene_id", None)
+        if getattr(shot, "establishing", False) and scene and str(scene) not in ctx.places:
+            ctx.places[str(scene)] = output_path
     return ok
 
 

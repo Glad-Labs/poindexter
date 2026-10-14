@@ -835,9 +835,18 @@ def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
     if not isinstance(people, int) or isinstance(people, bool):
         return TalkingFrameVerdict(ok=None, reason="vision response missing a people count")
     is_character = parsed.get("is_character")
-    reason = str(parsed.get("reason", "") or "")[:200]
-    ok = people == 1 and is_character is True
+    reason = _writing_reason(parsed, str(parsed.get("reason", "") or "")[:200])
+    # Scrambled writing fails the frame; a judge that leaves the question out
+    # is not read as a failure.
+    ok = people == 1 and is_character is True and parsed.get("writing_ok") is not False
     return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
+
+
+def _writing_reason(parsed: dict[str, Any], reason: str) -> str:
+    """Name scrambled writing in the reason, so the log says why a frame was redrawn."""
+    if parsed.get("writing_ok") is False and "writing" not in reason.lower():
+        return f"scrambled writing; {reason}"[:200]
+    return reason
 
 
 def _parse_cast_frame(text: str, cast_size: int) -> TalkingFrameVerdict:
@@ -854,8 +863,11 @@ def _parse_cast_frame(text: str, cast_size: int) -> TalkingFrameVerdict:
     for value in (people, strangers):
         if not isinstance(value, int) or isinstance(value, bool):
             return TalkingFrameVerdict(ok=None, reason="vision response missing a count")
-    reason = str(parsed.get("reason", "") or "")[:200]
-    ok = strangers == 0 and people <= cast_size and parsed.get("all_present") is True
+    reason = _writing_reason(parsed, str(parsed.get("reason", "") or "")[:200])
+    ok = (
+        strangers == 0 and people <= cast_size and parsed.get("all_present") is True
+        and parsed.get("writing_ok") is not False
+    )
     return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
 
 

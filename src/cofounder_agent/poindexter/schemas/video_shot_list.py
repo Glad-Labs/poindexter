@@ -192,6 +192,16 @@ class Shot(BaseModel):
             "lip-sync animates it instead of the fixed portrait (poindexter#1141)"
         ),
     )
+    # Backdrop continuity (2026-10-14). Optional, so every frozen list still
+    # validates. A screenplay shot carries its scene, and one shot per scene is
+    # its establishing picture: every other picture of the scene is drawn with
+    # it as a "this is the place" reference, so close-ups and inserts keep the
+    # same background instead of each inventing its own.
+    scene_id: str | None = Field(None, max_length=64, description="The screenplay scene this shot belongs to")
+    establishing: bool = Field(
+        False,
+        description="This shot's picture is its scene's place reference for the scene's other pictures",
+    )
 
     @field_validator("characters")
     @classmethod

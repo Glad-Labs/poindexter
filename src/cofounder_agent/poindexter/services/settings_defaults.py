@@ -1003,6 +1003,21 @@ DEFAULTS: dict[str, str] = {
         'Draw a new picture in the exact art style of the reference pictures, '
         'without the characters shown in them: {prompt}'
     ),
+    # A scene's establishing picture rides along as one more reference for
+    # every other picture of that scene, so the close-ups and inserts keep
+    # its background, light and colours ({n} = its picture number).
+    'video_reference_place_template': (
+        'Picture {n} shows the place: draw the new picture in this same place, '
+        'keeping its background, light and colours'
+    ),
+    # Appended to every reference-drawn picture. The edit model writes real
+    # letters wherever a prompt mentions a sign, screen or hologram, and they
+    # come out scrambled (the cyberpunk Cinderella's neon read as nonsense);
+    # its CFG of 1 makes a negative prompt inert, so this says what to draw.
+    'video_reference_text_rule': (
+        'Every sign, screen, label and hologram shows only glowing shapes and '
+        'symbols, never letters or words.'
+    ),
     # Draws of a cast talking frame before the portrait is lip-synced instead.
     # Each draw is checked by qa.talking_frame (one person, and the speaker);
     # a draw is ~20 s of Qwen-Image-Edit against ~6 min for the clip it feeds.
@@ -6701,6 +6716,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reference_name_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_prompt_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_style_only_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_place_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_text_rule': {'owner': 'reference_frames', 'value_type': 'string'},
     'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_min_insert_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_scene_master_template': {'owner': 'screenplay_director', 'value_type': 'string'},

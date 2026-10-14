@@ -181,6 +181,26 @@ def _scene_master_prompt(shot: dict[str, Any], site_config: Any) -> str:
     ).strip(" ,")[:1500]
 
 
+def _mark_establishing(shots: list[dict[str, Any]], plan: list[dict[str, Any]]) -> None:
+    """One establishing picture per scene: its master shot, else its first still.
+
+    The renderer draws every other picture of the scene with the establishing
+    one as a place reference, so a scene keeps one background. Matt on scene 2
+    of the first cartoon: the talking shots each had their own swirl backdrop.
+    """
+    chosen: dict[str, int] = {}
+    for i, (shot, s) in enumerate(zip(shots, plan, strict=False)):
+        scene = shot.get("scene_id")
+        if not scene or shot["source"] == "presenter":
+            continue
+        if s["kind"] == "master" and (scene not in chosen or plan[chosen[scene]]["kind"] != "master"):
+            chosen[scene] = i
+        elif scene not in chosen:
+            chosen[scene] = i
+    for i in chosen.values():
+        shots[i]["establishing"] = True
+
+
 def _delivery_for(screenplay: dict[str, Any], seg: dict[str, Any]) -> str:
     """The screenplay's delivery note for a timeline line, matched by text."""
     for scene in screenplay.get("scenes") or []:
@@ -437,7 +457,10 @@ def build_shot_list(
             shot["prompt"] = (f"{style}, {picture}" if style else picture)[:1500]
             if s["source"] == "generative":
                 shot["motion"] = (seen.get("motion") or "gentle camera push-in, subtle character motion")[:500]
+        if s.get("scene_id"):
+            shot["scene_id"] = str(s["scene_id"])[:64]
         shots.append(shot)
+    _mark_establishing(shots, plan)
     try:
         listing = VideoShotList.model_validate({
             "aspect": "16:9",
