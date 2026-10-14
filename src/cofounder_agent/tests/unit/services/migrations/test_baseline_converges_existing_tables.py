@@ -193,6 +193,23 @@ def test_plan_for_the_table_the_old_brain_created(baseline, create_tables):
     assert any("app_settings_value_type_check" in a for a in constraints)
 
 
+def test_a_column_element_without_a_name_is_skipped_not_guessed(baseline):
+    """poindexter#1113: ``TableElement.name`` is ``str | None``. A column
+    always carries a name from parse_create_table; one without a name can't
+    be looked up, so it is skipped, and a named column still converges."""
+    E = baseline.TableElement
+    declared = [
+        E("column", None, "mystery text", True),
+        E("column", "note", "note text NOT NULL", True),
+        E("column", "added", "added int", False),
+    ]
+    plan = baseline.plan_convergence("public.t", declared, {"note": False}, set())
+    assert plan == [
+        'ALTER TABLE public.t ALTER COLUMN "note" SET NOT NULL',
+        "ALTER TABLE public.t ADD COLUMN IF NOT EXISTS added int",
+    ]
+
+
 def test_plan_is_empty_for_a_table_already_in_shape(baseline, create_tables):
     declared = _app_settings(baseline, create_tables)
     columns = {e.name: e.not_null for e in declared if e.kind == "column"}

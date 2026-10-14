@@ -77,10 +77,6 @@
   "src/cofounder_agent/poindexter/services/media_quality_service.py": {
     "arg-type": 1
   },
-  "src/cofounder_agent/poindexter/services/migrations/0000_baseline.py": {
-    "arg-type": 1,
-    "index": 1
-  },
   "src/cofounder_agent/poindexter/services/model_eval/bakeoff.py": {
     "assignment": 2
   },

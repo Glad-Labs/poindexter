@@ -429,14 +429,17 @@ def plan_convergence(
         )
     alters: list[str] = []
     for element in declared:
-        if element.kind != "column":
+        # parse_create_table names every column; a nameless one can't be
+        # looked up in the catalog, so it is skipped rather than guessed at.
+        name = element.name
+        if element.kind != "column" or name is None:
             continue
-        if element.name not in columns:
+        if name not in columns:
             alters.append(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {element.sql}")
-        elif element.not_null and not columns[element.name]:
+        elif element.not_null and not columns[name]:
             alters.append(
                 f"ALTER TABLE {table} ALTER COLUMN "
-                f"{_quote_identifier(element.name)} SET NOT NULL"
+                f"{_quote_identifier(name)} SET NOT NULL"
             )
     for element in declared:
         if element.kind == "constraint" and element.name not in constraints:
