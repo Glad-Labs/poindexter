@@ -120,6 +120,10 @@ async def _draw(
             )
         if frame.exists():
             return str(frame)
+        if slr._no_fallbacks(ctx, site_config):
+            # No frame could be drawn at all: the shot stays undrawn for the
+            # render to draw, rather than a bare portrait standing in.
+            return None
         # No frame passed its check: the render lip-syncs the portrait.
         url = portraits.get(persona.slug) or persona.portrait_url
         got = await slr._fetch_presenter_portrait(url, work / f"portrait_{shot.idx:02d}.png", None) if url else None

@@ -237,14 +237,18 @@ class TestReferenceStill:
 
 class TestStillBranch:
     @pytest.mark.asyncio
-    async def test_reference_failure_falls_back_to_image_gen(self, monkeypatch, tmp_path):
+    async def test_a_cartoon_never_falls_back_to_the_text_path(self, monkeypatch, tmp_path):
+        """Matt, 2026-10-14: no fallbacks in the videos. A text-to-image still
+        is another style; the shot fails instead, to be drawn again."""
         monkeypatch.setattr(slr, "_render_reference_still", AsyncMock(return_value=False))
         image_gen = AsyncMock(return_value=True)
         monkeypatch.setattr(slr, "_render_image_gen_image", image_gen)
-        res = await slr._render_one_shot(
-            _shot(characters=["dex"]), prior_clip=None, work_dir=tmp_path, image_gen_url="http://x",
-            site_config=_sc(), http_client_factory=None, reference_ctx=slr.ReferenceContext(cast=("dex",)))
-        assert res.success and image_gen.await_count == 1
+        args = dict(prior_clip=None, work_dir=tmp_path, image_gen_url="http://x", http_client_factory=None,
+                    reference_ctx=slr.ReferenceContext(cast=("dex",)))
+        res = await slr._render_one_shot(_shot(characters=["dex"]), site_config=_sc(), **args)
+        assert not res.success and image_gen.await_count == 0
+        allowed = await slr._render_one_shot(_shot(characters=["dex"]), site_config=_sc(story_allow_fallbacks="true"), **args)
+        assert allowed.success and image_gen.await_count == 1
 
     @pytest.mark.asyncio
     async def test_reference_success_skips_image_gen(self, monkeypatch, tmp_path):
@@ -336,14 +340,25 @@ class TestTalkingFrameCheck:
         assert check.await_args.kwargs["name"] == "Nova"
 
     @pytest.mark.asyncio
-    async def test_every_draw_rejected_lip_syncs_the_portrait(self, stub_refs, monkeypatch, tmp_path):
+    async def test_every_draw_rejected_keeps_the_last_draw(self, stub_refs, monkeypatch, tmp_path):
+        """A cartoon keeps its best scene frame rather than the bare portrait in
+        front of a blank wall; with fallbacks allowed, the portrait stands in."""
         from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
 
         used, _ = await self._render(
             monkeypatch, tmp_path, [V(ok=False, people=2)] * 2,
             video_cast_talking_frame_attempts="2")
-        assert used == "presenter_nova.png"
+        assert used.startswith("talkframe_nova_")
         assert len(stub_refs["calls"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_with_fallbacks_allowed_the_portrait_stands_in(self, stub_refs, monkeypatch, tmp_path):
+        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
+
+        used, _ = await self._render(
+            monkeypatch, tmp_path, [V(ok=False, people=2)] * 2,
+            video_cast_talking_frame_attempts="2", story_allow_fallbacks="true")
+        assert used == "presenter_nova.png"
 
     @pytest.mark.asyncio
     async def test_a_check_that_cannot_answer_keeps_the_frame(self, stub_refs, monkeypatch, tmp_path):

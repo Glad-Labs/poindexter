@@ -2667,6 +2667,7 @@ async def _backfill_pass(
 
         house_style = resolve_media_policy(
             site_config, render_kwargs.get("niche_slug")).house_style
+    no_fallbacks = _no_fallbacks(reference_ctx, site_config)
     for st in states:
         if st.result.success and st.result.clip_path:
             continue  # primary / holdover / substitute already filled the slot
@@ -2674,6 +2675,11 @@ async def _backfill_pass(
         # with its own success row, which carries no error, so reading it after
         # the swap would always report an empty reason.
         primary_error = st.result.error or ""
+        if no_fallbacks:
+            # A cartoon takes no stand-in: the shot is drawn again, and one
+            # that cannot be made fails the render (render_shot_list).
+            await _retry_failed_shot(st, render_kwargs=render_kwargs, site_config=site_config)
+            continue
         if reference_ctx is not None:
             held = await _held_picture(st, states, reference_ctx)
             if held:
@@ -2722,6 +2728,27 @@ async def _backfill_pass(
                 )
                 continue
         st.rung = "dropped"
+
+
+async def _retry_failed_shot(st: _ShotState, *, render_kwargs: dict[str, Any], site_config: Any) -> None:
+    """Render a cartoon shot that produced nothing again, up to
+    ``story_shot_render_attempts`` more times; ``st.rung`` ends "retried" or "failed"."""
+    error = st.result.error or "no clip"
+    for attempt in range(1, _shot_render_attempts(site_config) + 1):
+        if st.shot.source in _IMAGE_GEN_FAMILY:
+            await _ready_card_for_escalation(render_kwargs)
+        cand = await _render_one_shot(
+            st.shot, prior_clip=None, attempt=attempt,
+            **_candidate_render_kwargs(render_kwargs, f"retry{attempt}"),
+        )
+        if cand.success and cand.clip_path:
+            logger.info("[SHOT_LIST] shot %d rendered on retry %d (first failure: %s)", st.shot.idx, attempt, error)
+            st.result, st.rung = cand, "retried"
+            return
+        error = cand.error or error
+        logger.warning("[SHOT_LIST] shot %d retry %d failed: %s", st.shot.idx, attempt, error)
+    st.result = ShotRenderResult(idx=st.shot.idx, source=st.shot.source, success=False, error=error)
+    st.rung = "failed"
 
 
 _STILL_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
@@ -3469,13 +3496,13 @@ async def _render_one_shot(
             if site_config is not None else default_int("video_reference_height"),
             ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
             http_client_factory=http_client_factory,
-        ) or await _render_image_gen_image(
+        ) or (not _no_fallbacks(reference_ctx, site_config) and await _render_image_gen_image(
             prompt=image_gen_prompt,
             output_path=clip_path,
             image_gen_url=image_gen_url,
             http_client_factory=http_client_factory,
             render_timeout=render_timeout,
-        )
+        ))
         if not ok:
             return ShotRenderResult(
                 idx=shot.idx,
@@ -3925,6 +3952,36 @@ def _emit_presenter_fallback_finding(*, shot: Shot, post_id: str, reason: str) -
     )
 
 
+def _no_fallbacks(reference_ctx: Any, site_config: Any) -> bool:
+    """True for a cartoon render: it ships no stand-in for any of its shots.
+
+    Matt, 2026-10-14: "There should be no fallbacks in the videos." A cartoon
+    (a screenplay video drawn from its cast, ``reference_ctx``) had shipped a
+    held-over close-up for each of five wide shots, the bare portrait for a
+    talking frame, a text-to-image still in another style, and stock footage.
+    Instead a shot is redrawn, a talking frame keeps its best draw, a shot
+    under the bar keeps its own best attempt, and a shot that cannot be made
+    at all fails the render, naming it. ``story_allow_fallbacks`` brings the
+    stand-ins back. A blog video keeps its ladder (stock is normal there).
+    """
+    from poindexter.services import reference_frames as rf
+
+    if reference_ctx is None or not rf.enabled(site_config):
+        return False
+    key = "story_allow_fallbacks"
+    raw = DEFAULTS[key] if site_config is None else site_config.get(key, DEFAULTS[key])
+    return str(raw).strip().lower() not in ("1", "true", "yes", "on")
+
+
+def _shot_render_attempts(site_config: Any) -> int:
+    key = "story_shot_render_attempts"
+    try:
+        raw = DEFAULTS[key] if site_config is None else site_config.get(key, DEFAULTS[key])
+        return max(1, int(float(str(raw).strip())))
+    except (TypeError, ValueError):
+        return int(float(DEFAULTS[key]))
+
+
 def _talking_frame_attempts(site_config: Any) -> int:
     key = "video_cast_talking_frame_attempts"
     try:
@@ -3953,8 +4010,10 @@ async def _draw_talking_frame(
     a man nobody wrote beside Mira on all of her lines. Each draw is judged by
     ``check_talking_frame`` (the speaker, and no other character); a rejected
     draw is redrawn with a fresh seed, up to ``video_cast_talking_frame_attempts``
-    draws, and after that the caller lip-syncs the portrait. A check that
-    cannot answer keeps the frame, so vision trouble never costs a shot.
+    draws. After that a cartoon keeps the last draw (``_no_fallbacks``): the
+    bare portrait, the old stand-in, put the speaker in front of a blank wall
+    in the middle of the scene. A check that cannot answer keeps the frame,
+    so vision trouble never costs a shot.
     """
     from poindexter.services.video_renderers.shot_vision_qa import check_talking_frame
 
@@ -3982,6 +4041,12 @@ async def _draw_talking_frame(
             "%s people, %s",
             persona.slug, shot.idx, attempt, attempts, verdict.people, verdict.reason,
         )
+        if attempt == attempts and _no_fallbacks(reference_ctx, site_config):
+            logger.warning(
+                "[SHOT_LIST] keeping draw %d of the talking frame for %s (shot %d): a "
+                "cartoon takes no stand-in portrait", attempt, persona.slug, shot.idx,
+            )
+            return
         frame.unlink()
     logger.warning(
         "[SHOT_LIST] no talking frame for %s (shot %d) passed in %d draw(s) — "
@@ -4203,7 +4268,7 @@ async def _render_hero_still(
         shot, prompt=shot.prompt, output_path=still_path, width=hero_w, height=hero_h,
         ctx=reference_ctx, work_dir=work_dir, site_config=site_config,
         http_client_factory=http_client_factory,
-    ) or await _render_image_gen_image(
+    ) or (not _no_fallbacks(reference_ctx, site_config) and await _render_image_gen_image(
         prompt=shot.prompt,
         output_path=still_path,
         image_gen_url=image_gen_url,
@@ -4211,7 +4276,7 @@ async def _render_hero_still(
         render_timeout=render_timeout,
         width=hero_w,
         height=hero_h,
-    )
+    ))
     if not still_ok:
         return ShotRenderResult(
             idx=shot.idx,
@@ -5652,6 +5717,7 @@ async def _finalize_pass(
     qa: _QAConfig,
     pool: Any,
     post_id: str,
+    keep_own: bool = False,
 ) -> list[ShotRenderResult]:
     """Assign per-shot outcomes, emit findings, and audit — threading the
     post-QA prior clip.
@@ -5698,6 +5764,18 @@ async def _finalize_pass(
             # vision_scorer_unavailable finding so the fail-open is visible.
             qa_outcome = "unscored"
             unscored.append(st)
+        elif st.qa.score < qa.threshold and keep_own:
+            # A cartoon keeps the shot's own best attempt and flags it: a held
+            # over close-up in its place was a different shot (_no_fallbacks).
+            qa_score = st.qa.score
+            _emit_fallback_finding(
+                shot=shot, score=st.qa.score, threshold=qa.threshold, post_id=post_id,
+                title=f"shot {shot.idx} ({shot.source}) kept below threshold",
+                body=(f"shot {shot.idx} scored {st.qa.score:.0f} < {qa.threshold:.0f} after "
+                      f"{st.attempts} regen(s); a cartoon keeps its own best attempt. "
+                      f"reason: {st.qa.reason}"),
+            )
+            qa_outcome = "kept_below"
         elif st.qa.score < qa.threshold:
             qa_score = st.qa.score
             still = _hero_still_fallback(st, qa=qa)
@@ -6245,8 +6323,18 @@ async def render_shot_list(
         await _talking_clip_pass(
             states, render_kwargs=render_kwargs, site_config=site_config, pool=pool, post_id=post_id,
         )
+    no_fallbacks = _no_fallbacks(reference_ctx, site_config)
+    failed = [st for st in states if st.rung == "failed"] if no_fallbacks else []
+    if failed:
+        names = "; ".join(f"shot {st.shot.idx} ({st.shot.source}): {st.result.error}" for st in failed)
+        logger.error("[SHOT_LIST] a cartoon takes no stand-in, and %d shot(s) could not be made: %s", len(failed), names)
+        return ShotListRenderResult(
+            success=False, shots_total=len(shot_list.shots),
+            shots_rendered=sum(1 for st in states if st.result.success),
+            error=f"{len(failed)} shot(s) could not be rendered and a cartoon takes no stand-in: {names}"[:1000],
+        )
     shot_results = await _finalize_pass(
-        states, qa=qa, pool=pool, post_id=post_id,
+        states, qa=qa, pool=pool, post_id=post_id, keep_own=no_fallbacks,
     )
     if clip_cache_dir:
         try:

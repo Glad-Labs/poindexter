@@ -3266,6 +3266,13 @@ DEFAULTS: dict[str, str] = {
     # camera move) held story_establishing_seconds (0 = off); the scene's
     # other wides get a camera move (story_wide_motion "camera") or are
     # animated ("animate").
+    # No stand-ins in a cartoon (Matt, 2026-10-14: "There should be no
+    # fallbacks in the videos"): a shot that renders nothing is drawn again
+    # up to story_shot_render_attempts more times and otherwise fails the
+    # render; a talking frame keeps its best draw, a shot under the bar its
+    # own best attempt. story_allow_fallbacks brings the old ladder back.
+    'story_allow_fallbacks': 'false',
+    'story_shot_render_attempts': '2',
     'story_establishing_seconds': '3.0',
     'story_landscape_template': (
         "a vast establishing landscape of the world this place sits in, seen "
@@ -6893,6 +6900,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_turnaround_panels': {'owner': 'model_sheets', 'value_type': 'integer'},
     'video_reference_sheet_panel': {'owner': 'reference_frames', 'value_type': 'integer'},
     'video_reference_sheet_name_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'story_allow_fallbacks': {'owner': 'shot_list_renderer', 'value_type': 'boolean'},
+    'story_shot_render_attempts': {'owner': 'shot_list_renderer', 'value_type': 'integer'},
     'story_establishing_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_landscape_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_wide_motion': {'owner': 'screenplay_director', 'value_type': 'string'},
