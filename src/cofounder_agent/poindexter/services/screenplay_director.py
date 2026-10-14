@@ -120,11 +120,24 @@ def plan_shots(
 
     plan: list[dict[str, Any]] = []
     talking = 0
-    for seg in _segments(timeline, track_seconds):
+    segments = _segments(timeline, track_seconds)
+    # Who is in the scene right now: a character who enters partway (an
+    # action's "enters") is out of the wide shots until then, and one who
+    # exits is out after it. Mara stood in every wide of Midnight Patch,
+    # from the first second, before her ring summoned her (2026-10-14).
+    entering: dict[Any, set[str]] = {}
+    for seg in segments:
+        if seg.get("kind") == "action":
+            entering.setdefault(seg.get("scene_id"), set()).update(seg.get("enters") or [])
+    away: dict[Any, set[str]] = {}
+    for seg in segments:
         scene = scenes.get(seg.get("scene_id")) or {}
         setting = str(scene.get("setting") or "")
         speaker = seg.get("speaker")
-        scene_cast = [c for c in scene.get("characters") or [] if c in cast]
+        gone = away.setdefault(seg.get("scene_id"), set(entering.get(seg.get("scene_id"), set())))
+        if seg.get("kind") == "action":
+            gone.difference_update(seg.get("enters") or [])
+        scene_cast = [c for c in scene.get("characters") or [] if c in cast and c not in gone]
         base = {
             "scene_id": seg.get("scene_id"), "setting": setting,
             "location": str(scene.get("location") or seg.get("scene_id") or ""),
@@ -133,6 +146,9 @@ def plan_shots(
             "palette": str(scene.get("palette") or "").strip(),
             "beat_text": seg.get("text", ""), "beat_kind": seg.get("kind"),
             "delivery": "", "scene_cast": scene_cast, "line_speaker": speaker,
+            # An entrance or exit is a moment to see, never folded into the
+            # scene's master shot (_mark_masters).
+            "moment": bool(seg.get("kind") == "action" and (seg.get("enters") or seg.get("exits"))),
         }
         length = seg["end_s"] - seg["start_s"]
         if seg.get("kind") == "line" and speaker in talkable and (
@@ -155,10 +171,13 @@ def plan_shots(
         elif speaker in cast:
             chars = [speaker]
         else:
-            chars = [c for c in scene.get("characters") or [] if c in cast]
+            chars = list(scene_cast)
         for start, piece in _split(seg["start_s"], length, max_shot):
             plan.append({**base, "kind": "still", "start_s": start, "length": piece,
                          "speaker": None, "characters": chars})
+        if seg.get("kind") == "action":
+            # The exit is seen in its own shot; the character is gone after it.
+            gone.update(seg.get("exits") or [])
     return _mark_masters(_merge_slivers(plan, site_config), site_config)
 
 
@@ -171,11 +190,12 @@ def _listeners(scene_cast: list[str], speaker: str | None) -> list[str]:
 def _mark_masters(plan: list[dict[str, Any]], site_config: Any) -> list[dict[str, Any]]:
     """A non-talking shot too short to establish anything of its own becomes
     the scene's master shot (``kind="master"``), which shows the scene's whole
-    cast. Lengths are final here (after ``_merge_slivers``)."""
+    cast. An entrance or exit (``moment``) stays its own shot, pictured from
+    its action. Lengths are final here (after ``_merge_slivers``)."""
     floor = site_config.get_float("story_min_insert_seconds", 2.5)
     out: list[dict[str, Any]] = []
     for shot in plan:
-        if shot["kind"] != "talk" and shot["length"] < floor:
+        if shot["kind"] != "talk" and shot["length"] < floor and not shot.get("moment"):
             shot = {**shot, "kind": "master",
                     "characters": list(shot.get("scene_cast") or shot["characters"])}
         out.append(shot)

@@ -380,6 +380,7 @@ async def render_dialogue(
                     "kind": "action", "speaker": None, "text": beat.get("text", ""),
                     "characters": list(beat.get("characters") or []),
                     "start_s": round(start, 3), "end_s": round(t, 3),
+                    **{k: list(beat[k]) for k in ("enters", "exits") if beat.get(k)},
                 })
                 previous_was_line = False
             beat_idx += 1

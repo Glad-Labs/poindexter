@@ -233,6 +233,14 @@ def normalize_beats(raw_beats: Any) -> list[dict[str, Any]]:
             item["intensity"] = intensity if intensity in INTENSITIES else "medium"
         else:
             item["characters"] = _csv_or_list(beat.get("characters"))
+            # Who arrives or leaves in this action: the director keeps a
+            # character out of the scene's wide shots before they enter and
+            # after they leave. Mara stood in every wide of Midnight Patch
+            # before her ring summoned her (2026-10-14).
+            for key in ("enters", "exits"):
+                names = _csv_or_list(beat.get(key))
+                if names:
+                    item[key] = names
         out.append(item)
     return out
 
@@ -403,11 +411,38 @@ def check_beats(
                     f"speaker must be one of {sorted(speakers)}",
                 )
         else:
-            for name in beat["characters"]:
+            for name in [*beat["characters"], *beat.get("enters", []), *beat.get("exits", [])]:
                 if name not in cast:
                     errors.append(
                         f"FIX scene {scene_id!r}: action names {name!r}, who is not in the cast",
                     )
+    errors.extend(_check_entrances(beats, scene_id))
+    return errors
+
+
+def _check_entrances(beats: list[dict[str, Any]], scene_id: str) -> list[str]:
+    """A character who enters is not in the scene before it, nor after they exit.
+
+    So they cannot speak before their entrance or after their exit, and they
+    cannot enter twice without leaving in between.
+    """
+    errors: list[str] = []
+    entering = {n for b in beats if b["kind"] == "action" for n in b.get("enters", [])}
+    away = set(entering)  # those who enter are away until they do
+    for beat in beats:
+        if beat["kind"] == "line" and beat.get("speaker") in away:
+            when = "before entering" if beat["speaker"] in entering else "after leaving"
+            errors.append(
+                f"FIX scene {scene_id!r}: {beat['speaker']!r} speaks {when}; move the line, "
+                "or the action where they enter or leave",
+            )
+        if beat["kind"] != "action":
+            continue
+        for name in beat.get("enters", []):
+            if name not in away:
+                errors.append(f"FIX scene {scene_id!r}: {name!r} enters while already in the scene")
+            away.discard(name)
+        away.update(beat.get("exits", []))
     return errors
 
 

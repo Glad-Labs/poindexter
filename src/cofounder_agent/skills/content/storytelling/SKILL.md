@@ -158,13 +158,14 @@ HOW TO WRITE IT
 - Give every line an "intensity": "low" for quiet, thoughtful or deadpan lines, "medium" for ordinary conversation, "high" for outbursts, big surprises and the turn itself. Vary it across the scene.
 - Write each character in their own voice, from their personality.
 - Use an action beat only where something happens that the audience must see to follow the story, such as a demonstration, a reaction that replaces a line, or an entrance. Most scenes need one to three.
+- A character who arrives partway through the scene arrives in an action beat that lists them in "enters"; one who leaves goes in an action beat that lists them in "exits". Everyone else is in the scene from its first beat to its last. A character speaks only while they are in the scene.
 - Keep facts accurate. Where a fact is uncertain, let a character ask or wonder rather than state it.
 - The "text" of a line is read aloud by a speech synthesizer: write words exactly as a person would say them, spell out symbols and abbreviations, and keep stage directions in "delivery".
 - Spend the full length on this scene's part of the story.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high"}}, {{"kind": "action", "text": "what we see", "characters": ["id"]}}]}}
+{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high"}}, {{"kind": "action", "text": "what we see", "characters": ["id"], "enters": [], "exits": []}}]}}
 ```
 
 ## story.shot_visuals
@@ -259,12 +260,13 @@ HOW TO REVISE
 - Keep everything the note does not touch: the same scenes, lines and order, word for word.
 - Keep the story spine (want, obstacle, turn, payoff). When the note changes one of them, update the spine to match.
 - Keep the "locations" and each scene's "location". A scene the note moves somewhere new uses a listed location, or a new one added to "locations" with an id and a description of the place.
+- Keep each action's "enters" and "exits", so a character still arrives and leaves where they did; a note that moves an entrance moves its action.
 - Keep each scene's "palette" unless the note changes the scene's feeling; a scene whose feeling changes gets a palette that fits the colour script around it.
 - Every "line" beat has "speaker", "text", "delivery" and "intensity" ("low", "medium" or "high"). Every "action" beat has "text" and "characters".
 
 OUTPUT
 Reply with the whole revised screenplay as one JSON object and nothing else, in the same shape as THE SCREENPLAY NOW:
-{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "palette": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"]}}]}}]}}
+{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "palette": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"], "enters": [], "exits": []}}]}}]}}
 ```
 
 ## story.casting_revise
