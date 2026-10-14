@@ -17,7 +17,9 @@ A rough cut puts them together:
 3. **Compose** with the renderer's own compositor (``FFmpegLocalCompositor``)
    at ``rough_cut_width`` x ``rough_cut_height``: each still held for its
    shot with the compositor's Ken Burns move, the dialogue over the whole
-   cut, the score under it, the captions burned in. A shot with no picture
+   cut, the score under it, the captions burned in, and the render's own
+   transitions (``video_scene_transition`` between scenes, a quick dissolve
+   between shots). A shot with no picture
    (a title card, a still that failed to draw) holds the previous picture.
 4. **Director's notes** on the cut (``director_notes.review_cut`` with
    ``cut="rough"``) when ``rough_cut_notes_enabled``: the judge screens the
@@ -78,13 +80,13 @@ def captions_srt(timeline: list[dict[str, Any]]) -> str:
     return "\n".join(blocks)
 
 
-def scene_plan(rows: list[dict[str, Any]], duration_s: float) -> list[tuple[str | None, float]]:
-    """``(image_url, seconds)`` per shot in order; a shot with no picture holds the one before.
+def scene_plan(rows: list[dict[str, Any]], duration_s: float) -> list[tuple[str | None, float, int]]:
+    """``(image_url, seconds, shot idx)`` per shot in order; a shot with no picture holds the one before.
 
     The last shot runs to the end of the audio, so the cut is never shorter
     than its voices.
     """
-    plan: list[tuple[str | None, float]] = []
+    plan: list[tuple[str | None, float, int]] = []
     held: str | None = None
     ordered = sorted(rows, key=lambda r: float(r.get("start_s") or 0.0))
     for i, row in enumerate(ordered):
@@ -94,7 +96,7 @@ def scene_plan(rows: list[dict[str, Any]], duration_s: float) -> list[tuple[str 
         else:
             seconds = max(float(row.get("duration_s") or 0.0), duration_s - float(row.get("start_s") or 0.0))
         if seconds > 0.04:
-            plan.append((held, seconds))
+            plan.append((held, seconds, int(row.get("idx", i))))
     return plan
 
 
@@ -150,16 +152,29 @@ async def compose_cut(
     plan = scene_plan(list(payload.get("shots") or []), float(payload.get("duration_s") or 0.0))
     if not plan:
         raise RoughCutError("the storyboard has no shots")
+    from poindexter.services.video_renderers.shot_list_renderer import (
+        transition_into,
+        transition_settings,
+    )
+
+    scene_of = {
+        int(sh["idx"]): sh.get("scene_id")
+        for sh in (payload.get("shot_list") or {}).get("shots") or [] if sh.get("idx") is not None
+    }
+    transitions = transition_settings(site_config)
+    prev_scene: str | None = None
     local: dict[str, str] = {}
     scenes = []
-    for n, (url, seconds) in enumerate(plan):
+    for n, (url, seconds, idx) in enumerate(plan):
         if url and url not in local:
             try:
                 local[url] = await _download(url, str(work / f"shot_{n:03d}{Path(url).suffix or '.png'}"))
             except Exception as exc:  # noqa: BLE001 — a missing still holds a blank, the cut still plays
                 logger.warning("[rough_cut] still %s did not download: %s", url, exc)
         path = local.get(url or "") or _blank(str(work / "blank.png"), width, height)
-        scenes.append(CompositionScene(clip_path=path, duration_s=seconds))
+        kind, fade = transition_into(prev_scene, scene_of.get(idx), transitions)
+        prev_scene = scene_of.get(idx) or prev_scene
+        scenes.append(CompositionScene(clip_path=path, duration_s=seconds, transition_in=kind, transition_s=fade))
     captions = work / "captions.srt"
     srt = captions_srt(list(payload.get("timeline") or []))
     if srt:

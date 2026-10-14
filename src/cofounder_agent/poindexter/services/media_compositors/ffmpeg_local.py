@@ -427,6 +427,95 @@ def _build_normalize_cmd(
     return cmd
 
 
+_XFADE_KIND = {"dissolve": "fade", "fade_black": "fadeblack"}
+#: A transition shorter than this is a hard cut (it would not read as one).
+_MIN_TRANSITION_S = 0.04
+
+
+def plan_transitions(scenes: list[Any]) -> list[tuple[str, float]]:
+    """``(xfade kind, seconds)`` into each scene; ``("", 0.0)`` is a hard cut.
+
+    A transition is clamped to the length of the shorter scene either side of
+    the cut: half of it is held from each side, so a 0.1 s shot cannot carry a
+    0.6 s dissolve. The first scene has none.
+    """
+    out: list[tuple[str, float]] = []
+    for i, scene in enumerate(scenes):
+        kind = _XFADE_KIND.get(str(getattr(scene, "transition_in", "") or ""), "")
+        seconds = float(getattr(scene, "transition_s", 0.0) or 0.0)
+        if i == 0 or not kind or seconds <= 0:
+            out.append(("", 0.0))
+            continue
+        seconds = min(seconds, float(scenes[i - 1].duration_s), float(scene.duration_s))
+        out.append((kind, round(seconds, 3)) if seconds >= _MIN_TRANSITION_S else ("", 0.0))
+    return out
+
+
+def _build_transition_join_cmd(
+    *,
+    binary: str,
+    paths: list[str],
+    durations: list[float],
+    transitions: list[tuple[str, float]],
+    output_path: str,
+    fps: int,
+    encoder: str,
+    preset: str,
+    crf: int,
+    audio_bitrate: str,
+    loglevel: str,
+) -> list[str]:
+    """Join normalized scenes with crossfades, keeping the total length.
+
+    Each transition of T seconds is centred on its cut: the outgoing scene
+    holds its last frame for T/2 and the incoming one its first frame for T/2,
+    and ``xfade`` overlaps those T seconds. The output is as long as the scenes
+    laid end to end, so a voice track laid over it stays in sync. Scenes are
+    silent (the narration is overlaid later), so the audio is generated
+    silence, encoded like the normalize step's.
+    """
+    cmd = [binary, "-loglevel", loglevel, "-y"]
+    for path in paths:
+        cmd.extend(["-i", path])
+    total = sum(durations)
+    cmd.extend(["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"])
+    parts: list[str] = []
+    n = len(paths)
+    for i in range(n):
+        pre = transitions[i][1] / 2 if transitions[i][0] else 0.0
+        post = transitions[i + 1][1] / 2 if i + 1 < n and transitions[i + 1][0] else 0.0
+        parts.append(
+            f"[{i}:v]tpad=start_mode=clone:start_duration={pre:.3f}:"
+            f"stop_mode=clone:stop_duration={post:.3f},settb=AVTB,fps={fps},format=yuv420p[c{i}]"
+        )
+    acc = "c0"
+    acc_len = durations[0] + (transitions[1][1] / 2 if n > 1 and transitions[1][0] else 0.0)
+    for i in range(1, n):
+        kind, seconds = transitions[i]
+        pre = seconds / 2 if kind else 0.0
+        post = transitions[i + 1][1] / 2 if i + 1 < n and transitions[i + 1][0] else 0.0
+        out = f"j{i}"
+        if kind:
+            parts.append(
+                f"[{acc}][c{i}]xfade=transition={kind}:duration={seconds:.3f}:"
+                f"offset={max(0.0, acc_len - seconds):.3f}[{out}]"
+            )
+            acc_len += pre + durations[i] + post - seconds
+        else:
+            parts.append(f"[{acc}][c{i}]concat=n=2:v=1:a=0[{out}]")
+            acc_len += durations[i] + post
+        acc = out
+    cmd.extend([
+        "-filter_complex", ";".join(parts),
+        "-map", f"[{acc}]", "-map", f"{n}:a:0",
+        "-c:v", encoder, "-pix_fmt", "yuv420p", "-preset", preset, "-crf", str(crf),
+        "-c:a", "aac", "-b:a", audio_bitrate, "-ar", "48000",
+        "-t", f"{total:.3f}",
+        output_path,
+    ])
+    return cmd
+
+
 def _build_concat_cmd(
     *,
     binary: str,
@@ -954,9 +1043,26 @@ class FFmpegLocalCompositor:
                         break
                     normalized_paths.append(norm_path)
 
-                # 2. Concat (only if normalize succeeded for all scenes).
+                # 2. Concat (only if normalize succeeded for all scenes). A
+                # list whose scenes ask for transitions is joined with
+                # crossfades instead (same total length); otherwise the
+                # stream-copy concat, exactly as before.
                 concat_path = os.path.join(tmpdir, "concat.mp4")
-                if success:
+                transitions = plan_transitions(list(request.scenes)) if success else []
+                if success and any(kind for kind, _ in transitions):
+                    cmd = _build_transition_join_cmd(
+                        binary=binary, paths=normalized_paths,
+                        durations=[float(sc.duration_s) for sc in request.scenes],
+                        transitions=transitions, output_path=concat_path, fps=request.fps,
+                        encoder=encoder, preset=preset, crf=crf, audio_bitrate=audio_bitrate,
+                        loglevel=loglevel,
+                    )
+                    rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
+                    if rc != 0:
+                        success = False
+                        ffmpeg_log_tail = err.strip()[-1000:]
+                        error = f"transition join failed (rc={rc}): {ffmpeg_log_tail or '(no stderr)'}"
+                elif success:
                     list_path = os.path.join(tmpdir, "concat_list.txt")
                     with open(list_path, "w", encoding="utf-8") as f:
                         for p in normalized_paths:

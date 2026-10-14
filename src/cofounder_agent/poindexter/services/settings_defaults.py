@@ -3197,6 +3197,15 @@ DEFAULTS: dict[str, str] = {
     'video_clip_cache_enabled': 'true',
     'video_clip_cache_dir': '~/.poindexter/video/clips',
     'video_clip_cache_keep_days': '14',
+    # Transitions in a screenplay video (a cartoon) and its rough cut: between
+    # two scenes of the story, video_scene_transition ("dissolve",
+    # "fade_black", or "" for a hard cut) over scene_transition_seconds;
+    # between two shots of one scene a quick dissolve over
+    # shot_transition_seconds (0 = a hard cut). Centred on the cut, so the
+    # length and the lip-sync are unchanged. Other videos keep hard cuts.
+    'video_scene_transition': 'dissolve',
+    'video_scene_transition_seconds': '0.6',
+    'video_shot_transition_seconds': '0.2',
     # Chat drafting phase 7: a finished cartoon's YouTube package
     # (services/video_package.py). The writer drafts the title (fits whole in
     # title_max_chars, never cut), the description, up to max_tags tags, the
@@ -6763,6 +6772,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
+    'video_scene_transition': {'owner': 'shot_list_renderer', 'value_type': 'string'},
+    'video_scene_transition_seconds': {'owner': 'shot_list_renderer', 'value_type': 'float'},
+    'video_shot_transition_seconds': {'owner': 'shot_list_renderer', 'value_type': 'float'},
     'video_package_title_max_chars': {'owner': 'video_package', 'value_type': 'integer'},
     'video_package_description_max_chars': {'owner': 'video_package', 'value_type': 'integer'},
     'video_package_max_tags': {'owner': 'video_package', 'value_type': 'integer'},

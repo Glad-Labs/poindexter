@@ -45,7 +45,7 @@ class TestParts:
 
     def test_a_shot_without_a_picture_holds_the_one_before_and_the_last_runs_to_the_end(self):
         assert rc.scene_plan(ROWS, 7.5) == [
-            ("https://cdn/s0.webp", 2.0), ("https://cdn/s0.webp", 1.0), ("https://cdn/s2.webp", 4.5),
+            ("https://cdn/s0.webp", 2.0, 0), ("https://cdn/s0.webp", 1.0, 1), ("https://cdn/s2.webp", 4.5, 2),
         ]
 
 
@@ -106,7 +106,18 @@ class TestBuild:
         assert out["rough_cut_url"] == "https://cdn/drafts/d1/rough_cut-v1.mp4"
         assert out["score_url"] == "https://cdn/drafts/d1/score.wav" and out["rough_cut_seconds"] == 7.5
         assert out["rough_cut_notes"]["status"] == "ready"
+        # BOARD's shot list carries no scenes: hard cuts, as before.
+        assert all(not sc.transition_in for sc in req.scenes)
         assert studio.review.await_args.kwargs["cut"] == "rough"
+
+    @pytest.mark.asyncio
+    async def test_scenes_dissolve_into_each_other_and_shots_soften(self, studio):
+        board = {**BOARD, "shot_list": {"shots": [{"idx": 0, "scene_id": "s1"}, {"idx": 1, "scene_id": "s1"},
+                                                  {"idx": 2, "scene_id": "s2"}]}}
+        await rc.build_rough_cut(board, site_config=_sc(rough_cut_notes_enabled="false"), pool=None,
+                                 upload_prefix="drafts/d3")
+        got = [(sc.transition_in, sc.transition_s) for sc in studio.requests[0].scenes]
+        assert got == [("", 0.0), ("dissolve", 0.2), ("dissolve", 0.6)]
 
     @pytest.mark.asyncio
     async def test_a_revision_keeps_the_approved_score(self, studio):

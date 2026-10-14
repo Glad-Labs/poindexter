@@ -86,6 +86,8 @@ class CompositionScene:
             continues on its final frame as a separate still scene
             (``shot_list_renderer._scenes_for_plan``). Stills are unaffected
             (they are already a held frame).
+        transition_in / transition_s: how the scene comes in from the one
+            before it (see the fields). The first scene's is ignored.
     """
 
     clip_path: str
@@ -95,6 +97,13 @@ class CompositionScene:
     ken_burns: bool | None = None
     hold_last_frame: bool = False
     ken_burns_variant: int | None = None
+    # How this scene comes in from the one before it: "" is a hard cut,
+    # "dissolve" a crossfade, "fade_black" a dip through black, over
+    # ``transition_s`` seconds centred on the cut. The compositor holds the
+    # frames either side of the cut to make the overlap, so the total length
+    # (and everything timed to it: narration, captions, lip-sync) is unchanged.
+    transition_in: str = ""
+    transition_s: float = 0.0
 
 
 @dataclass

@@ -4416,6 +4416,50 @@ def _merge_repeated_slots(
     return merged
 
 
+def transition_settings(site_config: Any) -> dict[str, Any]:
+    """The cartoon transitions: ``{scene_kind, scene_s, shot_s}`` from settings.
+
+    Between two scenes of the story, ``video_scene_transition`` (``dissolve``,
+    ``fade_black``, or empty for a hard cut) over
+    ``video_scene_transition_seconds``; between two shots of one scene a quick
+    dissolve over ``video_shot_transition_seconds`` (0 = a hard cut). Matt on
+    the Midnight Patch rough cut (2026-10-14): "need to have smoother
+    transitions between scenes and clips".
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    def _get(key: str) -> str:
+        raw = site_config.get(key, None) if site_config is not None else None
+        return str(DEFAULTS[key] if raw is None or str(raw).strip() == "" else raw)
+
+    def _secs(key: str) -> float:
+        try:
+            return max(0.0, float(_get(key)))
+        except ValueError:
+            return float(DEFAULTS[key])
+
+    return {
+        "scene_kind": _get("video_scene_transition").strip().lower(),
+        "scene_s": _secs("video_scene_transition_seconds"),
+        "shot_s": _secs("video_shot_transition_seconds"),
+    }
+
+
+def transition_into(prev_scene: str | None, scene: str | None, transitions: dict[str, Any] | None) -> tuple[str, float]:
+    """How a shot of story scene ``scene`` comes in after one of ``prev_scene``.
+
+    Only screenplay shots carry a scene, so every other video keeps its hard
+    cuts. ``("", 0.0)`` is a hard cut.
+    """
+    if not transitions or not scene or not prev_scene:
+        return "", 0.0
+    if scene != prev_scene:
+        kind = transitions.get("scene_kind") or ""
+        return (kind, float(transitions.get("scene_s") or 0.0)) if kind else ("", 0.0)
+    seconds = float(transitions.get("shot_s") or 0.0)
+    return ("dissolve", seconds) if seconds > 0 else ("", 0.0)
+
+
 async def _scenes_for_plan(
     scene_plan: list[tuple[int, float]],
     rendered: list[ShotRenderResult],
@@ -4425,6 +4469,7 @@ async def _scenes_for_plan(
     height: int,
     probe: Any = None,
     grab: Any = None,
+    transitions: dict[str, Any] | None = None,
 ) -> list[CompositionScene]:
     """One composition scene per planned slot, with no clip ever looping.
 
@@ -4446,9 +4491,16 @@ async def _scenes_for_plan(
     stills: dict[int, str | None] = {}
     scenes: list[CompositionScene] = []
     continued = 0
+    prev_scene: str | None = None
     for idx, dur in scene_plan:
         result = rendered[idx]
         clip = result.clip_path or ""
+        shot_scene = (
+            getattr(shot_list.shots[idx], "scene_id", None) if 0 <= idx < len(shot_list.shots) else None
+        )
+        kind, seconds = transition_into(prev_scene, shot_scene, transitions)
+        prev_scene = shot_scene or prev_scene
+        first = len(scenes)
         # The compositor cannot see the prompt; we can. A corridor shot zooms
         # to its vanishing point instead of drifting to a corner.
         # ``scene_plan`` may CYCLE indices to stretch a short plan over a long
@@ -4485,6 +4537,7 @@ async def _scenes_for_plan(
                         ken_burns_variant=KEN_BURNS_CENTER,
                     ))
                     continued += 1
+                    _mark_transition(scenes, first, kind, seconds)
                     continue
         scenes.append(CompositionScene(
             clip_path=clip, narration_path=None, duration_s=dur,
@@ -4493,12 +4546,20 @@ async def _scenes_for_plan(
             # the hold only ever covers a remainder.
             hold_last_frame=hold or bool(clip and not _is_still_image(clip)),
         ))
+        _mark_transition(scenes, first, kind, seconds)
     if continued:
         logger.info(
             "[SHOT_LIST] %d clip(s) shorter than their scene play once and "
             "continue on their final frame (no looping)", continued,
         )
     return scenes
+
+
+def _mark_transition(scenes: list[CompositionScene], first: int, kind: str, seconds: float) -> None:
+    """Put the slot's transition on its first scene (never on a continuation still)."""
+    if kind and seconds > 0 and first < len(scenes):
+        scenes[first].transition_in = kind
+        scenes[first].transition_s = seconds
 
 
 def _fitted_shot_window(
@@ -6087,6 +6148,7 @@ async def render_shot_list(
             )
     scenes = await _scenes_for_plan(
         scene_plan, rendered, shot_list, width=width, height=height,
+        transitions=transition_settings(site_config),
     )
     if endcard_scene is not None:
         # A SCENE, not a shot: shots_total / shots_carded stay untouched, so
