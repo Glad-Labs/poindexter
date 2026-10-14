@@ -162,6 +162,7 @@ WATCHES_SETTING_KEY = "scheduled_workflows"
 INTERVAL_SETTING_KEY = "scheduled_workflow_watch_interval_minutes"
 FAILURE_REPAGE_HOURS_KEY = "scheduled_workflow_watch_failure_repage_hours"
 TRANSIENT_FAILURE_PAGE_HOURS_KEY = "scheduled_workflow_watch_transient_failure_page_hours"
+RUNS_PER_PAGE_KEY = "scheduled_workflow_watch_runs_per_page"
 TOKEN_SETTING_KEY = "gh_token"
 _WATCHES_REF = f"app_settings.{WATCHES_SETTING_KEY}"
 
@@ -173,6 +174,11 @@ DEFAULT_FAILURE_REPAGE_HOURS = 24
 # only delays detection: the first clean pass reads every workflow's latest
 # run afresh, so nothing that went stale meanwhile is lost.
 DEFAULT_TRANSIENT_FAILURE_PAGE_HOURS = 6
+# How many of a workflow's scheduled runs one query reads. The newest is
+# picked from the page by its own created_at rather than taken as the page's
+# first row: GitHub's ordering under a status filter is not reliable enough to
+# trust a page of one (glad-labs-stack#4325). GitHub caps a page at 100.
+DEFAULT_RUNS_PER_PAGE = 20
 
 _STATE_ENTITY_PREFIX = "scheduled_workflow_watchdog"
 _LAST_RUN_ENTITY = f"{_STATE_ENTITY_PREFIX}:_last_checked"
@@ -406,7 +412,8 @@ def _parse_iso8601_utc(raw: Any) -> datetime | None:
 
 
 async def _fetch_runs(
-    client: Any, repo: str, workflow: str, *, only_success: bool
+    client: Any, repo: str, workflow: str, *, only_success: bool,
+    per_page: int = DEFAULT_RUNS_PER_PAGE,
 ) -> tuple[int, datetime | None]:
     """Return ``(total_count, newest_created_at)`` for SCHEDULED runs.
 
@@ -414,8 +421,18 @@ async def _fetch_runs(
     :class:`GitHubAPIError` on any non-200, so the caller can diagnose the
     failure (a bad token, a missing workflow, a GitHub outage) rather than
     inventing a verdict.
+
+    The newest run is the latest ``created_at`` on the page, never simply
+    the page's first row. Until 2026-10-14 this read one run (``per_page=1``)
+    and trusted GitHub to put the newest first. Under the ``status=success``
+    filter it did not: on 2026-10-06/07 four successive passes reported
+    ``benchmarks.yml``'s newest success as runs from 09-13, 10-04, 09-21 and
+    09-23. The verdict flapped between ok and stale, and each flip back to
+    stale emitted a fresh finding, about every two hours
+    (glad-labs-stack#4325). With ``only_success`` a run whose ``conclusion``
+    says otherwise is ignored too, in case the filter itself slips.
     """
-    params: dict[str, Any] = {"event": "schedule", "per_page": 1}
+    params: dict[str, Any] = {"event": "schedule", "per_page": max(1, min(100, per_page))}
     if only_success:
         params["status"] = "success"
     r = await client.get(
@@ -428,8 +445,14 @@ async def _fetch_runs(
     if not isinstance(payload, dict):
         raise RuntimeError(f"non-object payload: {type(payload).__name__}")
     runs = payload.get("workflow_runs") or []
-    newest = _parse_iso8601_utc(runs[0].get("created_at")) if runs else None
-    return int(payload.get("total_count", 0)), newest
+    stamps = [
+        stamp
+        for run in runs
+        if isinstance(run, dict)
+        and (not only_success or run.get("conclusion") in (None, "success"))
+        and (stamp := _parse_iso8601_utc(run.get("created_at"))) is not None
+    ]
+    return int(payload.get("total_count", 0)), max(stamps, default=None)
 
 
 def _describe_error(exc: BaseException) -> str:
@@ -594,7 +617,8 @@ async def _emit_finding(
 
 
 async def _assess(
-    pool: Any, client: Any, watch: dict[str, Any], now_utc: datetime
+    pool: Any, client: Any, watch: dict[str, Any], now_utc: datetime,
+    *, per_page: int = DEFAULT_RUNS_PER_PAGE,
 ) -> tuple[dict[str, Any], BaseException | None]:
     """Assess one workflow. Never raises.
 
@@ -606,14 +630,14 @@ async def _assess(
     name = _target_name(watch)
     try:
         total, _ = await _fetch_runs(
-            client, watch["repo"], watch["workflow"], only_success=False
+            client, watch["repo"], watch["workflow"], only_success=False, per_page=per_page,
         )
         if total == 0:
             # Never scheduled-fired here (fresh install, or the operator
             # removed the cron). Not an alert condition.
             return {"state": "not_assessed", "reason": "no scheduled runs"}, None
         _, last_success = await _fetch_runs(
-            client, watch["repo"], watch["workflow"], only_success=True
+            client, watch["repo"], watch["workflow"], only_success=True, per_page=per_page,
         )
     except Exception as exc:  # noqa: BLE001
         reason = _describe_error(exc)
@@ -1503,6 +1527,8 @@ async def run_scheduled_workflow_watch(
         "transient_failure_page_hours": await _read_hours(
             pool, TRANSIENT_FAILURE_PAGE_HOURS_KEY, DEFAULT_TRANSIENT_FAILURE_PAGE_HOURS,
         ),
+        # _read_hours is the module's whole-number reader; 0 falls back to 1.
+        "runs_per_page": await _read_hours(pool, RUNS_PER_PAGE_KEY, DEFAULT_RUNS_PER_PAGE),
     }
     # Set but not usable as written: say so once per episode, then check
     # whatever part of the list is valid.
@@ -1544,7 +1570,9 @@ async def run_scheduled_workflow_watch(
     async with factory() as client:
         for watch in watches:
             name = _target_name(watch)
-            results[name], exc = await _assess(pool, client, watch, now_utc)
+            results[name], exc = await _assess(
+                pool, client, watch, now_utc, per_page=int(config["runs_per_page"]),
+            )
             if exc is not None:
                 errors[name] = exc
 

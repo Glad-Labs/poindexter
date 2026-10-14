@@ -5561,6 +5561,9 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # here (the code defaults in poindexter/brain/scheduled_workflow_watch.py
     # are the backstop).
     'scheduled_workflow_watch_transient_failure_page_hours': '6',
+    # Scheduled runs read per query; the newest is picked by created_at from
+    # the page, since GitHub's order under a status filter flapped (#4325).
+    'scheduled_workflow_watch_runs_per_page': '20',
 
     # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
     # poindexter/brain/clock_skew_probe.py compares postgres clock_timestamp() to an
@@ -8026,6 +8029,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'scheduled_workflow_watch_interval_minutes': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
     'scheduled_workflow_watch_failure_repage_hours': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
     'scheduled_workflow_watch_transient_failure_page_hours': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
+    'scheduled_workflow_watch_runs_per_page': {'owner': 'scheduled_workflow_watch', 'value_type': 'integer'},
     'scheduled_workflows': {'owner': 'scheduled_workflow_watch', 'value_type': 'json'},
     'scheduler_alert_on_job_failure': {'owner': 'scheduler', 'value_type': 'boolean'},
     'scheduler_alert_on_job_overlap': {'owner': 'scheduler', 'value_type': 'boolean'},

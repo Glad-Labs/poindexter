@@ -376,6 +376,105 @@ class TestEveryPassIsAudible:
         assert summary["ok"] is True
 
 
+def _page_client(runs_by_success):
+    """Fake httpx client returning WHOLE pages: ``{only_success: [run, ...]}``."""
+    calls = []
+
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._p = payload
+
+        def json(self):
+            return self._p
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None):  # noqa: ANN001, ARG002
+            calls.append(params or {})
+            runs = runs_by_success[(params or {}).get("status") == "success"]
+            return _Resp({"total_count": len(runs), "workflow_runs": list(runs)})
+
+    mod = MagicMock()
+    mod.AsyncClient = MagicMock(return_value=_Client())
+    return mod, calls
+
+
+@pytest.mark.unit
+class TestNewestRunIsPickedNotAssumed:
+    """glad-labs-stack#4325: GitHub's order under ``status=success`` is not
+    reliable, so a page of one reported a different "newest success" on each
+    pass (09-13, 10-04, 09-21, 09-23 for benchmarks.yml), the verdict flapped
+    and every flip back to stale paged again."""
+
+    @pytest.mark.asyncio
+    async def test_a_recent_success_anywhere_on_the_page_counts(self, monkeypatch):
+        page = [{"created_at": _iso(500)}, {"created_at": _iso(2)}, {"created_at": _iso(200)}]
+        mod, _ = _page_client({False: page, True: page})
+        monkeypatch.setattr(swf, "httpx", mod)
+        pool = _pool(prev_state="ok")
+        summary = await swf.run_scheduled_workflow_watch(pool)
+        assert _findings(pool) == []
+        assert summary["ok"] is True
+
+    @pytest.mark.asyncio
+    async def test_the_verdict_does_not_depend_on_the_pages_order(self, monkeypatch):
+        page = [{"created_at": _iso(h)} for h in (530, 50, 360, 330)]
+        verdicts = []
+        for ordering in (page, list(reversed(page)), sorted(page, key=lambda r: r["created_at"])):
+            mod, _ = _page_client({False: ordering, True: ordering})
+            monkeypatch.setattr(swf, "httpx", mod)
+            pool = _pool(prev_state="stale")
+            await swf.run_scheduled_workflow_watch(pool)
+            writes = [
+                c for c in pool.execute.call_args_list
+                if c.args and "last_state" in c.args[0]
+                and str(c.args[1]).endswith(":acme/widgets:benchmarks.yml")
+            ]
+            verdicts.append((len(_findings(pool)), len(writes)))
+        # Stale (50 h > 30 h) every time, and already stale: no finding, no state write.
+        assert verdicts == [(0, 0)] * 3
+
+    @pytest.mark.asyncio
+    async def test_a_failed_run_in_a_success_page_is_ignored(self, monkeypatch):
+        everything = [{"created_at": _iso(1)}, {"created_at": _iso(400)}]
+        successes = [{"created_at": _iso(1), "conclusion": "failure"}, {"created_at": _iso(400), "conclusion": "success"}]
+        mod, _ = _page_client({False: everything, True: successes})
+        monkeypatch.setattr(swf, "httpx", mod)
+        pool = _pool(prev_state="ok")
+        await swf.run_scheduled_workflow_watch(pool)
+        (finding,) = _findings(pool)
+        assert finding["extra"]["age_hours"] > 390
+
+    @pytest.mark.asyncio
+    async def test_the_page_size_is_a_setting(self, monkeypatch):
+        page = [{"created_at": _iso(2)}]
+        mod, calls = _page_client({False: page, True: page})
+        monkeypatch.setattr(swf, "httpx", mod)
+        await swf.run_scheduled_workflow_watch(_pool())
+        assert {c["per_page"] for c in calls} == {swf.DEFAULT_RUNS_PER_PAGE}
+
+        pool = _pool()
+        base = pool.fetchrow.side_effect
+
+        async def _with_page_size(query, *args, **kwargs):  # noqa: ANN001
+            if args and args[0] == swf.RUNS_PER_PAGE_KEY:
+                return {"value": "50"}
+            return await base(query, *args, **kwargs)
+
+        pool.fetchrow = AsyncMock(side_effect=_with_page_size)
+        mod, calls = _page_client({False: page, True: page})
+        monkeypatch.setattr(swf, "httpx", mod)
+        await swf.run_scheduled_workflow_watch(pool)
+        assert {c["per_page"] for c in calls} == {50}
+
+
 @pytest.mark.unit
 class TestConfigValidation:
     """Every entry is either watched or ignored with a reason, never dropped
