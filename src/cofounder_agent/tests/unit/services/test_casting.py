@@ -30,6 +30,8 @@ def _sc(**extra):
         "persona.dex.display_name": "Dex",
         "persona.dex.appearance": "a young fox engineer in goggles",
         "persona.dex.portrait_url": "https://cdn.example/personas/dex.png",
+        # Drawn in the default house style, so a house-style piece may reuse him.
+        "persona.dex.portrait_prompt": "flat vector illustration, character portrait of a fox",
         "persona.dex.enabled": "true",
         "persona.off.display_name": "Off",
         "persona.off.enabled": "false",
@@ -68,7 +70,7 @@ class TestCheckCast:
 
     def test_reusing_an_unknown_character_is_named(self):
         errors = _check(_reply({"reuse": "ghost"}))
-        assert any("'ghost' is not an existing character" in e for e in errors)
+        assert any("'ghost' cannot be reused in this piece" in e for e in errors)
 
     def test_a_voice_outside_the_catalog_is_rejected(self):
         assert any('"voice" must be one of' in e for e in _check(_reply(_new(voice="af_made_up"))))
@@ -200,10 +202,10 @@ class TestCastCharacters:
         assert chat.await_args.kwargs["phase"] == "story_cast_characters"
 
     @pytest.mark.asyncio
-    async def test_an_asked_for_look_is_spelled_out_and_old_faces_do_not_anchor(self, chat, studio):
+    async def test_a_named_character_in_another_look_is_restyled(self, chat, studio):
         chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, _new(), style="ink wash, loose brush lines"))]
         out = await casting.cast_characters(
-            casting.CastingRequest(topic="t", style_hint="ink"),
+            casting.CastingRequest(topic="t", style_hint="ink", required=("dex",)),
             site_config=_sc(), pool=None, settings=FakeSettings())
         assert out["screenplay_visual_style"] == "ink wash, loose brush lines"
         assert "ART STYLE: ink\n" in chat.await_args.args[0]
@@ -217,6 +219,28 @@ class TestCastCharacters:
         assert set(out["cast_portraits"]) == {"dex"} and out["cast_portraits"]["dex"] != _sc().get(
             "persona.dex.portrait_url")
         assert out["cast_sheet"]["restyled"] == out["cast_portraits"]
+
+    @pytest.mark.asyncio
+    async def test_an_unnamed_character_in_another_look_is_not_offered(self, chat, studio):
+        """Matt (2026-10-14): restyled reused characters came out in three
+        different styles; "they should really be new characters"."""
+        chat.side_effect = [json.dumps(_reply({"reuse": "dex"}, style="ink wash")),
+                            json.dumps(_reply(_new(), style="ink wash"))]
+        out = await casting.cast_characters(
+            casting.CastingRequest(topic="t", style_hint="ink"),
+            site_config=_sc(), pool=None, settings=FakeSettings())
+        first, retry = (c.args[0] for c in chat.await_args_list)
+        assert "- dex:" not in first
+        assert "'dex' cannot be reused in this piece" in retry
+        assert out["screenplay_cast"] == ["wren"] and out["cast_portraits"] == {}
+
+    @pytest.mark.asyncio
+    async def test_a_new_name_never_takes_an_existing_slug(self, chat, studio):
+        chat.side_effect = [json.dumps(_reply(_new("dex"), style="ink wash"))]
+        out = await casting.cast_characters(
+            casting.CastingRequest(topic="t", style_hint="ink"),
+            site_config=_sc(), pool=None, settings=FakeSettings())
+        assert out["screenplay_cast"] == ["dex-2"]
 
     @pytest.mark.asyncio
     async def test_a_reused_face_already_in_the_style_is_not_redrawn(self, chat, studio):
@@ -248,7 +272,9 @@ class TestCastCharacters:
         house = "retro-tech illustration, cyan and navy"
         out = await casting.cast_characters(
             casting.CastingRequest(topic="t", style_hint="A cartoon!", niche_slug="lab"),
-            site_config=_sc(**{"niche.lab.media.house_style": house}), pool=None, settings=FakeSettings())
+            site_config=_sc(**{"niche.lab.media.house_style": house,
+                               "persona.dex.portrait_prompt": f"{house}, character portrait of a fox"}),
+            pool=None, settings=FakeSettings())
         assert out["screenplay_visual_style"] == house
         assert f"ART STYLE: {house}" in chat.await_args.args[0]
         # In the house style, the reused face anchors the new one.

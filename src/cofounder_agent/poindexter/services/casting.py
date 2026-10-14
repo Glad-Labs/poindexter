@@ -158,7 +158,7 @@ def check_cast(
         reuse = str(ch.get("reuse") or "").strip().lower()
         if reuse:
             if reuse not in roster:
-                errors.append(f"FIX character {i}: {reuse!r} is not an existing character; reuse one of {sorted(roster) or 'none'} or design a new one")
+                errors.append(f"FIX character {i}: {reuse!r} cannot be reused in this piece; reuse one of {sorted(roster) or 'none'} or design a new character")
             reused.add(reuse)
             continue
         new += 1
@@ -184,6 +184,12 @@ def check_cast(
         if str(narrator.get("reuse")).strip().lower() not in roster:
             errors.append("FIX narrator: \"reuse\" must name an existing character, or leave it empty and describe a new voice")
     return errors
+
+
+def _drawn_in(persona: Any, look: str) -> bool:
+    """Was this persona's portrait drawn in ``look``? (its prompt names it)"""
+    look = (look or "").strip().lower()
+    return bool(look) and look in str(getattr(persona, "portrait_prompt", "") or "").lower()
 
 
 def _unique_slug(base: str, taken: set[str]) -> str:
@@ -338,10 +344,10 @@ async def cast_characters(
 
         settings = SettingsService(pool)
     personas = [p for p in list_personas(site_config) if p.enabled]
-    roster = {p.slug: p for p in personas}
+    everyone = {p.slug: p for p in personas}
     catalog = voice_catalog(site_config)
     max_new = int(float(_setting(site_config, "story_cast_max_new")))
-    missing = [s for s in request.required if s not in roster]
+    missing = [s for s in request.required if s not in everyone]
     if missing:
         raise CastingError(f"required cast {missing} are not enabled personas")
     from poindexter.services.media_subject_policy import story_visual_style
@@ -349,6 +355,17 @@ async def cast_characters(
     # A look the request asked for, or the niche's house style. Never a free
     # pick: an unasked-for piece is drawn in the company's style.
     asked_style, asked = story_visual_style(site_config, request.niche_slug, request.style_hint)
+    # Who may be reused: a voice-only character, one whose portrait was drawn
+    # in this look, and anyone the request names. Matt (2026-10-14), on a
+    # neon retelling that restyled the watercolour Ruby, Wolf and Marta: the
+    # three came out in three different styles, "they should really be new
+    # characters". Everyone else is designed fresh, and the new faces are
+    # drawn as one set, each anchored on the ones before it.
+    personas = [
+        p for p in personas
+        if not p.has_portrait or _drawn_in(p, asked_style) or p.slug in request.required
+    ]
+    roster = {p.slug: p for p in personas}
 
     def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
         return check_cast(
@@ -380,7 +397,7 @@ async def cast_characters(
     # A requested look comes back written out in words a painter can follow,
     # and that phrase wins. The house style is used exactly as configured.
     style = (str(reply.get("style") or "").strip() or asked_style) if asked else asked_style
-    taken = set(roster)
+    taken = set(everyone)
     cast: list[str] = []
     new: list[dict[str, Any]] = []
     for ch in reply.get("characters") or []:
@@ -425,15 +442,15 @@ async def cast_characters(
     elif not narrator_slug:
         narrator_slug = NO_NARRATOR
 
-    # Portraits. In the house style, the cast's existing faces anchor the
-    # style of the new ones. A style asked for is the request's own look, which
-    # a reused face drawn for another piece could pull away from, so then only
-    # this run's new portraits anchor each other.
+    # Portraits. Reused faces already drawn in this look anchor the new ones,
+    # so the cast is one set.
     work = Path(tempfile.mkdtemp(prefix="casting-"))
     anchors: list[str] = []
-    for slug in cast if not asked else []:
+    for slug in cast:
         persona = roster.get(slug)
-        if persona is not None and persona.has_portrait:
+        if persona is not None and persona.has_portrait and (
+            _drawn_in(persona, asked_style) or _drawn_in(persona, style)
+        ):
             got = await _fetch(persona.portrait_url, work / f"anchor_{slug}.png")
             if got:
                 anchors.append(got)
@@ -455,17 +472,17 @@ async def cast_characters(
         await _clear_image_gen_for_hero(site_config)
         cleared = True
 
-    # A reused character whose portrait was drawn for another piece's style is
+    # A character the request names whose portrait is in another look is
     # redrawn in this one, for this piece only (the shot list carries it as
-    # cast_portraits). Every frame is drawn from the portraits, so a
-    # watercolour face would pull a neon anime piece back toward watercolour
-    # (2026-10-13). The persona keeps its own portrait.
+    # cast_portraits): every frame is drawn from the portraits. The persona
+    # keeps its own portrait. Unnamed characters in another look are never
+    # offered for reuse in the first place (see ``personas`` above).
     restyled: dict[str, str] = {}
-    for slug in cast if asked and use_refs else []:
+    for slug in cast if use_refs else []:
         persona = roster.get(slug)
         if persona is None or not persona.has_portrait:
             continue
-        if style.lower() in (persona.portrait_prompt or "").lower():
+        if _drawn_in(persona, asked_style) or _drawn_in(persona, style):
             continue
         own = await _fetch(persona.portrait_url, work / f"own_{slug}.png")
         if not own:
