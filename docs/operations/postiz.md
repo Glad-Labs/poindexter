@@ -26,6 +26,17 @@ When the brain reports `Postiz queue wedged … API unreachable`, first find out
 whether the container is hung or the backend cannot boot. They need different
 fixes, and a restart only fixes a hang.
 
+`postiz_queue_watch` now makes that call itself before it restarts anything
+(poindexter#1093). On an unreachable API it reads pm2's `backend` process. If
+pm2 reports it `errored` or `stopped`, or its restart count has risen since
+the previous 5-minute cycle, the backend is crash-looping at boot. The watch
+then restarts nothing and fires `postiz_backend_crashloop` once, with the
+tail of `backend-error.log` in the description. It resolves when the API
+answers again. A stable pm2 count, or a pm2 it cannot read, means a hang, and
+the watch restarts as before. Its retry budget survives a brain restart, and
+the escalate and crash-loop audit rows repeat at most every
+`postiz_queue_watch_reminder_hours` (1). To look by hand:
+
 ```bash
 docker inspect poindexter-postiz --format '{{.State.Health.Status}}'
 docker exec poindexter-postiz pm2 jlist | python3 -c 'import json,sys; [print(p["name"], p["pm2_env"]["status"], "restarts:", p["pm2_env"]["restart_time"]) for p in json.load(sys.stdin)]'

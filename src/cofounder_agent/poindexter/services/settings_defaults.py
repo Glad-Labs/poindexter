@@ -415,6 +415,10 @@ DEFAULTS: dict[str, str] = {
     'postiz_queue_watch_enabled': 'true',
     'postiz_queue_overdue_minutes': '30',
     'postiz_queue_watch_max_retries': '2',
+    # Hours between repeat escalate / crash-loop audit rows while one state
+    # persists (0 = state changes only). It wrote one every 5-min cycle,
+    # 261 in one incident (poindexter#1093).
+    'postiz_queue_watch_reminder_hours': '1',
     'postiz_queue_watch_retry_delay_seconds': '180',
 
     # ComfyUI host-RAM recycle watch (poindexter/brain/comfyui_ram_watch.py) — the render
@@ -7914,6 +7918,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'postiz_queue_overdue_minutes': {'owner': 'postiz_queue_watch', 'value_type': 'integer'},
     'postiz_queue_watch_enabled': {'owner': 'postiz_queue_watch', 'value_type': 'boolean'},
     'postiz_queue_watch_max_retries': {'owner': 'postiz_queue_watch', 'value_type': 'integer'},
+    'postiz_queue_watch_reminder_hours': {'owner': 'postiz_queue_watch', 'value_type': 'integer'},
     'postiz_queue_watch_retry_delay_seconds': {'owner': 'postiz_queue_watch', 'value_type': 'integer'},
     'prefect_content_flow_concurrency': {'owner': 'deploy_content_flow', 'value_type': 'integer'},
     'prefect_stuck_flow_cancelling_threshold_minutes': {'owner': 'prefect_stuck_flow_probe', 'value_type': 'integer'},

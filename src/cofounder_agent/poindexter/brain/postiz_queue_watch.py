@@ -32,13 +32,41 @@ Per cycle (mirrors ``brain/auto_embed_watch.py``):
 
 Design parity with auto_embed_watch: DB-configurable through ``app_settings``,
 injectable ``check_fn`` / ``restart_fn`` / ``sleep_fn`` / ``notify_fn`` seams
-for unit tests, module-level cumulative retry counter, Probe-Protocol wrapper.
+for unit tests, cumulative retry counter, Probe-Protocol wrapper.
+
+A backend that crashes at boot is not a wedge (poindexter#1093)
+---------------------------------------------------------------
+From 2026-09-27 15:39 to 09-28 14:23 UTC the Postiz backend failed
+deterministically at boot, so the API never answered, and an unreachable API
+counted as wedged. The watch restarted Postiz 8 times, re-arming two more
+restarts on each of four brain restarts, and wrote an escalate audit row 261
+times with the same generic "API unreachable". On postiz-app up to v2.23.0
+every container start also spent 22 of ``mastra_ai_spans``' 1600 column slots
+(#1091), so the restarts helped use the table up. pm2 restarts the crashed
+``backend`` inside the container, so Docker's RestartCount stayed 0 and the
+restart-loop watch could not see it either.
+
+So an unreachable API is classified before anything restarts. pm2 is asked
+for the ``backend`` process (``docker exec poindexter-postiz pm2 jlist``).
+If it is ``errored``/``stopped``, or its pm2 restart count rose since the last
+cycle, the backend is crash-looping at boot. A hung process does not restart
+itself, and a deterministic boot failure cannot be restarted away. Nothing
+is restarted; a ``postiz_backend_crashloop`` alert fires once, carrying the
+tail of ``backend-error.log``. Otherwise (pm2 stable, or pm2 unreadable) the
+watch restarts as before.
+
+The retry budget and the backend's restart count live in ``brain_knowledge``
+(entity ``probe.postiz_queue_watch``), so a brain restart no longer re-arms
+restarts against a Postiz already known to be bad. The escalate and crash-loop
+audit rows are written when the state changes and then at most every
+``postiz_queue_watch_reminder_hours``, not every 5-minute cycle.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -56,6 +84,7 @@ MAX_RETRIES_KEY = "postiz_queue_watch_max_retries"
 RETRY_DELAY_KEY = "postiz_queue_watch_retry_delay_seconds"
 API_URL_KEY = "postiz_api_url"
 API_KEY_KEY = "postiz_api_key"
+REMINDER_HOURS_KEY = "postiz_queue_watch_reminder_hours"
 
 DEFAULT_ENABLED = True
 # Our pipeline posts with type=now, so anything still QUEUE'd 30 minutes past
@@ -66,9 +95,22 @@ DEFAULT_MAX_RETRIES = 2
 # a thin sidecar to come back up — give it a generous window before re-check.
 DEFAULT_RETRY_DELAY_SECONDS = 180
 DEFAULT_API_URL = "http://postiz:3000"
+# Hours between repeat audit rows while the same escalation or crash loop
+# persists (0 = state changes only).
+DEFAULT_REMINDER_HOURS = 1
 
 _CONTAINER = "poindexter-postiz"
 _ALERTNAME = "postiz_queue_wedged"
+_CRASHLOOP_ALERTNAME = "postiz_backend_crashloop"
+# pm2 inside the container: the app that serves the public API, and its log.
+_BACKEND_APP = "backend"
+_BACKEND_ERROR_LOG = "/root/.pm2/logs/backend-error.log"
+_BACKEND_LOG_TAIL_LINES = 25
+_DOCKER_EXEC_TIMEOUT_SECONDS = 20
+_CRASHED_PM2_STATES = frozenset({"errored", "stopped"})
+# brain_knowledge rows that outlive a brain restart.
+_STATE_ENTITY = "probe.postiz_queue_watch"
+_STATE_SOURCE = "postiz_queue_watch"
 _API_TIMEOUT_SECONDS = 15
 # How far back to scan for stuck posts. A wedge older than this window has
 # long since been paged; keeps the response small.
@@ -88,15 +130,134 @@ PROBE_INTERVAL_SECONDS = 300
 # social_post_delivery_failed finding).
 _STUCK_STATES = frozenset({"QUEUE"})
 
-# Module-level retry counter — persists across cycles so escalation fires
-# cumulatively, exactly like auto_embed_watch's _retry_count.
+# Retry counter — cumulative across cycles so escalation fires, like
+# auto_embed_watch's _retry_count. Mirrored to brain_knowledge and read back
+# on a new process's first cycle (poindexter#1093).
 _retry_count = 0
+_state_loaded = False
+_state: dict[str, str] = {}
 
 
 def _reset_retry_state() -> None:
-    """Test helper — wipe the cross-cycle retry counter."""
-    global _retry_count
+    """Test helper — wipe the cross-cycle retry counter and loaded state."""
+    global _retry_count, _state_loaded
     _retry_count = 0
+    _state_loaded = False
+    _state.clear()
+
+
+async def _load_state(pool: Any) -> None:
+    """Read the persisted retry count and pm2 baseline once per process."""
+    global _retry_count, _state_loaded
+    if _state_loaded:
+        return
+    _state_loaded = True
+    try:
+        rows = await pool.fetch(
+            "SELECT attribute, value FROM brain_knowledge WHERE entity = $1", _STATE_ENTITY,
+        )
+    except Exception as exc:  # noqa: BLE001 — a cold start is the old behaviour, not a failure
+        logger.warning("[POSTIZ_WATCH] could not restore state (%s) — starting fresh", exc)
+        return
+    for row in rows or []:
+        try:
+            _state[str(row["attribute"])] = str(row["value"])
+        except (KeyError, TypeError):
+            continue
+    try:
+        _retry_count = max(0, int(_state.get("retry_count", "0")))
+    except ValueError:
+        _retry_count = 0
+
+
+async def _save_state(pool: Any, attribute: str, value: Any) -> None:
+    text = str(value)
+    if _state.get(attribute) == text:
+        return
+    _state[attribute] = text
+    try:
+        await pool.execute(
+            """
+            INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
+            VALUES ($1, $2, $3, 1.0, $4)
+            ON CONFLICT (entity, attribute)
+              DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """,
+            _STATE_ENTITY, attribute, text, _STATE_SOURCE,
+        )
+    except Exception as exc:  # noqa: BLE001 — losing it costs only the restart protection
+        logger.warning("[POSTIZ_WATCH] state write %s failed: %s", attribute, exc)
+
+
+async def _set_retry_count(pool: Any, value: int) -> None:
+    global _retry_count
+    _retry_count = value
+    await _save_state(pool, "retry_count", value)
+
+
+def _reminder_due(attribute: str, reminder_hours: int) -> bool:
+    """Whether an audit row named by ``attribute`` is due: never written, or older than the reminder."""
+    raw = _state.get(attribute)
+    if not raw:
+        return True
+    if reminder_hours <= 0:
+        return False
+    try:
+        last = float(raw)
+    except ValueError:
+        return True
+    return time.time() - last >= reminder_hours * 3600
+
+
+# --- pm2 inside the container (poindexter#1093) -----------------------------
+
+
+def _docker_exec(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return subprocess.run(
+            ["docker", "exec", _CONTAINER, *argv],
+            capture_output=True, text=True, timeout=_DOCKER_EXEC_TIMEOUT_SECONDS, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("[POSTIZ_WATCH] docker exec %s failed: %s", argv[0], exc)
+        return None
+
+
+def _parse_pm2_backend(raw: str) -> dict[str, Any] | None:
+    """``{"status", "restarts"}`` for pm2's ``backend`` app in ``pm2 jlist`` output."""
+    try:
+        apps = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    for app in apps if isinstance(apps, list) else []:
+        if not isinstance(app, dict) or app.get("name") != _BACKEND_APP:
+            continue
+        raw_env = app.get("pm2_env")
+        env: dict[str, Any] = raw_env if isinstance(raw_env, dict) else {}
+        try:
+            restarts = int(env.get("restart_time") or 0)
+        except (TypeError, ValueError):
+            restarts = 0
+        return {"status": str(env.get("status") or ""), "restarts": restarts}
+    return None
+
+
+def _pm2_backend_state_blocking() -> dict[str, Any] | None:
+    res = _docker_exec(["pm2", "jlist"])
+    if res is None or res.returncode != 0:
+        return None
+    backend = _parse_pm2_backend(res.stdout)
+    if backend is None:
+        return None
+    tail = _docker_exec(["tail", "-n", str(_BACKEND_LOG_TAIL_LINES), _BACKEND_ERROR_LOG])
+    lines = [ln.rstrip() for ln in ((tail.stdout or "") if tail else "").splitlines() if ln.strip()]
+    backend["error_tail"] = "\n".join(lines)[-2500:] or "(backend-error.log is empty)"
+    return backend
+
+
+async def _pm2_backend_state() -> dict[str, Any] | None:
+    """pm2's view of the backend, or ``None`` when it can't be read. Never raises."""
+    return await asyncio.to_thread(_pm2_backend_state_blocking)
 
 
 # --- app_settings reads (same pattern as auto_embed_watch.py) ---------------
@@ -257,8 +418,10 @@ async def _firing_alert_exists(pool: Any, alertname: str) -> bool:
     return bool(row) and (row["status"] or "").lower() == "firing"
 
 
-async def _emit_alert(pool: Any, *, status: str, severity: str, detail: str) -> bool:
-    """Insert a ``postiz_queue_wedged`` alert_events row (firing or resolved).
+async def _emit_alert(
+    pool: Any, *, status: str, severity: str, detail: str, alertname: str = _ALERTNAME,
+) -> bool:
+    """Insert a ``postiz_queue_wedged`` (or crash-loop) alert_events row.
 
     Postiz is not Prometheus-scraped and the wedge is invisible to our DB
     (drafts read 'posted'), so this watch is the only alert source — it emits
@@ -268,15 +431,21 @@ async def _emit_alert(pool: Any, *, status: str, severity: str, detail: str) -> 
         "source": "brain.postiz_queue_watch",
         "category": "social_distribution",
     }
-    annotations = {
-        "summary": (
+    if alertname == _CRASHLOOP_ALERTNAME:
+        summary = (
+            "Postiz backend crash-looping at boot — not restarting it"
+            if status == "firing"
+            else "Postiz backend up again"
+        )
+    else:
+        summary = (
             "Postiz queue wedged — accepted posts not publishing"
             if status == "firing"
             else "Postiz queue recovered after auto-restart"
-        ),
-        "description": detail,
-    }
-    fingerprint = f"postiz-queue-{status}-{int(time.time())}"
+        )
+    annotations = {"summary": summary, "description": detail}
+    prefix = "postiz-crashloop" if alertname == _CRASHLOOP_ALERTNAME else "postiz-queue"
+    fingerprint = f"{prefix}-{status}-{int(time.time())}"
     try:
         await pool.execute(
             """
@@ -285,7 +454,7 @@ async def _emit_alert(pool: Any, *, status: str, severity: str, detail: str) -> 
                 starts_at, fingerprint
             ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, NOW(), $6)
             """,
-            _ALERTNAME,
+            alertname,
             severity,
             status,
             json.dumps(labels),
@@ -327,6 +496,7 @@ async def run_postiz_queue_watch_probe(
     restart_fn: docker_utils.RestartFn | None = None,
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., Any] | None = None,
+    crash_check_fn: Callable[[], Awaitable[dict[str, Any] | None]] | None = None,
 ) -> dict[str, Any]:
     """Single cycle of the Postiz queue-wedge watch.
 
@@ -345,9 +515,13 @@ async def run_postiz_queue_watch_probe(
         notify_fn: operator notifier — defaults to
             :func:`brain.operator_notifier.notify_operator`, used only for
             the "docker is unreachable" surface.
+        crash_check_fn: ``() -> {"status", "restarts", "error_tail"} | None``
+            — pm2's view of the backend, asked only when the API is
+            unreachable. Defaults to ``docker exec poindexter-postiz pm2
+            jlist``. None means pm2 couldn't be read: today's restart path.
     """
-    global _retry_count
     restart_fn = restart_fn or docker_utils.restart_container
+    crash_check_fn = crash_check_fn or _pm2_backend_state
     sleep_fn = sleep_fn or asyncio.sleep
     _notify: Callable[..., Any] = notify_fn or notify_operator
 
@@ -368,15 +542,45 @@ async def run_postiz_queue_watch_probe(
     overdue_minutes = int(config["overdue_minutes"])
     max_retries = int(config["max_retries"])
     retry_delay = float(config["retry_delay_seconds"])
+    reminder_hours = max(0, _coerce_int(
+        await _read_setting(pool, REMINDER_HOURS_KEY, DEFAULT_REMINDER_HOURS),
+        DEFAULT_REMINDER_HOURS,
+    ))
     check_fn = check_fn or (lambda: _overdue_queue_posts(pool, overdue_minutes))
+    await _load_state(pool)
 
     state = await check_fn()
     overdue = None if state is None else int(state.get("overdue", 0))
 
+    # The API answered: any crash loop is over.
+    if state is not None and await _firing_alert_exists(pool, _CRASHLOOP_ALERTNAME):
+        await _emit_alert(
+            pool, status="resolved", severity="info", alertname=_CRASHLOOP_ALERTNAME,
+            detail="The Postiz API answers again.",
+        )
+        await _emit_audit_event(pool, "probe.postiz_backend_recovered", "Postiz API answers again")
+        await _save_state(pool, "crashloop_audit_at", "")
+
+    # 0) Unreachable: crash-looping at boot, or hung? Only a hung one is
+    # restarted (poindexter#1093).
+    if state is None:
+        crash = await crash_check_fn()
+        if crash is None:
+            logger.warning(
+                "[POSTIZ_WATCH] API unreachable and pm2 could not be read — "
+                "treating it as hung, as before"
+            )
+        else:
+            prev_raw = _state.get("backend_restarts", "")
+            await _save_state(pool, "backend_restarts", int(crash.get("restarts") or 0))
+            rising = prev_raw.isdigit() and int(crash.get("restarts") or 0) > int(prev_raw)
+            if str(crash.get("status") or "") in _CRASHED_PM2_STATES or rising:
+                return await _report_crash_loop(pool, crash, rising=rising, reminder_hours=reminder_hours)
+
     # 1) Clean queue => happy path / auto-resolve.
     if overdue == 0:
         prev = _retry_count
-        _retry_count = 0
+        await _set_retry_count(pool, 0)
         status = "clean"
         if await _firing_alert_exists(pool, _ALERTNAME):
             await _emit_alert(
@@ -408,14 +612,19 @@ async def run_postiz_queue_watch_probe(
             f"{stuck_detail} Escalating."
         )
         logger.warning("[POSTIZ_WATCH] %s", detail)
-        if not await _firing_alert_exists(pool, _ALERTNAME):
+        newly_firing = not await _firing_alert_exists(pool, _ALERTNAME)
+        if newly_firing:
             await _emit_alert(pool, status="firing", severity="warning", detail=detail)
-        await _emit_audit_event(
-            pool,
-            "probe.postiz_queue_escalate",
-            detail,
-            extra={"overdue": overdue, "retries_used": _retry_count},
-        )
+        # One audit row when the escalation starts, then one per reminder,
+        # not one per 5-minute cycle (261 in one incident, poindexter#1093).
+        if newly_firing or _reminder_due("escalate_audit_at", reminder_hours):
+            await _emit_audit_event(
+                pool,
+                "probe.postiz_queue_escalate",
+                detail,
+                extra={"overdue": overdue, "retries_used": _retry_count},
+            )
+            await _save_state(pool, "escalate_audit_at", f"{time.time():.0f}")
         return {
             "ok": False,
             "status": "escalated",
@@ -424,7 +633,7 @@ async def run_postiz_queue_watch_probe(
         }
 
     # 2a) Retry via docker restart (the documented Temporal-wedge fix).
-    _retry_count += 1
+    await _set_retry_count(pool, _retry_count + 1)
     logger.info(
         "[POSTIZ_WATCH] wedged (%s) — restart %d/%d on %s",
         stuck_detail, _retry_count, max_retries, _CONTAINER,
@@ -505,7 +714,7 @@ async def run_postiz_queue_watch_probe(
     post_state = await check_fn()
     post_overdue = None if post_state is None else int(post_state.get("overdue", 0))
     if post_overdue == 0:
-        _retry_count = 0
+        await _set_retry_count(pool, 0)
         if await _firing_alert_exists(pool, _ALERTNAME):
             await _emit_alert(
                 pool,
@@ -538,6 +747,43 @@ async def run_postiz_queue_watch_probe(
         "ok": False,
         "status": "retry_failed",
         "overdue": post_overdue,
+        "retries_used": _retry_count,
+    }
+
+
+async def _report_crash_loop(
+    pool: Any, crash: dict[str, Any], *, rising: bool, reminder_hours: int,
+) -> dict[str, Any]:
+    """Page a boot-time crash loop once, with its log tail, and restart nothing."""
+    status = str(crash.get("status") or "?")
+    restarts = int(crash.get("restarts") or 0)
+    why = (
+        f"pm2 has restarted it {restarts} time(s), and the count is still rising"
+        if rising else f"pm2 reports it {status}"
+    )
+    detail = (
+        f"The Postiz API is unreachable and its backend is crash-looping at boot ({why}). "
+        f"A deterministic boot failure cannot be restarted away, so poindexter-postiz "
+        f"was NOT restarted. Fix the cause below, then the API answers and this resolves.\n\n"
+        f"Last lines of {_BACKEND_ERROR_LOG}:\n```\n{crash.get('error_tail') or '(none)'}\n```"
+    )
+    logger.warning("[POSTIZ_WATCH] backend crash loop (%s) — not restarting", why)
+    newly_firing = not await _firing_alert_exists(pool, _CRASHLOOP_ALERTNAME)
+    if newly_firing:
+        await _emit_alert(
+            pool, status="firing", severity="warning", alertname=_CRASHLOOP_ALERTNAME, detail=detail,
+        )
+    if newly_firing or _reminder_due("crashloop_audit_at", reminder_hours):
+        await _emit_audit_event(
+            pool, "probe.postiz_backend_crashloop", detail,
+            extra={"pm2_status": status, "pm2_restarts": restarts},
+        )
+        await _save_state(pool, "crashloop_audit_at", f"{time.time():.0f}")
+    return {
+        "ok": False,
+        "status": "crash_loop",
+        "pm2_status": status,
+        "pm2_restarts": restarts,
         "retries_used": _retry_count,
     }
 

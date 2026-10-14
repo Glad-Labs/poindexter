@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -90,6 +91,14 @@ def _reset():
     pz._reset_retry_state()
     yield
     pz._reset_retry_state()
+
+
+@pytest.fixture(autouse=True)
+def _no_live_pm2(monkeypatch):
+    """The default crash check runs ``docker exec`` against the real Postiz;
+    no unit test may reach it. Tests that exercise the classifier inject
+    ``crash_check_fn``."""
+    monkeypatch.setattr(pz, "_pm2_backend_state", AsyncMock(return_value=None))
 
 
 def test_disabled_short_circuits():
@@ -477,3 +486,123 @@ def test_default_restart_is_the_shared_helper_given_the_pool(monkeypatch):
 
     helper.assert_awaited_once_with(pz._CONTAINER, pool=pool)
     assert summary["status"] == "recovered"
+
+
+# ---------------------------------------------------------------------------
+# A backend that crashes at boot is not a wedge (poindexter#1093)
+# ---------------------------------------------------------------------------
+
+
+def _knowledge_pool(knowledge=None, **kw):
+    """_make_pool plus brain_knowledge rows the watch restores its state from."""
+    executed: list = kw.pop("executed", [])
+    pool = _make_pool(executed=executed, **kw)
+    rows = [{"attribute": k, "value": v} for k, v in (knowledge or {}).items()]
+    pool.fetch = AsyncMock(return_value=rows)
+    return pool, executed
+
+
+def _crash(status="online", restarts=0, tail="Error: Cannot find module 'x'"):
+    return AsyncMock(return_value={"status": status, "restarts": restarts, "error_tail": tail})
+
+
+def _alerts(executed, alertname):
+    return [a for q, a in executed if "alert_events" in q and a and a[0] == alertname]
+
+
+def _audits(executed, event):
+    return [a for q, a in executed if "audit_log" in q and a and a[0] == event]
+
+
+def _run(pool, **kw):
+    kw.setdefault("check_fn", AsyncMock(return_value=None))  # API unreachable
+    kw.setdefault("restart_fn", restart_stub())
+    kw.setdefault("sleep_fn", AsyncMock())
+    kw.setdefault("notify_fn", lambda **_k: None)
+    return asyncio.run(pz.run_postiz_queue_watch_probe(pool, **kw))
+
+
+@pytest.mark.parametrize("pm2_status", ["errored", "stopped"])
+def test_a_crashed_backend_is_not_restarted_and_pages_once_with_its_log(pm2_status):
+    pool, executed = _knowledge_pool()
+    restarts: list = []
+    summary = _run(pool, restart_fn=restart_stub(restarts), crash_check_fn=_crash(pm2_status, 15))
+    assert summary["status"] == "crash_loop"
+    assert restarts == []
+    (alert,) = _alerts(executed, "postiz_backend_crashloop")
+    description = json.loads(alert[4])["description"]
+    assert "NOT restarted" in description and "Cannot find module" in description
+    assert len(_audits(executed, "probe.postiz_backend_crashloop")) == 1
+
+
+def test_restarts_rising_since_the_last_cycle_is_a_crash_loop():
+    """First sight: pm2 says online, so it may just be hung and gets the
+    restart. Next cycle the backend's pm2 restart count has climbed: a hung
+    process doesn't restart itself, so stop restarting."""
+    pool, _ = _knowledge_pool()
+    restarts: list = []
+    first = _run(pool, restart_fn=restart_stub(restarts), crash_check_fn=_crash("online", 3))
+    assert first["status"] in ("retry_failed", "escalated")
+    assert restarts == ["poindexter-postiz"]
+    second = _run(pool, restart_fn=restart_stub(restarts), crash_check_fn=_crash("online", 9))
+    assert second["status"] == "crash_loop"
+    assert restarts == ["poindexter-postiz"], "a crash loop must not be restarted again"
+
+
+def test_unreadable_pm2_falls_back_to_the_restart():
+    pool, _ = _knowledge_pool()
+    restarts: list = []
+    summary = _run(pool, restart_fn=restart_stub(restarts), crash_check_fn=AsyncMock(return_value=None))
+    assert restarts == ["poindexter-postiz"]
+    assert summary["status"] != "crash_loop"
+
+
+def test_the_retry_budget_survives_a_brain_restart():
+    """Four brain restarts each re-armed two more restarts against a Postiz
+    already known to be bad. A fresh process now reads the spent budget."""
+    pool, _ = _knowledge_pool(knowledge={"retry_count": "2"})
+    restarts: list = []
+    summary = _run(pool, restart_fn=restart_stub(restarts))
+    assert summary["status"] == "escalated"
+    assert restarts == []
+
+
+def test_escalation_writes_one_audit_row_per_state_change_not_per_cycle():
+    pool, executed = _knowledge_pool(knowledge={"retry_count": "2"}, firing=set())
+    _run(pool)
+    assert len(_audits(executed, "probe.postiz_queue_escalate")) == 1
+    # Now the alert is firing: later cycles inside the reminder write nothing.
+    pool2, executed2 = _knowledge_pool(
+        knowledge={"retry_count": "2", "escalate_audit_at": f"{time.time():.0f}"},
+        firing={"postiz_queue_wedged"},
+    )
+    pz._reset_retry_state()
+    _run(pool2)
+    _run(pool2)
+    assert _audits(executed2, "probe.postiz_queue_escalate") == []
+
+
+def test_a_reminder_is_written_once_the_window_passes():
+    pool, executed = _knowledge_pool(
+        knowledge={"retry_count": "2", "escalate_audit_at": f"{time.time() - 2 * 3600:.0f}"},
+        firing={"postiz_queue_wedged"},
+    )
+    _run(pool)
+    assert len(_audits(executed, "probe.postiz_queue_escalate")) == 1
+
+
+def test_the_api_answering_resolves_a_crash_loop():
+    pool, executed = _knowledge_pool(firing={"postiz_backend_crashloop"})
+    _run(pool, check_fn=AsyncMock(return_value=_clean()))
+    resolved = [a for a in _alerts(executed, "postiz_backend_crashloop") if a[2] == "resolved"]
+    assert resolved
+
+
+def test_pm2_jlist_is_parsed_for_the_backend_app():
+    raw = json.dumps([
+        {"name": "frontend", "pm2_env": {"status": "online", "restart_time": 0}},
+        {"name": "backend", "pm2_env": {"status": "errored", "restart_time": 41}},
+    ])
+    assert pz._parse_pm2_backend(raw) == {"status": "errored", "restarts": 41}
+    assert pz._parse_pm2_backend("not json") is None
+    assert pz._parse_pm2_backend("[]") is None
