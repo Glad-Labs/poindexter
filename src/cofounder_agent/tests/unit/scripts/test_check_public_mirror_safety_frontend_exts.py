@@ -243,3 +243,59 @@ def test_sync_script_strips_self() -> None:
         "_STRIP_FILES (so the guard skips scanning it) but the sync won't strip "
         "it — add a `git rm --cached` line in the mirror-tooling block."
     )
+
+
+# ---------------------------------------------------------------------------
+# Every tracked text file is scanned (glad-labs-stack#4217)
+# ---------------------------------------------------------------------------
+
+#: Tracked text that is deliberately not scanned, each with its reason.
+_UNSCANNED_TEXT_SUFFIXES = {
+    ".lock": "generated dependency lockfiles: package hashes and versions, no authored text",
+    ".typed": "py.typed is an empty PEP 561 marker",
+}
+
+
+def test_every_tracked_text_file_is_scanned() -> None:
+    """Derived from ``git ls-files``, never a hand list: a tracked file that
+    decodes as UTF-8 text must be one ``_is_text_file`` accepts, or the sync's
+    rewrite skips it (an ``org/name`` reference in a ``.service`` comment
+    froze the mirror for three pushes on 2026-09-28) and so do the leak
+    patterns. A new extension fails here, by name, until it is added to
+    ``_TEXT_EXTS`` or to the reasoned list above."""
+    import subprocess
+
+    root = _repo_root()
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    examined, missed = 0, []
+    for rel in tracked:
+        path = root / rel
+        if not path.is_file():
+            continue
+        head = path.read_bytes()[:8192]
+        if b"\0" in head:
+            continue
+        try:
+            head.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        examined += 1
+        if CHECK._is_text_file(rel) or Path(rel).suffix.lower() in _UNSCANNED_TEXT_SUFFIXES:
+            continue
+        missed.append(rel)
+    # A check that examined nothing has not passed.
+    assert examined > 1000, f"only {examined} tracked text files examined"
+    assert not missed, f"tracked text the mirror sync skips: {missed[:20]}"
+
+
+def test_unit_files_and_extensionless_scripts_are_text() -> None:
+    for rel in (
+        "infrastructure/systemd/poindexter-demo-bake.timer",
+        "scripts/recovery-agent.cmd",
+        "docs/api/index.mdx",
+        ".githooks/pre-push",
+        "LICENSE",
+    ):
+        assert CHECK._is_text_file(rel), rel

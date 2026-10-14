@@ -812,19 +812,33 @@ _TEXT_EXTS = frozenset({
     # scanned as defense-in-depth though the sync strips it, #2137):
     ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".css", ".html", ".vue", ".svelte",
+    # Host and tooling text the predicate used to skip, so the rewrite left
+    # an internal repo reference in place and the post-rewrite check froze
+    # the mirror (a .service comment, 2026-09-28), and the leak patterns
+    # never looked at them either (glad-labs-stack#4217): systemd units,
+    # configs, templates, Windows scripts, VHS tapes, Mintlify pages.
+    ".service", ".timer", ".conf", ".tpl", ".tmpl", ".cmd", ".bat",
+    ".tape", ".mdx", ".example", ".desktop", ".theme",
 })
 
 
 def _is_text_file(rel_path: str) -> bool:
     """Restrict scanning to known text extensions + special cases.
 
-    ``Dockerfile*`` and bare dotfiles (``.gitignore``) ship as text but
-    have no regular suffix; handle them explicitly.
+    ``Dockerfile*``, bare dotfiles (``.gitignore``) and files with no
+    extension at all (``LICENSE``, git hooks, extensionless scripts) ship as
+    text but have no regular suffix; handle them explicitly. Reading a
+    binary by mistake is harmless: the scan skips what won't decode, and the
+    sync's rewrite is a byte-level replace.
+    ``test_every_tracked_text_file_is_scanned`` derives the rest from
+    ``git ls-files`` so an unlisted text extension fails CI by name.
     """
     name = Path(rel_path).name
     if name.startswith("Dockerfile"):
         return True
     if name.startswith(".") and "." not in name[1:]:
+        return True
+    if "." not in name:
         return True
     return Path(rel_path).suffix.lower() in _TEXT_EXTS
 
