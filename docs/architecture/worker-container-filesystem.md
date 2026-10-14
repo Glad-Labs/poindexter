@@ -39,6 +39,33 @@ Until glad-labs-stack#4186 (2026-09-28), worker, pipeline-bot and prefect-worker
 - `cadvisor` mounts `/` **read-only**, the standard cAdvisor host-filesystem mount.
 - `brain-daemon` mounts the deploy clone read-write so the migration-drift self-heal can reset it.
 
+## Upgrading a Linux or macOS consumer install (2026-10-14)
+
+Until poindexter#1106, `docker-compose.consumer.yml` spelled most of its host
+paths `${USERPROFILE:-.}`. `USERPROFILE` is set only on Windows, so on Linux and
+macOS those mounts resolved to the **checkout**, not your home. Media and caches
+went to `<checkout>/.poindexter/`, `<checkout>/.cache/huggingface` and
+`<checkout>/.EasyOCR`, while the host CLI and the backups looked in `~`. The file
+now writes `${USERPROFILE:-${HOME}}` everywhere, as `docker-compose.local.yml`
+already did. Windows installs are unaffected.
+
+If you ran the consumer stack on Linux or macOS before this change, move what it
+wrote, then restart the stack. Moving the Hugging Face cache saves re-downloading
+the models.
+
+```bash
+cd <your poindexter checkout>
+docker compose -f docker-compose.consumer.yml down
+mkdir -p ~/.poindexter ~/.cache
+[ -d .poindexter ] && cp -an .poindexter/. ~/.poindexter/ && rm -rf .poindexter
+[ -d .cache/huggingface ] && cp -an .cache/huggingface ~/.cache/ && rm -rf .cache/huggingface
+[ -d .EasyOCR ] && cp -an .EasyOCR ~/ && rm -rf .EasyOCR
+docker compose -f docker-compose.consumer.yml up -d
+```
+
+`cp -an` never overwrites a file already in your home. The compose mount lint
+above fails on the old `${USERPROFILE:-.}` spelling (`cwd-home`), so it can't come back.
+
 ## Why this matters (the 2026-04-29 → 2026-05-12 silent failure)
 
 Before 2026-05-12, the worker only mounted `/root/.poindexter`. Code that wrote to `~/.poindexter` (resolved against appuser's home) ended up in a container-local `/home/appuser/.poindexter/` directory that:

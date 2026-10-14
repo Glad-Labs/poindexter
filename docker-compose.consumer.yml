@@ -178,7 +178,7 @@ services:
       - alertmanager-data:/alertmanager
       # Bearer token for the Poindexter webhook receiver. Must match
       # app_settings.alertmanager_webhook_token.
-      - ${USERPROFILE:-.}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
       - ./infrastructure/prometheus/secrets:/etc/alertmanager/secrets:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -444,10 +444,10 @@ services:
       # into appuser's home — if it were, resolve_database_url() inside
       # the container would pick up the host DSN (localhost:5433) which
       # is unreachable from inside the container.
-      - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
-      - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
-      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
-      - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      - ${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast
+      - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
       # Demo clips — VHS-recorded CLI footage consumed by the `cli_demo` shot
       # source (poindexter#937). MUST be mounted on BOTH `worker` (where
       # `poindexter media demos bake` runs) and `prefect-worker` (where the
@@ -455,12 +455,12 @@ services:
       # container-local storage the renderer cannot see, and every cli_demo
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
-      - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+      - ${USERPROFILE:-${HOME}}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
       # Chat drafting runs casting in this process (services/creative_drafts.py):
       # keeping a cast draft writes each character's Chatterbox clone reference
       # here, the same cast/ subfolder prefect-worker writes. Never tts-voices
       # itself: hand-made references stay out of reach of LLM-driven code.
-      - ${USERPROFILE:-.}/.poindexter/tts-voices/cast:/home/appuser/.poindexter/cast-voices
+      - ${USERPROFILE:-${HOME}}/.poindexter/tts-voices/cast:/home/appuser/.poindexter/cast-voices
       # storage_provider=local (the fresh-install default) publishes the site
       # here, images + static JSON export + feeds, and the worker serves it at
       # /site/. A named volume rather than a host bind mount, for two reasons:
@@ -480,8 +480,8 @@ services:
       # mount this service, pipeline-bot and prefect-worker used to carry was
       # read by no code (stack#4186). scripts/ci/compose_poindexter_home_mount_lint.py
       # fails CI on a whole-dir mount or an undeclared subdirectory.
-      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
-      - ${USERPROFILE:-.}/sensor_logs:/host/sensor_logs:ro
+      - ${USERPROFILE:-${HOME}}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
+      - ${USERPROFILE:-${HOME}}/sensor_logs:/host/sensor_logs:ro
       # Source code — read-only bind mount; restart picks up changes without rebuild.
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/scripts:/opt/scripts:ro
@@ -691,10 +691,10 @@ services:
       # appuser's HOME or resolve_database_url reads the host DSN,
       # unreachable from inside the container, and this container runs
       # LLM-driven pipeline code that has no business near the master key.
-      - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
-      - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
-      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
-      - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      - ${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast
+      - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
       # Demo clips — VHS-recorded CLI footage consumed by the `cli_demo` shot
       # source (poindexter#937). MUST be mounted on BOTH `worker` (where
       # `poindexter media demos bake` runs) and `prefect-worker` (where the
@@ -702,7 +702,7 @@ services:
       # container-local storage the renderer cannot see, and every cli_demo
       # shot silently falls back to a branded card. Same shape as the #906
       # bug: appuser media mounts added to `worker` but not `prefect-worker`.
-      - ${USERPROFILE:-.}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
+      - ${USERPROFILE:-${HOME}}/.poindexter/demo-clips:/home/appuser/.poindexter/demo-clips
       # Voice clips for characters the casting step invents (story.cast_characters,
       # poindexter#1134): Kokoro reads each new character's sample line and the
       # clip becomes its Chatterbox clone reference, which the chatterbox
@@ -710,7 +710,7 @@ services:
       # tts-voices mount. Only the cast/ subdir, never tts-voices itself: that
       # holds hand-made references (the operator's own voice among them) that
       # LLM-driven pipeline code must not be able to overwrite.
-      - ${USERPROFILE:-.}/.poindexter/tts-voices/cast:/home/appuser/.poindexter/cast-voices
+      - ${USERPROFILE:-${HOME}}/.poindexter/tts-voices/cast:/home/appuser/.poindexter/cast-voices
       # Local publishing folder (storage_provider=local). The flow stores post
       # images here; the worker exports and serves the site from the same
       # volume. See the matching mount on `worker`.
@@ -962,11 +962,11 @@ services:
     environment:
       POINDEXTER_BRAIN_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
     volumes:
-      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
-      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/home/appuser/.cache/huggingface
       # OCR text-leakage gate's EasyOCR model weights (~100MB) — mounted so
       # they survive container recreates instead of re-downloading.
-      - ${USERPROFILE:-.}/.EasyOCR:/home/appuser/.EasyOCR
+      - ${USERPROFILE:-${HOME}}/.EasyOCR:/home/appuser/.EasyOCR
     deploy:
       resources:
         reservations:
@@ -1035,12 +1035,12 @@ services:
       # filter (both GPUs stay visible) would need this pin back — override
       # via a host-specific .env if that setup recurs.
     volumes:
-      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/home/appuser/.cache/huggingface
       # Optional voice-clone reference(s). Empty/absent dir = harmless no-op
       # (chatterbox's own built-in voice). An operator's real clip goes here
       # + plugin.tts_provider.chatterbox.audio_prompt_path — see
       # scripts/tts_sidecars/assets/README.md. Never committed to git.
-      - ${USERPROFILE:-.}/.poindexter/tts-voices:/app/voices:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/tts-voices:/app/voices:ro
     deploy:
       resources:
         limits:

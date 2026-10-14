@@ -43,6 +43,11 @@ it is:
 - ``escapes-project``: a relative source that climbs out of the project dir
   with ``..``. On the operator host the project dir IS the deploy clone,
   inside ``~/.poindexter``, so ``../..`` is the master key's directory.
+- ``cwd-home``: the home spelled ``${USERPROFILE:-.}``. ``USERPROFILE`` is set
+  only on Windows, so on Linux and macOS that is the compose project dir, not
+  the home: media landed in ``<checkout>/.poindexter/`` while the host CLI
+  and the backups looked in ``~/.poindexter`` (poindexter#1106). The home is
+  ``${USERPROFILE:-${HOME}}``.
 
 ``EXEMPT`` lists the deliberate exceptions, one per (service, container path),
 each pinned to the one finding it covers and carrying its reason. The
@@ -406,12 +411,18 @@ _DETAIL = {
     "undeclared": "mounts ~/.poindexter/{entry}, which ALLOWED_ENTRIES does not declare",
     "escapes-project": "climbs out of the project dir; on the operator host that "
     "dir is the deploy clone inside ~/.poindexter",
+    "cwd-home": "spells the home ${USERPROFILE:-.}, which is the compose project dir "
+    "on Linux and macOS; write ${USERPROFILE:-${HOME}}",
 }
+
+_CWD_HOME_RE = re.compile(r"\$\{USERPROFILE:-\.\}")
 
 
 def check_mount(mount: Mount) -> list[Finding]:
     """Findings for one mount across every host environment, deduplicated."""
     found: dict[tuple[str, str | None], Finding] = {}
+    if _CWD_HOME_RE.search(mount.source):
+        found[("cwd-home", None)] = Finding(mount, "cwd-home", None, _DETAIL["cwd-home"])
     for env in HOST_ENVS.values():
         verdict = classify(mount.source, env)
         if verdict is None or verdict in found:

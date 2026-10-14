@@ -155,7 +155,6 @@ def test_a_source_that_climbs_out_of_the_project_dir_fails(entry: str) -> None:
     "entry",
     [
         "${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast",
-        "${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video",
         "${POINDEXTER_BACKUP_ROOT:-${USERPROFILE:-${HOME}}/.poindexter/backups}:/home/appuser/.poindexter/backups",
         "${USERPROFILE:-${HOME}}/.poindexter/comfyui/models/vae:/comfyui/models/vae:ro",
         # Not ~/.poindexter at all: the deployed code tree, named volumes, sockets.
@@ -168,6 +167,20 @@ def test_a_source_that_climbs_out_of_the_project_dir_fails(entry: str) -> None:
 )
 def test_declared_and_unrelated_mounts_pass(entry: str) -> None:
     assert _findings(entry) == []
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video",
+        "${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface",
+    ],
+)
+def test_the_project_dir_spelling_of_home_fails(entry: str) -> None:
+    """poindexter#1106: ``USERPROFILE`` is Windows-only, so on Linux/macOS
+    ``${USERPROFILE:-.}`` is the compose project dir and media landed under
+    the checkout instead of ``~/.poindexter``."""
+    assert ("cwd-home", None) in _findings(entry)
 
 
 # --- exemptions are pinned to one mount and one finding ---------------------
