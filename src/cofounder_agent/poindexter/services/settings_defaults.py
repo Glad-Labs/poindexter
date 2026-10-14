@@ -1071,11 +1071,12 @@ DEFAULTS: dict[str, str] = {
     # The crop is described, never the hands: "hands out of frame" drew hands
     # reaching up from the bottom edge, human ones even on Bolt, a robot mouse
     # (Midnight Patch v3, 2026-10-14).
-    'story_talking_frame_template': (
-        '{style}, head-and-shoulders close-up of {name} alone in the frame, '
-        'facing the viewer and talking, the picture cropped just below the '
-        'shoulders, in {setting}'
-    ),
+    # A talking frame is drawn in one of story_talking_framings, rotating per
+    # speaker, so a character's lines are covered from different setups
+    # instead of one portrait over and over (2026-10-14). Each keeps the
+    # speaker alone in the frame: the talking-frame judge rejects anyone else.
+    'story_talking_frame_template': '{style}, {framing}, alone in the frame and talking, in {setting}',
+    'story_talking_framings': '["head-and-shoulders close-up of {name}, facing the viewer, the picture cropped just below the shoulders", "medium shot of {name} from the waist up, turned three-quarters to one side", "medium-wide shot of {name} standing in the scene from the knees up, turned slightly to one side"]',
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
     # PUNISHES stillness — 静态 (static), 静止 (still), 静止不动的画面 (motionless
@@ -6873,6 +6874,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reference_text_rule': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_identity_rule': {'owner': 'reference_frames', 'value_type': 'string'},
     'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_talking_framings': {'owner': 'screenplay_director', 'value_type': 'json'},
     'story_min_insert_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_scene_master_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_line_intensity_offsets': {'owner': 'screenplay', 'value_type': 'string'},

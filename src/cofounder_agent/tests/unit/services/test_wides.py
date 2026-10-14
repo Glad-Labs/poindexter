@@ -158,6 +158,24 @@ class TestPlateLettering:
         assert r.score == 45.0
 
 
+class TestTalkingCoverage:
+    def test_a_speakers_lines_rotate_through_the_framings(self):
+        """Every line was the same frontal portrait (Matt, 2026-10-14: "It feels
+        flat just going from portrait to portrait")."""
+        timeline = [_line("s1", "dex", 0.0, 4.0), _line("s1", "nova", 4.0, 8.0),
+                    _line("s1", "dex", 8.0, 12.0), _line("s1", "dex", 12.0, 16.0)]
+        sc = _sc(story_establishing_seconds="0")
+        listing = sd.build_shot_list(sd.assign_sources(sd.plan_shots(SCREENPLAY, timeline, 16.0, sc), sc), {},
+                                     style="ink", director_model="m", site_config=sc)
+        dex = [s["frame_prompt"] for s in listing["shots"] if s.get("speaker") == "dex"]
+        assert "close-up of Dex" in dex[0] and "medium shot of Dex" in dex[1]
+        assert len(set(dex)) == len(dex)
+        assert all("alone in the frame and talking" in p for p in dex)
+
+    def test_the_framings_are_a_setting(self):
+        sc = _sc(story_talking_framings='["profile of {name}"]')
+        assert sd._talking_framings(sc) == ["profile of {name}"]
+        assert len(sd._talking_framings(_sc(story_talking_framings="not json"))) == 3
 class TestActionMoments:
     def test_an_action_is_its_own_animated_shot_never_the_wide(self):
         """Midnight Patch's payoff (the spell, the gown, the coach) was a

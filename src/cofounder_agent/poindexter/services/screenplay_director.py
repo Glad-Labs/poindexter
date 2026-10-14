@@ -120,6 +120,10 @@ def plan_shots(
 
     plan: list[dict[str, Any]] = []
     talking = 0
+    # Each speaker's talking shots rotate through story_talking_framings, so
+    # one character never gets the same portrait twice running (Matt,
+    # 2026-10-14: "It feels flat just going from portrait to portrait").
+    lines_by: dict[str, int] = {}
     segments = _segments(timeline, track_seconds)
     # Who is in the scene right now: a character who enters partway (an
     # action's "enters") is out of the wide shots until then, and one who
@@ -183,7 +187,9 @@ def plan_shots(
             if 1e-3 < length - talk_len < min_reaction:
                 talk_len = max(min(talk_len, length - min_reaction), length / 2)
             plan.append({**base, "kind": "talk", "start_s": seg["start_s"], "length": talk_len,
-                         "speaker": speaker, "characters": [speaker], "delivery": delivery})
+                         "speaker": speaker, "characters": [speaker], "delivery": delivery,
+                         "framing_idx": lines_by.get(str(speaker), 0)})
+            lines_by[str(speaker)] = lines_by.get(str(speaker), 0) + 1
             talking += 1
             rest = length - talk_len
             for start, piece in _split(seg["start_s"] + talk_len, rest, max_shot) if rest > 1e-3 else []:
@@ -539,6 +545,21 @@ async def write_visuals(
     return out, model
 
 
+def _talking_framings(site_config: Any) -> list[str]:
+    """``story_talking_framings``: the camera setups a speaker's lines rotate through."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    raw = site_config.get("story_talking_framings", None) if site_config is not None else None
+    for value in (raw, DEFAULTS["story_talking_framings"]):
+        try:
+            items = json.loads(value) if isinstance(value, str) else value
+        except (TypeError, ValueError):
+            continue
+        if isinstance(items, list) and (framings := [str(f).strip() for f in items if str(f).strip()]):
+            return framings
+    return ["{name}"]
+
+
 def _talking_frame_prompt(shot: dict[str, Any], style: str, site_config: Any) -> str:
     """The cast shot's first frame: the speaker in this scene, in this style.
 
@@ -556,8 +577,11 @@ def _talking_frame_prompt(shot: dict[str, Any], style: str, site_config: Any) ->
         (site_config.get("story_talking_frame_template", None) if site_config is not None else None)
         or DEFAULTS["story_talking_frame_template"]
     )
+    framings = _talking_framings(site_config)
+    framing = framings[int(shot.get("framing_idx") or 0) % len(framings)].replace("{name}", name)
     text = (
         template.replace("{style}", style or "")
+        .replace("{framing}", framing)
         .replace("{name}", name)
         .replace("{delivery}", shot.get("delivery") or "expressive")
         .replace("{setting}", shot.get("setting") or "the scene")

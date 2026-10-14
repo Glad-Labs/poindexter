@@ -443,9 +443,8 @@ def test_director_writes_a_talking_frame_per_cast_shot():
     shot = {"speaker": "nova", "delivery": "patient", "setting": "a garage at sunrise"}
     text = sd._talking_frame_prompt(shot, "flat 2D cartoon", _sc())
     # One frame per speaker per scene: the default leaves delivery out.
-    assert text == ("flat 2D cartoon, head-and-shoulders close-up of Nova alone in the frame, "
-                    "facing the viewer and talking, the picture cropped just below the shoulders, "
-                    "in a garage at sunrise")
+    assert text == ("flat 2D cartoon, head-and-shoulders close-up of Nova, facing the viewer, the picture "
+                    "cropped just below the shoulders, alone in the frame and talking, in a garage at sunrise")
     # The crop is described, never the hands: naming them drew them.
     assert "hand" not in text
     custom = sd._talking_frame_prompt(shot, "x", _sc(story_talking_frame_template="{name}/{delivery}"))
