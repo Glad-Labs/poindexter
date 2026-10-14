@@ -3050,9 +3050,8 @@ async def _place_for(
             ctx=ctx, work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
         )
         if drawn:
-            # A plate with someone in it would put them in every picture of
-            # the location.
-            await _empty_the_plate(out, key, ctx, site_config)
+            # _render_reference_still has made sure nobody is in it: a plate
+            # with someone in it would put them in every picture of the place.
             ctx.places[key] = out
         return out if drawn else None
     drawn = await _render_reference_still(
@@ -3232,6 +3231,11 @@ async def _render_reference_still(
         )
     else:
         ctx.drawn[reuse_key] = output_path
+        if not shot.characters and not speakers:
+            # A picture of nobody (a place's plate, a scene's landscape) is
+            # drawn with the cast's portraits as style references, and the
+            # edit model can draw one of them in.
+            await _empty_the_plate(output_path, f"shot {shot.idx}", ctx, site_config)
         scene = _plate_key(shot)
         if (getattr(shot, "establishing", False) and scene and scene not in ctx.places
                 and not getattr(shot, "place_prompt", None)):

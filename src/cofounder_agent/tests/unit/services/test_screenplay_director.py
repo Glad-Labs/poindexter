@@ -34,6 +34,9 @@ def _sc(**extra):
         "story_max_shot_seconds": "6",
         "story_min_shot_seconds": "0.8",
         "story_min_animated_shot_seconds": "2.5",
+        # Pacing tests below are about lines and cutaways; the establishing
+        # wide has its own tests (test_wides.py).
+        "story_establishing_seconds": "0",
     }
     base.update(extra)
     return SiteConfig(initial_config=base)
@@ -179,13 +182,17 @@ class TestSources:
         # The third becomes a reaction: whoever listens to dex in the scene.
         assert plan[2]["source"] != "presenter" and plan[2]["characters"] == ["nova"]
 
-    def test_a_cartoon_animates_every_non_talking_shot(self):
+    def test_a_cartoon_animates_every_non_talking_shot_but_its_wides(self):
         """Matt, 2026-10-14: a cartoon is animated "start to finish", not still
-        pans. Only a third shot in a row from one source (the schema's pacing
-        guard) falls back to a still."""
+        pans; a wide is the exception, a painting the camera moves across
+        (story_wide_motion), unless that is set to "animate"."""
         plan = _plan(sc=_sc(story_min_animated_shot_seconds="0"))
         not_talking = [s for s in plan if s["source"] != "presenter"]
-        assert not_talking and all(s["source"] == "generative" for s in not_talking)
+        assert not_talking
+        assert all(s["source"] == "generative" for s in not_talking if s["kind"] != "master")
+        assert all(s["source"] == "image_kenburns" for s in not_talking if s["kind"] == "master")
+        animated = _plan(sc=_sc(story_min_animated_shot_seconds="0", story_wide_motion="animate"))
+        assert all(s["source"] == "generative" for s in animated if s["source"] != "presenter")
 
     def test_the_cartoon_animation_budget_is_its_own_setting(self):
         plan = _plan(sc=_sc(story_max_animated_shots="1", story_min_animated_shot_seconds="2.5"))

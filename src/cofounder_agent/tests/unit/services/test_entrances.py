@@ -28,6 +28,7 @@ def _sc(**extra):
         "story_min_shot_seconds": "0.8",
         "story_min_insert_seconds": "2.5",
         "story_min_reaction_seconds": "1.0",
+        "story_establishing_seconds": "0",  # the opening landscape is test_wides.py's
     }
     base.update(extra)
     return SiteConfig(initial_config=base)

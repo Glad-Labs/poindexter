@@ -130,6 +130,14 @@ def plan_shots(
         if seg.get("kind") == "action":
             entering.setdefault(seg.get("scene_id"), set()).update(seg.get("enters") or [])
     away: dict[Any, set[str]] = {}
+    # Each scene opens on a landscape that holds long enough to show where we
+    # are (story_establishing_seconds; 0 = off), under the start of its first
+    # beat: the wider world the place sits in, with nobody in it, not the
+    # background the characters stand in front of (Matt, 2026-10-14).
+    # Midnight Patch's wides were 1.5-1.8 s flashes between close-ups, too
+    # short to give the scene any geography.
+    establish = site_config.get_float("story_establishing_seconds", 3.0)
+    established: set[Any] = set()
     for seg in segments:
         scene = scenes.get(seg.get("scene_id")) or {}
         setting = str(scene.get("setting") or "")
@@ -151,6 +159,18 @@ def plan_shots(
             "moment": bool(seg.get("kind") == "action" and (seg.get("enters") or seg.get("exits"))),
         }
         length = seg["end_s"] - seg["start_s"]
+        if establish > 0 and seg.get("scene_id") not in established and not base["moment"]:
+            established.add(seg.get("scene_id"))
+            # A beat too short to share keeps the wide for all of it.
+            held = establish if length >= establish + min_reaction else length
+            plan.append({**base, "kind": "landscape", "start_s": seg["start_s"], "length": held,
+                         "speaker": None, "characters": []})
+            if held >= length - 1e-3:
+                gone.update(seg.get("exits") or [] if seg.get("kind") == "action" else [])
+                continue
+            seg = {**seg, "start_s": seg["start_s"] + held}
+            length -= held
+        established.add(seg.get("scene_id"))
         if seg.get("kind") == "line" and speaker in talkable and (
             max_talking < 0 or talking < max_talking
         ):
@@ -188,14 +208,16 @@ def _listeners(scene_cast: list[str], speaker: str | None) -> list[str]:
 
 
 def _mark_masters(plan: list[dict[str, Any]], site_config: Any) -> list[dict[str, Any]]:
-    """A non-talking shot too short to establish anything of its own becomes
-    the scene's master shot (``kind="master"``), which shows the scene's whole
-    cast. An entrance or exit (``moment``) stays its own shot, pictured from
-    its action. Lengths are final here (after ``_merge_slivers``)."""
+    """A still too short to establish anything of its own becomes the scene's
+    master shot (``kind="master"``), which shows the scene's whole cast. A
+    reaction stays a cutaway to whoever is listening: as masters, Midnight
+    Patch's reactions were the same wide five times over (2026-10-14). An
+    entrance or exit (``moment``) stays its own shot, pictured from its
+    action. Lengths are final here (after ``_merge_slivers``)."""
     floor = site_config.get_float("story_min_insert_seconds", 2.5)
     out: list[dict[str, Any]] = []
     for shot in plan:
-        if shot["kind"] != "talk" and shot["length"] < floor and not shot.get("moment"):
+        if shot["kind"] == "still" and shot["length"] < floor and not shot.get("moment"):
             shot = {**shot, "kind": "master",
                     "characters": list(shot.get("scene_cast") or shot["characters"])}
         out.append(shot)
@@ -219,6 +241,18 @@ def _scene_master_prompt(shot: dict[str, Any], site_config: Any) -> str:
     return (
         template.replace("{names}", who).replace("{setting}", shot.get("setting") or "the scene")
     ).strip(" ,")[:1500]
+
+
+def _landscape_prompt(shot: dict[str, Any], site_config: Any) -> str:
+    """A scene's opening landscape: the wider world its place sits in, nobody in it."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    template = str(
+        (site_config.get("story_landscape_template", None) if site_config is not None else None)
+        or DEFAULTS["story_landscape_template"]
+    )
+    place = shot.get("location_desc") or shot.get("setting") or "the scene"
+    return template.replace("{place}", place).strip(" ,")[:1200]
 
 
 def _place_prompt(setting: str, style: str, site_config: Any) -> str:
@@ -269,7 +303,7 @@ def _mark_establishing(
         # One plate per LOCATION: a place the story returns to in a later
         # scene keeps its background (a studio's background design).
         place = shot.get("location_id") or shot.get("scene_id")
-        if not place or shot["source"] == "presenter":
+        if not place or shot["source"] == "presenter" or s["kind"] == "landscape":
             continue
         if s["kind"] == "master" and (place not in chosen or plan[chosen[place]]["kind"] != "master"):
             chosen[place] = i
@@ -375,9 +409,15 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
     # video_hero_shots_max. A master shot animates too.
     hero_left = site_config.get_int("story_max_animated_shots", -1)
     hero_floor = site_config.get_float("story_min_animated_shot_seconds", 0.0)
+    # A wide is a painting the camera moves across (a slow push-in under the
+    # music), as in a lot of animation, unless story_wide_motion is "animate".
+    # Animated, Midnight Patch's trio wides drifted: Mara turned into a mouse
+    # and Cinder's hair went purple (2026-10-14).
+    camera_wides = str(site_config.get("story_wide_motion", "camera") or "camera").strip().lower() != "animate"
+    animated_kinds = ("still", "cutaway", "reaction") if camera_wides else ("still", "cutaway", "reaction", "master")
     candidates = sorted(
         (i for i, s in enumerate(plan)
-         if s["kind"] in ("still", "cutaway", "reaction", "master") and s["length"] >= hero_floor),
+         if s["kind"] in animated_kinds and s["length"] >= hero_floor),
         key=lambda i: (-plan[i]["length"], i),
     )
     animate = set(candidates[: max(0, hero_left)]) if hero_left >= 0 else set(candidates)
@@ -398,7 +438,10 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
                 continue
             shot.update(kind="reaction", speaker=None,
                         characters=_listeners(shot.get("scene_cast") or [], shot["speaker"]))
-        options = (["generative"] if i in animate else []) + list(_STILL_SOURCES)
+        if shot["kind"] == "landscape" or (shot["kind"] == "master" and camera_wides):
+            options = ["image_kenburns", "image_gen"]
+        else:
+            options = (["generative"] if i in animate else []) + list(_STILL_SOURCES)
         # An animated shot is its own picture (the schema keys it by prompt),
         # so animated shots in a row are never a streak.
         for source in options:
@@ -445,7 +488,7 @@ async def write_visuals(
 
     # Master shots are a fixed picture of the scene; only inserts and
     # reactions need the illustrator.
-    wanted = [i for i, s in enumerate(plan) if s["source"] != "presenter" and s["kind"] != "master"]
+    wanted = [i for i, s in enumerate(plan) if s["source"] != "presenter" and s["kind"] not in ("master", "landscape")]
     model = str(site_config.get("story_visuals_model", "") or "").strip()
     if not model:
         from poindexter.services.llm_text import resolve_local_writer_model
@@ -576,6 +619,10 @@ def build_shot_list(
                 shot["prompt"] = note[:2000]
             shot["frame_prompt"] = _with_palette(
                 _talking_frame_prompt(s, style, site_config), palette, site_config, 1500)
+        elif s["kind"] == "landscape":
+            picture = _landscape_prompt(s, site_config)
+            shot["intent"] = picture[:200]
+            shot["prompt"] = _with_palette(f"{style}, {picture}" if style else picture, palette, site_config, 1500)
         elif s["kind"] == "master":
             picture = _scene_master_prompt(s, site_config)
             shot["intent"] = picture[:200]
@@ -589,7 +636,9 @@ def build_shot_list(
                 shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
         if s.get("scene_id"):
             shot["scene_id"] = str(s["scene_id"])[:64]
-        if s.get("location"):
+        # A landscape is a wider view than the place's plate, so it is drawn
+        # on its own, not in the plate.
+        if s.get("location") and s["kind"] != "landscape":
             shot["location_id"] = str(s["location"])[:64]
         if palette:
             shot["palette"] = palette[:300]

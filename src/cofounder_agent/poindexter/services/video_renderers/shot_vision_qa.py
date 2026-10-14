@@ -315,9 +315,10 @@ async def score_shot_frame(
         source=shot.source,
     )
 
+    cap_text = not _text_from_plate(shot, site_config)
     opening = await _score_views(
         image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot.idx,
-        site_config=site_config,
+        site_config=site_config, cap_text=cap_text,
     )
     opening.frame, opening.opening_score = "opening", opening.score
     if opening.score is None or not _judges_final_frame(frame_path, shot, site_config):
@@ -326,7 +327,7 @@ async def score_shot_frame(
         return opening
     final = await _score_final_frame(
         frame_path, opening_image=image_path, prompt=prompt, model=model,
-        pool=pool, shot_idx=shot.idx, site_config=site_config,
+        pool=pool, shot_idx=shot.idx, site_config=site_config, cap_text=cap_text,
     )
     # Worst frame wins, as with the two views of one frame: the viewer sees
     # both, and the final one for longest.
@@ -334,6 +335,22 @@ async def score_shot_frame(
         return opening
     final.opening_score = opening.score
     return final
+
+
+def _text_from_plate(shot: Shot, site_config: Any) -> bool:
+    """True when the shot's scrambled lettering comes from its place, not its draw.
+
+    A cartoon shot is drawn on its location's background plate
+    (``location_id``, else ``scene_id`` on older lists), so lettering on the
+    plate's signs is in every shot of the place, and a re-roll draws it again.
+    Capping such a shot under the threshold spent 5 re-rolls on Midnight Patch
+    that all scored the same 45, then replaced all five wide shots with the
+    close-up before them held over (2026-10-14). The judge's own score
+    stands for these shots unless ``video_shot_qa_cap_plate_text`` is on.
+    """
+    if not (getattr(shot, "location_id", None) or getattr(shot, "scene_id", None)):
+        return False
+    return not _sc_bool(site_config, "video_shot_qa_cap_plate_text", False)
 
 
 def _judges_final_frame(frame_path: str, shot: Shot, site_config: Any) -> bool:
@@ -353,14 +370,17 @@ async def _score_views(
     pool: Any,
     shot_idx: int,
     site_config: Any,
+    cap_text: bool = True,
 ) -> ShotQAResult:
-    """Judge one frame twice, whole and as a 2x centre crop; worst view wins."""
-    full = _cap_garbled_text(
-        await _score_image(
-            image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
-        ),
-        site_config,
+    """Judge one frame twice, whole and as a 2x centre crop; worst view wins.
+
+    ``cap_text=False`` keeps the judge's own score for a frame it labels as
+    having garbled text (see ``_text_from_plate``)."""
+    full = await _score_image(
+        image_path, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
     )
+    if cap_text:
+        full = _cap_garbled_text(full, site_config)
     if not _sc_bool(site_config, "video_shot_qa_crop_enabled", True):
         return full
     if full.score is None:
@@ -417,6 +437,7 @@ async def _score_final_frame(
     pool: Any,
     shot_idx: int,
     site_config: Any,
+    cap_text: bool = True,
 ) -> ShotQAResult:
     """Judge the clip's last frame: detail collapse first (no model call), then
     the same two views as the opening frame."""
@@ -448,7 +469,7 @@ async def _score_final_frame(
         )
     result = await _score_views(
         last, prompt=prompt, model=model, pool=pool, shot_idx=shot_idx,
-        site_config=site_config,
+        site_config=site_config, cap_text=cap_text,
     )
     if result.score is not None:
         result.reason = f"final frame: {result.reason}"[:200]

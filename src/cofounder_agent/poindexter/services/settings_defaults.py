@@ -3248,6 +3248,26 @@ DEFAULTS: dict[str, str] = {
     # colours and light, planned across the story in story.outline. Every
     # picture of the scene ends with story_palette_template; a location seen
     # again in another palette has its plate relit from the first one
+    # A cartoon shot's scrambled sign lettering comes from its location's
+    # plate, so the garbled-text cap (video_shot_qa_garbled_text_cap) would
+    # re-roll it for nothing and then replace it with the shot before it held
+    # over: all five wides of Midnight Patch, 2026-10-14. Off: the judge's own
+    # Wides (2026-10-14, Matt: a wide can be a zoom and slow pan across the
+    # scene under the music, and the opening one a landscape that sets the
+    # scene rather than the background the characters stand in). Each scene
+    # opens on a landscape (story_landscape_template, nobody in it, always a
+    # camera move) held story_establishing_seconds (0 = off); the scene's
+    # other wides get a camera move (story_wide_motion "camera") or are
+    # animated ("animate").
+    'story_establishing_seconds': '3.0',
+    'story_landscape_template': (
+        "a vast establishing landscape of the world this place sits in, seen "
+        "from far away and high above, where the place itself is only a small "
+        "detail among its surroundings, with nobody in it: {place}"
+    ),
+    'story_wide_motion': 'camera',
+    # score stands for a plate-drawn shot.
+    'video_shot_qa_cap_plate_text': 'false',
     # (story_relight_template), so the place keeps its buildings.
     'story_palette_template': 'Colour and light: {palette}.',
     # A palette longer than this goes back to the writer (check_outline): it
@@ -6865,6 +6885,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_turnaround_panels': {'owner': 'model_sheets', 'value_type': 'integer'},
     'video_reference_sheet_panel': {'owner': 'reference_frames', 'value_type': 'integer'},
     'video_reference_sheet_name_template': {'owner': 'reference_frames', 'value_type': 'string'},
+    'story_establishing_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
+    'story_landscape_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_wide_motion': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'video_shot_qa_cap_plate_text': {'owner': 'shot_vision_qa', 'value_type': 'boolean'},
     'story_palette_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_palette_max_chars': {'owner': 'screenplay', 'value_type': 'integer'},
     'story_relight_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
