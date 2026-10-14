@@ -237,24 +237,49 @@ def normalize_beats(raw_beats: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _location_id(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(text or "").strip().lower()).strip("-")[:48]
+
+
 def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
+    """The outline reply in a fixed shape.
+
+    ``locations`` are the story's places, each drawn once and reused by every
+    scene set there (a studio's background design, 2026-10-14). A reply with
+    no locations, like every script written before them, gets one per scene
+    from its setting, so older scripts keep working.
+    """
+    locations: list[dict[str, str]] = []
+    for item in raw.get("locations") or []:
+        if not isinstance(item, dict):
+            continue
+        loc_id = _location_id(item.get("id") or item.get("name") or "")
+        description = str(item.get("description") or "").strip()
+        if loc_id and loc_id not in {loc["id"] for loc in locations}:
+            locations.append({"id": loc_id, "description": description})
     scenes: list[dict[str, Any]] = []
     for i, scene in enumerate(raw.get("scenes") or [], start=1):
         if not isinstance(scene, dict):
             continue
         scenes.append({
             "scene_id": str(scene.get("scene_id") or f"s{i}").strip() or f"s{i}",
+            "location": _location_id(scene.get("location") or ""),
             "setting": str(scene.get("setting") or "").strip(),
             "summary": str(scene.get("summary") or "").strip(),
             "turn": str(scene.get("turn") or "").strip(),
             "characters": _csv_or_list(scene.get("characters")),
         })
+    if not locations:
+        for scene in scenes:
+            scene["location"] = _location_id(scene["scene_id"]) or scene["scene_id"]
+            locations.append({"id": scene["location"], "description": scene["setting"]})
     spine_value = raw.get("spine")
     spine_raw: dict[str, Any] = spine_value if isinstance(spine_value, dict) else {}
     return {
         "title": str(raw.get("title") or "").strip(),
         "logline": str(raw.get("logline") or "").strip(),
         "spine": {k: str(spine_raw.get(k) or "").strip() for k in SPINE_PARTS},
+        "locations": locations,
         "scenes": scenes,
     }
 
@@ -274,8 +299,16 @@ def check_outline(outline: dict[str, Any], request: ScreenplayRequest) -> list[s
             "FIX: add a \"spine\" with " + ", ".join(f'"{k}"' for k in missing)
             + " (who wants what, what is in the way, the turn, the payoff)",
         )
+    known = {loc["id"] for loc in outline.get("locations") or []}
+    for loc in outline.get("locations") or []:
+        if not loc.get("description"):
+            errors.append(f"FIX location {loc['id']!r}: add a \"description\" of the place a background artist can paint")
     for scene in outline["scenes"]:
         sid = scene["scene_id"]
+        if known and scene.get("location") not in known:
+            errors.append(
+                f"FIX scene {sid!r}: set \"location\" to one of the location ids {sorted(known)}",
+            )
         if not scene["setting"]:
             errors.append(f"FIX scene {sid!r}: add a \"setting\" (one sentence: place and mood)")
         if not scene["summary"]:
@@ -545,7 +578,7 @@ async def write_screenplay(
 
     screenplay: dict[str, Any] = {
         "title": outline["title"], "logline": outline["logline"],
-        "spine": outline["spine"], "scenes": scenes,
+        "spine": outline["spine"], "locations": outline.get("locations") or [], "scenes": scenes,
     }
     hard = validate(screenplay, request, site_config)
     if hard:
@@ -600,8 +633,9 @@ def _core(screenplay: dict[str, Any]) -> dict[str, Any]:
         "title": screenplay.get("title", ""),
         "logline": screenplay.get("logline", ""),
         "spine": screenplay.get("spine") or {},
+        "locations": screenplay.get("locations") or [],
         "scenes": [
-            {k: scene.get(k) for k in ("scene_id", "setting", "summary", "turn", "characters", "beats")}
+            {k: scene.get(k) for k in ("scene_id", "location", "setting", "summary", "turn", "characters", "beats")}
             for scene in screenplay.get("scenes") or []
         ],
     }
@@ -649,7 +683,7 @@ async def revise_screenplay(
     revised = normalize_screenplay(reply)
     words = spoken_words(revised)
     total = length_problem(words, budget, site_config)
-    carried = {k: v for k, v in screenplay.items() if k not in ("title", "logline", "spine", "scenes")}
+    carried = {k: v for k, v in screenplay.items() if k not in ("title", "logline", "spine", "locations", "scenes")}
     revised.update({
         **carried,
         "spoken_words": words,

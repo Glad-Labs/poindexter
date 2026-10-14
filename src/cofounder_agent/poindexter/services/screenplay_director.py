@@ -97,6 +97,9 @@ def plan_shots(
         raise DirectorError("the dialogue timeline is empty — run media.render_dialogue first")
     cast = set(screenplay.get("cast") or [])
     scenes = {s.get("scene_id"): s for s in screenplay.get("scenes") or []}
+    # The story's locations (screenplay "locations"): a place the story
+    # returns to shares one background plate across its scenes.
+    places = {str(loc.get("id")): str(loc.get("description") or "") for loc in screenplay.get("locations") or []}
     talk_budget = presenter_window_budget_s(site_config) or 4.6
     max_shot = site_config.get_float("story_max_shot_seconds", 6.0)
     # A line longer than one talking shot leaves a remainder for a cutaway.
@@ -124,6 +127,8 @@ def plan_shots(
         scene_cast = [c for c in scene.get("characters") or [] if c in cast]
         base = {
             "scene_id": seg.get("scene_id"), "setting": setting,
+            "location": str(scene.get("location") or seg.get("scene_id") or ""),
+            "location_desc": places.get(str(scene.get("location") or "")) or setting,
             "beat_text": seg.get("text", ""), "beat_kind": seg.get("kind"),
             "delivery": "", "scene_cast": scene_cast, "line_speaker": speaker,
         }
@@ -210,7 +215,7 @@ def _place_prompt(setting: str, style: str, site_config: Any) -> str:
 def _mark_establishing(
     shots: list[dict[str, Any]], plan: list[dict[str, Any]], place_prompts: Any = None,
 ) -> None:
-    """One establishing picture per scene: its master shot, else its first still.
+    """One establishing picture per location: its first master shot, else its first still.
 
     The renderer draws every other picture of the scene with the establishing
     one as a place reference, so a scene keeps one background. Matt on scene 2
@@ -222,17 +227,20 @@ def _mark_establishing(
     """
     chosen: dict[str, int] = {}
     for i, (shot, s) in enumerate(zip(shots, plan, strict=False)):
-        scene = shot.get("scene_id")
-        if not scene or shot["source"] == "presenter":
+        # One plate per LOCATION: a place the story returns to in a later
+        # scene keeps its background (a studio's background design).
+        place = shot.get("location_id") or shot.get("scene_id")
+        if not place or shot["source"] == "presenter":
             continue
-        if s["kind"] == "master" and (scene not in chosen or plan[chosen[scene]]["kind"] != "master"):
-            chosen[scene] = i
-        elif scene not in chosen:
-            chosen[scene] = i
+        if s["kind"] == "master" and (place not in chosen or plan[chosen[place]]["kind"] != "master"):
+            chosen[place] = i
+        elif place not in chosen:
+            chosen[place] = i
     for i in chosen.values():
         shots[i]["establishing"] = True
-        if place_prompts is not None and plan[i].get("setting"):
-            shots[i]["place_prompt"] = place_prompts(plan[i]["setting"])
+        described = plan[i].get("location_desc") or plan[i].get("setting")
+        if place_prompts is not None and described:
+            shots[i]["place_prompt"] = place_prompts(described)
 
 
 def _delivery_for(screenplay: dict[str, Any], seg: dict[str, Any]) -> str:
@@ -538,6 +546,8 @@ def build_shot_list(
                 shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
         if s.get("scene_id"):
             shot["scene_id"] = str(s["scene_id"])[:64]
+        if s.get("location"):
+            shot["location_id"] = str(s["location"])[:64]
         shots.append(shot)
     _mark_establishing(shots, plan, lambda setting: _place_prompt(setting, style, site_config))
     try:

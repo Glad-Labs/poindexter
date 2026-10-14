@@ -13,7 +13,7 @@ metadata:
   prompts:
     - key: story.outline
       output_format: json
-      description: 'Screenplay outline — topic + brief + format + cast (slug, personality, looks) + length + scene count in; JSON title, logline and scenes (scene_id, setting, summary, characters) out. Validated in code (settings, summaries, cast-only characters). Used by services.screenplay.write_screenplay.'
+      description: "Screenplay outline — topic + brief + format + cast (slug, personality, looks) + length + scene count in; JSON title, logline, the story's locations (id, description: each place drawn once and reused) and scenes (scene_id, location, setting, summary, characters) out. Validated in code (settings, summaries, cast-only characters, every scene at a listed location). Used by services.screenplay.write_screenplay."
     - key: story.scene
       output_format: json
       description: 'Writes ONE scene of an outlined screenplay — the outline, this scene, its word budget and the last lines before it in; JSON "beats" out: "line" beats (speaker, text, delivery) and "action" beats (text, characters). Validated in code (cast-only speakers, beat kinds, soft length). Used by services.screenplay.write_screenplay.'
@@ -91,10 +91,15 @@ Every format, an explainer included, is a story about a character. Decide the sp
 The topic is what the character learns or runs into; the audience learns it by watching them.
 When the topic is a well-known tale, tell that tale: keep its best-known moments, lines and ending, retold in fresh words, and let its plot be the spine.
 
+PLAN THE PLACES
+- List the story's locations once under "locations": each has a short "id" (lowercase words joined by hyphens) and a "description" of the place itself that a background artist could paint: its architecture, objects, scale and look. Leave the time of day and mood to the scenes.
+- A place the story returns to is the same location, so it is drawn the same way every time.
+
 PLAN THE SCENES
 - Give the piece about {scene_count} scene(s). Each scene is one step of the spine, and something is different at its end: a new understanding, a decision, a feeling.
 - Keep the characters in one main place unless the story has a reason to move. When it moves, the summary says why (they go to try something, or a demonstration takes them there).
-- "setting": a place, time of day and mood in one sentence a background artist could paint.
+- "location": the id of the location the scene happens in.
+- "setting": that place at this moment, with its time of day and mood, in one sentence a background artist could paint.
 - "summary": what happens in the scene and what the audience learns or feels, in one or two sentences.
 - "turn": what is different by the end of this scene, in one sentence.
 - "characters": the cast ids visible in the scene.
@@ -102,7 +107,7 @@ PLAN THE SCENES
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "scenes": [{{"scene_id": "s1", "setting": "a cosy workshop at night, warm lamps, rain on the window", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
+{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
 ```
 
 ## story.scene
@@ -246,11 +251,12 @@ HOW TO REVISE
 - Make the change the note asks for, and whatever that change needs elsewhere to stay consistent: a renamed thing, a moved beat, a line that calls back to it.
 - Keep everything the note does not touch: the same scenes, lines and order, word for word.
 - Keep the story spine (want, obstacle, turn, payoff). When the note changes one of them, update the spine to match.
+- Keep the "locations" and each scene's "location". A scene the note moves somewhere new uses a listed location, or a new one added to "locations" with an id and a description of the place.
 - Every "line" beat has "speaker", "text", "delivery" and "intensity" ("low", "medium" or "high"). Every "action" beat has "text" and "characters".
 
 OUTPUT
 Reply with the whole revised screenplay as one JSON object and nothing else, in the same shape as THE SCREENPLAY NOW:
-{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "scenes": [{{"scene_id": "s1", "setting": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"]}}]}}]}}
+{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"]}}]}}]}}
 ```
 
 ## story.casting_revise

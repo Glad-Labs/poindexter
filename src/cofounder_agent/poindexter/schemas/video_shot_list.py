@@ -198,6 +198,10 @@ class Shot(BaseModel):
     # it as a "this is the place" reference, so close-ups and inserts keep the
     # same background instead of each inventing its own.
     scene_id: str | None = Field(None, max_length=64, description="The screenplay scene this shot belongs to")
+    location_id: str | None = Field(
+        None, max_length=64,
+        description="The screenplay location this shot is set in; its scenes share one background plate",
+    )
     establishing: bool = Field(
         False,
         description="This shot's picture is its scene's place reference for the scene's other pictures",

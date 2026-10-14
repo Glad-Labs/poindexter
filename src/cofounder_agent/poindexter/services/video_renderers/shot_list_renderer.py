@@ -2736,8 +2736,8 @@ async def _held_picture(st: _ShotState, states: list[_ShotState], ctx: Reference
     """
     from poindexter.services.video_renderers.shot_vision_qa import _final_frame
 
-    scene = getattr(st.shot, "scene_id", None)
-    place = ctx.places.get(str(scene)) if scene else None
+    scene = _place_key(st.shot)
+    place = ctx.places.get(scene) if scene else None
     if place and os.path.exists(place):
         return place
     before = [s for s in states if s.shot.idx < st.shot.idx and s.result.success and s.result.clip_path]
@@ -2868,13 +2868,18 @@ def reference_context_for(shot_list: Any) -> ReferenceContext | None:
                 cast.append(slug)
     overrides = getattr(shot_list, "cast_portraits", None) or {}
     establishing = {
-        str(shot.scene_id): shot for shot in shot_list.shots
-        if getattr(shot, "establishing", False) and getattr(shot, "scene_id", None) and shot.prompt
+        _place_key(shot): shot for shot in shot_list.shots
+        if getattr(shot, "establishing", False) and _place_key(shot) and shot.prompt
     }
     return ReferenceContext(
         cast=tuple(cast), portrait_urls={str(k): str(v) for k, v in overrides.items() if v},
         establishing=establishing,
     )
+
+
+def _place_key(shot: Any) -> str:
+    """The background a shot shares: its location, else its scene (older lists)."""
+    return str(getattr(shot, "location_id", None) or getattr(shot, "scene_id", None) or "")
 
 
 async def _place_for(
@@ -2894,10 +2899,10 @@ async def _place_for(
     """
     from poindexter.services.settings_defaults import DEFAULTS
 
-    scene = getattr(shot, "scene_id", None)
+    scene = _place_key(shot)
     if not scene:
         return None
-    est = ctx.establishing.get(str(scene))
+    est = ctx.establishing.get(scene)
     plate = str(getattr(est, "place_prompt", "") or "") if est is not None else ""
     if getattr(shot, "establishing", False) and not plate:
         return None
@@ -2916,8 +2921,8 @@ async def _place_for(
     out = str(work_dir / f"place_{re.sub(r'[^A-Za-z0-9_-]', '_', str(scene))}.png")
     if plate:
         empty = est.model_copy(update={
-            "characters": [], "speaker": None, "scene_id": None, "establishing": False, "prompt": plate,
-            "frame_url": None,
+            "characters": [], "speaker": None, "scene_id": None, "location_id": None,
+            "establishing": False, "prompt": plate, "frame_url": None,
         })
         drawn = await _render_reference_still(
             empty, prompt=plate, output_path=out,
@@ -3064,10 +3069,10 @@ async def _render_reference_still(
         )
     else:
         ctx.drawn[reuse_key] = output_path
-        scene = getattr(shot, "scene_id", None)
-        if (getattr(shot, "establishing", False) and scene and str(scene) not in ctx.places
+        scene = _place_key(shot)
+        if (getattr(shot, "establishing", False) and scene and scene not in ctx.places
                 and not getattr(shot, "place_prompt", None)):
-            ctx.places[str(scene)] = output_path
+            ctx.places[scene] = output_path
     return ok
 
 
