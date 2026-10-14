@@ -4546,6 +4546,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # to the normal restart — pending migrations matter too, and a wedged
     # 'in_progress' row shouldn't block recovery forever.
     'migration_drift_max_inflight_defers': '6',
+    # A media render is never an in_progress task, so the probe also waits on
+    # the render signals the host deploy sync waits on (brain/stack_busy.py):
+    # a granted advisory lock, a render claim younger than _claim_max_minutes
+    # with no video asset, or a live_activity media heartbeat fresher than
+    # _heartbeat_max_minutes. While one is live the defer budget is
+    # _max_render_defers cycles (~90 min), since a render can outlast 30
+    # (poindexter#1120).
+    'migration_drift_max_render_defers': '18',
+    'migration_drift_render_claim_max_minutes': '90',
+    'migration_drift_render_heartbeat_max_minutes': '3',
     # Auto-sync knobs (#228). Ships dark (auto_sync_enabled=false) until the
     # operator wires up the dedicated deploy checkout + bind-mount. When on, the
     # probe resyncs the checkout (git reset --hard origin/main + clean -fd)
@@ -7748,6 +7758,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_render_vram_gate_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
     'migration_drift_deploy_checkout_path': {'owner': 'migration_drift_probe', 'value_type': 'string'},
     'migration_drift_max_inflight_defers': {'owner': 'migration_drift_probe', 'value_type': 'integer'},
+    'migration_drift_max_render_defers': {'owner': 'migration_drift_probe', 'value_type': 'integer'},
+    'migration_drift_render_claim_max_minutes': {'owner': 'migration_drift_probe', 'value_type': 'integer'},
+    'migration_drift_render_heartbeat_max_minutes': {'owner': 'migration_drift_probe', 'value_type': 'integer'},
     'migration_drift_recover_max_attempts': {'owner': 'migration_drift_probe', 'value_type': 'integer'},
     'newsletter_batch_delay_seconds': {'owner': 'newsletter_service', 'value_type': 'integer'},
     'newsletter_batch_size': {'owner': 'newsletter_service', 'value_type': 'integer'},

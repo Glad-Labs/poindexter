@@ -1109,6 +1109,61 @@ class TestInflightDefer:
         assert len(restart_calls) == 1
 
     @pytest.mark.asyncio
+    async def test_a_media_render_defers_the_restart_with_no_task_in_flight(self):
+        """poindexter#1120: a render runs in the worker's scheduler job and is
+        never an 'in_progress' task, so the probe restarted the worker through
+        one. The render signals the deploy sync waits on now defer it too, on
+        the longer render budget."""
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            inflight=0, **{mdp.MAX_INFLIGHT_DEFERS_SETTING_KEY: "2"}
+        )
+        pool.fetchrow = AsyncMock(return_value={
+            "advisory_locks": 0, "render_claims": 1, "media_heartbeats": 1,
+        })
+        restart_calls: list[str] = []
+        kw = {
+            "notify_fn": lambda **k: None,
+            "restart_fn": restart_stub(restart_calls),
+            "wait_fn": lambda: (True, _health_with_drift(0)),
+            "health_fetcher": lambda: _health_with_drift(1),
+        }
+        statuses = [
+            (await mdp.run_migration_drift_probe(pool, **kw))["status"] for _ in range(5)
+        ]
+        # Past the 2-cycle content-task cap: a render gets the render budget (18).
+        assert statuses == ["recover_deferred_inflight"] * 5
+        assert restart_calls == []
+        detail = [
+            call.args for call in pool.execute.call_args_list
+            if "audit_log" in call.args[0]
+        ][-1]
+        assert "media render claim(s) open" in str(detail)
+
+    @pytest.mark.asyncio
+    async def test_the_render_budget_is_a_setting_and_still_a_cap(self):
+        pool = _make_pool()
+        pool.fetchval = _settings_fetchval(
+            inflight=0,
+            **{mdp.MAX_INFLIGHT_DEFERS_SETTING_KEY: "1", mdp.MAX_RENDER_DEFERS_SETTING_KEY: "2"},
+        )
+        pool.fetchrow = AsyncMock(return_value={
+            "advisory_locks": 1, "render_claims": 0, "media_heartbeats": 0,
+        })
+        restart_calls: list[str] = []
+        kw = {
+            "notify_fn": lambda **k: None,
+            "restart_fn": restart_stub(restart_calls),
+            "wait_fn": lambda: (True, _health_with_drift(0)),
+            "health_fetcher": lambda: _health_with_drift(1),
+        }
+        s1 = await mdp.run_migration_drift_probe(pool, **kw)
+        s2 = await mdp.run_migration_drift_probe(pool, **kw)
+        s3 = await mdp.run_migration_drift_probe(pool, **kw)
+        assert [s1["status"], s2["status"]] == ["recover_deferred_inflight"] * 2
+        assert s3["status"] == "recovered" and len(restart_calls) == 1
+
+    @pytest.mark.asyncio
     async def test_count_inflight_tasks_best_effort_zero_on_error(self):
         pool = _make_pool()
         pool.fetchval = AsyncMock(side_effect=Exception("db down"))

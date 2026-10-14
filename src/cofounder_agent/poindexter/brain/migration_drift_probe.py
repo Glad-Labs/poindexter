@@ -65,6 +65,11 @@ from typing import Any
 from poindexter.brain import docker_utils
 from poindexter.brain.docker_utils import localize_url
 from poindexter.brain.operator_notifier import notify_operator
+from poindexter.brain.stack_busy import (
+    DEFAULT_RENDER_CLAIM_MAX_MINUTES,
+    DEFAULT_RENDER_HEARTBEAT_MAX_MINUTES,
+    render_signals,
+)
 
 logger = logging.getLogger("brain.migration_drift_probe")
 
@@ -103,9 +108,19 @@ FINDING_KIND_RESYNC_FAILED = "migration_drift_resync_failed"
 # then falls through to the normal restart (pending migrations matter too).
 DEFER_WHILE_INFLIGHT_SETTING_KEY = "migration_drift_defer_while_inflight"
 MAX_INFLIGHT_DEFERS_SETTING_KEY = "migration_drift_max_inflight_defers"
+# A media render runs inside the worker's scheduler job and is never an
+# ``in_progress`` task, so the content-task count above cannot see it
+# (poindexter#1120). These read the render signals the host deploy sync
+# already waits on (brain/stack_busy.py), and give a render a longer defer
+# budget, since one can outlast 30 minutes.
+MAX_RENDER_DEFERS_SETTING_KEY = "migration_drift_max_render_defers"
+RENDER_CLAIM_MAX_MINUTES_SETTING_KEY = "migration_drift_render_claim_max_minutes"
+RENDER_HEARTBEAT_MAX_MINUTES_SETTING_KEY = "migration_drift_render_heartbeat_max_minutes"
 
 # Default cap on consecutive in-flight defers — ≈30 min at the 5-min cycle.
 _DEFAULT_MAX_INFLIGHT_DEFERS = 6
+# ≈90 min at the 5-min cycle: the deploy sync's render-claim window.
+_DEFAULT_MAX_RENDER_DEFERS = 18
 
 # In-brain-container path the deploy checkout is mounted at (RW). Only used when
 # auto-sync is enabled; overridable via DEPLOY_CHECKOUT_PATH_SETTING_KEY.
@@ -1091,21 +1106,46 @@ async def run_migration_drift_probe(
     # 'in_progress' row must not block recovery forever). Deferring does NOT
     # consume a recovery attempt (the migrations still aren't applied), so the
     # backoff/exhaustion budget is untouched.
+    #
+    # A media render is never an 'in_progress' task: it runs in the worker's
+    # scheduler job. So the same deferral also waits on the render signals the
+    # host deploy sync waits on (brain/stack_busy.py), with the longer
+    # ``migration_drift_max_render_defers`` budget while one is live
+    # (poindexter#1120).
     if await _read_bool_setting(
         pool, DEFER_WHILE_INFLIGHT_SETTING_KEY, default=True
     ):
         inflight = await _count_inflight_tasks(pool)
+        render = await render_signals(
+            pool,
+            claim_max_minutes=await _read_int_setting(
+                pool, RENDER_CLAIM_MAX_MINUTES_SETTING_KEY, DEFAULT_RENDER_CLAIM_MAX_MINUTES,
+            ),
+            heartbeat_max_minutes=await _read_int_setting(
+                pool, RENDER_HEARTBEAT_MAX_MINUTES_SETTING_KEY, DEFAULT_RENDER_HEARTBEAT_MAX_MINUTES,
+            ),
+        )
         max_defers = await _read_int_setting(
             pool, MAX_INFLIGHT_DEFERS_SETTING_KEY, _DEFAULT_MAX_INFLIGHT_DEFERS
         )
-        if inflight > 0 and _inflight_defers < max_defers:
+        if render.busy:
+            max_defers = max(max_defers, await _read_int_setting(
+                pool, MAX_RENDER_DEFERS_SETTING_KEY, _DEFAULT_MAX_RENDER_DEFERS,
+            ))
+        busy = inflight > 0 or render.busy
+        what = ", ".join(
+            part for part in (
+                f"{inflight} content task(s) in-flight" if inflight else "",
+                render.describe() if render.busy else "",
+            ) if part
+        )
+        if busy and _inflight_defers < max_defers:
             _inflight_defers += 1
             defer_detail = (
-                f"{detected_detail} — restart DEFERRED: {inflight} content "
-                f"task(s) in-flight (defer {_inflight_defers}/{max_defers}). "
-                f"Restarting now would orphan a mid-run task in 'in_progress' "
-                f"until the 180-min stale sweep; waiting for it to finish "
-                f"before applying pending migrations."
+                f"{detected_detail} — restart DEFERRED: {what} "
+                f"(defer {_inflight_defers}/{max_defers}). Restarting now would "
+                f"kill a media render or orphan a mid-run task in 'in_progress'; "
+                f"waiting for it to finish before applying pending migrations."
             )
             logger.info("[MIGRATION_DRIFT] %s", defer_detail)
             await _emit_audit_event(
@@ -1115,6 +1155,9 @@ async def run_migration_drift_probe(
                 pending=pending,
                 extra={
                     "inflight_tasks": inflight,
+                    "render_advisory_locks": render.advisory_locks,
+                    "render_claims": render.render_claims,
+                    "render_heartbeats": render.media_heartbeats,
                     "consecutive_defers": _inflight_defers,
                     "max_defers": max_defers,
                 },
@@ -1128,16 +1171,16 @@ async def run_migration_drift_probe(
                 "latest_applied": drift["latest_applied"],
                 "auto_recover_enabled": True,
                 "inflight_tasks": inflight,
+                "render_busy": render.busy,
                 "consecutive_defers": _inflight_defers,
             }
-        if inflight > 0 and _inflight_defers >= max_defers:
+        if busy and _inflight_defers >= max_defers:
             # Cap hit — stop deferring and restart anyway. Log + audit so the
             # orphan-on-restart is explainable after the fact.
             cap_detail = (
                 f"{detected_detail} — in-flight defer cap reached "
-                f"({_inflight_defers}/{max_defers}) with {inflight} task(s) "
-                f"still in-flight; restarting to apply pending migrations "
-                f"(a mid-run task may be orphaned until the stale sweep)."
+                f"({_inflight_defers}/{max_defers}) with {what}; restarting to "
+                f"apply pending migrations (a mid-run task or render may be lost)."
             )
             logger.warning("[MIGRATION_DRIFT] %s", cap_detail)
             await _emit_audit_event(
