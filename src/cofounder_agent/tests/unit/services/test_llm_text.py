@@ -597,3 +597,28 @@ class TestMaybeUnwrapJson:
         # must not shadow it (post_body is listed first).
         wrapped = '{"post": "teaser", "post_body": "Full markdown body."}'
         assert maybe_unwrap_json(wrapped) == "Full markdown body."
+
+
+class TestStripMarkdownFenceOneLine:
+    """poindexter#643: chat_agent kept its own fence strip because it also
+    unwrapped a fence written on one line. The shared helper now does."""
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ('```json {"a": 1}```', '{"a": 1}'),
+            ('```{"a": 1}```', '{"a": 1}'),
+            ('```JSON [1, 2]```', "[1, 2]"),
+            ('```jsonc {"a": 1}```', '{"a": 1}'),
+        ],
+    )
+    def test_a_one_line_json_fence_is_unwrapped(self, raw, expected):
+        from poindexter.services.llm_text import strip_markdown_fence
+
+        assert strip_markdown_fence(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["```python print(1)```", "```", "```json"])
+    def test_anything_else_on_one_line_is_left_alone(self, raw):
+        from poindexter.services.llm_text import strip_markdown_fence
+
+        assert strip_markdown_fence(raw) == raw

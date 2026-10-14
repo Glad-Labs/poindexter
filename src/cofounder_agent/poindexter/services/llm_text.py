@@ -453,7 +453,7 @@ def strip_markdown_fence(s: str) -> str:
     if s.startswith("```"):
         first_nl = s.find("\n")
         if first_nl == -1:
-            return s
+            return _strip_one_line_fence(s)
         opening = s[:first_nl].strip().lower()
         # Accept ```, ```json, ```JSON, ```jsonc — anything that LOOKS
         # like a JSON fence. Reject non-JSON fences (```python etc.)
@@ -464,6 +464,27 @@ def strip_markdown_fence(s: str) -> str:
                 body = body[: -3].rstrip()
             return body
     return s
+
+
+_JSON_FENCE_TAGS = ("json5", "jsonc", "json")
+
+
+def _strip_one_line_fence(s: str) -> str:
+    """Unwrap ```json {...}``` written on a single line.
+
+    Small chat models emit this shape for a tool call (the copy
+    ``chat_agent`` had of this helper handled it). Unwraps only when the
+    body is JSON-shaped, untagged or tagged json/jsonc/json5, so a
+    one-line ```python ...``` fence is left as written.
+    """
+    if len(s) < 6 or not s.endswith("```"):
+        return s
+    inner = s[3:-3].strip()
+    for tag in _JSON_FENCE_TAGS:
+        if inner.lower().startswith(tag):
+            inner = inner[len(tag):].strip()
+            break
+    return inner if inner[:1] in ("{", "[") else s
 
 
 def maybe_unwrap_json(prose: str) -> str:

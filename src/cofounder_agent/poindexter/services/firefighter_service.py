@@ -45,6 +45,7 @@ import json
 import time
 from typing import Any, Protocol
 
+from poindexter.services.llm_text import strip_markdown_fence
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
 
@@ -334,15 +335,7 @@ def _parse_selection_json(text: str) -> dict[str, Any] | None:
     """
     if not text:
         return None
-    s = text.strip()
-    if s.startswith("```"):
-        # ```json\n{...}\n``` or ```\n{...}\n``` — take the fenced body.
-        parts = s.split("```")
-        if len(parts) >= 3:
-            s = parts[1]
-        s = s.strip()
-        if s.lower().startswith("json"):
-            s = s[4:].strip()
+    s = strip_markdown_fence(text)
     # Try the whole (de-fenced) string first, then the first {...} span as a
     # last resort. A narrow parse failure just moves on to the next candidate
     # (``continue``, not a silent swallow); exhausting them returns None, which

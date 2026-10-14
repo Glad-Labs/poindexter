@@ -482,6 +482,23 @@ class TestTextualToolCallRecovery:
         )
         assert any(e["event"] == "tool_result" and e["ok"] for e in events)
 
+    def test_one_line_fenced_textual_call_recovers(self, monkeypatch):
+        """chat_agent's own fence strip handled ```json {...}``` on one line;
+        the shared llm_text.strip_markdown_fence it now calls must too."""
+        async def handler(ctx, **kwargs):
+            return "ok"
+
+        specs = {"get_budget": _spec("get_budget", handler)}
+        fs = FakeStore()
+        events, _ = _run(
+            monkeypatch, fs, tool_specs=specs,
+            completions=[
+                _completion(text='```json {"name": "get_budget", "arguments": {}}```'),
+                _completion(text="done"),
+            ],
+        )
+        assert any(e["event"] == "tool_result" and e["ok"] for e in events)
+
     def test_prose_mentioning_json_stays_prose(self, monkeypatch):
         fs = FakeStore()
         text = 'The payload looks like {"name": "x"} but here is your answer.'

@@ -56,6 +56,7 @@ from poindexter.services.chat_tools import (
     to_openai_tools,
     tool_names_csv,
 )
+from poindexter.services.llm_text import strip_markdown_fence
 from poindexter.services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -86,11 +87,7 @@ def _textual_tool_calls(text: str) -> list[dict[str, Any]] | None:
     re-enter the normal per-call machinery (permission gates, repeat guard,
     caps, audit), so this changes robustness, never policy.
     """
-    t = (text or "").strip()
-    if t.startswith("```"):
-        t = t.strip("`").strip()
-        if t.lower().startswith("json"):
-            t = t[4:].strip()
+    t = strip_markdown_fence(text or "")
     if not t or t[0] not in "[{":
         return None
     try:

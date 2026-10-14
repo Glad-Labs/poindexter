@@ -126,6 +126,21 @@ async def test_json_fenced_output_is_parsed():
 
 
 @pytest.mark.asyncio
+async def test_prose_after_the_closing_fence_still_parses():
+    """The shared fence strip keeps trailing prose; the first-{-to-last-}
+    fallback still recovers the object."""
+    router = _router(
+        "```json\n"
+        + json.dumps(
+            {"action_name": "run_auto_remediate", "params": {}, "confidence": 0.6, "reason": "x"}
+        )
+        + "\n```\nThis restarts the stuck task."
+    )
+    out = await _select(router, alertname="StuckTasks")
+    assert out["action_name"] == "run_auto_remediate"
+
+
+@pytest.mark.asyncio
 async def test_missing_confidence_defaults_to_zero():
     """A missing/garbage confidence becomes 0.0 so the engine's gate pages."""
     router = _router(
