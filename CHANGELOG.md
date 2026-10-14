@@ -2,6 +2,69 @@
 
 ## Unreleased
 
+## [0.156.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.155.0...v0.156.0) (2026-10-14)
+
+
+### Features
+
+* **architect:** plans change creative settings for themselves, or one step ([#4407](https://github.com/Glad-Labs/glad-labs-stack/issues/4407)) ([fc6f1f0](https://github.com/Glad-Labs/glad-labs-stack/commit/fc6f1f0c87d5ecc5afd6b92878e544e34e1ab9cd))
+* **casting:** a new look gets new characters, not restyled old ones ([#4408](https://github.com/Glad-Labs/glad-labs-stack/issues/4408)) ([e9bce3c](https://github.com/Glad-Labs/glad-labs-stack/commit/e9bce3c8fdd0d35fb028452c0595aedd47e725c9))
+* **chat:** a storyboard cuts a scored rough cut with director's notes before anything animates ([#4417](https://github.com/Glad-Labs/glad-labs-stack/issues/4417)) ([7955f8c](https://github.com/Glad-Labs/glad-labs-stack/commit/7955f8cf9ab5b7a5ad8871ed8d04f582e9bfad9f))
+* **chat:** director's notes on every cartoon render, with redo notes the chat applies ([#4416](https://github.com/Glad-Labs/glad-labs-stack/issues/4416)) ([bd2ec58](https://github.com/Glad-Labs/glad-labs-stack/commit/bd2ec5806f6e9024a21e7b810539913376bb1072))
+* **chat:** draft and revise a cast or a script in the console chat ([#4409](https://github.com/Glad-Labs/glad-labs-stack/issues/4409)) ([8a576f9](https://github.com/Glad-Labs/glad-labs-stack/commit/8a576f98f02bd6132b2e30a119607b98cb12e50a))
+* **chat:** redo only the shots a note is about in a finished render ([#4412](https://github.com/Glad-Labs/glad-labs-stack/issues/4412)) ([121f224](https://github.com/Glad-Labs/glad-labs-stack/commit/121f2242caab2ccd8a770f15ce5cee43dcba16ba))
+* **chat:** render a script or storyboard draft from the chat ([#4411](https://github.com/Glad-Labs/glad-labs-stack/issues/4411)) ([0dbd278](https://github.com/Glad-Labs/glad-labs-stack/commit/0dbd2782d7ba8a0ba54401a74702ab248ab2a3ac))
+* **chat:** story notes rewrite the script and redo only the lines and scenes they change ([#4418](https://github.com/Glad-Labs/glad-labs-stack/issues/4418)) ([f02c30d](https://github.com/Glad-Labs/glad-labs-stack/commit/f02c30de1ec9b4001f43046a11ab0982f4d8438b))
+* **chat:** storyboard a script draft before anything animates ([#4410](https://github.com/Glad-Labs/glad-labs-stack/issues/4410)) ([c5ecfa6](https://github.com/Glad-Labs/glad-labs-stack/commit/c5ecfa6dd3341c07958b61528eb894448644b517))
+* **chat:** write a cartoon's YouTube package in the chat and publish it from the card ([#4415](https://github.com/Glad-Labs/glad-labs-stack/issues/4415)) ([b1d4f5e](https://github.com/Glad-Labs/glad-labs-stack/commit/b1d4f5e2f41e34d4893b9085db6afbff3d957e85))
+* **cli:** poindexter taps create / delete, so adding a topic source needs no SQL ([#4435](https://github.com/Glad-Labs/glad-labs-stack/issues/4435)) ([8eb4562](https://github.com/Glad-Labs/glad-labs-stack/commit/8eb4562bfe0d00266303f44278fb03b0c412f3ed))
+* **console:** a Watch button on Gate-2 media rows ([#4396](https://github.com/Glad-Labs/glad-labs-stack/issues/4396)) ([ace3929](https://github.com/Glad-Labs/glad-labs-stack/commit/ace3929c3543d68ce4f11b4b65e26ad3037025ad))
+* **media:** a casting step designs, draws and voices a story's own characters ([#4402](https://github.com/Glad-Labs/glad-labs-stack/issues/4402)) ([1c07066](https://github.com/Glad-Labs/glad-labs-stack/commit/1c070663e42419c9341d2055fd27ad73c9595c90))
+* **media:** a persona can set its own Chatterbox emotion strength ([#4399](https://github.com/Glad-Labs/glad-labs-stack/issues/4399)) ([765edd3](https://github.com/Glad-Labs/glad-labs-stack/commit/765edd370ee1debcdf820ffc00e045076a22acdc))
+* **media:** check each cartoon talking clip for slop and redo failing takes ([#4413](https://github.com/Glad-Labs/glad-labs-stack/issues/4413)) ([86f5b21](https://github.com/Glad-Labs/glad-labs-stack/commit/86f5b213bce7c02a9cd33410de3ae1cf49782edd))
+* **media:** reused characters are redrawn in the piece's style, for that piece ([#4406](https://github.com/Glad-Labs/glad-labs-stack/issues/4406)) ([3b4b4c0](https://github.com/Glad-Labs/glad-labs-stack/commit/3b4b4c0a6dc65e9be14638e069e22868a1b6e20e))
+* **media:** score cartoons with music per scene and sound effects on actions ([#4414](https://github.com/Glad-Labs/glad-labs-stack/issues/4414)) ([a82511f](https://github.com/Glad-Labs/glad-labs-stack/commit/a82511fa64abfc1bc1533289d3ac7364461b24da))
+* **media:** screenplays follow a story spine, and each line carries its emotion ([#4401](https://github.com/Glad-Labs/glad-labs-stack/issues/4401)) ([ea18dd4](https://github.com/Glad-Labs/glad-labs-stack/commit/ea18dd42a375d4673e3f570e1d3daddbe174b3e9))
+* **media:** Shorts get their own checked title, description and vertical thumbnail ([#4400](https://github.com/Glad-Labs/glad-labs-stack/issues/4400)) ([c705b29](https://github.com/Glad-Labs/glad-labs-stack/commit/c705b2931ac3e78d55a8c02cf7163f1e5bf91f18))
+* **media:** upload approved standalone videos to YouTube (creative studio phase 6b) ([#4390](https://github.com/Glad-Labs/glad-labs-stack/issues/4390)) ([d8f8fdb](https://github.com/Glad-Labs/glad-labs-stack/commit/d8f8fdbd07acbc3bd94e9bef29cd91dacb619405))
+
+
+### Bug Fixes
+
+* **api:** error responses keep the raiser's headers and the request's own id ([#4426](https://github.com/Glad-Labs/glad-labs-stack/issues/4426)) ([70dd43e](https://github.com/Glad-Labs/glad-labs-stack/commit/70dd43e72c17506ecdef4af6e5cb04143f2a1b78))
+* **approve:** stop writing an approval block into result that never survives ([#4424](https://github.com/Glad-Labs/glad-labs-stack/issues/4424)) ([b6fa6a0](https://github.com/Glad-Labs/glad-labs-stack/commit/b6fa6a038d952ac1f2aa8128c6ad51794efdab46))
+* **architect:** a media-only plan finishes completed, not awaiting approval ([#4397](https://github.com/Glad-Labs/glad-labs-stack/issues/4397)) ([8520b2a](https://github.com/Glad-Labs/glad-labs-stack/commit/8520b2aedca5c5390a85650c7e4ba67f2260a5f1))
+* **architect:** an intent that asks for exactly these atoms gets exactly them ([#4437](https://github.com/Glad-Labs/glad-labs-stack/issues/4437)) ([de28a3b](https://github.com/Glad-Labs/glad-labs-stack/commit/de28a3b2c7e2f1e044f620353a77ccfc023ae822))
+* **brain:** back off PR-staleness reminders for a PR that stays open ([#4423](https://github.com/Glad-Labs/glad-labs-stack/issues/4423)) ([c24fb8e](https://github.com/Glad-Labs/glad-labs-stack/commit/c24fb8e08386b394424f7974978b7fbd9119b1b2)), closes [#4265](https://github.com/Glad-Labs/glad-labs-stack/issues/4265)
+* **brain:** migration-drift auto-recover waits for media renders, not just content tasks ([#4428](https://github.com/Glad-Labs/glad-labs-stack/issues/4428)) ([8829bdf](https://github.com/Glad-Labs/glad-labs-stack/commit/8829bdf6707fdff3bf06aa1bcfa5210d87d506ff))
+* **brain:** postiz_queue_watch stops restarting a backend that crashes at boot ([#4429](https://github.com/Glad-Labs/glad-labs-stack/issues/4429)) ([d749842](https://github.com/Glad-Labs/glad-labs-stack/commit/d749842daa899e1cdb584a74493b507a55cb193f))
+* **brain:** the scheduled-CI watch picks the newest run itself, so its verdict stops flapping ([#4421](https://github.com/Glad-Labs/glad-labs-stack/issues/4421)) ([013acda](https://github.com/Glad-Labs/glad-labs-stack/commit/013acda7b02ae0d4d7837d264d50303b5b94933c)), closes [#4325](https://github.com/Glad-Labs/glad-labs-stack/issues/4325)
+* **compose:** consumer media mounts use the home, not the checkout, on Linux and macOS ([#4434](https://github.com/Glad-Labs/glad-labs-stack/issues/4434)) ([f3fccda](https://github.com/Glad-Labs/glad-labs-stack/commit/f3fccda9c13ea3db8f0a232f40a35278a71ee9f8))
+* **deploy:** rename containers a dying compose recreate left under &lt;id&gt;_&lt;name&gt; ([#4422](https://github.com/Glad-Labs/glad-labs-stack/issues/4422)) ([9e6a4c7](https://github.com/Glad-Labs/glad-labs-stack/commit/9e6a4c7ec10c4678ce96f5a6c1374583fba18c48))
+* **image-gen:** count its own VRAM with NVML so the scheduler trusts its declines ([#4392](https://github.com/Glad-Labs/glad-labs-stack/issues/4392)) ([9125018](https://github.com/Glad-Labs/glad-labs-stack/commit/912501803705ec182d0364e8238e51bcdb66f3f3))
+* **media:** a cartoon never cuts to stock footage, and a voice-only narrator stays off screen ([#4420](https://github.com/Glad-Labs/glad-labs-stack/issues/4420)) ([bb1d9eb](https://github.com/Glad-Labs/glad-labs-stack/commit/bb1d9eb4df05e1456090245d5a2674bbe3cc72b6))
+* **media:** cartoon pictures keep their scene's background and no scrambled writing ([#4419](https://github.com/Glad-Labs/glad-labs-stack/issues/4419)) ([443899f](https://github.com/Glad-Labs/glad-labs-stack/commit/443899f592698765da376923ac59bcd05fb4276b))
+* **media:** cartoon stills cover the scene instead of illustrating the line ([#4398](https://github.com/Glad-Labs/glad-labs-stack/issues/4398)) ([ff23691](https://github.com/Glad-Labs/glad-labs-stack/commit/ff23691a93b46f4cf4ef96c5bd1957af2efd848c))
+* **media:** check a cast talking frame before lip-syncing it ([#4394](https://github.com/Glad-Labs/glad-labs-stack/issues/4394)) ([84fdf44](https://github.com/Glad-Labs/glad-labs-stack/commit/84fdf444056f457b358205427d77fff92dcbc5a3))
+* **media:** no gate that guards nothing; a named look or the house style ([#4403](https://github.com/Glad-Labs/glad-labs-stack/issues/4403)) ([ba87094](https://github.com/Glad-Labs/glad-labs-stack/commit/ba870948b1d10e2713c2dff02ac275907c3ffa54))
+* **media:** the frame judges count robots and creatures, and a sign is not worth the portrait ([#4444](https://github.com/Glad-Labs/glad-labs-stack/issues/4444)) ([edb453a](https://github.com/Glad-Labs/glad-labs-stack/commit/edb453a34335b5f2fac23585e0b0c404a1cf3e62))
+* **migrations:** narrow plan_convergence's column name, clearing its two mypy errors ([#4430](https://github.com/Glad-Labs/glad-labs-stack/issues/4430)) ([7ab22e2](https://github.com/Glad-Labs/glad-labs-stack/commit/7ab22e28556d6cc6626bd27a72e833d5b0485f31))
+* **publish:** don't announce a site no search engine can reach, or ping IndexNow without a key ([#4427](https://github.com/Glad-Labs/glad-labs-stack/issues/4427)) ([e1bea3d](https://github.com/Glad-Labs/glad-labs-stack/commit/e1bea3d43b04e486973ce91d0f1fa038a1e755b1))
+* **publish:** the hero's alt text reaches the post, and a swapped hero sheds the old one's description ([#4425](https://github.com/Glad-Labs/glad-labs-stack/issues/4425)) ([2eb505a](https://github.com/Glad-Labs/glad-labs-stack/commit/2eb505a86d04fbf5e61c85a55b3f35e2f9be3964))
+* **tts:** spell OSS out so "gpt oss" is not read as a word ([#4395](https://github.com/Glad-Labs/glad-labs-stack/issues/4395)) ([9429974](https://github.com/Glad-Labs/glad-labs-stack/commit/942997473b385ad0cb0fe64934bb3f54b47d04ad))
+
+
+### Performance
+
+* **video:** optional 4-step lightning LoRA for S2V talking heads ([#4393](https://github.com/Glad-Labs/glad-labs-stack/issues/4393)) ([33f7f72](https://github.com/Glad-Labs/glad-labs-stack/commit/33f7f7222edc31e83ff03fdcb90f60c41976d0dc))
+
+
+### Code Refactoring
+
+* **cloudinary:** one configure_cloudinary for image and video uploads ([#4439](https://github.com/Glad-Labs/glad-labs-stack/issues/4439)) ([8e576e3](https://github.com/Glad-Labs/glad-labs-stack/commit/8e576e3dce7545b178d424c9f337a1a6a97de61e))
+* **content:** drop the dead TopicDecisionGateStage, keep its artifact builder ([#4440](https://github.com/Glad-Labs/glad-labs-stack/issues/4440)) ([96ce2cd](https://github.com/Glad-Labs/glad-labs-stack/commit/96ce2cd9c48325c1a4de57d49008c5d1434a97bb))
+* **llm:** firefighter and chat agent use the shared fence strip ([#4438](https://github.com/Glad-Labs/glad-labs-stack/issues/4438)) ([89119d1](https://github.com/Glad-Labs/glad-labs-stack/commit/89119d161f69f9c04341d3edc15c6d56c28e3ac3))
+
 ## [0.155.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.154.2...v0.155.0) (2026-10-13)
 
 
