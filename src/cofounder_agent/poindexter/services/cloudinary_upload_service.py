@@ -44,6 +44,41 @@ from poindexter.services.logger_config import get_logger
 logger = get_logger(__name__)
 
 
+async def configure_cloudinary(site_config: Any) -> None:
+    """Point the Cloudinary SDK at the configured account.
+
+    The one place the three ``cloudinary_*`` settings are read
+    (poindexter#643: the image and video upload paths each had a copy).
+    ``cloudinary_api_key`` and ``cloudinary_api_secret`` are
+    ``is_secret=true`` rows: sync ``.get()`` returns their ciphertext,
+    so only ``get_secret()`` decrypts them (poindexter#334). The cloud
+    name is not secret and comes from ``.get()``.
+
+    Raises ``RuntimeError`` naming the missing keys when any of the three
+    is empty. The SDK would otherwise fail later with an auth error that
+    does not say which setting is unset.
+    """
+    import cloudinary
+
+    values = {
+        "cloudinary_cloud_name": site_config.get("cloudinary_cloud_name") or "",
+        "cloudinary_api_key": await site_config.get_secret("cloudinary_api_key", ""),
+        "cloudinary_api_secret": await site_config.get_secret("cloudinary_api_secret", ""),
+    }
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        raise RuntimeError(
+            f"Cloudinary upload needs {', '.join(missing)} set in app_settings "
+            "(poindexter settings set <key> <value>; the api key and secret "
+            "are secret rows)."
+        )
+    cloudinary.config(
+        cloud_name=values["cloudinary_cloud_name"],
+        api_key=values["cloudinary_api_key"],
+        api_secret=values["cloudinary_api_secret"],
+    )
+
+
 async def upload_to_cloudinary(
     path: str,
     prompt: str,
@@ -70,11 +105,11 @@ async def upload_to_cloudinary(
         The Cloudinary ``secure_url`` (https) for the uploaded asset.
 
     Raises:
-        RuntimeError: When ``site_config`` is None (missing DI seam) or
-            Cloudinary returns an empty ``secure_url`` (means upload
+        RuntimeError: When ``site_config`` is None (missing DI seam), a
+            Cloudinary setting is unset (see :func:`configure_cloudinary`),
+            or Cloudinary returns an empty ``secure_url`` (means upload
             failed even though SDK didn't raise).
     """
-    import cloudinary
     import cloudinary.uploader
 
     if site_config is None:
@@ -84,17 +119,7 @@ async def upload_to_cloudinary(
             "(GH#95 DI seam).",
         )
 
-    # cloudinary_api_key + cloudinary_api_secret are is_secret=true in
-    # app_settings (encrypted with enc:v1: prefix). Sync .get() returns
-    # the ciphertext for is_secret rows — only get_secret() decrypts.
-    # Fixes Glad-Labs/poindexter#334.
-    api_key = await site_config.get_secret("cloudinary_api_key", "")
-    api_secret = await site_config.get_secret("cloudinary_api_secret", "")
-    cloudinary.config(
-        cloud_name=site_config.get("cloudinary_cloud_name"),
-        api_key=api_key,
-        api_secret=api_secret,
-    )
+    await configure_cloudinary(site_config)
 
     def _upload() -> dict:
         return cloudinary.uploader.upload(

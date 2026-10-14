@@ -327,3 +327,64 @@ async def test_path_passed_as_first_positional_arg(
 
     assert mock_cloudinary.call_args.args[0] == "/path/with/spaces and unicode-é.png"
     assert mock_cloudinary.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "unset",
+    [
+        ("cloudinary_cloud_name",),
+        ("cloudinary_api_key",),
+        ("cloudinary_api_secret",),
+        ("cloudinary_api_key", "cloudinary_api_secret"),
+    ],
+)
+async def test_an_unset_credential_is_named_before_any_upload(
+    mock_cloudinary: MagicMock, unset: tuple[str, ...],
+) -> None:
+    """poindexter#643: configure_cloudinary is the one reader of the three
+    settings, and an empty one fails here, by name, instead of as an SDK
+    auth error from inside the upload."""
+    import cloudinary  # type: ignore[import-not-found]
+
+    from poindexter.services.cloudinary_upload_service import upload_to_cloudinary
+
+    values = {
+        "cloudinary_cloud_name": "test-cloud",
+        "cloudinary_api_key": "test-api-key",
+        "cloudinary_api_secret": "test-api-secret",
+    }
+    for key in unset:
+        values[key] = ""
+    sc = MagicMock()
+    sc.get = MagicMock(side_effect=lambda key, default=None: values.get(key, default))
+    sc.get_secret = AsyncMock(side_effect=lambda key, default="": values.get(key, default))
+
+    with pytest.raises(RuntimeError) as exc:
+        await upload_to_cloudinary(
+            "/tmp/x.png", "prompt", site_config=sc, provider_tag="flux_schnell",
+        )
+
+    for key in unset:
+        assert key in str(exc.value)
+    cloudinary.config.assert_not_called()  # type: ignore[attr-defined]
+    mock_cloudinary.assert_not_called()
+
+
+async def test_the_video_upload_configures_through_the_shared_helper(
+    mock_cloudinary: MagicMock, mock_site_config: MagicMock,
+) -> None:
+    """wan2_1 had its own copy of the three-setting read; it now calls
+    configure_cloudinary, so the same secrets reach the SDK."""
+    import cloudinary  # type: ignore[import-not-found]
+
+    from poindexter.services.video_providers.wan2_1 import _upload_to_cloudinary
+
+    url = await _upload_to_cloudinary("/tmp/x.mp4", "prompt", mock_site_config)
+
+    assert url == "https://res.cloudinary.com/x/y.png"
+    assert cloudinary.config.call_args.kwargs == {  # type: ignore[attr-defined]
+        "cloud_name": "test-cloud",
+        "api_key": "test-api-key",
+        "api_secret": "test-api-secret",
+    }
+    assert mock_cloudinary.call_args.kwargs["resource_type"] == "video"

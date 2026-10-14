@@ -599,7 +599,6 @@ async def _upload_to_cloudinary(
     path: str, prompt: str, site_config: Any,
 ) -> str:
     """Upload a generated MP4 to Cloudinary and return the secure URL."""
-    import cloudinary
     import cloudinary.uploader
 
     if site_config is None:
@@ -608,11 +607,9 @@ async def _upload_to_cloudinary(
             "video_service dispatcher must seed '_site_config' (GH#95)",
         )
 
-    cloudinary.config(
-        cloud_name=site_config.get("cloudinary_cloud_name"),
-        api_key=await site_config.get_secret("cloudinary_api_key"),
-        api_secret=await site_config.get_secret("cloudinary_api_secret"),
-    )
+    from poindexter.services.cloudinary_upload_service import configure_cloudinary
+
+    await configure_cloudinary(site_config)
 
     def _upload() -> dict:
         return cloudinary.uploader.upload(
