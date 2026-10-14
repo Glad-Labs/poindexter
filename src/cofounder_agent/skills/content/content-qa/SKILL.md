@@ -49,7 +49,7 @@ metadata:
       description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one frame of an AI shot 0-100 on topic and looks, and labels its large lettering none / readable / garbled; the label caps a garbled frame under the repair threshold. Hero clips are judged on their 1 s frame and on the final frame the compositor holds. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
     - key: qa.talking_frame
       output_format: json
-      description: 'Vision check on a cast talking frame before it is lip-synced: how many people are in the picture, is the main figure the named speaker as their character sheet describes them, and is any writing in it free of scrambled letters? Code accepts the frame only for exactly one person who is the speaker, with no scrambled writing, and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
+      description: 'Vision check on a cast talking frame before it is lip-synced: is the main figure the named speaker as their character sheet describes them (person, animal, robot or creature), how many other characters are in the picture, are any hands reaching in or the wrong kind for the character, and is any writing in it scrambled? Code accepts the frame when it is the speaker with no other characters and no stray hands (writing is reported, not a reason to redraw), and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
     - key: qa.talking_clip
       output_format: json
       description: 'Vision check on a rendered cartoon talking clip, shown as a contact sheet of moments across the take: are the hands intact, is the mouth in proportion while speaking, does the face stay the same character, and did anyone else appear? Code passes a take only when all four hold, re-renders a failing take and keeps whichever has fewer problems. Used by services.video_renderers.shot_vision_qa.check_talking_clip.'
@@ -583,21 +583,26 @@ is made from this picture.
 
 THE SPEAKER: {name}, {appearance}
 
-1. CHARACTERS - count every character you can see in the picture: people,
+1. SPEAKER - is the main figure {name} as described above, with the same look,
+   whether {name} is a person, an animal, a robot or a creature?
+
+2. OTHERS - besides {name}, how many other characters can you see: people,
    and animals, robots and creatures that act like characters, including
-   anyone small, half out of frame, behind glass or in the background.
+   anyone small, half out of frame, behind glass or in the background?
    Pictures, posters and screens that show a face count only when the face is
-   as large as the speaker's. The speaker counts, whatever they are.
+   as large as {name}'s.
 
-2. CHARACTER - is the main figure {name} as described above: the same hair,
-   clothing and look?
+3. HANDS - is the picture free of hands and arms reaching in from its edges,
+   and are any hands that show the kind {name} has (a robot or an animal has
+   its own paws, claws or grippers, never human hands)? A picture with no
+   hands answers true.
 
-3. WRITING - look at every sign, screen, label and hologram. Is the picture
+4. WRITING - look at every sign, screen, label and hologram. Is the picture
    free of letters and words that are scrambled, half-formed or meaningless?
    A picture with no writing at all answers true.
 
 Output EXACTLY one JSON object, no prose, no code fences:
-{{"people": <integer>, "is_character": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
+{{"is_character": <true or false>, "others": <integer>, "hands_ok": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.talking_clip

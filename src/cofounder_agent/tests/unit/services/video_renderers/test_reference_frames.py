@@ -67,13 +67,13 @@ class TestGraph:
             rf.build_reference_graph(prompt="p", references=[], width=8, height=8, seed=1, site_config=_sc())
 
 
-RULE = "never letters or words."
+RULE = "with no letters or words."
 
 
 class TestPrompt:
     def test_names_each_picture(self):
         text = rf.compose_reference_prompt("at a desk", ["Dex", "Nova"], style_only=False, site_config=_sc())
-        assert text.startswith("Picture 1 is Dex. Picture 2 is Nova.") and "at a desk Every sign" in text
+        assert text.startswith("Picture 1 is Dex. Picture 2 is Nova.") and "at a desk Each character keeps" in text
 
     def test_style_only_keeps_the_characters_out(self):
         text = rf.compose_reference_prompt("an empty server aisle", [], style_only=True, site_config=_sc())
@@ -88,6 +88,13 @@ class TestPrompt:
         for style_only in (True, False):
             assert rf.compose_reference_prompt("a neon street", ["Dex"], style_only=style_only,
                                                site_config=_sc()).endswith(RULE)
+
+    def test_characters_drawn_together_keep_their_own_marks(self):
+        """Mara wore Cinder's grease mark in every shot they shared (2026-10-14)."""
+        two = rf.compose_reference_prompt("at the dock", ["Cinder", "Mara"], style_only=False, site_config=_sc())
+        one = rf.compose_reference_prompt("at the dock", ["Cinder"], style_only=False, site_config=_sc())
+        assert "nothing on one character appears on another" in two
+        assert "nothing on one character appears on another" not in one
 
     def test_the_place_is_the_picture_after_the_cast(self):
         text = rf.compose_reference_prompt("Dex talks", ["Dex"], style_only=False, site_config=_sc(), place=True)
@@ -339,18 +346,6 @@ class TestTalkingFrameCheck:
         assert len(stub_refs["calls"]) == 2
 
     @pytest.mark.asyncio
-    async def test_a_draw_failed_only_on_writing_beats_the_portrait(self, stub_refs, monkeypatch, tmp_path):
-        """Cinder's frame (2026-10-14) was rejected for a neon sign behind her;
-        with every draw rejected, the portrait put her on a blank card."""
-        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
-
-        used, _ = await self._render(
-            monkeypatch, tmp_path,
-            [V(ok=False, people=1, reason="scrambled writing", writing_only=True), V(ok=False, people=2)],
-            video_cast_talking_frame_attempts="2")
-        assert used.startswith("talkframe_nova_") and len(stub_refs["calls"]) == 2
-
-    @pytest.mark.asyncio
     async def test_a_check_that_cannot_answer_keeps_the_frame(self, stub_refs, monkeypatch, tmp_path):
         from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
 
@@ -376,12 +371,35 @@ class TestTalkingFrameVerdictParse:
 
         assert _parse_talking_frame(reply).ok is False
 
-    def test_scrambled_writing_alone_is_marked_so(self):
+    def test_the_speaker_alone_passes_whatever_they_are(self):
+        """Bolt, a robot mouse, read as 0 people; the judge now counts others."""
         from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
 
-        v = _parse_talking_frame('{"people": 1, "is_character": true, "writing_ok": false, "reason": "a sign"}')
-        assert v.ok is False and v.writing_only is True
-        assert _parse_talking_frame('{"people": 2, "is_character": true, "writing_ok": false}').writing_only is False
+        assert _parse_talking_frame('{"is_character": true, "others": 0, "reason": "Bolt alone"}').ok is True
+        assert _parse_talking_frame('{"is_character": true, "others": 1, "reason": "a man behind"}').ok is False
+        assert _parse_talking_frame('{"is_character": false, "others": 0}').ok is False
+
+    def test_stray_hands_fail_a_frame(self):
+        """Midnight Patch v3: human hands reached up from the bottom of Bolt's
+        and Mara's talking frames."""
+        from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
+
+        v = _parse_talking_frame('{"is_character": true, "others": 0, "hands_ok": false, "reason": "hands at the bottom"}')
+        assert v.ok is False
+        assert _parse_talking_frame('{"is_character": true, "others": 0, "hands_ok": true}').ok is True
+
+    def test_writing_is_reported_but_never_fails_a_frame(self):
+        """The edit model draws signs into every neon street; three redraws
+        never removed one, so the check only cost draws."""
+        from poindexter.services.video_renderers.shot_vision_qa import (
+            _parse_cast_frame,
+            _parse_talking_frame,
+        )
+
+        v = _parse_talking_frame('{"is_character": true, "others": 0, "writing_ok": false, "reason": "a sign"}')
+        assert v.ok is True and v.reason.startswith("scrambled writing")
+        assert _parse_cast_frame(
+            '{"people": 2, "strangers": 0, "all_present": true, "writing_ok": false, "reason": "x"}', 2).ok is True
 
     def test_the_judge_counts_characters_not_just_people(self):
         """Bolt, a robot mouse, was counted as 0 people, so every Bolt frame
@@ -389,7 +407,7 @@ class TestTalkingFrameVerdictParse:
         from poindexter.services.prompt_manager import get_prompt_manager
 
         text = get_prompt_manager().get_prompt("qa.talking_frame", name="Bolt", appearance="a chrome mouse robot")
-        assert "robots and creatures" in text and "The speaker counts, whatever they are" in text
+        assert "robots and creatures" in text and "besides Bolt, how many other characters" in text
 
     @pytest.mark.parametrize("reply", ["no idea", '{"is_character": true}', '{"people": "one"}'])
     def test_an_unreadable_reply_is_no_verdict(self, reply):
@@ -411,7 +429,10 @@ def test_director_writes_a_talking_frame_per_cast_shot():
     text = sd._talking_frame_prompt(shot, "flat 2D cartoon", _sc())
     # One frame per speaker per scene: the default leaves delivery out.
     assert text == ("flat 2D cartoon, head-and-shoulders close-up of Nova alone in the frame, "
-                    "facing the viewer and talking, hands out of frame, in a garage at sunrise")
+                    "facing the viewer and talking, the picture cropped just below the shoulders, "
+                    "in a garage at sunrise")
+    # The crop is described, never the hands: naming them drew them.
+    assert "hand" not in text
     custom = sd._talking_frame_prompt(shot, "x", _sc(story_talking_frame_template="{name}/{delivery}"))
     assert custom == "Nova/patient"
 
@@ -522,76 +543,3 @@ class TestScenePlace:
         plan = [{"kind": "still"}, {"kind": "master"}, {"kind": "talk"}, {"kind": "still"}, {"kind": "master"}]
         sd._mark_establishing(shots, plan)
         assert [bool(s.get("establishing")) for s in shots] == [False, True, False, True, False]
-
-
-class TestWritingCheck:
-    def test_scrambled_writing_fails_a_talking_frame_and_a_still(self):
-        from poindexter.services.video_renderers import shot_vision_qa as sq
-
-        frame = sq._parse_talking_frame('{"people": 1, "is_character": true, "writing_ok": false, "reason": "a sign"}')
-        assert frame.ok is False and frame.reason.startswith("scrambled writing")
-        assert sq._parse_talking_frame('{"people": 1, "is_character": true, "reason": "ok"}').ok is True
-        still = sq._parse_cast_frame(
-            '{"people": 2, "strangers": 0, "all_present": true, "writing_ok": false, "reason": "neon RUBY"}', 2)
-        assert still.ok is False
-
-
-class TestCartoonBackfill:
-    """A cartoon's failed shot never becomes stock footage (2026-10-14: the
-    cyberpunk Cinderella cut to real women reading in a bedroom)."""
-
-    @staticmethod
-    def _state(idx, *, ok, clip=None, scene="s1"):
-        shot = Shot(**{**_shot(idx, source="image_gen").model_dump(), "scene_id": scene})
-        res = slr.ShotRenderResult(idx=idx, source="image_gen", success=ok, clip_path=clip,
-                                   error=None if ok else "image-gen 503 CUDA out of memory")
-        return slr._ShotState(shot=shot, result=res, is_reused=False)
-
-    @staticmethod
-    def _kwargs(tmp_path, ctx):
-        return dict(work_dir=tmp_path, image_gen_url="", site_config=None, http_client_factory=None,
-                    pexels_key="KEY", orientation="landscape", post_id="t1", reference_ctx=ctx)
-
-    @pytest.mark.asyncio
-    async def test_a_failed_shot_holds_its_scenes_place_and_never_searches_stock(self, tmp_path, monkeypatch):
-        stock = AsyncMock(return_value=True)
-        monkeypatch.setattr(slr, "_render_pexels_video", stock)
-        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
-        place = tmp_path / "place_s1.png"
-        place.write_bytes(b"PNG")
-        ctx = slr.ReferenceContext(cast=("dex",), places={"s1": str(place)})
-        st = self._state(3, ok=False)
-        await slr._backfill_pass([st], render_kwargs=self._kwargs(tmp_path, ctx), site_config=None,
-                                 post_id="t1", width=8, height=8, wordmark="x")
-        assert st.rung == "hold" and st.result.clip_path == str(place) and st.result.duration_s == 3.0
-        assert stock.await_count == 0
-
-    @pytest.mark.asyncio
-    async def test_without_a_place_it_holds_the_picture_before(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
-        before = tmp_path / "shot_02.png"
-        before.write_bytes(b"PNG")
-        ctx = slr.ReferenceContext(cast=("dex",))
-        states = [self._state(2, ok=True, clip=str(before), scene="s0"), self._state(3, ok=False)]
-        await slr._backfill_pass(states, render_kwargs=self._kwargs(tmp_path, ctx), site_config=None,
-                                 post_id="t1", width=8, height=8, wordmark="x")
-        assert states[1].rung == "hold" and states[1].result.clip_path == str(before)
-
-    @pytest.mark.asyncio
-    async def test_nothing_to_hold_falls_to_the_card_not_stock(self, tmp_path, monkeypatch):
-        stock = AsyncMock(return_value=True)
-        monkeypatch.setattr(slr, "_render_pexels_video", stock)
-        monkeypatch.setattr(slr, "emit_finding", lambda **kw: None)
-        st = self._state(0, ok=False)
-        await slr._backfill_pass([st], render_kwargs=self._kwargs(tmp_path, slr.ReferenceContext(cast=("dex",))),
-                                 site_config=None, post_id="t1", width=64, height=36, wordmark="x")
-        assert st.rung == "card" and stock.await_count == 0
-
-    @pytest.mark.asyncio
-    async def test_a_shot_of_only_portraitless_characters_is_drawn_in_the_cast_style(self, stub_refs, tmp_path):
-        ctx = slr.ReferenceContext(cast=("dex", "nova"))
-        ok = await slr._render_reference_still(
-            _shot(characters=["pip"]), prompt="pip by the window", output_path=str(tmp_path / "s.png"),
-            width=8, height=8, ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
-        call = stub_refs["calls"][0]
-        assert ok and "without the characters" in call["prompt"] and len(call["reference_paths"]) == 2

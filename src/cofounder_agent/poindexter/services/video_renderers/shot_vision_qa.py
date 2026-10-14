@@ -821,12 +821,19 @@ class TalkingFrameVerdict:
     ok: bool | None
     people: int | None = None
     reason: str = ""
-    # Rejected for scrambled writing alone (the right character, alone): a
-    # caller can still prefer this frame to a worse fallback.
-    writing_only: bool = False
 
 
 def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
+    """Pass when the picture is the speaker with no other character in it.
+
+    The judge counts OTHER characters besides the speaker. It used to count
+    "people", and the vision model counted Bolt, a robot mouse, as 0 people
+    however the question was worded (2026-10-14), so every Bolt frame failed
+    the exactly-one rule. A reply in the older shape (``people``) is still
+    read. Scrambled writing is reported in the reason but does not fail the
+    frame: the edit model draws signs into every neon street, and three
+    redraws never removed one.
+    """
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
         return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
@@ -834,20 +841,23 @@ def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
         parsed = json.loads(m.group(0))
     except json.JSONDecodeError:
         return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
-    people = parsed.get("people")
-    if not isinstance(people, int) or isinstance(people, bool):
-        return TalkingFrameVerdict(ok=None, reason="vision response missing a people count")
+    others, people = parsed.get("others"), parsed.get("people")
+    if isinstance(others, int) and not isinstance(others, bool):
+        people = others + 1
+    elif not isinstance(people, int) or isinstance(people, bool):
+        return TalkingFrameVerdict(ok=None, reason="vision response missing a character count")
     is_character = parsed.get("is_character")
     reason = _writing_reason(parsed, str(parsed.get("reason", "") or "")[:200])
-    # Scrambled writing fails the frame; a judge that leaves the question out
-    # is not read as a failure.
-    right = people == 1 and is_character is True
-    ok = right and parsed.get("writing_ok") is not False
-    return TalkingFrameVerdict(ok=ok, people=people, reason=reason, writing_only=right and not ok)
+    if parsed.get("hands_ok") is False and "hand" not in reason.lower():
+        reason = f"stray hands; {reason}"[:200]
+    # A hand reaching in from the edge is animated by the lip-sync for the
+    # whole line (Midnight Patch v3: human hands under Bolt, a robot mouse).
+    ok = people == 1 and is_character is True and parsed.get("hands_ok") is not False
+    return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
 
 
 def _writing_reason(parsed: dict[str, Any], reason: str) -> str:
-    """Name scrambled writing in the reason, so the log says why a frame was redrawn."""
+    """Name scrambled writing in the reason, so the log shows it."""
     if parsed.get("writing_ok") is False and "writing" not in reason.lower():
         return f"scrambled writing; {reason}"[:200]
     return reason
@@ -867,11 +877,9 @@ def _parse_cast_frame(text: str, cast_size: int) -> TalkingFrameVerdict:
     for value in (people, strangers):
         if not isinstance(value, int) or isinstance(value, bool):
             return TalkingFrameVerdict(ok=None, reason="vision response missing a count")
+    # Scrambled writing is reported, not a reason to redraw (see _parse_talking_frame).
     reason = _writing_reason(parsed, str(parsed.get("reason", "") or "")[:200])
-    ok = (
-        strangers == 0 and people <= cast_size and parsed.get("all_present") is True
-        and parsed.get("writing_ok") is not False
-    )
+    ok = strangers == 0 and people <= cast_size and parsed.get("all_present") is True
     return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
 
 

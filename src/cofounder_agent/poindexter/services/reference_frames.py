@@ -78,8 +78,9 @@ def compose_reference_prompt(
     ``style_only``: the pictures set the look, but nobody in them is in this
     shot. ``place``: one more reference follows the named ones, the scene's
     establishing picture, whose background the new picture keeps
-    (``video_reference_place_template``). ``video_reference_text_rule`` is
-    appended to every picture.
+    (``video_reference_place_template``). With two or more characters,
+    ``video_reference_identity_rule`` keeps each one's marks on them alone.
+    ``video_reference_text_rule`` is appended to every picture.
     """
     if style_only:
         text = _cfg(site_config, "video_reference_style_only_template").replace("{prompt}", prompt)
@@ -92,6 +93,9 @@ def compose_reference_prompt(
             _cfg(site_config, "video_reference_prompt_template")
             .replace("{references}", refs).replace("{prompt}", prompt)
         )
+        identity = _cfg(site_config, "video_reference_identity_rule").strip() if len(names) > 1 else ""
+        if identity:
+            text = f"{text.rstrip()} {identity}"
     if place:
         where = _cfg(site_config, "video_reference_place_template").replace("{n}", str(len(names) + 1))
         text = f"{where}. {text}"

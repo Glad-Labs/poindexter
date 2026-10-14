@@ -1014,13 +1014,25 @@ DEFAULTS: dict[str, str] = {
         'Picture {n} shows the place: draw the new picture in this same place, '
         'keeping its background, light and colours'
     ),
+    # Added when two or more characters are drawn together. The edit model
+    # carries one character's marks onto another: in the "Midnight Patch"
+    # storyboard (2026-10-14) Mara, a hologram, wore the grease mark from
+    # Cinder's cheek in every shot they shared.
+    'video_reference_identity_rule': (
+        "Each character keeps exactly the face, skin, markings and clothes of "
+        "their own picture; nothing on one character appears on another."
+    ),
     # Appended to every reference-drawn picture. The edit model writes real
     # letters wherever a prompt mentions a sign, screen or hologram, and they
     # come out scrambled (the cyberpunk Cinderella's neon read as nonsense);
     # its CFG of 1 makes a negative prompt inert, so this says what to draw.
+    # "Signs show only symbols" was ignored in every neon street (2026-10-14:
+    # every talking-frame draw of the "Midnight Patch" re-cut had legible
+    # signs); a soft-focus background, the look the cast portraits already
+    # have, leaves no letters to read.
     'video_reference_text_rule': (
-        'Every sign, screen, label and hologram shows only glowing shapes and '
-        'symbols, never letters or words.'
+        'The background is softly out of focus, so every sign, screen and '
+        'hologram reads as a blurred glow of colour, with no letters or words.'
     ),
     # Draws of a cast talking frame before the portrait is lip-synced instead.
     # Each draw is checked by qa.talking_frame (one person, and the speaker);
@@ -1046,12 +1058,16 @@ DEFAULTS: dict[str, str] = {
     # carries each line's expression. With it, every line drew its own frame.
     # "alone": with only the speaker's portrait as reference, the edit model
     # drew a generic human listener beside Nova (2026-10-13), which is also a
-    # second mouth for the lip-sync to pick. Head and shoulders, hands out of
-    # frame: S2V animates any hand it can see, and in Red Riding Hood
+    # second mouth for the lip-sync to pick. Head and shoulders, cropped below
+    # them: S2V animates any hand it can see, and in Red Riding Hood
     # (2026-10-13) every visible hand turned into the shot's worst artefact.
+    # The crop is described, never the hands: "hands out of frame" drew hands
+    # reaching up from the bottom edge, human ones even on Bolt, a robot mouse
+    # (Midnight Patch v3, 2026-10-14).
     'story_talking_frame_template': (
         '{style}, head-and-shoulders close-up of {name} alone in the frame, '
-        'facing the viewer and talking, hands out of frame, in {setting}'
+        'facing the viewer and talking, the picture cropped just below the '
+        'shoulders, in {setting}'
     ),
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
@@ -6752,6 +6768,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reference_style_only_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_place_template': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_text_rule': {'owner': 'reference_frames', 'value_type': 'string'},
+    'video_reference_identity_rule': {'owner': 'reference_frames', 'value_type': 'string'},
     'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_min_insert_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_scene_master_template': {'owner': 'screenplay_director', 'value_type': 'string'},
