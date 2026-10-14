@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-10-08.**  
+> **Auto-generated from live `app_settings` table on 2026-10-14.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 670 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -350,7 +350,7 @@ The worker re-reads on every poll; no restart needed.
 | `glitchtip_api_token` | `` |  |  |
 | `glitchtip_triage_alert_freshness_hours` | `24` |  |  |
 | `glitchtip_triage_default_resolve_max_count` | `50` |  |  |
-| `google_sitemap_ping_url` | `https://www.google.com/ping` |  | Auto-seeded by services.settings_defaults (#379) |
+| `google_sitemap_ping_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `gpu_busy_threshold_percent` | `30` |  | GPU utilization % above which gaming is detected |
 | `gpu_gaming_check_interval` | `15` |  | Seconds between gaming detection checks |
 | `gpu_gaming_clear_checks` | `3` |  | Consecutive low-util checks to resume pipeline |
