@@ -3760,7 +3760,8 @@ def _fit_presenter_to_chunk_budget(
 
 
 def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str:
-    """S2V render prompt: the DB template with the persona's name, then the
+    """S2V render prompt: the DB template with the persona's name, then (a cast
+    shot) the persona's looks (``video_cast_appearance_template``), then the
     persona's own suffix, then the shot's delivery note.
 
     A cast shot (a screenplay line) uses ``video_cast_render_prompt`` instead:
@@ -3774,11 +3775,7 @@ def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str
     )
     template_key = "video_presenter_render_prompt"
     if _is_cast_shot(shot):
-        template = (
-            "{display_name} talks in the scene, expressive face, natural head "
-            "movement and hand gestures that fit the line, lips synchronized "
-            "with the speech, consistent character design"
-        )
+        template = DEFAULTS["video_cast_render_prompt"]
         template_key = "video_cast_render_prompt"
     if site_config is not None:
         try:
@@ -3788,6 +3785,18 @@ def _compose_presenter_prompt(shot: Shot, persona: Any, site_config: Any) -> str
             pass
     name = getattr(persona, "display_name", "") or getattr(persona, "slug", "") or "The presenter"
     parts = [template.replace("{display_name}", name)]
+    appearance = (getattr(persona, "appearance", "") or "").strip()
+    if _is_cast_shot(shot) and appearance:
+        # Named, the character keeps their look: without it the model gave a
+        # robot mouse's lens eyes pupils that came and went (2026-10-14).
+        look = DEFAULTS["video_cast_appearance_template"]
+        if site_config is not None:
+            try:
+                look = str(site_config.get("video_cast_appearance_template", look) or "").strip()
+            except Exception:  # noqa: BLE001  # silent-ok: a settings read must not
+                pass           # decide a render's fate; the default stands.
+        if look:
+            parts.append(look.replace("{display_name}", name).replace("{appearance}", appearance))
     suffix = (getattr(persona, "render_prompt_suffix", "") or "").strip()
     if suffix:
         parts.append(suffix)

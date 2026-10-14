@@ -965,11 +965,18 @@ DEFAULTS: dict[str, str] = {
     # prompt dominates (see video_presenter_render_prompt), so the prompt now
     # asks for a natural delivery with still hands and small mouth shapes, and
     # the negative names what went wrong. The voice carries the emotion.
+    # 2026-10-14 (Midnight Patch): "small natural mouth movements" left a
+    # robot mouse's tiny mouth barely moving (lip-sync misses), and with no
+    # description the model gave his lens eyes pupils that came and went.
+    # A/B on two of his lines: naming his look (video_cast_appearance_template)
+    # held his eyes and antenna steady, and "follow every syllable" moved his
+    # mouth; the negative still rules out an oversized mouth.
     'video_cast_render_prompt': (
         '{display_name} talks in the scene with a natural, lively expression, '
-        'gentle head movement, hands relaxed and still, small natural mouth '
-        'movements synchronized with the speech, consistent character design'
+        'gentle head movement, hands relaxed and still, mouth movements that '
+        'follow every syllable of the speech, consistent character design'
     ),
+    'video_cast_appearance_template': '{display_name} looks exactly as in the picture: {appearance}',
     'video_cast_negative_prompt': (
         'static, blurred, distorted face, hand gestures, waving hands, '
         'deformed hands, extra fingers, fused fingers, oversized mouth, mouth '
@@ -6836,6 +6843,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reclaim_reclear_max': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_render_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_cast_render_prompt': {'owner': 'video', 'value_type': 'string'},
+    'video_cast_appearance_template': {'owner': 'video', 'value_type': 'string'},
     'video_cast_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_reference_frames_enabled': {'owner': 'reference_frames', 'value_type': 'boolean'},
     'video_reference_model': {'owner': 'reference_frames', 'value_type': 'string'},
