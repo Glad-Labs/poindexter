@@ -47,23 +47,26 @@ Wait for the next scheduler tick and verify `last_run_at` populates:
 poindexter taps list
 ```
 
-### Adding a new built-in source
+### Adding a source to a niche
 
-If you write a new `services/topic_sources/*.py` plugin and register it under `plugins.topic_source`, seed it as a tap row:
+Each tap row runs one source for one niche. Add one from the CLI:
 
-```sql
-INSERT INTO external_taps
-  (name, handler_name, tap_type, target_table, schedule, enabled, metadata)
-VALUES (
-  'reddit',
-  'builtin_topic_source',
-  'reddit',
-  'content_tasks',
-  'every 2 hours',
-  FALSE,
-  jsonb_build_object('description', 'Reddit submissions from operator-defined subreddits')
-);
+```bash
+poindexter taps create glad-labs_rss_example --type rss --niche glad-labs \
+  --config '{"feed_url": "https://example.com/feed"}' --schedule "every 6 hours"
 ```
+
+Before writing anything, `taps create` checks that `--type` is a registered
+topic source (the name `tap.builtin_topic_source` dispatches on), that the niche
+exists, and that the name is new. A mistake is refused with the list of valid
+choices, instead of failing on the tap's first run. `--disabled` creates it
+switched off. To change an existing tap use `taps set-config`, `enable` or
+`disable`. `taps delete NAME --yes` removes the row and its run history.
+
+If you write a new `services/topic_sources/*.py` plugin, register it under
+`plugins.topic_source`; it is then a valid `--type`. A `plugin.topic_source.<name>`
+row only permits the source. Nothing ingests until a tap row like the one above
+exists.
 
 ### Disabling
 

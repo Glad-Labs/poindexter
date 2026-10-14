@@ -70,6 +70,60 @@ def test_taps_enable_missing_reports_and_exits():
     assert "no tap named" in result.output
 
 
+def test_taps_create_delegates_and_prints_the_row():
+    from poindexter.cli.taps import taps_group
+
+    created = AsyncMock(return_value={"name": "t1", "enabled": True, "tap_type": "rss"})
+    with patch("poindexter.cli.taps.run_service", _fake_run_service), patch(
+        "poindexter.services.tap_admin.create_tap", created,
+    ):
+        result = CliRunner().invoke(taps_group, [
+            "create", "t1", "--type", "rss", "--niche", "glad-labs",
+            "--config", '{"feed_url": "https://e.x/feed"}', "--schedule", "every 6 hours",
+        ])
+    assert result.exit_code == 0, result.output
+    assert "t1: created (enabled)" in result.output
+    kw = created.await_args.kwargs
+    assert (kw["name"], kw["tap_type"], kw["niche_slug"], kw["schedule"]) == ("t1", "rss", "glad-labs", "every 6 hours")
+    assert kw["config"] == {"feed_url": "https://e.x/feed"} and kw["enabled"] is True
+
+
+def test_taps_create_refusal_exits_with_the_reason():
+    from poindexter.cli.taps import taps_group
+    from poindexter.services.tap_admin import TapAdminError
+
+    with patch("poindexter.cli.taps.run_service", _fake_run_service), patch(
+        "poindexter.services.tap_admin.create_tap",
+        AsyncMock(side_effect=TapAdminError("no topic source 'rsss'; registered: rss")),
+    ):
+        result = CliRunner().invoke(taps_group, ["create", "t1", "--type", "rsss", "--niche", "x"])
+    assert result.exit_code == 1 and "no topic source 'rsss'" in result.output
+
+
+def test_taps_create_rejects_bad_json_before_any_call():
+    from poindexter.cli.taps import taps_group
+
+    created = AsyncMock()
+    with patch("poindexter.services.tap_admin.create_tap", created):
+        result = CliRunner().invoke(taps_group, ["create", "t1", "--type", "rss", "--config", "{nope"])
+    assert result.exit_code == 1 and "not valid JSON" in result.output
+    created.assert_not_awaited()
+
+
+def test_taps_delete_needs_yes_and_reports_a_miss():
+    from poindexter.cli.taps import taps_group
+
+    deleted = AsyncMock(return_value=False)
+    with patch("poindexter.cli.taps.run_service", _fake_run_service), patch(
+        "poindexter.services.tap_admin.delete_tap", deleted,
+    ):
+        refused = CliRunner().invoke(taps_group, ["delete", "t1"])
+        missing = CliRunner().invoke(taps_group, ["delete", "ghost", "--yes"])
+    assert refused.exit_code == 1 and "without --yes" in refused.output
+    assert missing.exit_code == 1 and "no tap named 'ghost'" in missing.output
+    deleted.assert_awaited_once()
+
+
 def test_taps_run_loads_handlers_before_dispatch():
     """Regression: `poindexter taps run` used to call tap_runner.run_all
     without ever importing the handler modules, so the registry was always

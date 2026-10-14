@@ -2,7 +2,8 @@
 
 Thin adapter over :mod:`services.declarative_config_service` (#1522, epic
 #1340): list / show / enable / disable read & write config through the
-service; `run` delegates to the tap_runner. No raw SQL or asyncpg connection
+service; create / delete go through ``services.tap_admin``, which validates
+the type and niche first (poindexter#1128); `run` delegates to the tap_runner. No raw SQL or asyncpg connection
 lives here — the shared ``_dataplane`` helper owns the pool lifecycle.
 """
 
@@ -162,6 +163,80 @@ def taps_set_config(name: str, config_json: str, replace: bool) -> None:
         sys.exit(1)
     click.secho(f"{name}: config updated", fg="green")
     click.echo(json.dumps(merged, indent=2, default=str))
+
+
+@taps_group.command("create")
+@click.argument("name")
+@click.option("--type", "tap_type", required=True,
+              help="Topic source to run (rss, hackernews, web_search, …), or the handler's tap type.")
+@click.option("--niche", "niche_slug", default=None, help="Niche slug the topics land in (required for topic sources).")
+@click.option("--config", "config_json", default="{}", show_default=True,
+              help='Tap config as a JSON object, e.g. \'{"feed_url": "https://example.com/feed"}\'.')
+@click.option("--schedule", default=None, help='Cadence, e.g. "every 6 hours".')
+@click.option("--handler", default="builtin_topic_source", show_default=True,
+              help="Tap handler. The default runs one topic source per row.")
+@click.option("--disabled", is_flag=True, default=False, help="Create it disabled.")
+def taps_create(
+    name: str, tap_type: str, niche_slug: str | None, config_json: str,
+    schedule: str | None, handler: str, disabled: bool,
+) -> None:
+    """Create tap NAME: add a topic source for a niche without SQL.
+
+    The type must be a registered topic source and the niche a known one,
+    checked before anything is written. An existing NAME is refused; change
+    one with set-config / enable / disable.
+
+    \b
+    Add an RSS feed to a niche:
+      poindexter taps create glad-labs_rss_example --type rss --niche glad-labs \\
+        --config '{"feed_url": "https://example.com/feed"}' --schedule "every 6 hours"
+    """
+    from poindexter.services.tap_admin import TapAdminError, create_tap
+
+    try:
+        config = json.loads(config_json)
+    except json.JSONDecodeError as e:
+        click.echo(f"Error: --config is not valid JSON ({e})", err=True)
+        sys.exit(1)
+
+    try:
+        row = run_service(lambda p: create_tap(
+            p, name=name, tap_type=tap_type, niche_slug=niche_slug, handler=handler,
+            config=config, schedule=schedule, enabled=not disabled,
+        ))
+    except TapAdminError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    state = "enabled" if row.get("enabled") else "disabled"
+    click.secho(f"{name}: created ({state})", fg="green")
+    dump_row(row, missing="")
+
+
+@taps_group.command("delete")
+@click.argument("name")
+@click.option("--yes", is_flag=True, default=False, help="Confirm the delete.")
+def taps_delete(name: str, yes: bool) -> None:
+    """Delete tap NAME. Its run history goes with it; `disable` keeps it."""
+    from poindexter.services.tap_admin import delete_tap
+
+    if not yes:
+        click.echo(
+            f"Refusing to delete {name!r} without --yes. `poindexter taps disable {name}` "
+            "stops it and keeps its history.", err=True,
+        )
+        sys.exit(1)
+    try:
+        deleted = run_service(lambda p: delete_tap(p, name))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if not deleted:
+        click.echo(f"(no tap named {name!r})", err=True)
+        sys.exit(1)
+    click.secho(f"{name}: deleted", fg="yellow")
 
 
 @taps_group.command("run")
