@@ -5126,6 +5126,109 @@ def _hero_still_fallback(st: _ShotState, *, qa: _QAConfig) -> str | None:
     return still
 
 
+_PRESENTER_KWARGS = (
+    "work_dir", "site_config", "http_client_factory", "orientation", "post_id",
+    "narration_path", "niche_slug", "heartbeat_cb", "reference_ctx",
+)
+
+
+def _setting_int(site_config: Any, key: str) -> int:
+    raw = site_config.get(key, None) if site_config is not None else None
+    return int(float(raw if raw not in (None, "") else default_int(key)))
+
+
+async def _talking_clip_pass(
+    states: list[_ShotState],
+    *,
+    render_kwargs: dict[str, Any],
+    site_config: Any,
+    pool: Any,
+    post_id: str,
+) -> None:
+    """Check each cartoon talking clip for slop tells; re-render a failing take.
+
+    Chat drafting phase 5 (Matt, 2026-10-14: auto-fix slop shots). A talking
+    frame is checked before it is animated, but melting hands and a mouth
+    stretched past the face appear only once the lip-sync moves it (the Red
+    Riding Hood render, 2026-10-13). So each finished cast talking clip is
+    checked on a contact sheet of moments across the take
+    (``check_talking_clip``). A failing take is re-rendered, which draws a new
+    random S2V seed, up to ``video_cast_clip_redo_attempts`` times, within a
+    per-render ``video_cast_clip_redo_budget`` (each redo costs minutes of
+    GPU), and the take with fewer problems is kept. A clip the operator
+    already watched (rung ``kept``) is never touched. A shot still flawed
+    after its redos ships with a ``talking_clip_flawed`` finding.
+    """
+    from poindexter.services.persona_service import get_persona
+    from poindexter.services.video_renderers.shot_vision_qa import check_talking_clip
+
+    if site_config is None or pool is None:
+        return
+    if str(site_config.get("video_cast_clip_check_enabled", "true") or "true").strip().lower() not in (
+        "true", "1", "yes", "on",
+    ):
+        return
+    attempts = _setting_int(site_config, "video_cast_clip_redo_attempts")
+    budget = _setting_int(site_config, "video_cast_clip_redo_budget")
+    presenter_kwargs = {k: v for k, v in render_kwargs.items() if k in _PRESENTER_KWARGS}
+    checked = redone = 0
+    for st in states:
+        shot = st.shot
+        if (
+            st.rung != "primary" or st.is_reused or not _is_cast_shot(shot)
+            or not st.result.success or not st.result.clip_path
+        ):
+            continue
+        persona = get_persona(site_config, shot.speaker or "")
+        if persona is None:
+            continue
+
+        async def _check(path: str, persona: Any = persona) -> Any:
+            return await check_talking_clip(
+                clip_path=path, name=persona.display_name or persona.slug,
+                appearance=persona.visual_description, site_config=site_config, pool=pool,
+            )
+
+        verdict = await _check(st.result.clip_path)
+        checked += 1
+        tries = 0
+        while verdict.ok is False and tries < attempts and budget > 0:
+            tries += 1
+            budget -= 1
+            redone += 1
+            # The redo writes the same path: set the current take aside first.
+            current = Path(st.result.clip_path)
+            aside = current.with_name(f"{current.stem}_take{tries}{current.suffix}")
+            shutil.move(str(current), aside)
+            st.result = replace(st.result, clip_path=str(aside))
+            logger.info(
+                "[SHOT_LIST] talking shot %d (%s) failed its clip check (%s); re-rendering, try %d/%d",
+                shot.idx, persona.slug, verdict.reason, tries, attempts,
+            )
+            redo = await _render_presenter_clip(shot, narration_window=None, **presenter_kwargs)
+            if not redo.success or not redo.clip_path:
+                break
+            again = await _check(redo.clip_path)
+            if again.ok is not None and again.problems < verdict.problems:
+                st.result, verdict = redo, again
+        if verdict.ok is False:
+            emit_finding(
+                source="shot_list_renderer",
+                kind="talking_clip_flawed",
+                title=f"talking shot {shot.idx} ({persona.slug}) still flawed after {tries} redo(s)",
+                body=f"post {post_id}: {verdict.reason} ({verdict.problems} problem(s) on the best take)",
+                severity="info",
+                dedup_key=f"talking_clip_flawed:{post_id}:{shot.idx}",
+                extra={"post_id": post_id, "shot_idx": shot.idx, "speaker": persona.slug,
+                       "problems": verdict.problems, "redos": tries},
+            )
+    if checked:
+        logger.info(
+            "[SHOT_LIST] talking clip check: %d checked, %d re-rendered (%d redo budget left)",
+            checked, redone, budget,
+        )
+
+
 async def _finalize_pass(
     states: list[_ShotState],
     *,
@@ -5711,6 +5814,10 @@ async def render_shot_list(
         states, render_kwargs=render_kwargs, site_config=site_config,
         post_id=post_id, width=width, height=height, wordmark=wordmark,
     )
+    if getattr(shot_list, "timing", "fit") == "exact":
+        await _talking_clip_pass(
+            states, render_kwargs=render_kwargs, site_config=site_config, pool=pool, post_id=post_id,
+        )
     shot_results = await _finalize_pass(
         states, qa=qa, pool=pool, post_id=post_id,
     )

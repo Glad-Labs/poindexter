@@ -238,6 +238,23 @@ names the failures. The talking frame (`story_talking_frame_template`) is a
 head-and-shoulders close-up with the hands out of frame, since S2V animates
 any hand it can see. The voice carries the emotion.
 
+Some tells only appear once the lip-sync moves the picture: a hand that
+melts as it gestures, a mouth that stretches past the face, a face that
+warps into someone else. So after rendering, each cast talking clip is
+checked again (`_talking_clip_pass`, chat drafting phase 5).
+`check_talking_clip` tiles `video_cast_clip_check_frames` moments from
+across the take into one contact sheet. The vision model (`qa.talking_clip`)
+answers four countable questions: are the hands intact, is the mouth in
+proportion, does the face stay the character, and did anyone else appear?
+
+A failing take is re-rendered, which draws a new random S2V seed, up to
+`video_cast_clip_redo_attempts` times within a per-render
+`video_cast_clip_redo_budget`, and the take with fewer problems is kept.
+Each redo costs minutes of GPU. A clip the operator already watched (a kept
+clip in a revision) is never touched. A shot still flawed after its redos
+ships with a `talking_clip_flawed` finding. The pass is off with
+`video_cast_clip_check_enabled=false`.
+
 ## One look: every frame drawn from the portraits
 
 The first cartoon renders switched art style whenever a character spoke.

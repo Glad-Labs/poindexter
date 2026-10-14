@@ -50,6 +50,9 @@ metadata:
     - key: qa.talking_frame
       output_format: json
       description: 'Vision check on a cast talking frame before it is lip-synced: how many people are in the picture, and is the main figure the named speaker as their character sheet describes them? Code accepts the frame only for exactly one person who is the speaker, and otherwise redraws it or falls back to the portrait. Used by services.video_renderers.shot_vision_qa.check_talking_frame.'
+    - key: qa.talking_clip
+      output_format: json
+      description: 'Vision check on a rendered cartoon talking clip, shown as a contact sheet of moments across the take: are the hands intact, is the mouth in proportion while speaking, does the face stay the same character, and did anyone else appear? Code passes a take only when all four hold, re-renders a failing take and keeps whichever has fewer problems. Used by services.video_renderers.shot_vision_qa.check_talking_clip.'
     - key: qa.cast_frame
       output_format: json
       description: "Vision check on a cartoon still drawn from the cast portraits: how many people are in the picture, how many are strangers outside the cartoon's cast, and is every character the shot needs there as their sheet describes them? Code accepts the still only with no strangers, no more people than the cast, and everyone required present; otherwise it redraws. Used by services.video_renderers.shot_vision_qa.check_cast_frame."
@@ -587,6 +590,35 @@ THE SPEAKER: {name}, {appearance}
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"people": <integer>, "is_character": <true or false>, "reason": "<one short sentence>"}}
+```
+
+## qa.talking_clip
+
+```text
+You are checking a finished talking shot of a cartoon before anyone sees it.
+The picture is a contact sheet: {frames} moments from the same shot, in order,
+left to right and top to bottom. One character speaks in the shot.
+
+THE SPEAKER: {name}, {appearance}
+
+Look at every moment and answer four questions.
+
+1. HANDS - wherever a hand or fingers show, are they whole and natural for this
+   character: the right number of fingers, no melting, smearing, fusing or
+   twisting? Hands out of frame count as intact.
+
+2. MOUTH - while speaking, does the mouth stay in proportion to the face? A
+   mouth opened far wider than speech needs, stretched across the face, or
+   distorted counts as not intact.
+
+3. FACE - does the face stay the same character from moment to moment, without
+   melting, warping or turning into someone else?
+
+4. STRANGERS - how many people or person-like characters appear besides the
+   speaker?
+
+Output EXACTLY one JSON object, no prose, no code fences:
+{{"hands_ok": <true or false>, "mouth_ok": <true or false>, "face_ok": <true or false>, "strangers": <integer>, "reason": "<one short sentence naming what is wrong, or that the take is clean>"}}
 ```
 
 ## qa.cast_frame

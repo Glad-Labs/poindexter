@@ -1006,6 +1006,15 @@ DEFAULTS: dict[str, str] = {
     # Draws of a cast talking frame before the portrait is lip-synced instead.
     # Each draw is checked by qa.talking_frame (one person, and the speaker);
     # a draw is ~20 s of Qwen-Image-Edit against ~6 min for the clip it feeds.
+    # Chat drafting phase 5 (auto-fix slop shots): each finished cartoon
+    # talking clip is checked on a contact sheet of this many moments for
+    # melted hands, a stretched mouth, a warping face or a stranger; a failing
+    # take is re-rendered (a new S2V seed) up to redo_attempts times, within a
+    # per-render redo_budget, keeping the take with fewer problems.
+    'video_cast_clip_check_enabled': 'true',
+    'video_cast_clip_check_frames': '4',
+    'video_cast_clip_redo_attempts': '1',
+    'video_cast_clip_redo_budget': '4',
     'video_cast_talking_frame_attempts': '3',
     # Coverage (2026-10-13): a non-talking shot shorter than this is the
     # scene's master shot, one picture of its cast in its setting drawn once and
@@ -4576,6 +4585,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # real-time correlation — page it like anomaly (telegram/critical).
     # deploy_sync_stale: merged main is silently not shipping. Nothing else
     # reports it — the sync emits nothing at all when it does not run.
+    # talking_clip_flawed: a cartoon talking shot still showed slop tells after
+    # its redos. The operator reviews every cartoon before it ships, so this
+    # is a record for tuning the redo budget, not a page.
+    'findings.talking_clip_flawed.delivery': 'log_only',
     'findings.deploy_sync_stale.delivery': 'telegram',
     'findings.deploy_sync_stale.fallback': 'discord',
     'findings.deploy_sync_stale.cooldown_minutes': '60',
@@ -6658,6 +6671,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_portrait_size': {'owner': 'casting', 'value_type': 'integer'},
     'story_portrait_attempts': {'owner': 'casting', 'value_type': 'integer'},
     'video_cast_talking_frame_attempts': {'owner': 'video', 'value_type': 'integer'},
+    'video_cast_clip_check_enabled': {'owner': 'video', 'value_type': 'boolean'},
+    'video_cast_clip_check_frames': {'owner': 'video', 'value_type': 'integer'},
+    'video_cast_clip_redo_attempts': {'owner': 'video', 'value_type': 'integer'},
+    'video_cast_clip_redo_budget': {'owner': 'video', 'value_type': 'integer'},
     'video_presenter_negative_prompt': {'owner': 'video', 'value_type': 'string'},
     'video_clip_interpolation_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_clip_interpolation_engine': {'owner': 'video', 'value_type': 'string'},

@@ -684,6 +684,118 @@ async def _score_image(
     return _parse_score(text)
 
 
+@dataclass(frozen=True)
+class TalkingClipVerdict:
+    """Is a rendered talking clip free of the tells that read as AI slop?
+
+    ``ok=None``: could not tell. ``problems`` counts the failed checks (hands,
+    mouth, face, strangers), so two takes of one shot compare on it.
+    """
+
+    ok: bool | None
+    problems: int = 0
+    reason: str = ""
+
+
+def _parse_talking_clip(text: str) -> TalkingClipVerdict:
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return TalkingClipVerdict(ok=None, reason="unparseable vision response")
+    try:
+        parsed = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return TalkingClipVerdict(ok=None, reason="unparseable vision response")
+    checks = [parsed.get(k) for k in ("hands_ok", "mouth_ok", "face_ok")]
+    strangers = parsed.get("strangers")
+    if any(not isinstance(c, bool) for c in checks) or not isinstance(strangers, int) or isinstance(strangers, bool):
+        return TalkingClipVerdict(ok=None, reason="vision response missing a check")
+    problems = sum(1 for c in checks if c is False) + (1 if strangers > 0 else 0)
+    return TalkingClipVerdict(ok=problems == 0, problems=problems, reason=str(parsed.get("reason", "") or "")[:200])
+
+
+async def talking_clip_sheet(clip_path: str, frames: int, tag: str) -> str | None:
+    """``frames`` moments across a clip tiled into one PNG, in order, or ``None``.
+
+    The tells a talking clip goes wrong with (a hand that melts as it
+    gestures, a mouth that stretches past the face) come and go within the
+    clip, so one frame misses them; one sheet lets a single vision call see
+    the whole take.
+    """
+    import math
+
+    duration = await _probe_seconds(clip_path)
+    if not duration:
+        return None
+    n = max(1, frames)
+    stills = []
+    for i in range(n):
+        got = await _frame_at(clip_path, duration * (i + 0.5) / n, f"{tag}_{i}")
+        if got:
+            stills.append(got)
+    if not stills:
+        return None
+    cols = math.ceil(math.sqrt(len(stills)))
+    out = os.path.join(tempfile.gettempdir(), f"shotqa_{tag}_sheet_{os.path.basename(clip_path)}.png")
+    inputs: list[str] = []
+    for still in stills:
+        inputs += ["-i", still]
+    layout = "|".join(f"{(k % cols) * 512}_{(k // cols) * 288}" for k in range(len(stills)))
+    scaled = "".join(f"[{k}:v]scale=512:288[s{k}];" for k in range(len(stills)))
+    joined = "".join(f"[s{k}]" for k in range(len(stills)))
+    graph = f"{scaled}{joined}xstack=inputs={len(stills)}:layout={layout}:fill=black[out]" \
+        if len(stills) > 1 else "[0:v]scale=512:288[out]"
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", *inputs, "-filter_complex", graph, "-map", "[out]", out]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[SHOT_QA] contact sheet failed for %s: %s", clip_path, exc)
+        return None
+    return out if os.path.exists(out) and os.path.getsize(out) > 0 else None
+
+
+async def check_talking_clip(
+    *,
+    clip_path: str,
+    name: str,
+    appearance: str,
+    site_config: Any,
+    pool: Any,
+) -> TalkingClipVerdict:
+    """Does a rendered talking clip keep its hands, mouth and face intact, alone?
+
+    Matt on the Red Riding Hood render (2026-10-13): "the hands in the
+    animations are slop" and "Red's mouth is too large at times". A talking
+    frame is checked before animation (``check_talking_frame``), but these
+    tells appear only once the lip-sync moves the picture, so the finished
+    clip is checked too. Countable checks, not a score; fail-soft ``ok=None``.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    if site_config is None or pool is None:
+        return TalkingClipVerdict(ok=None, reason="no site_config or pool")
+    model = (site_config.get("qa_vision_model", "") or "").strip()
+    if not model:
+        return TalkingClipVerdict(ok=None, reason="no vision model configured")
+    raw = site_config.get("video_cast_clip_check_frames", None)
+    frames = int(float(raw if raw not in (None, "") else DEFAULTS["video_cast_clip_check_frames"]))
+    sheet = await talking_clip_sheet(clip_path, frames, "talkclip")
+    if sheet is None:
+        return TalkingClipVerdict(ok=None, reason="could not sample the clip")
+
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    prompt = get_prompt_manager().get_prompt(
+        "qa.talking_clip", name=name, appearance=appearance or name, frames=frames,
+    )
+    text, why = await _vision_text(sheet, prompt=prompt, model=model, pool=pool, shot_idx=-1)
+    if text is None:
+        return TalkingClipVerdict(ok=None, reason=why)
+    return _parse_talking_clip(text)
+
+
 @dataclass
 class TalkingFrameVerdict:
     """Is this talking frame the speaker, alone? ``ok=None``: could not tell."""
