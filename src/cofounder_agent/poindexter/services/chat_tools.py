@@ -540,6 +540,10 @@ async def _revise_render(
     )
 
 
+async def _package_video(ctx: ChatToolContext, *, task_id: str) -> str:
+    return await _start_draft(ctx, "package", {"task_id": task_id.strip()})
+
+
 async def _revise_draft(ctx: ChatToolContext, *, draft_id: str, instruction: str) -> str:
     from poindexter.services import creative_drafts as cd
 
@@ -777,13 +781,30 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         handler=_revise_render,
     ),
     ChatToolSpec(
+        name="package_video",
+        description=(
+            "Write a finished cartoon's YouTube package: its title, "
+            "description, tags and a thumbnail composed from one of its shots "
+            "with a few words on it. Use it when the operator wants to publish "
+            "or upload a render, or asks for its title or thumbnail. task_id is "
+            "the render's task id (from its render card). Returns at once; a "
+            "draft card fills in about a minute later. A note on it ('punchier "
+            "title', 'use the shot of the prince') goes to revise_draft; the "
+            "card's Publish button is the operator's: it stores the package on "
+            "the video and approves it for upload."
+        ),
+        parameters=_params({"task_id": _STR}, ["task_id"]),
+        tier="read",
+        handler=_package_video,
+    ),
+    ChatToolSpec(
         name="revise_draft",
         description=(
-            "Make the next version of a cast or screenplay draft from the "
-            "operator's note (e.g. 'make the wolf scarier', 'cut scene 2', "
-            "'give Ruby a green cloak'). Untouched parts carry over; a cast "
-            "revision redraws only the characters whose looks changed. Returns "
-            "at once; the new card fills in when ready."
+            "Make the next version of a cast, screenplay, storyboard or "
+            "YouTube package draft from the operator's note (e.g. 'make the "
+            "wolf scarier', 'cut scene 2', 'a punchier title'). Untouched parts "
+            "carry over; a cast revision redraws only the characters whose "
+            "looks changed. Returns at once; the new card fills in when ready."
         ),
         parameters=_params({"draft_id": _STR, "instruction": _STR}, ["draft_id", "instruction"]),
         tier="read",
@@ -792,8 +813,9 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
     ChatToolSpec(
         name="show_draft",
         description=(
-            "Read a cast or screenplay draft as text (status, characters or the "
-            "script) by its 8-character id, to discuss or revise it."
+            "Read a draft as text (status, then the characters, the script, "
+            "the shots or the YouTube package) by its 8-character id, to "
+            "discuss or revise it."
         ),
         parameters=_params({"draft_id": _STR}, ["draft_id"]),
         tier="read",

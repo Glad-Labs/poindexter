@@ -14,6 +14,10 @@ about and revise, and only "keep" makes it real.
 - A **storyboard** draft (phase 2) voices scenes of a script draft and draws
   a still per shot with the renderer's own functions
   (``services/storyboard.py``). A note redraws only the shots it changes.
+- A **package** draft (phase 7) writes a finished cartoon's YouTube title,
+  description and tags and composes its thumbnail from a frame
+  (``services/video_package.py``). Keep stores it on the video, so it is
+  what uploads; the card's Publish keeps it and approves the video.
 
 Every revision is a new row (``parent_id`` -> the version it revises,
 ``version`` + 1), so the chat can go back. Drafts are built in the
@@ -33,7 +37,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("cast", "screenplay", "storyboard")
+KINDS = ("cast", "screenplay", "storyboard", "package")
 _JOBS: set[asyncio.Task[Any]] = set()
 
 
@@ -157,6 +161,14 @@ async def _wait_for_gpu(pool: Any, draft_id: str, site_config: Any) -> None:
 async def _build(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None, site_config: Any) -> dict[str, Any]:
     request = draft["request"]
     instruction = str(request.get("instruction") or "")
+    if draft["kind"] == "package":
+        from poindexter.services import video_package as vp
+
+        return await vp.draft_package(
+            pool, task_id=str(request["task_id"]), site_config=site_config,
+            upload_prefix=f"drafts/{draft['id']}",
+            previous=parent["payload"] if parent is not None else None, instruction=instruction,
+        )
     if draft["kind"] == "storyboard":
         from poindexter.services import storyboard as sb
 
@@ -238,6 +250,25 @@ async def _check_storyboard_request(pool: Any, request: dict[str, Any], site_con
         request["cast_draft"] = cast["id"]
 
 
+async def _check_package_request(pool: Any, request: dict[str, Any]) -> None:
+    """Fail in the chat turn on a video that cannot be packaged."""
+    from poindexter.services import video_package as vp
+    from poindexter.utils.uuid_prefix import resolve_task_id_prefix
+
+    raw = str(request.get("task_id") or "").strip()
+    if not raw:
+        raise DraftError("a YouTube package needs the video's task id (from its render card)")
+    try:
+        task_id = await resolve_task_id_prefix(pool, raw)
+    except Exception as exc:  # noqa: BLE001 — an unknown or ambiguous prefix (an HTTP 404/409 there)
+        raise DraftError(f"no single video task matches {raw!r}") from exc
+    try:
+        await vp.check_packageable(pool, task_id)
+    except vp.PackageError as exc:
+        raise DraftError(str(exc)) from exc
+    request["task_id"] = task_id
+
+
 def _spawn(coro: Any) -> None:
     task = asyncio.get_running_loop().create_task(coro)
     _JOBS.add(task)
@@ -253,6 +284,8 @@ async def start_draft(
         raise DraftError(f"kind must be one of {KINDS}, not {kind!r}")
     if kind == "storyboard":
         await _check_storyboard_request(pool, request, site_config)
+    elif kind == "package":
+        await _check_package_request(pool, request)
     elif not str(request.get("topic") or "").strip():
         raise DraftError("a draft needs a topic: what the piece is about")
     if kind == "screenplay":
@@ -303,6 +336,13 @@ async def keep_draft(pool: Any, draft_id: str, *, site_config: Any) -> dict[str,
         from poindexter.services import casting
 
         payload = {**payload, "kept": await casting.keep_cast(payload, site_config=site_config, pool=pool)}
+    elif draft["kind"] == "package":
+        from poindexter.services import video_package as vp
+
+        try:
+            payload = {**payload, "applied": await vp.apply_package(pool, payload)}
+        except vp.PackageError as exc:
+            raise DraftError(str(exc)) from exc
     await _finish(pool, draft["id"], status="kept", payload=payload)
     return {**draft, "status": "kept", "payload": payload}
 
@@ -481,7 +521,18 @@ def describe(draft: dict[str, Any], *, max_chars: int = 6000) -> str:
         return f"{head}: {draft.get('error') or 'failed'}"
     payload = draft.get("payload") or {}
     lines = [head]
-    if draft["kind"] == "storyboard":
+    if draft["kind"] == "package":
+        lines.append(f"YouTube package for video {str(payload.get('task_id', ''))[:8]} ({payload.get('source_title', '')})")
+        lines.append(f"title: {payload.get('title', '')}")
+        lines.append(f"description: {payload.get('description', '')}")
+        lines.append(f"tags: {', '.join(payload.get('tags') or [])}")
+        lines.append(
+            f"thumbnail: shot {payload.get('thumbnail_shot')} ({str(payload.get('thumbnail_picture') or '')[:160]}), "
+            f"words: {payload.get('thumbnail_text') or '(none)'}"
+        )
+        if payload.get("notes"):
+            lines.append("notes: " + " ".join(payload["notes"]))
+    elif draft["kind"] == "storyboard":
         lines.append(f"storyboard of {payload.get('title', '')}, scenes {payload.get('scenes')}, style: {payload.get('style', '')}")
         for row in payload.get("shots") or []:
             drawn = "drawn" if row.get("image_url") else "not drawn"

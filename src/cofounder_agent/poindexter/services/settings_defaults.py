@@ -3178,6 +3178,17 @@ DEFAULTS: dict[str, str] = {
     'video_clip_cache_enabled': 'true',
     'video_clip_cache_dir': '~/.poindexter/video/clips',
     'video_clip_cache_keep_days': '14',
+    # Chat drafting phase 7: a finished cartoon's YouTube package
+    # (services/video_package.py). The writer drafts the title (fits whole in
+    # title_max_chars, never cut), the description, up to max_tags tags, the
+    # thumbnail's words and the shot it shows; the thumbnail is a frame of
+    # that shot in the video_thumbnail_* look, laid out per thumbnail_layout
+    # ('right' = the frame on the right, words on the left; 'cover' = full
+    # bleed behind a scrim).
+    'video_package_title_max_chars': '70',
+    'video_package_description_max_chars': '700',
+    'video_package_max_tags': '12',
+    'video_package_thumbnail_layout': 'right',
     # A cast draft's voice previews load Chatterbox on the render card; below
     # this much free VRAM, ComfyUI's resident image-edit model is reclaimed first.
     'story_cast_preview_min_free_gb': '3',
@@ -6682,6 +6693,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
+    'video_package_title_max_chars': {'owner': 'video_package', 'value_type': 'integer'},
+    'video_package_description_max_chars': {'owner': 'video_package', 'value_type': 'integer'},
+    'video_package_max_tags': {'owner': 'video_package', 'value_type': 'integer'},
+    'video_package_thumbnail_layout': {'owner': 'video_package', 'value_type': 'string'},
     'story_cast_preview_min_free_gb': {'owner': 'casting', 'value_type': 'float'},
     'creative_draft_gpu_busy_stages': {'owner': 'creative_drafts', 'value_type': 'csv'},
     'creative_draft_gpu_wait_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},

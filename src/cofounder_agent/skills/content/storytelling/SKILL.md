@@ -35,9 +35,15 @@ metadata:
     - key: story.score
       output_format: json
       description: 'Scores a voiced cartoon: its scenes (id, length, setting, what happens, the turn), its action beats (number, scene, what happens) and the art style in; JSON {"music": [{scene_id, prompt}], "sounds": [{beat, prompt}]} out, a music brief per scene and a sound for the actions worth hearing. Validated in code (real scene ids and beat numbers, a prompt each). Used by services.score.plan_score; Stable Audio makes each piece.'
+    - key: story.youtube_package
+      output_format: json
+      description: 'Packages a finished cartoon for YouTube (chat drafting phase 7): the title, logline, art style, cast (id and name), the story (scene summaries and turns, then the spoken lines) and a table of the drawn shots in; JSON {title, description, tags, thumbnail_text, thumbnail_shot} out. Validated in code (title fits whole, numbers only from the script, no links, short comma-free tags, the long-video thumbnail checks on thumbnail_text, a real shot number). Used by services.video_package.package_video, which composes the thumbnail from a frame of that shot.'
+    - key: story.youtube_package_revise
+      output_format: json
+      description: "Revises a cartoon's YouTube package to address one note from the operator: the same inputs as story.youtube_package plus the current package JSON and the note; the whole revised package out in the same shape, untouched fields kept. Validated in code like a new package. Used by services.video_package.package_video."
     - key: story.screenplay_fix
       output_format: json
-      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise, story.storyboard_revise and story.score: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
+      description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise, story.storyboard_revise, story.score, story.youtube_package and story.youtube_package_revise: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
 ---
 
 # Storytelling skill
@@ -322,6 +328,68 @@ Pick at most {max_sounds} of the actions whose sound the audience should hear (a
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
 {{"music": [{{"scene_id": "s1", "prompt": "..."}}], "sounds": [{{"beat": 4, "prompt": "..."}}]}}
+```
+
+## story.youtube_package
+
+```text
+You are publishing a finished short animated piece on YouTube, "{title}": {logline}
+
+ART STYLE: {style}
+
+THE CAST - id: name
+{cast_block}
+
+THE STORY
+{story}
+
+THE DRAWN SHOTS - number | who is in it | the picture
+{shot_table}
+
+WRITE
+- "title": what makes someone browsing click, and what someone searching would type. Name the thing people know: the tale it retells, a character, or the subject. Make it fit in {title_max} characters as written.
+- "description": two or three short paragraphs, under {description_max} characters: the first line hooks (it shows before "more"), then what happens without giving away the ending, then who it is for. Plain text.
+- "tags": up to {max_tags} search phrases of one to four words each: the tale, the characters, the genre, the art style, the audience.
+- "thumbnail_text": the words on the thumbnail, at most {hook_max} characters: a few words that add a question or a stake to the title rather than repeating it.
+- "thumbnail_shot": the number of the shot whose picture makes the best thumbnail: a character's face showing a clear feeling, at the moment the story turns.
+- Every number you write comes from the story above.
+
+OUTPUT
+Reply with one JSON object and nothing else, shaped like this:
+{{"title": "...", "description": "...", "tags": ["..."], "thumbnail_text": "...", "thumbnail_shot": 0}}
+```
+
+## story.youtube_package_revise
+
+```text
+You are publishing a finished short animated piece on YouTube, "{title}": {logline}. The operator has read its package and left a note.
+
+THE NOTE
+{instruction}
+
+THE PACKAGE NOW
+{current}
+
+ART STYLE: {style}
+
+THE CAST - id: name
+{cast_block}
+
+THE STORY
+{story}
+
+THE DRAWN SHOTS - number | who is in it | the picture
+{shot_table}
+
+HOW TO REVISE
+- Change what the note is about and keep every other field as it is.
+- When the note gives exact words, use those words.
+- The title fits in {title_max} characters as written; the description stays under {description_max} characters, plain text; up to {max_tags} tags of one to four words; thumbnail_text at most {hook_max} characters; thumbnail_shot is a number from the shot table.
+- Every number you write comes from the story above.
+
+OUTPUT
+Reply with the whole package as one JSON object and nothing else, shaped like this:
+{{"title": "...", "description": "...", "tags": ["..."], "thumbnail_text": "...", "thumbnail_shot": 0}}
 ```
 
 ## story.screenplay_fix

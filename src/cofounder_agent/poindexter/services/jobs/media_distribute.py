@@ -163,7 +163,8 @@ _PRUNE_ORPHAN_SQL = (
 # Two halves, one shape. The first is a post's media, described by its post.
 # The second is a standalone video (poindexter#1140): a creative-studio piece
 # with no post, keyed on its task, described by its own asset (the
-# screenplay's title and logline, stored by media.persist) and with no
+# screenplay's title and logline, stored by media.persist, or the YouTube
+# package written in the chat, services/video_package.py) and with no
 # article to link back to. ``subject_id`` is the approval row's key in both
 # halves (the post id, or the task id) and is what the dispatch stamps use;
 # ``post_id`` is NULL for a standalone row.
@@ -216,7 +217,12 @@ _APPROVED_UNDISPATCHED_SQL = """
                    ma.medium,
                    ma.created_at AS _appr_created,
                    mas.title, ''::text AS content, mas.description::text AS excerpt,
-                   ''::text AS seo_keywords, ''::text AS slug,
+                   -- tags from the chat-written YouTube package (services/video_package.py)
+                   COALESCE((SELECT string_agg(t, ',')
+                               FROM jsonb_array_elements_text(
+                                    CASE WHEN jsonb_typeof(mas.metadata->'youtube_package'->'tags') = 'array'
+                                         THEN mas.metadata->'youtube_package'->'tags' END) t), '') AS seo_keywords,
+                   ''::text AS slug,
                    mas.metadata->'video_shot_list' AS video_shot_list, pt.niche_slug,
                    mas.id::text AS asset_id,
                    mas.task_id,

@@ -343,10 +343,30 @@ function CfDraftCard({ card, pushToast }) {
       setBusy(false);
     }
   };
+  const [published, setPublished] = React.useState(false);
+  // Publish = keep the package onto the video, then approve the video (the
+  // same Gate-2 decision as the media inbox; the subject is the task).
+  const publish = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const kept = await PX.api.chatDraftKeep(card.draft_id);
+      setDraft(kept);
+      await PX.api.mediaDecide(kept.payload.task_id, 'video', true);
+      setPublished(true);
+    } catch (e) {
+      pushToast && pushToast(`Publish failed — ${e.message}`, 'red', '✕');
+    } finally {
+      setBusy(false);
+    }
+  };
   const kind =
-    { cast: 'Cast', screenplay: 'Script', storyboard: 'Storyboard' }[
-      card.draft_kind
-    ] || 'Draft';
+    {
+      cast: 'Cast',
+      screenplay: 'Script',
+      storyboard: 'Storyboard',
+      package: 'YouTube package',
+    }[card.draft_kind] || 'Draft';
   const status = draft ? draft.status : 'working';
   const payload = (draft && draft.payload) || {};
   return (
@@ -368,6 +388,8 @@ function CfDraftCard({ card, pushToast }) {
             {
               cast: 'Designing the characters, drawing their portraits and voicing them…',
               storyboard: 'Voicing the lines and drawing every shot…',
+              package:
+                'Writing the title and description and composing the thumbnail…',
             }[card.draft_kind] ||
             'Writing the script…'}
         </div>
@@ -386,16 +408,34 @@ function CfDraftCard({ card, pushToast }) {
       {!working && status !== 'failed' && card.draft_kind === 'storyboard' && (
         <CfDraftStoryboard payload={payload} />
       )}
+      {!working && status !== 'failed' && card.draft_kind === 'package' && (
+        <CfDraftPackage payload={payload} />
+      )}
       {status === 'ready' && (
         <div className="cf-plan__actions">
+          {card.draft_kind === 'package' && (
+            <button
+              className="mbtn mbtn--primary"
+              disabled={busy}
+              onClick={publish}
+              title="Store this package on the video and approve it: it uploads with these words and this thumbnail"
+            >
+              <Icon name="check" size={12} />
+              {busy ? 'PUBLISHING…' : 'Publish'}
+            </button>
+          )}
           <button
-            className="mbtn mbtn--primary"
+            className={
+              card.draft_kind === 'package' ? 'mbtn' : 'mbtn mbtn--primary'
+            }
             disabled={busy}
             onClick={() => act(PX.api.chatDraftKeep, 'Keep')}
             title={
-              card.draft_kind === 'cast'
-                ? 'Save these characters as personas'
-                : 'Keep this script'
+              {
+                cast: 'Save these characters as personas',
+                package:
+                  'Store this package on the video without approving it yet',
+              }[card.draft_kind] || 'Keep this script'
             }
           >
             <Icon name="check" size={12} />
@@ -411,14 +451,59 @@ function CfDraftCard({ card, pushToast }) {
           <span className="cf-draft__hint">or type a note to revise it</span>
         </div>
       )}
+      {status === 'kept' && card.draft_kind === 'package' && !published && (
+        <div className="cf-plan__actions">
+          <button
+            className="mbtn mbtn--primary"
+            disabled={busy}
+            onClick={publish}
+            title="Approve the video: it uploads with this package"
+          >
+            <Icon name="check" size={12} />
+            {busy ? 'PUBLISHING…' : 'Publish'}
+          </button>
+        </div>
+      )}
       {(status === 'kept' || status === 'discarded') && (
         <div className="cf-draft__note">
           {status === 'kept'
-            ? card.draft_kind === 'cast'
-              ? 'Kept: these characters are saved and can be cast.'
-              : 'Kept.'
+            ? {
+                cast: 'Kept: these characters are saved and can be cast.',
+                package: published
+                  ? 'Published: approved, it uploads with this package on the next distribution run.'
+                  : 'Kept: the video will upload with this package once it is approved.',
+              }[card.draft_kind] || 'Kept.'
             : 'Discarded.'}
         </div>
+      )}
+    </div>
+  );
+}
+
+// A YouTube package draft: the composed thumbnail over the words that upload.
+function CfDraftPackage({ payload }) {
+  return (
+    <div className="cf-package">
+      {payload.thumbnail_url && (
+        <img
+          className="cf-package__thumb"
+          src={payload.thumbnail_url}
+          alt={`Thumbnail: shot ${payload.thumbnail_shot}`}
+        />
+      )}
+      <div className="cf-package__title">{payload.title}</div>
+      <div className="cf-package__desc">{payload.description}</div>
+      {(payload.tags || []).length > 0 && (
+        <div className="cf-plan__overrides">
+          {payload.tags.map((t) => (
+            <code key={t} className="cf-plan__override">
+              {t}
+            </code>
+          ))}
+        </div>
+      )}
+      {(payload.notes || []).length > 0 && (
+        <div className="cf-draft__note">{payload.notes.join(' ')}</div>
       )}
     </div>
   );
@@ -620,6 +705,7 @@ function CfRenderCard({ card, pushToast }) {
             ? `Revision of ${String(card.revises).slice(0, 8)}: only the changed shots were re-rendered. `
             : ''}
           Type a note to redo a shot (e.g. "shot 4 wider"); the rest is reused.
+          Say "package it for YouTube" for its title, description and thumbnail.
         </div>
       )}
     </div>
