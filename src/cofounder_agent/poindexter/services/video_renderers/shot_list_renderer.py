@@ -191,7 +191,7 @@ class _ShotState:
     is_reused: bool  # True ⇒ holdover / pexels-miss (reused a prior clip; never scored)
     qa: ShotQAResult | None = None  # best score (None ⇒ unscored / couldn't score)
     attempts: int = 0  # regen rounds spent on this shot
-    rung: str = "primary"  # fill provenance: primary | substitute | card | dropped
+    rung: str = "primary"  # fill provenance: primary | substitute | card | dropped | kept (a cached clip, final)
     # A render of this shot ended in a detail collapse, the incumbent's or a
     # candidate that lost keep-best. Every later re-roll holds the camera
     # (``_candidate_shot``): the shot's own motion is the likeliest cause.
@@ -4456,7 +4456,7 @@ async def _score_pass(
     if not qa.enabled:
         return
     for st in states:
-        if st.is_reused or not st.result.success or not st.result.clip_path:
+        if st.is_reused or st.rung == "kept" or not st.result.success or not st.result.clip_path:
             continue
         st.qa = await score_shot_frame(
             frame_path=st.result.clip_path, shot=st.shot,
@@ -5154,7 +5154,7 @@ async def _finalize_pass(
         qa_score: float | None = None
         qa_outcome: str | None = None
 
-        if st.rung in ("substitute", "card"):
+        if st.rung in ("substitute", "card", "kept"):
             # Backfilled slot — result is already final, no QA verdict applies.
             qa_outcome = st.rung
         elif st.is_reused:
@@ -5440,8 +5440,13 @@ async def render_shot_list(
     endcard_cta_text: str = "",
     heartbeat_cb: Any = None,
     niche_slug: str | None = None,
+    clip_cache_dir: str | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
+
+    ``clip_cache_dir`` (chat drafting phase 4, ``clip_cache``): reuse every
+    cached shot clip whose render inputs still match and render only the
+    rest, then store this render's clips there for the next revision.
 
     Args:
         post_id: For audit_log + temp-dir naming.
@@ -5654,10 +5659,28 @@ async def render_shot_list(
                 position, states_so_far, _window_for, site_config,
             )
 
-    states = await _render_pass(
-        capped_shots, render_kwargs=render_kwargs, progress_cb=progress_cb,
+    from poindexter.services.video_renderers import clip_cache
+
+    kept = clip_cache.reusable(clip_cache_dir, capped_shots, work_dir)
+    fresh = [s for s in capped_shots if s.idx not in kept]
+    fresh_states = await _render_pass(
+        fresh, render_kwargs=render_kwargs, progress_cb=progress_cb,
         presenter_window_fn=presenter_window_fn,
-    )
+    ) if fresh else []
+    by_idx = {st.shot.idx: st for st in fresh_states}
+    # A kept clip is one the operator already watched: final, never rescored
+    # or re-rolled (rung "kept").
+    states = [
+        _ShotState(
+            shot=s, is_reused=False, rung="kept",
+            result=ShotRenderResult(
+                idx=s.idx, source=s.source, success=True,
+                clip_path=kept[s.idx][0], duration_s=kept[s.idx][1],
+            ),
+        ) if s.idx in kept else by_idx[s.idx]
+        for s in capped_shots
+        if s.idx in kept or s.idx in by_idx
+    ]
     if qa.enabled:
         qa = replace(
             qa,
@@ -5691,6 +5714,15 @@ async def render_shot_list(
     shot_results = await _finalize_pass(
         states, qa=qa, pool=pool, post_id=post_id,
     )
+    if clip_cache_dir:
+        try:
+            saved = clip_cache.save(
+                clip_cache_dir,
+                [(st.shot, res, st.rung) for st, res in zip(states, shot_results, strict=False)],
+            )
+            logger.info("[SHOT_LIST] kept %d shot clip(s) in %s for revisions", saved, clip_cache_dir)
+        except OSError as exc:
+            logger.warning("[SHOT_LIST] could not keep shot clips in %s: %s", clip_cache_dir, exc)
 
     shots_substituted = sum(1 for st in states if st.rung == "substitute")
     shots_carded = sum(1 for st in states if st.rung == "card")

@@ -458,3 +458,39 @@ the subject.
 
 `render_draft` is a write tool without an approval card, like
 `create_post`, because its output lands in that approval queue.
+
+### Revising a render
+
+Phase 4 adds `revise_render`, which redoes only the shots a note is about,
+for example "redo the shot where Ruby meets the wolf, hands lower". It works
+in three parts.
+
+**What a render keeps.** Every screenplay render (exact timing, long lane)
+keeps its final shot clips (`video_renderers/clip_cache.py`). They live in
+`video_clip_cache_dir/<task>`, under a key over everything that decides how a
+shot renders: source, prompts, motion, speaker and timing. The render also
+keeps its dialogue track, captions, shot list, timeline and script.
+
+**What a revision does** (`services/render_revision.py`):
+
+1. It reads the kept shot list and timeline and asks the writer which shots
+   the note is about and their new pictures. This uses
+   `story.storyboard_revise`, because a render's shots are a storyboard's
+   shots.
+2. It writes the revised shot list beside the cache.
+3. It queues `media.load_render_revision` → `media.render_long_video` →
+   `media.qa` → `media.persist` under the source's cache key.
+
+`render_shot_list(clip_cache_dir=...)` reuses every clip whose key still
+matches as a `kept` rung. A kept clip is final: it is not rescored or
+re-rolled, because the operator already watched it. Only the changed shots
+render. The same track and captions are reused, and the new video lands in
+the approval queue titled "(revised)".
+
+**Revising a revision.** A revision's task id points back to the source cache
+through `refs/<task>.txt`, so a revision of a revision builds on the same
+clips.
+
+Fallback clips (a substitute or a branded card) are not kept, so a revision
+retries them. Caches untouched for `video_clip_cache_keep_days` are pruned
+when the next render writes one.

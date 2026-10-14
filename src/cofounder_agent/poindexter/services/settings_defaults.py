@@ -3147,6 +3147,13 @@ DEFAULTS: dict[str, str] = {
     # after this many minutes without progress was interrupted (a worker
     # restart) and reads as failed.
     'creative_draft_stale_minutes': '45',
+    # Chat drafting phase 4: a screenplay video keeps its shot clips (plus its
+    # dialogue track, captions, shot list, timeline and script) under
+    # <dir>/<task>, so a note re-renders only the shots it changes. Caches
+    # untouched for keep_days are deleted when the next render writes one.
+    'video_clip_cache_enabled': 'true',
+    'video_clip_cache_dir': '~/.poindexter/video/clips',
+    'video_clip_cache_keep_days': '14',
     # A cast draft's voice previews load Chatterbox on the render card; below
     # this much free VRAM, ComfyUI's resident image-edit model is reclaimed first.
     'story_cast_preview_min_free_gb': '3',
@@ -6635,6 +6642,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_line_exaggeration_max': {'owner': 'screenplay', 'value_type': 'float'},
     'story_cast_max_new': {'owner': 'casting', 'value_type': 'integer'},
     'creative_draft_stale_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},
+    'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
+    'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
+    'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
     'story_cast_preview_min_free_gb': {'owner': 'casting', 'value_type': 'float'},
     'creative_draft_gpu_busy_stages': {'owner': 'creative_drafts', 'value_type': 'csv'},
     'creative_draft_gpu_wait_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},

@@ -62,6 +62,48 @@ def _resolve_dims(aspect: str) -> tuple[int, int]:
     return 1920, 1080
 
 
+def _clip_cache_dir(state: dict[str, Any], shot_list: Any, output_key: str, site_config: Any) -> str | None:
+    """Where this render keeps its shot clips, or None (blog videos, Shorts, off)."""
+    import os
+
+    from poindexter.services.settings_defaults import DEFAULTS
+    from poindexter.services.video_renderers import clip_cache
+
+    def _get(key: str) -> str:
+        raw = site_config.get(key, None) if site_config is not None else None
+        return str(DEFAULTS[key] if raw is None or str(raw).strip() == "" else raw)
+
+    if output_key != "long_video_path" or getattr(shot_list, "timing", "fit") != "exact":
+        return None
+    if _get("video_clip_cache_enabled").strip().lower() not in ("true", "1", "yes", "on"):
+        return None
+    key = str(state.get("video_clip_cache_key") or state.get("task_id") or "").strip()
+    if not key:
+        return None
+    root = os.path.expanduser(_get("video_clip_cache_dir"))
+    try:
+        clip_cache.prune(root, float(_get("video_clip_cache_keep_days")))
+    except (OSError, ValueError) as exc:
+        logger.warning("[media_render] clip cache prune failed: %s", exc)
+    return os.path.join(root, key)
+
+
+def _keep_render_inputs(
+    cache_dir: str, state: dict[str, Any], shot_list: Any, narration: Any, caption: Any,
+) -> None:
+    from poindexter.services.video_renderers import clip_cache
+
+    try:
+        clip_cache.save_inputs(
+            cache_dir, audio_path=narration, caption_path=caption,
+            shot_list=shot_list.model_dump(mode="json"),
+            timeline=state.get("dialogue_timeline") or [],
+            screenplay=state.get("screenplay") or {},
+        )
+    except OSError as exc:
+        logger.warning("[media_render] could not keep render inputs in %s: %s", cache_dir, exc)
+
+
 async def render_from_state(
     state: dict[str, Any],
     *,
@@ -255,6 +297,11 @@ async def render_from_state(
 
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"
 
+    # A screenplay video keeps its shot clips so the chat can redo one shot
+    # without re-rendering the rest (chat drafting phase 4, clip_cache). A
+    # revision renders under its source's cache key.
+    clip_cache_dir = _clip_cache_dir(state, shot_list, output_key, site_config)
+
     # Best-effort live-activity: surface the render as a kind='media' row in the
     # console pulse's "In Production" column, with real per-shot progress. The
     # ledger never affects the render (swallow-on-error; None id ⇒ silent no-op).
@@ -343,9 +390,12 @@ async def render_from_state(
                     narration_fit_min_shot_s=fit_min_shot_s,
                     narration_fit_hold_s=fit_hold_s,
                     endcard_cta_text=endcard_cta_text,
+                    clip_cache_dir=clip_cache_dir,
                 )
             if not result.success:
                 act.fail()
+            elif clip_cache_dir:
+                _keep_render_inputs(clip_cache_dir, state, shot_list, narration, caption)
     except Exception as exc:  # noqa: BLE001 — a render must never halt the graph
         logger.exception("[media.render] %s render raised: %s", output_key, exc)
         emit_finding(

@@ -621,6 +621,11 @@ class PipelineState(TypedDict, total=False):
     # render starts from (creative_drafts phase 3).
     creative_draft: str
     cast_draft: str
+    # Chat drafting phase 4: a render revision's source clip cache, and the
+    # media.load_render_revision node config naming it.
+    video_clip_cache_key: str
+    render_source: str
+    shot_list_file: str
     # media.render_dialogue's measured beat timeline (start_s/end_s per line
     # and action beat), read by media.direct_screenplay.
     dialogue_timeline: list

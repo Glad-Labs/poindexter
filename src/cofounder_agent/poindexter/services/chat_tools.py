@@ -464,23 +464,27 @@ async def _storyboard_draft(
     return await _start_draft(ctx, "storyboard", inputs)
 
 
+def _parse_overrides(raw: str) -> dict[str, Any]:
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise ChatToolError(
+            'setting_overrides must be a JSON object, e.g. {"persona.kai.voice_exaggeration": 0.6}'
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise ChatToolError("setting_overrides must be a JSON object of setting key to value")
+    return parsed
+
+
 async def _render_draft(
     ctx: ChatToolContext, *, draft_id: str, cast_draft: str = "", setting_overrides: str = "",
     niche_slug: str = "",
 ) -> str:
     from poindexter.services import creative_drafts as cd
 
-    overrides: dict[str, Any] = {}
-    if setting_overrides.strip():
-        try:
-            parsed = json.loads(setting_overrides)
-        except ValueError as exc:
-            raise ChatToolError(
-                'setting_overrides must be a JSON object, e.g. {"persona.kai.voice_exaggeration": 0.6}'
-            ) from exc
-        if not isinstance(parsed, dict):
-            raise ChatToolError("setting_overrides must be a JSON object of setting key to value")
-        overrides = parsed
+    overrides = _parse_overrides(setting_overrides)
     if not ctx.conversation_id or not ctx.message_id:
         raise ChatToolError("render_draft runs from a chat conversation")
     try:
@@ -502,6 +506,37 @@ async def _render_draft(
         f"Render of {run['title']!r} queued as task {run['task_id'][:8]}{changed}. A render "
         "takes about an hour or two; the render card shows its progress and plays the "
         "video when it is done, with Approve / Reject. Say so and stop."
+    )
+
+
+async def _revise_render(
+    ctx: ChatToolContext, *, task_id: str, instruction: str, setting_overrides: str = "",
+) -> str:
+    from poindexter.services import render_revision as rr
+    from poindexter.utils.uuid_prefix import resolve_task_id_prefix
+
+    overrides = _parse_overrides(setting_overrides)
+    if not ctx.conversation_id or not ctx.message_id:
+        raise ChatToolError("revise_render runs from a chat conversation")
+    resolved = await resolve_task_id_prefix(ctx.pool, task_id.strip())
+    try:
+        run = await rr.start_render_revision(
+            ctx.pool, ctx.db_service, task_id=resolved, instruction=instruction,
+            site_config=ctx.site_config, conversation_id=ctx.conversation_id,
+            message_id=ctx.message_id, setting_overrides=overrides or None,
+        )
+    except rr.RevisionError as exc:
+        raise ChatToolError(str(exc)) from exc
+    ctx.linked_task_ids.append(run["task_id"])
+    ctx.emitted_cards.append({
+        "kind": "render", "task_id": run["task_id"], "title": run["title"],
+        "overrides": run.get("overrides") or [], "revises": resolved,
+    })
+    shots = ", ".join(str(i) for i in run["changed"])
+    return (
+        f"Revision queued as task {run['task_id'][:8]}: re-rendering shot(s) {shots} and "
+        "reusing every other shot, so it takes minutes rather than hours. The render card "
+        "plays it when it is done. Say so and stop."
     )
 
 
@@ -723,6 +758,23 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         ),
         tier="write",
         handler=_render_draft,
+    ),
+    ChatToolSpec(
+        name="revise_render",
+        description=(
+            "Redo only some shots of a finished cartoon render from the "
+            "operator's note ('redo the shot where Ruby meets the wolf, hands "
+            "lower', 'shot 4 wider'). Every other shot's clip is reused, so it "
+            "takes minutes, not hours. task_id is the render's task id (from its "
+            "render card); setting_overrides is an optional JSON object for this "
+            "revision only. The new video lands in the approval queue."
+        ),
+        parameters=_params(
+            {"task_id": _STR, "instruction": _STR, "setting_overrides": _STR},
+            ["task_id", "instruction"],
+        ),
+        tier="write",
+        handler=_revise_render,
     ),
     ChatToolSpec(
         name="revise_draft",

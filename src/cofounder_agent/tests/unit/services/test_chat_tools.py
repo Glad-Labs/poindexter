@@ -64,6 +64,8 @@ class TestRegistryShape:
             # Exempt for the same reason: a draft's render lands in the media
             # approval queue (Gate 2), and its card decides it in place.
             "render_draft": False,
+            # Same: a render revision's new video lands in that queue too.
+            "revise_render": False,
             # Approval-carded (executed only via the operator's click):
             "set_setting": True,
             "restart_service": True,

@@ -614,6 +614,14 @@ function CfRenderCard({ card, pushToast }) {
           {decided === 'approved' ? 'Approved.' : 'Rejected.'}
         </div>
       )}
+      {done && (
+        <div className="cf-draft__hint">
+          {card.revises
+            ? `Revision of ${String(card.revises).slice(0, 8)}: only the changed shots were re-rendered. `
+            : ''}
+          Type a note to redo a shot (e.g. "shot 4 wider"); the rest is reused.
+        </div>
+      )}
     </div>
   );
 }
