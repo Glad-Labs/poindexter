@@ -147,7 +147,9 @@ async def _seed_places(ctx: Any, shot_list: Any, indices: set[int], existing: di
 
     for shot in shot_list.shots:
         url = existing.get(shot.idx)
-        if not (shot.establishing and shot.scene_id and url) or shot.idx in indices:
+        # A scene with an empty plate draws it afresh: seeding the establishing
+        # picture would put its characters back into the place reference.
+        if not (shot.establishing and shot.scene_id and url) or shot.idx in indices or shot.place_prompt:
             continue
         try:
             raw = await _download(url, str(work / f"place_src_{shot.idx:02d}"))

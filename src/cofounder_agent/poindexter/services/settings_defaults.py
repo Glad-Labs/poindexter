@@ -3213,6 +3213,13 @@ DEFAULTS: dict[str, str] = {
     'video_clip_cache_enabled': 'true',
     'video_clip_cache_dir': '~/.poindexter/video/clips',
     'video_clip_cache_keep_days': '14',
+    # Pacing (2026-10-14): a talking shot gives up part of a long line so the
+    # cutaway that plays the rest is at least min_reaction_seconds, never a
+    # 0.1 s flash. The scene's empty background plate is drawn from
+    # place_plate_template ({style}, {setting}) and used as every picture's
+    # place reference, so no character's features end up in the background.
+    'story_min_reaction_seconds': '1.8',
+    'story_place_plate_template': '{style}, the empty place with nobody in it: {setting}, wide view',
     # Transitions in a screenplay video (a cartoon) and its rough cut: between
     # two scenes of the story, video_scene_transition ("dissolve",
     # "fade_black", or "" for a hard cut) over scene_transition_seconds;
@@ -6789,6 +6796,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
+    'story_min_reaction_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
+    'story_place_plate_template': {'owner': 'screenplay_director', 'value_type': 'string'},
     'video_scene_transition': {'owner': 'shot_list_renderer', 'value_type': 'string'},
     'video_scene_transition_seconds': {'owner': 'shot_list_renderer', 'value_type': 'float'},
     'video_shot_transition_seconds': {'owner': 'shot_list_renderer', 'value_type': 'float'},

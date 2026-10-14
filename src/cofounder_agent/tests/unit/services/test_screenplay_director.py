@@ -74,6 +74,39 @@ def _plan(sc=None, timeline=TIMELINE, screenplay=SCREENPLAY, track=TRACK):
     return sd.assign_sources(sd.plan_shots(screenplay, timeline, track, sc), sc)
 
 
+class TestPacing:
+    """A line a little longer than one talking shot used to leave a 0.1 s
+    cutaway flash (Midnight Patch rough cut, 2026-10-14)."""
+
+    def _talk(self, end, sc=None):
+        timeline = [_line(0, "dex", "A line.", 0.0, end)]
+        screenplay = {**SCREENPLAY, "scenes": [{**SCREENPLAY["scenes"][0], "beats": [
+            {"kind": "line", "speaker": "dex", "text": "A line.", "delivery": ""}]}]}
+        return [(s["kind"], round(s["length"], 2)) for s in _plan(sc, timeline, screenplay, end)]
+
+    def test_a_short_remainder_becomes_a_real_cutaway(self):
+        # 4.8 s line, 4.66 s talking budget: 0.14 s left over.
+        plan = self._talk(4.8)
+        assert plan[0] == ("talk", 3.0) and all(length >= 1.8 for _, length in plan[1:])
+        assert sum(length for _, length in plan) == 4.8
+
+    def test_a_line_that_fits_is_one_shot(self):
+        assert self._talk(4.0) == [("talk", 4.0)]
+
+    def test_the_minimum_is_a_setting(self):
+        plan = self._talk(4.8, _sc(story_min_reaction_seconds="0"))
+        assert plan[0] == ("talk", 4.66)
+
+
+class TestPlacePlate:
+    def test_each_scene_gets_an_empty_plate_on_its_establishing_shot(self):
+        shots = [{"source": "image_gen", "scene_id": "s1"}, {"source": "presenter", "scene_id": "s1"}]
+        plan = [{"kind": "master", "setting": "a rooftop dock"}, {"kind": "talk", "setting": "a rooftop dock"}]
+        sd._mark_establishing(shots, plan, lambda setting: sd._place_prompt(setting, "ink", _sc()))
+        assert shots[0]["place_prompt"] == "ink, the empty place with nobody in it: a rooftop dock, wide view"
+        assert "place_prompt" not in shots[1]
+
+
 class TestTiling:
     def test_shots_tile_the_track_with_no_gap_or_overlap(self):
         plan = _plan()

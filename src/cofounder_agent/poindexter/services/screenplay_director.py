@@ -98,6 +98,11 @@ def plan_shots(
     scenes = {s.get("scene_id"): s for s in screenplay.get("scenes") or []}
     talk_budget = presenter_window_budget_s(site_config) or 4.6
     max_shot = site_config.get_float("story_max_shot_seconds", 6.0)
+    # A line longer than one talking shot leaves a remainder for a cutaway.
+    # A remainder shorter than this is a flash (0.1 s in the Midnight Patch
+    # rough cut, 2026-10-14), so the talking shot gives up enough of the line
+    # to make the cutaway at least this long.
+    min_reaction = site_config.get_float("story_min_reaction_seconds", 1.8)
     max_talking = site_config.get_int("story_max_talking_shots", -1)
     talkable = {
         slug for slug in cast
@@ -127,6 +132,8 @@ def plan_shots(
         ):
             delivery = _delivery_for(screenplay, seg)
             talk_len = min(length, talk_budget)
+            if 1e-3 < length - talk_len < min_reaction:
+                talk_len = max(min(talk_len, length - min_reaction), length / 2)
             plan.append({**base, "kind": "talk", "start_s": seg["start_s"], "length": talk_len,
                          "speaker": speaker, "characters": [speaker], "delivery": delivery})
             talking += 1
@@ -186,12 +193,31 @@ def _scene_master_prompt(shot: dict[str, Any], site_config: Any) -> str:
     ).strip(" ,")[:1500]
 
 
-def _mark_establishing(shots: list[dict[str, Any]], plan: list[dict[str, Any]]) -> None:
+def _place_prompt(setting: str, style: str, site_config: Any) -> str:
+    """The scene's empty background plate: its place with nobody in it."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    template = str(
+        (site_config.get("story_place_plate_template", None) if site_config is not None else None)
+        or DEFAULTS["story_place_plate_template"]
+    )
+    return (
+        template.replace("{style}", style or "").replace("{setting}", setting or "the scene")
+    ).strip(" ,")[:1500]
+
+
+def _mark_establishing(
+    shots: list[dict[str, Any]], plan: list[dict[str, Any]], place_prompts: Any = None,
+) -> None:
     """One establishing picture per scene: its master shot, else its first still.
 
     The renderer draws every other picture of the scene with the establishing
     one as a place reference, so a scene keeps one background. Matt on scene 2
     of the first cartoon: the talking shots each had their own swirl backdrop.
+    The establishing shot also carries ``place_prompt``, the scene's empty
+    background plate: drawn with nobody in it, it is the place reference
+    instead, so no character's features ride along on it (Mara's wings were
+    stuck on the buildings behind Cinder and Bolt, 2026-10-14).
     """
     chosen: dict[str, int] = {}
     for i, (shot, s) in enumerate(zip(shots, plan, strict=False)):
@@ -204,6 +230,8 @@ def _mark_establishing(shots: list[dict[str, Any]], plan: list[dict[str, Any]]) 
             chosen[scene] = i
     for i in chosen.values():
         shots[i]["establishing"] = True
+        if place_prompts is not None and plan[i].get("setting"):
+            shots[i]["place_prompt"] = place_prompts(plan[i]["setting"])
 
 
 def _delivery_for(screenplay: dict[str, Any], seg: dict[str, Any]) -> str:
@@ -465,7 +493,7 @@ def build_shot_list(
         if s.get("scene_id"):
             shot["scene_id"] = str(s["scene_id"])[:64]
         shots.append(shot)
-    _mark_establishing(shots, plan)
+    _mark_establishing(shots, plan, lambda setting: _place_prompt(setting, style, site_config))
     try:
         listing = VideoShotList.model_validate({
             "aspect": "16:9",

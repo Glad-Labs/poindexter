@@ -529,6 +529,22 @@ class TestScenePlace:
         assert len(stub_refs["calls"]) == 2 and (tmp_path / "e.png").exists()
 
     @pytest.mark.asyncio
+    async def test_an_empty_plate_is_the_place_so_no_one_rides_along(self, stub_refs, tmp_path):
+        """Mara's wings were stuck on the buildings behind Cinder and Bolt: the
+        place reference was the wide shot with Mara in it (2026-10-14)."""
+        est = Shot(**{**_shot(0, characters=["dex", "nova"]).model_dump(), "scene_id": "s1", "establishing": True,
+                      "prompt": "wide shot of Dex and Nova on the dock",
+                      "place_prompt": "ink, the empty place with nobody in it: a dock"})
+        ctx = slr.ReferenceContext(cast=("dex", "nova"), establishing={"s1": est})
+        await slr._render_reference_still(
+            est, prompt=est.prompt, output_path=str(tmp_path / "e.png"), width=8, height=8,
+            ctx=ctx, work_dir=tmp_path, site_config=_sc(), http_client_factory=None)
+        plate, wide = stub_refs["calls"]
+        assert "without the characters" in plate["prompt"] and "nobody in it: a dock" in plate["prompt"]
+        # The establishing shot itself is drawn in the plate's place too.
+        assert Path(wide["reference_paths"][-1]).name == "place_s1.png" and "shows the place" in wide["prompt"]
+
+    @pytest.mark.asyncio
     async def test_no_scene_or_a_full_reference_set_means_no_place(self, stub_refs, tmp_path):
         ctx = slr.ReferenceContext(cast=("dex", "nova"))
         await slr._render_reference_still(

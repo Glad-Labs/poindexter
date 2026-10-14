@@ -2880,24 +2880,33 @@ def reference_context_for(shot_list: Any) -> ReferenceContext | None:
 async def _place_for(
     shot: Shot, ctx: ReferenceContext, *, work_dir: Path, site_config: Any, http_client_factory: Any,
 ) -> str | None:
-    """The drawn picture of ``shot``'s scene establishing shot, drawing it first if need be.
+    """The place reference for ``shot``'s scene, drawing it first if need be.
 
-    ``None`` for the establishing shot itself, a shot with no scene, or a
-    scene whose establishing picture cannot be drawn. Drawn on demand into
-    the same work dir, so when the establishing shot's own turn comes the
-    same picture is reused rather than drawn again.
+    A scene whose establishing shot carries ``place_prompt`` gets an empty
+    background plate: the place drawn with nobody in it (style-only
+    references), used by every picture of the scene, the establishing one
+    included. With a character in the reference, the edit model carried their
+    features into the background: Mara's wings were stuck on the buildings
+    behind Cinder and Bolt (2026-10-14). An older list without a plate prompt
+    uses the establishing shot's own picture, drawn ahead of its turn when
+    needed and reused when its turn comes. ``None`` for a shot with no scene,
+    or when nothing can be drawn.
     """
     from poindexter.services.settings_defaults import DEFAULTS
 
     scene = getattr(shot, "scene_id", None)
-    if not scene or getattr(shot, "establishing", False):
+    if not scene:
+        return None
+    est = ctx.establishing.get(str(scene))
+    plate = str(getattr(est, "place_prompt", "") or "") if est is not None else ""
+    if getattr(shot, "establishing", False) and not plate:
         return None
     if scene in ctx.places and os.path.exists(ctx.places[scene]):
         return ctx.places[scene]
-    est = ctx.establishing.get(str(scene))
-    # Drawn ahead of its turn only as a still: a generative shot's first frame
-    # is drawn at the hero size for the motion model, so it waits for its turn.
-    if est is None or est.source not in ("image_gen", "image_kenburns"):
+    # Without a plate, the establishing picture is drawn ahead of its turn
+    # only as a still: a generative shot's first frame is drawn at the hero
+    # size for the motion model, so it waits for its turn.
+    if est is None or (not plate and est.source not in ("image_gen", "image_kenburns")):
         return None
 
     def _dim(key: str) -> int:
@@ -2905,6 +2914,18 @@ async def _place_for(
         return int(float(raw if raw not in (None, "") else DEFAULTS[key]))
 
     out = str(work_dir / f"place_{re.sub(r'[^A-Za-z0-9_-]', '_', str(scene))}.png")
+    if plate:
+        empty = est.model_copy(update={
+            "characters": [], "speaker": None, "scene_id": None, "establishing": False, "prompt": plate,
+        })
+        drawn = await _render_reference_still(
+            empty, prompt=plate, output_path=out,
+            width=_dim("video_reference_width"), height=_dim("video_reference_height"),
+            ctx=ctx, work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
+        )
+        if drawn:
+            ctx.places[str(scene)] = out
+        return out if drawn else None
     drawn = await _render_reference_still(
         est, prompt=est.prompt or "", output_path=out,
         width=_dim("video_reference_width"), height=_dim("video_reference_height"),
@@ -3038,7 +3059,8 @@ async def _render_reference_still(
     else:
         ctx.drawn[reuse_key] = output_path
         scene = getattr(shot, "scene_id", None)
-        if getattr(shot, "establishing", False) and scene and str(scene) not in ctx.places:
+        if (getattr(shot, "establishing", False) and scene and str(scene) not in ctx.places
+                and not getattr(shot, "place_prompt", None)):
             ctx.places[str(scene)] = output_path
     return ok
 

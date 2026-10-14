@@ -202,6 +202,14 @@ class Shot(BaseModel):
         False,
         description="This shot's picture is its scene's place reference for the scene's other pictures",
     )
+    place_prompt: str | None = Field(
+        None,
+        max_length=1500,
+        description=(
+            "On an establishing shot: the scene's empty background plate (the place with "
+            "nobody in it), drawn once and used as every picture's place reference"
+        ),
+    )
 
     @field_validator("characters")
     @classmethod
