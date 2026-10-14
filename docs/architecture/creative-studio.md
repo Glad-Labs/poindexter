@@ -28,6 +28,11 @@ are how a plan passes its creative choices; each falls back to a
 | `media.render_dialogue`   | `screenplay`                                                   | `long_narration_audio_path`, `video_long_script`, `dialogue_timeline`             | `dialogue_narrator_persona`                                                                                                                                                                                                                    |
 | `media.direct_screenplay` | `screenplay`, `dialogue_timeline`, `long_narration_audio_path` | `video_shot_list`                                                                 | `screenplay_visual_style` (art style for every still)                                                                                                                                                                                          |
 
+A plan can also change creative settings for itself or one step, such as a
+calmer voice for one character or a different coat this time, without
+touching the saved settings. See
+[plan setting overrides](plan-setting-overrides.md).
+
 ## The cast is personas
 
 A character is a persona ([media-personas](media-personas.md)): a face

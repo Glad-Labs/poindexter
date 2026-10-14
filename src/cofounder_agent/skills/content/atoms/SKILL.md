@@ -280,6 +280,7 @@ JSON SCHEMA:
   "name": "<short_snake_slug>",
   "description": "<one-sentence purpose>",
   "entry": "<node_id_of_entry>",
+  "setting_overrides": {{<optional: setting key to value, for this whole plan>}},
   "nodes": [
     {{"id": "<unique_node_id>", "atom": "<atom_name_from_catalog>",
      "config": {{<optional state seed values for this node>}}}}
@@ -350,6 +351,18 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
 
 CHARACTERS (ids a creative plan may cast in screenplay_cast):
 {cast_roster}
+
+SETTING OVERRIDES
+When the intent asks for something a setting below controls (a calmer or
+livelier voice for one character, a different look for one piece, a
+character in different clothes this time), change that setting for this plan
+only. Put "setting_overrides" at the top level to change it for every step,
+or inside one node's "config" to change it for that step alone. The plan
+runs with the new value; the saved setting stays as it is. Use only keys
+from this list, and keep a value's form (a number stays a number, a
+"low=...,high=..." list keeps its shape). Leave overrides out when the
+intent asks for nothing they control.
+{overridable_settings}
 
 If the spec validator returns errors on a previous attempt, every
 error message starts with "FIX:" followed by exactly what to change.

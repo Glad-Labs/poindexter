@@ -146,10 +146,12 @@ def _resolve_system_prompt(site_config: SiteConfig | None) -> str:
     site_url = (site_config.get("site_url") if site_config else "") or ""
     from poindexter.services.persona_service import cast_roster
     from poindexter.services.prompt_manager import get_prompt_manager
+    from poindexter.services.setting_overrides import overridable_settings_block
 
     return get_prompt_manager().get_prompt(
         _PROMPT_KEY, site_name=site_name, site_url=site_url,
         cast_roster=cast_roster(site_config) if site_config is not None else "(unknown)",
+        overridable_settings=overridable_settings_block(site_config) if site_config is not None else "(none)",
     )
 
 
@@ -304,6 +306,11 @@ async def compose(
             continue
 
         valid, validation_errors = _validate_composed_spec(spec)
+        from poindexter.services.setting_overrides import check_spec_overrides
+
+        override_errors = [*check_spec_overrides(spec, _sc), *_named_cast_errors(spec, intent, _sc)]
+        if override_errors:
+            valid, validation_errors = False, [*validation_errors, *override_errors]
         if valid:
             return ArchitectResult(
                 ok=True, spec=spec, raw_response=raw, model_used=model,
@@ -862,6 +869,69 @@ def _validate_spec(
     return (not errors), errors
 
 
+_CAST_KEYS = ("screenplay_cast",)
+_NARRATOR_KEYS = ("screenplay_narrator", "dialogue_narrator_persona")
+
+
+def _named_cast_errors(spec: dict[str, Any], intent: str, site_config: Any) -> list[str]:
+    """The characters an intent names are the ones a plan casts.
+
+    The architect swapped Mira for Marta in two of three composes of "Kai and
+    Mira explain VRAM" (2026-10-13): similar names in the roster, and nothing
+    checked the cast against the request. A character named in the intent
+    must be cast or narrate. When the intent names any character, the cast
+    holds only named characters; casting can still design new ones. A
+    narrator the intent does not name is dropped so casting chooses one: a
+    cyberpunk fairytale got the ten-year-old shepherd boy as its narrator
+    when nobody asked for one.
+    """
+    from poindexter.services.persona_service import list_personas
+
+    if site_config is None or not intent:
+        return []
+    named: dict[str, str] = {}
+    for p in list_personas(site_config):
+        if not p.enabled:
+            continue
+        for word in {p.slug, p.display_name}:
+            if word and re.search(rf"\b{re.escape(word)}\b", intent, re.IGNORECASE):
+                named[p.slug] = p.display_name or p.slug
+    cast: set[str] = set()
+    voices: set[str] = set()
+    for node in spec.get("nodes") or []:
+        config = node.get("config") if isinstance(node, dict) else None
+        if not isinstance(config, dict):
+            continue
+        for key in _CAST_KEYS:
+            value = config.get(key)
+            items = value if isinstance(value, list) else str(value or "").split(",")
+            cast |= {str(v).strip().lower() for v in items if str(v).strip()}
+        for key in _NARRATOR_KEYS:
+            if config.get(key):
+                voices.add(str(config[key]).strip().lower())
+    errors: list[str] = []
+    if not named and not voices:
+        return []
+    for slug, name in named.items():
+        if slug not in cast and slug not in voices:
+            errors.append(
+                f'FIX: the intent names {name}; add "{slug}" to screenplay_cast on the '
+                "story.cast_characters or story.write_screenplay node"
+            )
+    roster = {p.slug for p in list_personas(site_config)}
+    for slug in sorted(voices & roster - set(named)):
+        errors.append(
+            f'FIX: the narrator is "{slug}", whom the intent does not name; drop '
+            "screenplay_narrator and dialogue_narrator_persona so casting chooses the narrator"
+        )
+    for slug in sorted(cast & roster - set(named)) if named else []:
+        errors.append(
+            f'FIX: screenplay_cast lists "{slug}", whom the intent does not name; cast '
+            f"the characters it names ({', '.join(sorted(named))}) and drop {slug!r}"
+        )
+    return errors
+
+
 def _validate_composed_spec(spec: dict[str, Any]) -> tuple[bool, list[str]]:
     """Validate a plan the architect LLM wrote: :func:`_validate_spec` plus the
     rules that bind only a composed plan. :func:`compose` calls this.
@@ -1073,12 +1143,21 @@ def build_graph_from_spec(
             # {"gate_name": "draft_gate"}) seeds the atom_input. State
             # values take precedence; config is the fallback/seed.
             node_config = n.get("config") if isinstance(n.get("config"), dict) else None
+            # Plan-wide setting overrides, then this step's (step wins). They
+            # reach the atom as a scoped view of its site_config, never as a
+            # write to app_settings (services/setting_overrides.py).
+            from poindexter.services.setting_overrides import merged_overrides
+
+            step_overrides = merged_overrides(
+                spec.get("setting_overrides"), (node_config or {}).get("setting_overrides"),
+            )
             g.add_node(
                 nid,
                 _span_wrap(
                     _wrap_atom(
                         run_fn, atom_name, nid, record_sink,
                         node_config=node_config,
+                        setting_overrides=step_overrides,
                         on_event=on_event,
                         index=index,
                         total=total_nodes,
@@ -1327,6 +1406,7 @@ def _wrap_atom(
     index: int | None = None,
     total: int | None = None,
     retry_policy: Any = None,
+    setting_overrides: dict[str, str] | None = None,
 ) -> Callable[..., Any]:
     """Wrap a pure atom into the LangGraph node signature with
     record_sink integration so observability matches stage nodes.
@@ -1406,6 +1486,13 @@ def _wrap_atom(
         if node_config:
             for cfg_key, cfg_value in node_config.items():
                 atom_input.setdefault(cfg_key, cfg_value)
+        atom_input.pop("setting_overrides", None)
+        if setting_overrides and atom_input.get("site_config") is not None:
+            from poindexter.services.setting_overrides import apply_overrides
+
+            atom_input["site_config"] = apply_overrides(
+                atom_input["site_config"], setting_overrides, where=node_id,
+            )
         input_keys = sorted(str(k) for k in atom_input.keys())
         task_id = atom_input.get("task_id")
         # node_started — fires before run_fn so a streaming channel shows the

@@ -618,6 +618,18 @@ DEFAULTS: dict[str, str] = {
     # custom local models (see services/operator_overrides.py). Listed here so
     # the overlay's "only overwrite the OSS default" guard has a value to match.
     'pipeline_architect_model': 'ollama/gemma3:27b',
+    # Settings a plan may override for itself or one step
+    # (services/setting_overrides.py): fnmatch patterns. Overrides live only in
+    # that run's view of the settings and never write app_settings. Deny wins:
+    # models (cost), endpoints, paths and credentials stay out even when an
+    # allow pattern matches them.
+    'architect_setting_overrides_allow': (
+        'story_*, video_cast_*, media_house_style, persona.*.voice_exaggeration, '
+        'persona.*.appearance, persona.*.render_prompt_suffix'
+    ),
+    'architect_setting_overrides_deny': (
+        '*model*, *_url, *_dir, *_prefix, *secret*, *token*, *_key, *password*'
+    ),
     'podcast_script_model': 'ollama/gemma3:27b',
     'preferred_ollama_model': 'gemma3:27b',
     'inline_image_prompt_model': 'ollama/gemma3:27b',  # inline-image prompt-builder (public default; operator overlay pins the custom fine-tune)
@@ -7678,6 +7690,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'owner_name': {'owner': 'podcast_routes'},
     'pexels_api_base': {'value_type': 'url'},
     'pipeline_architect_model': {'owner': 'pipeline_architect', 'value_type': 'model'},
+    'architect_setting_overrides_allow': {'owner': 'setting_overrides', 'value_type': 'csv'},
+    'architect_setting_overrides_deny': {'owner': 'setting_overrides', 'value_type': 'csv'},
     'pipeline_architect_timeout_seconds': {'owner': 'pipeline_architect', 'value_type': 'float'},
     'pipeline_event_stream_types': {'owner': 'pipeline_events_routes'},
     'pipeline_streaming_channel': {'owner': 'pipeline_streaming', 'value_type': 'string'},

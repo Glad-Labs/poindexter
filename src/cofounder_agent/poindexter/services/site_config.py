@@ -45,8 +45,11 @@ Testing:
         assert cfg.get("site_url") == "https://test"
 """
 
+from __future__ import annotations
+
 import os
 from collections.abc import Callable
+from typing import Any
 
 from poindexter.services.logger_config import get_logger
 
@@ -381,6 +384,82 @@ class SiteConfig:
         keys = list(self._read_keys)
         self._read_keys.clear()
         return keys
+
+    def with_overrides(self, overrides: dict[str, Any]) -> SiteConfig:
+        """This config with ``overrides`` answered first, for one plan or step.
+
+        ``app_settings`` is untouched: the overrides live only in the returned
+        view. See :class:`ScopedSiteConfig`.
+        """
+        if not overrides:
+            return self
+        return ScopedSiteConfig(self, overrides)
+
+
+class ScopedSiteConfig(SiteConfig):
+    """A plan's or step's view of the settings: overrides first, then the base.
+
+    The pipeline architect may tune creative settings for one plan, or one
+    step of it, without writing ``app_settings`` (Matt, 2026-10-13: "make Kai
+    calmer in this one" must not make him calmer everywhere). Everything that
+    is not overridden goes to the base instance, deliberately including
+    ``reload()``: casting writes new personas and reloads so later steps see
+    them, and a copy would swallow that reload. Secrets are never overridden.
+    """
+
+    _base: SiteConfig
+    _overrides: dict[str, str]
+
+    def __init__(self, base: SiteConfig, overrides: dict[str, Any]) -> None:  # noqa: D107
+        # No super().__init__(): this view owns no cache, telemetry set or
+        # pool. Attributes it does not define resolve on the base (__getattr__).
+        if isinstance(base, ScopedSiteConfig):
+            overrides = {**base._overrides, **overrides}
+            base = base._base
+        self._base = base
+        self._overrides = {str(k): "" if v is None else str(v) for k, v in overrides.items()}
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+    @property
+    def overrides(self) -> dict[str, str]:
+        return dict(self._overrides)
+
+    def peek(self, key: str, default: str = "") -> str:
+        if key in self._overrides:
+            return self._overrides[key]
+        return self._base.peek(key, default)
+
+    def require(self, key: str) -> str:
+        if key in self._overrides:
+            self._base._record_read(key)
+            return self._overrides[key]
+        return self._base.require(key)
+
+    def all(self) -> dict[str, str]:
+        return {**self._base.all(), **self._overrides}
+
+    async def load(self, pool) -> int:
+        return await self._base.load(pool)
+
+    async def reload(self, pool) -> int:
+        return await self._base.reload(pool)
+
+    async def get_secret(self, key: str, default: str = "") -> str:
+        return await self._base.get_secret(key, default)
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._base.is_loaded
+
+    def drain_read_keys(self) -> list[str]:
+        return self._base.drain_read_keys()
+
+    def with_overrides(self, overrides: dict[str, Any]) -> SiteConfig:
+        if not overrides:
+            return self
+        return ScopedSiteConfig(self, overrides)
 
 
 # Module-level singleton DELETED 2026-05-09 (Glad-Labs/glad-labs-stack#330).

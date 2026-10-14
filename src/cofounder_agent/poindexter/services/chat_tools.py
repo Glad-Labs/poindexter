@@ -367,11 +367,17 @@ async def _plan_pipeline(
         "topic": plan["topic"],
         "node_count": plan["node_count"],
         "nodes": plan["nodes"],
+        "overrides": plan.get("overrides") or [],
         "state": "draft",
     })
+    changed = plan.get("overrides") or []
+    changes = (
+        " It changes these settings for this plan only: " + "; ".join(changed) + "."
+        if changed else ""
+    )
     return (
         f"Plan ready: {plan['node_count']} steps, cached as "
-        f"{plan['slug']} (plan {plan['plan_id'][:8]}). The plan card shows "
+        f"{plan['slug']} (plan {plan['plan_id'][:8]}).{changes} The plan card shows "
         "the steps — the operator clicks Run pipeline to execute it or "
         "Adjust to refine. Summarize the plan in one sentence and stop."
     )

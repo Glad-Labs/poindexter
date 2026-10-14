@@ -229,6 +229,19 @@ function CfPlanCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
           </span>
         ))}
       </div>
+      {(card.overrides || []).length > 0 && (
+        <div
+          className="cf-plan__overrides"
+          title="Settings this plan changes for itself only; the saved settings stay as they are"
+        >
+          <span className="cf-plan__overrides-label">For this plan only</span>
+          {card.overrides.map((o) => (
+            <code key={o} className="cf-plan__override">
+              {o}
+            </code>
+          ))}
+        </div>
+      )}
       {warnings.length > 0 && (
         <div className="cf-plan__warns">
           {warnings.map((w) => (

@@ -122,6 +122,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("operator_id", "identity"),
     # pipeline
     ("pipeline", "pipeline"),
+    ("architect_", "pipeline"),  # plan setting overrides (services/setting_overrides.py)
     ("prefect", "pipeline"),
     ("auto_publish", "pipeline"),
     ("staging", "pipeline"),

@@ -168,6 +168,9 @@ async def create_plan(
             f"plan slug {slug!r} escaped the {_SLUG_PREFIX!r} namespace"
         )
     nodes = [n.get("id") or n.get("atom") or "?" for n in safe_spec.get("nodes") or []]
+    from poindexter.services.setting_overrides import describe_overrides
+
+    overrides = describe_overrides(safe_spec)
     row = await pool.fetchrow(
         """
         INSERT INTO chat_plans
@@ -185,6 +188,8 @@ async def create_plan(
         "topic": topic[:200],
         "node_count": len(nodes),
         "nodes": nodes,
+        # Settings this plan changes for itself only (services/setting_overrides).
+        "overrides": overrides,
     }
 
 
