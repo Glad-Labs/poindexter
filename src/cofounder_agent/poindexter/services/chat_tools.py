@@ -591,13 +591,13 @@ async def _package_video(ctx: ChatToolContext, *, task_id: str) -> str:
     return await _start_draft(ctx, "package", {"task_id": task_id.strip()})
 
 
-async def _revise_draft(ctx: ChatToolContext, *, draft_id: str, instruction: str) -> str:
+async def _revise_draft(ctx: ChatToolContext, *, draft_id: str, instruction: str, scope: str = "") -> str:
     from poindexter.services import creative_drafts as cd
 
     try:
         draft = await cd.revise_draft(
             ctx.pool, draft_id, instruction, site_config=ctx.site_config,
-            conversation_id=ctx.conversation_id or None,
+            conversation_id=ctx.conversation_id or None, scope=scope,
         )
     except cd.DraftError as exc:
         raise ChatToolError(str(exc)) from exc
@@ -882,9 +882,16 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
             "YouTube package draft from the operator's note (e.g. 'make the "
             "wolf scarier', 'cut scene 2', 'a punchier title'). Untouched parts "
             "carry over; a cast revision redraws only the characters whose "
-            "looks changed. Returns at once; the new card fills in when ready."
+            "looks changed. For a storyboard, scope 'pictures' (the default) "
+            "redraws the shots the note is about, and scope 'story' rewrites "
+            "its script from the note (a story, pacing or sound note) and "
+            "storyboards it again, re-voicing only changed lines and redrawing "
+            "only changed scenes. Returns at once; the new card fills in when ready."
         ),
-        parameters=_params({"draft_id": _STR, "instruction": _STR}, ["draft_id", "instruction"]),
+        parameters=_params(
+            {"draft_id": _STR, "instruction": _STR, "scope": {"type": "string", "enum": ["pictures", "story"]}},
+            ["draft_id", "instruction"],
+        ),
         tier="read",
         handler=_revise_draft,
     ),

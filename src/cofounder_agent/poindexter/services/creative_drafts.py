@@ -177,6 +177,8 @@ async def _build(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None
 
         await _wait_for_gpu(pool, draft["id"], site_config)
         prefix = f"drafts/{draft['id']}"
+        if parent is not None and request.get("scope") == "story":
+            return await _restory(pool, draft, parent, site_config, prefix)
         if parent is not None:
             revised = await sb.revise_storyboard(
                 parent["payload"], instruction, site_config=site_config, pool=pool, upload_prefix=prefix,
@@ -226,6 +228,46 @@ async def _build(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None
         design, site_config=site_config, pool=pool, upload_prefix=f"drafts/{draft['id']}",
         previous=parent["payload"] if parent is not None else None,
     )
+
+
+async def _restory(
+    pool: Any, draft: dict[str, Any], parent: dict[str, Any], site_config: Any, prefix: str,
+) -> dict[str, Any]:
+    """A storyboard's story revision: the script rewritten from the note, then storyboarded again.
+
+    The rewritten script becomes the next version of the storyboard's script
+    draft (so the chat can read, revise or render it), and this storyboard
+    points at it. Voices come through the line cache and unchanged scenes
+    keep their pictures (``storyboard.restory_storyboard``); the rough cut is
+    scored again, because the timing moved.
+    """
+    from poindexter.services import screenplay as sp
+    from poindexter.services import storyboard as sb
+    from poindexter.services.rough_cut import add_rough_cut
+
+    request = draft["request"]
+    note = str(request.get("instruction") or "")
+    script = await get_draft(pool, str(request.get("screenplay_draft") or ""), site_config=site_config)
+    if script is None or script["kind"] != "screenplay" or script["status"] not in ("ready", "kept"):
+        raise DraftError("the storyboard's script draft is gone or not ready, so its story cannot be rewritten")
+    await _note(pool, draft["id"], "rewriting the script from the note")
+    revised = await sp.revise_screenplay(script["payload"], note, site_config=site_config, pool=pool)
+    new_script = await _insert(
+        pool, kind="screenplay", request={**script["request"], "instruction": note},
+        conversation_id=draft.get("conversation_id") or script.get("conversation_id"), parent=script,
+    )
+    await _finish(pool, new_script["id"], status="ready", payload=revised)
+    await pool.execute(
+        "UPDATE creative_drafts SET request = request || $2::jsonb, updated_at = now() WHERE id = $1::uuid",
+        draft["id"], json.dumps({"screenplay_draft": new_script["id"]}),
+    )
+    await _note(pool, draft["id"], "voicing the changed lines and redrawing the changed scenes")
+    board = await sb.restory_storyboard(
+        parent["payload"], revised, site_config=site_config, pool=pool, upload_prefix=prefix, note=note,
+    )
+    board["script_draft"] = {"id": new_script["id"], "version": new_script["version"]}
+    await _note(pool, draft["id"], "scoring and cutting the rough cut")
+    return await add_rough_cut(board, site_config=site_config, pool=pool, upload_prefix=prefix)
 
 
 async def _run(pool: Any, draft: dict[str, Any], parent: dict[str, Any] | None, site_config: Any) -> None:
@@ -311,11 +353,19 @@ async def start_draft(
     return draft
 
 
+REVISION_SCOPES = ("pictures", "story")
+
+
 async def revise_draft(
     pool: Any, draft_id: str, instruction: str, *, site_config: Any,
-    conversation_id: str | None = None,
+    conversation_id: str | None = None, scope: str = "",
 ) -> dict[str, Any]:
-    """Start the next version of a ready draft, addressing ``instruction``."""
+    """Start the next version of a ready draft, addressing ``instruction``.
+
+    ``scope`` matters for a storyboard: ``pictures`` (the default) redraws
+    the shots the note is about; ``story`` rewrites its script from the note
+    and storyboards it again, keeping every unchanged line and scene.
+    """
     parent = await get_draft(pool, draft_id, site_config=site_config)
     if parent is None:
         raise DraftError(f"no draft {draft_id!r}")
@@ -323,7 +373,13 @@ async def revise_draft(
         raise DraftError(f"draft {parent['id'][:8]} is {parent['status']}; revise a ready draft")
     if not (instruction or "").strip():
         raise DraftError("say what to change")
+    scope = (scope or "").strip().lower()
+    if scope and scope not in REVISION_SCOPES:
+        raise DraftError(f"scope must be one of {REVISION_SCOPES}, not {scope!r}")
     request = {**parent["request"], "instruction": instruction.strip()}
+    request.pop("scope", None)
+    if parent["kind"] == "storyboard" and scope == "story":
+        request["scope"] = "story"
     draft = await _insert(
         pool, kind=parent["kind"], request=request,
         conversation_id=conversation_id or parent.get("conversation_id"), parent=parent,
@@ -549,6 +605,13 @@ def describe(draft: dict[str, Any], *, max_chars: int = 6000) -> str:
             lines.append("notes: " + " ".join(payload["notes"]))
     elif draft["kind"] == "storyboard":
         lines.append(f"storyboard of {payload.get('title', '')}, scenes {payload.get('scenes')}, style: {payload.get('style', '')}")
+        last = (payload.get("revisions") or [{}])[-1]
+        if last.get("story"):
+            lines.append(
+                f"story revision: scenes changed {last.get('scenes_changed')}, shots redrawn "
+                f"{last.get('shots_drawn')}, {last.get('lines_reused')} lines kept their takes; "
+                f"script now {str((payload.get('script_draft') or {}).get('id', ''))[:8]}"
+            )
         if payload.get("rough_cut_url"):
             lines.append(f"rough cut: {payload.get('rough_cut_seconds')}s, with {'its score' if payload.get('score_url') else 'no score'}")
         elif payload.get("rough_cut_error"):

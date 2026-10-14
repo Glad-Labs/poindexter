@@ -3210,6 +3210,13 @@ DEFAULTS: dict[str, str] = {
     'rough_cut_width': '1280',
     'rough_cut_height': '720',
     'rough_cut_notes_enabled': 'true',
+    # Chat drafting phase 10: every voiced line is kept under
+    # story_line_cache_dir, keyed by its words, intensity, emotion and voice
+    # (services/dialogue_audio.py), so re-voicing a revised script speaks only
+    # the changed lines. Files untouched for keep_days are deleted.
+    'story_line_cache_enabled': 'true',
+    'story_line_cache_dir': '~/.poindexter/video/lines',
+    'story_line_cache_keep_days': '30',
     # A cast draft's voice previews load Chatterbox on the render card; below
     # this much free VRAM, ComfyUI's resident image-edit model is reclaimed first.
     'story_cast_preview_min_free_gb': '3',
@@ -6728,6 +6735,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rough_cut_width': {'owner': 'rough_cut', 'value_type': 'integer'},
     'rough_cut_height': {'owner': 'rough_cut', 'value_type': 'integer'},
     'rough_cut_notes_enabled': {'owner': 'rough_cut', 'value_type': 'boolean'},
+    'story_line_cache_enabled': {'owner': 'dialogue_audio', 'value_type': 'boolean'},
+    'story_line_cache_dir': {'owner': 'dialogue_audio', 'value_type': 'string'},
+    'story_line_cache_keep_days': {'owner': 'dialogue_audio', 'value_type': 'float'},
     'story_cast_preview_min_free_gb': {'owner': 'casting', 'value_type': 'float'},
     'creative_draft_gpu_busy_stages': {'owner': 'creative_drafts', 'value_type': 'csv'},
     'creative_draft_gpu_wait_minutes': {'owner': 'creative_drafts', 'value_type': 'integer'},

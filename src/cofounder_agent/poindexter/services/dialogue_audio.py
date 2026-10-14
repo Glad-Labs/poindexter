@@ -25,15 +25,27 @@ and an estimate would put a character's mouth on the wrong words.
 A line that fails to synthesize is retried once and then raises. Swapping in
 another voice would put one character's words in another's mouth, and a
 missing line would leave a hole the shots are timed around.
+
+**Line cache** (chat drafting phase 10). Every voiced line is kept under
+``story_line_cache_dir``, keyed by what decides how it sounds: the words, the
+intensity, the emotion strength, and the speaker's voice (provider, voice id,
+reference clip, exaggeration) plus the house voice settings. Voicing a
+revised script synthesizes only the lines that changed; every other line is
+the exact take the operator already heard. Chatterbox never says a line the
+same way twice, so this is about keeping an approved take as much as about
+saving GPU. Files untouched for ``story_line_cache_keep_days`` are deleted.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +165,53 @@ def _intensity_offsets(site_config: Any) -> dict[str, float]:
     return out
 
 
+_VOICE_FIELDS = ("slug", "voice_provider", "voice_id", "voice_ref_audio_url", "voice_exaggeration")
+_HOUSE_VOICE_KEYS = ("podcast_tts_voice", "plugin.tts_provider.chatterbox.exaggeration")
+
+
+def line_cache_key(persona: Any, text: str, intensity: str, emotion: float | None, site_config: Any) -> str:
+    """What decides how a line sounds, hashed: the cache file's name."""
+    voice = {f: getattr(persona, f, None) for f in _VOICE_FIELDS} if persona is not None else None
+    house = {k: str(site_config.get(k, "") or "") for k in _HOUSE_VOICE_KEYS} if site_config is not None else {}
+    blob = json.dumps(
+        {"voice": voice, "house": house, "text": text, "intensity": intensity, "emotion": emotion},
+        sort_keys=True, default=str,
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:40]
+
+
+def line_cache_dir(site_config: Any) -> str | None:
+    """The line cache directory, or ``None`` when ``story_line_cache_enabled`` is off."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    def _get(key: str) -> str:
+        raw = site_config.get(key, None) if site_config is not None else None
+        return str(DEFAULTS[key] if raw is None or str(raw).strip() == "" else raw)
+
+    if _get("story_line_cache_enabled").strip().lower() not in ("1", "true", "yes", "on"):
+        return None
+    path = os.path.expanduser(_get("story_line_cache_dir"))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def prune_line_cache(path: str, keep_days: float) -> int:
+    """Delete cached lines untouched for ``keep_days``. Returns how many."""
+    if keep_days <= 0 or not os.path.isdir(path):
+        return 0
+    cutoff = time.time() - keep_days * 86400
+    removed = 0
+    for name in os.listdir(path):
+        full = os.path.join(path, name)
+        try:
+            if os.path.isfile(full) and os.path.getmtime(full) < cutoff:
+                os.remove(full)
+                removed += 1
+        except OSError:  # silent-ok: a file another render is using stays
+            continue
+    return removed
+
+
 def line_exaggeration(persona: Any, intensity: str, site_config: Any) -> float | None:
     """The Chatterbox emotion strength for one line, or ``None`` to leave it.
 
@@ -184,6 +243,7 @@ async def render_dialogue(
     output_path: str,
     narrator_persona: str | None = None,
     synthesize: Any = None,
+    line_cache: str | None = None,
 ) -> dict[str, Any]:
     """Voice every line, join the track, return ``{audio_path, timeline,
     spoken_script, duration_s}``.
@@ -192,11 +252,24 @@ async def render_dialogue(
     per-line TTS seam; production passes ``PodcastService.synthesize_line``.
     ``exaggeration`` is passed only for a Chatterbox voice: the line's
     intensity moves the speaker's emotion strength (``line_exaggeration``).
+
+    ``line_cache`` is the line cache directory; production (no
+    ``synthesize`` seam) uses ``story_line_cache_dir`` when the cache is on.
+    The result's ``lines_reused`` counts lines taken from it.
     """
     if synthesize is None:
         from poindexter.services.podcast_service import PodcastService
 
         synthesize = PodcastService(site_config=site_config).synthesize_line
+        if line_cache is None:
+            line_cache = line_cache_dir(site_config)
+    if line_cache:
+        try:
+            keep = float(site_config.get("story_line_cache_keep_days", 30) or 30)
+        except (TypeError, ValueError):
+            keep = 30.0
+        prune_line_cache(line_cache, keep)
+    reused = 0
     # Narrator voice: an explicit argument, else the one the screenplay was
     # written for (screenplay_narrator), else story_default_narrator_persona.
     narrator_slug = (
@@ -246,7 +319,16 @@ async def render_dialogue(
                 intensity = str(beat.get("intensity") or "medium")
                 emotion = line_exaggeration(persona, intensity, site_config)
                 extra = {"exaggeration": emotion} if emotion is not None else {}
-                for attempt in (1, 2):
+                cached = (
+                    os.path.join(line_cache, line_cache_key(persona, beat["text"], intensity, emotion, site_config) + ".wav")
+                    if line_cache else None
+                )
+                if cached and os.path.isfile(cached) and os.path.getsize(cached) > 0:
+                    shutil.copyfile(cached, clip)
+                    os.utime(cached)
+                    produced = clip
+                    reused += 1
+                for attempt in (1, 2) if produced is None else ():
                     try:
                         produced = await synthesize(beat["text"], persona, raw, **extra)
                     except Exception as exc:  # noqa: BLE001 — retried, then raised below
@@ -271,7 +353,13 @@ async def render_dialogue(
                         f"({speaker}: {beat['text'][:60]!r}) failed to synthesize twice"
                         + (f": {last_error}" if last_error else ""),
                     )
-                await _normalize(produced, clip)
+                if produced != clip:
+                    await _normalize(produced, clip)
+                    if cached:
+                        try:
+                            shutil.copyfile(clip, cached)
+                        except OSError as exc:
+                            logger.warning("[dialogue] line cache write failed (%s): %s", cached, exc)
                 seconds = await probe_seconds(clip)
                 parts.append(clip)
                 timeline.append({
@@ -301,19 +389,23 @@ async def render_dialogue(
     await _concat(parts, output_path, work)
     duration = await probe_seconds(output_path)
     logger.info(
-        "[dialogue] %d lines, %d beats, %.1fs track -> %s",
-        len(spoken), len(timeline), duration, output_path,
+        "[dialogue] %d lines (%d from the line cache), %d beats, %.1fs track -> %s",
+        len(spoken), reused, len(timeline), duration, output_path,
     )
     return {
         "audio_path": output_path,
         "timeline": timeline,
         "spoken_script": "\n".join(spoken),
         "duration_s": round(duration, 3),
+        "lines_reused": reused,
     }
 
 
 __all__ = [
     "DialogueAudioError",
+    "line_cache_dir",
+    "line_cache_key",
+    "prune_line_cache",
     "probe_seconds",
     "render_dialogue",
     "resolve_voice",

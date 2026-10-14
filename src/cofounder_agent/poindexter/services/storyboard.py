@@ -14,7 +14,10 @@ render runs, stopping short of animation:
 
 So the preview is the picture the video will start from, not a look-alike.
 The payload keeps the shot list, so a revision redraws only the shots a note
-changes (``revise_storyboard``) and phase 3 can render from it.
+changes (``revise_storyboard``) and phase 3 can render from it. A story
+revision (phase 10, ``restory_storyboard``) rewrites the script from a note,
+re-voices only the changed lines (the line cache keeps the rest) and redraws
+only the scenes the rewrite touched (``carry_over``).
 """
 
 from __future__ import annotations
@@ -315,10 +318,167 @@ async def revise_storyboard(
     }
 
 
+# --- A story revision (chat drafting, phase 10) --------------------------------
+
+
+def _scene_sig(scene: dict[str, Any]) -> str:
+    """What decides a scene's pictures: its place, who is in it, and its beats."""
+    beats = [
+        [b.get("kind"), b.get("speaker"), " ".join(str(b.get("text") or "").split()),
+         b.get("intensity"), sorted(b.get("characters") or [])]
+        for b in scene.get("beats") or []
+    ]
+    return json.dumps(
+        [" ".join(str(scene.get("setting") or "").split()), sorted(scene.get("characters") or []), beats],
+        sort_keys=True,
+    )
+
+
+def shot_scenes(listing: dict[str, Any], timeline: list[dict[str, Any]]) -> dict[int, str]:
+    """Each shot's scene id: the scene of the beat its first moment falls in."""
+    beats = sorted(timeline, key=lambda b: float(b.get("start_s") or 0.0))
+    out: dict[int, str] = {}
+    for shot in listing.get("shots") or []:
+        at = float(shot.get("narration_offset_s") or 0.0) + 0.01
+        scene = None
+        for beat in beats:
+            if float(beat.get("start_s") or 0.0) <= at:
+                scene = beat.get("scene_id")
+            else:
+                break
+        if scene is None and beats:
+            scene = beats[0].get("scene_id")
+        out[int(shot["idx"])] = str(scene)
+    return out
+
+
+_CARRIED = ("prompt", "frame_prompt", "motion", "intent")
+
+
+def carry_over(
+    old: dict[str, Any], new_listing: dict[str, Any], new_timeline: list[dict[str, Any]],
+    new_screenplay: dict[str, Any],
+) -> tuple[dict[int, str | None], set[int], list[str]]:
+    """Keep the drawn pictures of every scene a story revision left alone.
+
+    ``old`` is the previous storyboard payload. A scene is unchanged when its
+    place, cast and beats are the same; its new shots then line up one for
+    one with its old shots (the director plans a scene from its beats and
+    their measured lengths, and unchanged lines keep their takes). Each such
+    shot takes its old picture prompt and image. Changes ``new_listing`` in
+    place; returns ``(new idx -> image url, shots to draw, changed scene ids)``.
+    """
+    old_scenes = {str(s.get("scene_id")): _scene_sig(s) for s in (old.get("screenplay") or {}).get("scenes") or []}
+    new_scenes = {str(s.get("scene_id")): _scene_sig(s) for s in new_screenplay.get("scenes") or []}
+    same = {sid for sid, sig in new_scenes.items() if old_scenes.get(sid) == sig}
+    old_listing = old.get("shot_list") or {}
+    old_of = shot_scenes(old_listing, list(old.get("timeline") or []))
+    new_of = shot_scenes(new_listing, new_timeline)
+    old_urls = {int(r["idx"]): r.get("image_url") for r in old.get("shots") or []}
+    old_by_idx = {int(sh["idx"]): sh for sh in old_listing.get("shots") or []}
+    new_shots = new_listing.get("shots") or []
+
+    def _shape(shot: dict[str, Any]) -> tuple[Any, ...]:
+        return shot.get("source"), shot.get("speaker"), tuple(shot.get("characters") or [])
+
+    urls: dict[int, str | None] = {}
+    kept: set[int] = set()
+    for sid in same:
+        olds = [old_by_idx[i] for i in sorted(old_by_idx) if old_of.get(i) == sid]
+        news = [sh for sh in new_shots if new_of.get(int(sh["idx"])) == sid]
+        if len(olds) != len(news) or any(_shape(a) != _shape(b) for a, b in zip(olds, news, strict=False)):
+            continue
+        for was, now in zip(olds, news, strict=False):
+            for key in _CARRIED:
+                if was.get(key) is not None:
+                    now[key] = was[key]
+            urls[int(now["idx"])] = old_urls.get(int(was["idx"]))
+            kept.add(int(now["idx"]))
+    redraw = {int(sh["idx"]) for sh in new_shots} - kept
+    changed = sorted(sid for sid in new_scenes if sid not in same)
+    return urls, redraw, changed
+
+
+async def restory_storyboard(
+    previous: dict[str, Any],
+    screenplay: dict[str, Any],
+    *,
+    site_config: Any,
+    pool: Any,
+    upload_prefix: str,
+    note: str = "",
+) -> dict[str, Any]:
+    """Storyboard a revised script again, redoing only what the revision changed.
+
+    The lines are voiced through the line cache, so only changed lines are
+    synthesized; the shots are planned afresh against the new timing; every
+    shot of a scene the revision left alone keeps its picture; only the rest
+    is drawn. ``previous`` is the storyboard being revised.
+    """
+    from poindexter.services.casting import _ensure_voice_headroom
+    from poindexter.services.dialogue_audio import render_dialogue
+    from poindexter.services.screenplay_director import direct_screenplay
+
+    wanted = [str(s) for s in previous.get("scenes") or []]
+    known = {str(s.get("scene_id")) for s in screenplay.get("scenes") or []}
+    # A revision that renamed or cut the storyboarded scenes storyboards the
+    # whole revised script rather than failing.
+    sub = select_scenes(screenplay, [s for s in wanted if s in known] or None)
+    look = str(previous.get("style") or "")
+    old_listing = previous.get("shot_list") or {}
+    work = Path(tempfile.mkdtemp(prefix="storyboard-"))
+    await _ensure_voice_headroom(site_config)
+    voiced = await render_dialogue(sub, site_config=site_config, output_path=str(work / "dialogue.wav"))
+    listing = await direct_screenplay(
+        sub, list(voiced["timeline"]), float(voiced["duration_s"]),
+        site_config=site_config, style=look, pool=pool,
+        cast_portraits=dict(old_listing.get("cast_portraits") or {}),
+    )
+    urls, redraw, changed = carry_over(previous, listing, list(voiced["timeline"]), sub)
+    mp3 = str(work / "dialogue.mp3")
+    version = len(previous.get("revisions") or []) + 2
+    audio_url = await _upload(mp3, f"{upload_prefix}/dialogue-v{version}.mp3", "audio/mpeg", site_config) \
+        if await _to_mp3(voiced["audio_path"], mp3) else None
+    master_url = await _upload(
+        voiced["audio_path"], f"{upload_prefix}/dialogue-v{version}.wav", "audio/wav", site_config,
+    )
+    drawn = await _draw_shots(
+        listing, redraw, work=work, site_config=site_config, pool=pool,
+        upload_prefix=upload_prefix, version_tag=f"-v{version}",
+    ) if redraw else {}
+    merged = {**urls, **drawn}
+    lines = sum(1 for b in voiced["timeline"] if b.get("kind") == "line")
+    reused = int(voiced.get("lines_reused") or 0)
+    logger.info(
+        "[storyboard] story revision: %d of %d lines re-voiced, %d of %d shots drawn, scenes changed %s",
+        lines - reused, lines, len(redraw), len(listing["shots"]), changed,
+    )
+    return {
+        **{k: v for k, v in previous.items() if k not in ("score_url",)},
+        "title": screenplay.get("title", ""),
+        "scenes": [s.get("scene_id") for s in sub.get("scenes") or []],
+        "audio_url": audio_url,
+        "audio_master_url": master_url,
+        "spoken_script": voiced.get("spoken_script", ""),
+        "duration_s": float(voiced["duration_s"]),
+        "shots": _rows(listing, list(voiced["timeline"]), merged),
+        "shot_list": listing,
+        "timeline": voiced["timeline"],
+        "screenplay": sub,
+        "revisions": [*(previous.get("revisions") or []), {
+            "note": note[:500], "story": True, "scenes_changed": changed,
+            "shots_drawn": sorted(redraw), "lines_reused": voiced.get("lines_reused", 0),
+        }],
+    }
+
+
 __all__ = [
     "StoryboardError",
     "build_storyboard",
+    "carry_over",
     "check_revision",
+    "restory_storyboard",
     "revise_storyboard",
     "select_scenes",
+    "shot_scenes",
 ]

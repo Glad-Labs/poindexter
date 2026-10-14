@@ -715,6 +715,7 @@ function CfRenderCard({ card, onAdjust, pushToast }) {
       {done && (
         <CfNotes
           taskId={card.task_id}
+          draftId={card.draft_id}
           onAdjust={onAdjust}
           pushToast={pushToast}
         />
@@ -727,7 +728,7 @@ function CfRenderCard({ card, onAdjust, pushToast }) {
 // cartoon render is screened as its last step; this reads the notes (polling
 // while they are written), and a pick of redo notes goes to the composer as
 // a request, so the operator sends it and the chat runs the revision.
-function CfNotes({ taskId, onAdjust, pushToast }) {
+function CfNotes({ taskId, draftId, onAdjust, pushToast }) {
   const [review, setReview] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const load = React.useCallback(async () => {
@@ -793,6 +794,15 @@ function CfNotes({ taskId, onAdjust, pushToast }) {
           `Apply director's notes ${picks.map((n) => n.n).join(', ')} to render ${String(taskId).slice(0, 8)}`
         )
       }
+      onRewrite={
+        draftId
+          ? (picks) =>
+              onAdjust &&
+              onAdjust(
+                `Revise draft ${String(draftId).slice(0, 8)}, scope story: ${cfNotesText(picks)}`
+              )
+          : null
+      }
       extra={
         <button className="mbtn" disabled={busy} onClick={start}>
           Review again
@@ -802,13 +812,27 @@ function CfNotes({ taskId, onAdjust, pushToast }) {
   );
 }
 
+// The picked notes as the text of a revision request.
+function cfNotesText(picks) {
+  return picks
+    .map(
+      (n) =>
+        `${n.shots && n.shots.length ? `shot${n.shots.length > 1 ? 's' : ''} ${n.shots.join(', ')}: ` : ''}${n.problem} Fix: ${n.fix}`
+    )
+    .join(' ');
+}
+
 // The notes themselves: verdict, what works, and ranked notes with a
 // checkbox on each redo note. onRedo gets the picked redo notes; the caller
 // decides what a redo means (a render revision, or a storyboard revision).
-function CfNotesBody({ review, redoLabel, onRedo, extra }) {
+function CfNotesBody({ review, redoLabel, onRedo, onRewrite, extra }) {
   const [picked, setPicked] = React.useState({});
   const notes = review.notes || [];
   const picks = notes.filter((n) => n.kind === 'redo' && picked[n.n]);
+  // Story, pacing and sound notes are applied by rewriting the script,
+  // when the caller can (a storyboard, or a render made from a draft).
+  const storyPicks = notes.filter((n) => n.kind !== 'redo' && picked[n.n]);
+  const pickable = (n) => n.kind === 'redo' || !!onRewrite;
   return (
     <div className="cf-notes">
       <div className="cf-notes__head">
@@ -825,7 +849,7 @@ function CfNotesBody({ review, redoLabel, onRedo, extra }) {
       )}
       {notes.map((n) => (
         <label key={n.n} className={`cf-notes__note cf-notes__note--${n.kind}`}>
-          {n.kind === 'redo' ? (
+          {pickable(n) ? (
             <input
               type="checkbox"
               checked={!!picked[n.n]}
@@ -856,6 +880,16 @@ function CfNotesBody({ review, redoLabel, onRedo, extra }) {
             title="Puts the request in the message box; send it to redo those shots"
           >
             {redoLabel}
+          </button>
+        )}
+        {onRewrite && notes.some((n) => n.kind !== 'redo') && (
+          <button
+            className="mbtn"
+            disabled={!storyPicks.length}
+            onClick={() => onRewrite(storyPicks)}
+            title="Puts the request in the message box; send it to rewrite the script, re-voicing only changed lines"
+          >
+            Rewrite with picked notes
           </button>
         )}
         {extra}
@@ -958,13 +992,13 @@ function CfDraftStoryboard({ payload, draftId, onAdjust }) {
           onRedo={(picks) =>
             onAdjust &&
             onAdjust(
-              `Revise storyboard draft ${String(draftId).slice(0, 8)}: ` +
-                picks
-                  .map(
-                    (n) =>
-                      `shot${n.shots.length > 1 ? 's' : ''} ${n.shots.join(', ')}: ${n.problem} Fix: ${n.fix}`
-                  )
-                  .join(' ')
+              `Revise storyboard draft ${String(draftId).slice(0, 8)}, scope pictures: ${cfNotesText(picks)}`
+            )
+          }
+          onRewrite={(picks) =>
+            onAdjust &&
+            onAdjust(
+              `Revise storyboard draft ${String(draftId).slice(0, 8)}, scope story: ${cfNotesText(picks)}`
             )
           }
         />
@@ -1042,6 +1076,7 @@ function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
         </div>
         <CfNotes
           taskId={card.task_id}
+          draftId={card.draft_id}
           onAdjust={onAdjust}
           pushToast={pushToast}
         />
