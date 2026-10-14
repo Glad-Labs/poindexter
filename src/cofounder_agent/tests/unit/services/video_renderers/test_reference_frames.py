@@ -339,6 +339,18 @@ class TestTalkingFrameCheck:
         assert len(stub_refs["calls"]) == 2
 
     @pytest.mark.asyncio
+    async def test_a_draw_failed_only_on_writing_beats_the_portrait(self, stub_refs, monkeypatch, tmp_path):
+        """Cinder's frame (2026-10-14) was rejected for a neon sign behind her;
+        with every draw rejected, the portrait put her on a blank card."""
+        from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
+
+        used, _ = await self._render(
+            monkeypatch, tmp_path,
+            [V(ok=False, people=1, reason="scrambled writing", writing_only=True), V(ok=False, people=2)],
+            video_cast_talking_frame_attempts="2")
+        assert used.startswith("talkframe_nova_") and len(stub_refs["calls"]) == 2
+
+    @pytest.mark.asyncio
     async def test_a_check_that_cannot_answer_keeps_the_frame(self, stub_refs, monkeypatch, tmp_path):
         from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict as V
 
@@ -363,6 +375,21 @@ class TestTalkingFrameVerdictParse:
         from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
 
         assert _parse_talking_frame(reply).ok is False
+
+    def test_scrambled_writing_alone_is_marked_so(self):
+        from poindexter.services.video_renderers.shot_vision_qa import _parse_talking_frame
+
+        v = _parse_talking_frame('{"people": 1, "is_character": true, "writing_ok": false, "reason": "a sign"}')
+        assert v.ok is False and v.writing_only is True
+        assert _parse_talking_frame('{"people": 2, "is_character": true, "writing_ok": false}').writing_only is False
+
+    def test_the_judge_counts_characters_not_just_people(self):
+        """Bolt, a robot mouse, was counted as 0 people, so every Bolt frame
+        failed and he spoke from his white-background portrait."""
+        from poindexter.services.prompt_manager import get_prompt_manager
+
+        text = get_prompt_manager().get_prompt("qa.talking_frame", name="Bolt", appearance="a chrome mouse robot")
+        assert "robots and creatures" in text and "The speaker counts, whatever they are" in text
 
     @pytest.mark.parametrize("reply", ["no idea", '{"is_character": true}', '{"people": "one"}'])
     def test_an_unreadable_reply_is_no_verdict(self, reply):

@@ -3714,15 +3714,20 @@ async def _draw_talking_frame(
     scene, and a talking clip is never re-rolled, so a stranger in the frame
     stays on screen for the whole scene: render a19363a9's closing scene put
     a man nobody wrote beside Mira on all of her lines. Each draw is judged by
-    ``check_talking_frame`` (one person, and the speaker); a rejected draw is
-    redrawn with a fresh seed, up to ``video_cast_talking_frame_attempts``
-    draws, and after that the caller lip-syncs the portrait. A check that
-    cannot answer keeps the frame, so vision trouble never costs a shot.
+    ``check_talking_frame`` (one character, and the speaker); a rejected draw
+    is redrawn with a fresh seed, up to ``video_cast_talking_frame_attempts``
+    draws. After that the first draw rejected only for scrambled writing is
+    kept, else the caller lip-syncs the portrait. A check that cannot answer
+    keeps the frame, so vision trouble never costs a shot.
     """
     from poindexter.services.video_renderers.shot_vision_qa import check_talking_frame
 
     fw, fh, _ = _hero_render_dims(orientation, site_config)
     attempts = _talking_frame_attempts(site_config)
+    # A draw whose only flaw is scrambled writing (a background sign) is kept
+    # aside: if no draw passes, it still beats the portrait, which puts the
+    # speaker on a blank card with nothing of the scene behind them.
+    spare = frame.with_name(f"{frame.stem}_writing{frame.suffix}")
     for attempt in range(1, attempts + 1):
         drawn = await _render_reference_still(
             shot, prompt=shot.frame_prompt or "", output_path=str(frame), width=fw, height=fh,
@@ -3732,20 +3737,32 @@ async def _draw_talking_frame(
         if not drawn:
             if frame.exists():
                 frame.unlink()
-            return
+            break
         verdict = await check_talking_frame(
             frame_path=str(frame), name=persona.display_name,
             appearance=getattr(persona, "appearance", "") or "",
             site_config=site_config, pool=getattr(reference_ctx, "pool", None),
         )
         if verdict.ok is not False:
+            if spare.exists():
+                spare.unlink()
             return
         logger.warning(
             "[SHOT_LIST] talking frame for %s (shot %d) rejected on draw %d/%d: "
             "%s people, %s",
             persona.slug, shot.idx, attempt, attempts, verdict.people, verdict.reason,
         )
-        frame.unlink()
+        if verdict.writing_only and not spare.exists():
+            frame.replace(spare)
+        else:
+            frame.unlink()
+    if spare.exists():
+        spare.replace(frame)
+        logger.warning(
+            "[SHOT_LIST] talking frame for %s (shot %d): keeping a draw whose only "
+            "flaw is scrambled writing rather than the portrait", persona.slug, shot.idx,
+        )
+        return
     logger.warning(
         "[SHOT_LIST] no talking frame for %s (shot %d) passed in %d draw(s) — "
         "lip-syncing the portrait instead", persona.slug, shot.idx, attempts,

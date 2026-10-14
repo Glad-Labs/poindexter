@@ -821,6 +821,9 @@ class TalkingFrameVerdict:
     ok: bool | None
     people: int | None = None
     reason: str = ""
+    # Rejected for scrambled writing alone (the right character, alone): a
+    # caller can still prefer this frame to a worse fallback.
+    writing_only: bool = False
 
 
 def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
@@ -838,8 +841,9 @@ def _parse_talking_frame(text: str) -> TalkingFrameVerdict:
     reason = _writing_reason(parsed, str(parsed.get("reason", "") or "")[:200])
     # Scrambled writing fails the frame; a judge that leaves the question out
     # is not read as a failure.
-    ok = people == 1 and is_character is True and parsed.get("writing_ok") is not False
-    return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
+    right = people == 1 and is_character is True
+    ok = right and parsed.get("writing_ok") is not False
+    return TalkingFrameVerdict(ok=ok, people=people, reason=reason, writing_only=right and not ok)
 
 
 def _writing_reason(parsed: dict[str, Any], reason: str) -> str:

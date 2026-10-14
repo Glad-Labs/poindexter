@@ -583,10 +583,11 @@ is made from this picture.
 
 THE SPEAKER: {name}, {appearance}
 
-1. PEOPLE - count every person or person-like character you can see in the
-   picture, including anyone small, half out of frame, behind glass or in the
-   background. Pictures, posters and screens that show a face count only when
-   the face is as large as the speaker's.
+1. CHARACTERS - count every character you can see in the picture: people,
+   and animals, robots and creatures that act like characters, including
+   anyone small, half out of frame, behind glass or in the background.
+   Pictures, posters and screens that show a face count only when the face is
+   as large as the speaker's. The speaker counts, whatever they are.
 
 2. CHARACTER - is the main figure {name} as described above: the same hair,
    clothing and look?
@@ -621,8 +622,8 @@ Look at every moment and answer four questions.
 3. FACE - does the face stay the same character from moment to moment, without
    melting, warping or turning into someone else?
 
-4. STRANGERS - how many people or person-like characters appear besides the
-   speaker?
+4. STRANGERS - how many other characters (people, or animals, robots and
+   creatures that act like characters) appear besides the speaker?
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"hands_ok": <true or false>, "mouth_ok": <true or false>, "face_ok": <true or false>, "strangers": <integer>, "reason": "<one short sentence naming what is wrong, or that the take is clean>"}}
@@ -649,7 +650,8 @@ Look at every moment and answer:
    without melting, warping or changing into someone else?
 3. MOUTH - while someone speaks, does the mouth stay in proportion to the
    face? Answer true when no one is speaking.
-4. STRANGERS - how many people or person-like characters appear who are not
+4. STRANGERS - how many other characters (people, or animals, robots and
+   creatures that act like characters) appear who are not
    the ones named above?
 5. WRITING - is any writing, sign or screen text legible and sensible? Answer
    true when there is none.
@@ -672,12 +674,12 @@ THE CAST - the only characters who exist in this cartoon:
 
 MUST APPEAR in this picture: {required}
 
-1. PEOPLE - count every person or person-like character you can see in the
-   picture, including anyone small, half out of frame, behind glass or in the
-   background. Pictures, posters and screens that show a face count only when
+1. CHARACTERS - count every character you can see in the picture: people,
+   and animals, robots and creatures that act like characters, including
+   anyone small, half out of frame, behind glass or in the background. Pictures, posters and screens that show a face count only when
    the face is as large as the characters' faces.
 
-2. STRANGERS - how many of those people are not one of the cast above, going
+2. STRANGERS - how many of those characters are not one of the cast above, going
    by the hair, clothing and look described?
 
 3. PRESENT - is every character under MUST APPEAR in the picture, looking as
