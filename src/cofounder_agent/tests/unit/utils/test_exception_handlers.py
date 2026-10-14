@@ -426,3 +426,55 @@ class TestRegisterExceptionHandlers:
         resp = client.get("/test-generic")
         assert resp.status_code == 500
         assert resp.json()["error_code"] == "INTERNAL_ERROR"
+
+
+# ---------------------------------------------------------------------------
+# Through the real stack: handlers + RequestIDMiddleware (poindexter#1119)
+# ---------------------------------------------------------------------------
+
+
+def _real_app():
+    from fastapi import HTTPException
+
+    from middleware.request_id import RequestIDMiddleware
+
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.get("/needs-token")
+    async def _needs_token():
+        raise HTTPException(
+            status_code=401, detail="Invalid token",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        )
+
+    @app.get("/slow-down")
+    async def _slow_down():
+        raise HTTPException(status_code=429, detail="Too many", headers={"Retry-After": "30"})
+
+    return app
+
+
+class TestHeadersAndRequestIdSurviveTheHandlers:
+    def test_a_401_keeps_www_authenticate_and_the_envelope(self):
+        resp = TestClient(_real_app()).get("/needs-token")
+        assert resp.status_code == 401
+        assert resp.headers["www-authenticate"] == 'Bearer error="invalid_token"'
+        body = resp.json()
+        assert body["error_code"] == "UNAUTHORIZED"
+        assert body["message"] == "Invalid token"
+        assert body["request_id"]
+
+    def test_any_raiser_header_survives(self):
+        resp = TestClient(_real_app()).get("/slow-down")
+        assert resp.status_code == 429 and resp.headers["retry-after"] == "30"
+
+    def test_the_body_request_id_matches_the_header_when_the_client_sent_none(self):
+        resp = TestClient(_real_app()).get("/needs-token")
+        assert resp.json()["request_id"] == resp.headers["x-request-id"]
+
+    def test_a_client_request_id_is_echoed_in_both(self):
+        resp = TestClient(_real_app()).get("/needs-token", headers={"X-Request-ID": "trace-123"})
+        assert resp.headers["x-request-id"] == "trace-123"
+        assert resp.json()["request_id"] == "trace-123"
