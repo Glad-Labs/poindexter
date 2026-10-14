@@ -5872,6 +5872,11 @@ async def render_shot_list(
         site_config.get_int("video_hero_shots_max", 3)
         if site_config is not None else 3
     )
+    if getattr(shot_list, "timing", "fit") == "exact":
+        # A cartoon is animated throughout (Matt, 2026-10-14: "a fully
+        # automated cartoon start to finish", not still pans): its own budget,
+        # -1 = every shot the director animated.
+        max_hero = site_config.get_int("story_max_animated_shots", -1) if site_config is not None else -1
     capped_shots = _cap_hero_shots(list(shot_list.shots), max_hero)
     # Presenter shots: same shape of cap (GPU budget), plus "none at all" when
     # no enabled persona with a portrait is allowed for this niche — the

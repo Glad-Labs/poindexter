@@ -3179,8 +3179,10 @@ DEFAULTS: dict[str, str] = {
     # Per-line emotion (2026-10-13): each screenplay line's intensity moves its
     # speaker's Chatterbox emotion strength (persona voice_exaggeration, else
     # the shared plugin.tts_provider.chatterbox.exaggeration) by these offsets,
-    # clamped to min/max. Past about 1.2 Chatterbox garbles words.
-    'story_line_intensity_offsets': 'low=-0.2,medium=0,high=0.2',
+    # clamped to min/max. Past about 1.2 Chatterbox garbles words. Narrowed to
+    # +-0.1 (2026-10-14): Matt heard 0.9 as too emotional and 0.7 as too flat,
+    # so a line stays within 0.1 of its speaker's level.
+    'story_line_intensity_offsets': 'low=-0.1,medium=0,high=0.1',
     'story_line_exaggeration_min': '0.25',
     'story_line_exaggeration_max': '1.2',
     # Casting (story.cast_characters, poindexter#1134): the step that reads a
@@ -3327,7 +3329,9 @@ DEFAULTS: dict[str, str] = {
     # 2026-10-13 audition ("the over the top emotion goes better there"), and
     # Kai's chosen voice runs at 0.9. Per-line intensity moves these by
     # story_line_intensity_offsets, clamped to story_line_exaggeration_max.
-    'story_cast_energy_exaggeration': 'low=0.65,medium=0.85,high=1.0',
+    # Re-centred on 0.8 (2026-10-14): Matt on Bolt at 1.0, "0.9 is too high,
+    # 0.7 too low, maybe 0.8 is the right setting for these cartoon voices".
+    'story_cast_energy_exaggeration': 'low=0.7,medium=0.8,high=0.85',
     # A new character's portrait: every frame of the piece is drawn from it.
     # {style} is the cast's art style, {appearance} the character's looks.
     'story_portrait_template': (
@@ -3348,12 +3352,15 @@ DEFAULTS: dict[str, str] = {
     'story_action_beat_seconds': '1.5',
     # Screenplay director (poindexter#1138, services/screenplay_director.py).
     # Longest non-talking shot; shortest shot (slivers merge into a neighbour);
-    # shortest still worth animating; talking-shot cap (-1 = every line by a
-    # character with a portrait is lip-synced, ~4 min of GPU each). Visuals
-    # model empty = the local writer resolver.
+    # shortest non-talking shot that animates (0 = all of them) and how many
+    # animate (-1 = all; a cartoon is animated throughout, 2026-10-14);
+    # talking-shot cap (-1 = every line by a character with a portrait is
+    # lip-synced, ~4 min of GPU each). Visuals model empty = the local writer
+    # resolver.
     'story_max_shot_seconds': '6.0',
     'story_min_shot_seconds': '0.8',
-    'story_min_animated_shot_seconds': '2.5',
+    'story_min_animated_shot_seconds': '0',
+    'story_max_animated_shots': '-1',
     'story_max_talking_shots': '-1',
     'story_visuals_model': '',
     # Style suffix appended to every image-gen prompt — niche brand voice.
@@ -7660,6 +7667,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_max_shot_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_min_shot_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_min_animated_shot_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
+    'story_max_animated_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_max_talking_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_visuals_model': {'owner': 'screenplay_director'},
     'persona.presenter.personality': {'owner': 'media_policy', 'value_type': 'string'},

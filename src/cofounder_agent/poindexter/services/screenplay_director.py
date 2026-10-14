@@ -14,7 +14,7 @@ on the words it belongs to:
   other characters listening, with the voice continuing over it.
 - Narrator lines, lines by a character without a portrait, and ``action``
   beats become stills of the scene: ``generative`` (animated, within
-  ``video_hero_shots_max``) or Ken Burns / static stills, alternated so the
+  ``story_max_animated_shots``, every one by default) or Ken Burns / static stills, alternated so the
   schema's pacing rule (no source three times running) holds.
 
 **Coverage, not illustration** (2026-10-13). The first two-character cartoon
@@ -283,11 +283,16 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
     allows two). Stills animate (``generative``) within the hero budget,
     longest first; the rest alternate Ken Burns / static so no source runs
     three times."""
-    hero_left = site_config.get_int("video_hero_shots_max", 3)
-    hero_floor = site_config.get_float("story_min_animated_shot_seconds", 2.5)
+    # A cartoon is animated throughout (Matt, 2026-10-14: "a fully automated
+    # cartoon start to finish", not still pans). story_max_animated_shots
+    # (-1 = every non-talking shot) and story_min_animated_shot_seconds (0 =
+    # any length) are the cartoon's own budget, apart from the blog videos'
+    # video_hero_shots_max. A master shot animates too.
+    hero_left = site_config.get_int("story_max_animated_shots", -1)
+    hero_floor = site_config.get_float("story_min_animated_shot_seconds", 0.0)
     candidates = sorted(
         (i for i, s in enumerate(plan)
-         if s["kind"] in ("still", "cutaway", "reaction") and s["length"] >= hero_floor),
+         if s["kind"] in ("still", "cutaway", "reaction", "master") and s["length"] >= hero_floor),
         key=lambda i: (-plan[i]["length"], i),
     )
     animate = set(candidates[: max(0, hero_left)]) if hero_left >= 0 else set(candidates)
@@ -309,12 +314,15 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
             shot.update(kind="reaction", speaker=None,
                         characters=_listeners(shot.get("scene_cast") or [], shot["speaker"]))
         options = (["generative"] if i in animate else []) + list(_STILL_SOURCES)
+        # An animated shot is its own picture (the schema keys it by prompt),
+        # so animated shots in a row are never a streak.
         for source in options:
-            if _streak_ok((source, None)):
+            key = (source, str(i)) if source == "generative" else (source, None)
+            if _streak_ok(key):
                 shot["source"] = source
                 break
         out.append(shot)
-        history.append((shot["source"], None))
+        history.append((shot["source"], str(i)) if shot["source"] == "generative" else (shot["source"], None))
     return out
 
 

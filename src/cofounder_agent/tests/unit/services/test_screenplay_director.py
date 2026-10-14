@@ -179,11 +179,19 @@ class TestSources:
         # The third becomes a reaction: whoever listens to dex in the scene.
         assert plan[2]["source"] != "presenter" and plan[2]["characters"] == ["nova"]
 
-    def test_hero_budget_animates_the_longest_stills(self):
-        plan = _plan()
+    def test_a_cartoon_animates_every_non_talking_shot(self):
+        """Matt, 2026-10-14: a cartoon is animated "start to finish", not still
+        pans. Only a third shot in a row from one source (the schema's pacing
+        guard) falls back to a still."""
+        plan = _plan(sc=_sc(story_min_animated_shot_seconds="0"))
+        not_talking = [s for s in plan if s["source"] != "presenter"]
+        assert not_talking and all(s["source"] == "generative" for s in not_talking)
+
+    def test_the_cartoon_animation_budget_is_its_own_setting(self):
+        plan = _plan(sc=_sc(story_max_animated_shots="1", story_min_animated_shot_seconds="2.5"))
         eligible = sorted((s["length"] for s in plan if s["kind"] != "talk" and s["length"] >= 2.5), reverse=True)
         animated = sorted((s["length"] for s in plan if s["source"] == "generative"), reverse=True)
-        assert animated == eligible[:2]  # video_hero_shots_max = 2, longest first
+        assert animated == eligible[:1]  # longest first; video_hero_shots_max (2 here) is the blog's
 
     def test_talking_shot_cap(self):
         plan = _plan(sc=_sc(story_max_talking_shots="1"))

@@ -449,7 +449,16 @@ class VideoShotList(BaseModel):
                 streak_src = None
                 streak_count = 0
                 continue
-            key = (s.source, s.speaker if s.source == "presenter" else None)
+            # An animated shot is keyed by its picture: three different
+            # animated moments in a row are a scene in motion, not a repeat
+            # (a cartoon animates every shot, 2026-10-14).
+            key: tuple[str, str | None]
+            if s.source == "presenter":
+                key = (s.source, s.speaker)
+            elif s.source == "generative":
+                key = (s.source, s.prompt)
+            else:
+                key = (s.source, None)
             if key == streak_src:
                 streak_count += 1
                 if streak_count > 2:

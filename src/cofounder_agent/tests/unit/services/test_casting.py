@@ -442,7 +442,8 @@ class TestBuildVoice:
         assert spoken == [("Who goes there?", "kokoro", "bf_emma")]
         assert out["voice_provider"] == "chatterbox"
         assert out["voice_ref_audio_url"] == "/app/voices/cast/wren.wav"
-        assert out["voice_exaggeration"] == "1.0"
+        # High energy is 0.85 since 2026-10-14 (Matt: 0.9 too high, 0.7 too low).
+        assert out["voice_exaggeration"] == "0.85"
         assert (tmp_path / "wren.wav").exists()
 
     @pytest.mark.asyncio
