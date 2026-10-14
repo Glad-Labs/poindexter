@@ -61,6 +61,9 @@ class TestRegistryShape:
             # Exempt: its output already lands in the operator's approval
             # inbox — the human gate is downstream (P1 decision).
             "create_post": False,
+            # Exempt for the same reason: a draft's render lands in the media
+            # approval queue (Gate 2), and its card decides it in place.
+            "render_draft": False,
             # Approval-carded (executed only via the operator's click):
             "set_setting": True,
             "restart_service": True,

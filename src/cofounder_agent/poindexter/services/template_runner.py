@@ -617,6 +617,10 @@ class PipelineState(TypedDict, total=False):
     # Reused characters redrawn in this piece's style (slug -> portrait URL),
     # read by media.direct_screenplay into the shot list.
     cast_portraits: dict
+    # story.load_draft's node config: the chat draft (and its cast draft) a
+    # render starts from (creative_drafts phase 3).
+    creative_draft: str
+    cast_draft: str
     # media.render_dialogue's measured beat timeline (start_s/end_s per line
     # and action beat), read by media.direct_screenplay.
     dialogue_timeline: list

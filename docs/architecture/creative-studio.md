@@ -429,3 +429,32 @@ timeline, which phase 3 renders from.
 
 Storyboards wait for a running render like cast drafts, and voice before
 they draw (`_ensure_voice_headroom`).
+
+### Rendering a draft
+
+Phase 3 adds `render_draft`, which turns a ready or kept script or storyboard
+draft into the video, from the chat. No architect is involved: the draft is
+the plan (`creative_drafts.render_spec`).
+
+- **Script draft:** `story.load_draft` → `media.render_dialogue` →
+  `media.direct_screenplay` → `media.transcribe_narration` →
+  `media.render_long_video` → `media.qa` → `media.persist`.
+- **Storyboard draft:** `story.load_draft` hands over the screenplay,
+  timeline, shot list and full-quality dialogue track (`audio_master_url`)
+  it was storyboarded with. The render skips voicing and directing and
+  animates exactly the shots the operator approved.
+
+A cast draft, when named, supplies the art style and any per-piece
+portraits. `setting_overrides` (a JSON object) applies to that render only,
+under the same policy as architect plans.
+
+The plan is validated like any plan and queued through
+`chat_plans.create_plan` and `run_plan`, so the task is linked to the
+conversation and the activity rail follows it. The render card polls
+`/api/chat/watch/{task}` for progress. When the render is done, the card
+plays it (`/api/media-approval/{task}/video/preview`) and offers Approve and
+Reject. That is the same Gate-2 decision as the media inbox, with the task as
+the subject.
+
+`render_draft` is a write tool without an approval card, like
+`create_post`, because its output lands in that approval queue.

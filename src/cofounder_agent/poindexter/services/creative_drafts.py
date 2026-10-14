@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -316,6 +317,160 @@ async def discard_draft(pool: Any, draft_id: str, *, site_config: Any = None) ->
     return {**draft, "status": "discarded"}
 
 
+# --- Rendering a draft (chat drafting, phase 3) --------------------------------
+
+RENDERABLE = ("screenplay", "storyboard")
+
+
+async def _download(url: str, dest: str) -> str:
+    import httpx
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0), follow_redirects=True) as client:
+        resp = await client.get(url)
+    if resp.status_code != 200 or not resp.content:
+        raise DraftError(f"could not fetch the storyboard's dialogue track ({resp.status_code})")
+    with open(dest, "wb") as fh:
+        fh.write(resp.content)
+    return dest
+
+
+async def load_for_render(
+    pool: Any, draft_id: str, *, site_config: Any, cast_draft: str | None = None,
+) -> dict[str, Any]:
+    """The pipeline state a draft hands the render (``story.load_draft``).
+
+    A script draft supplies the screenplay; the render voices and directs it.
+    A storyboard supplies all of that already done (screenplay, timeline,
+    shot list and its full-quality dialogue track), so the video is the
+    storyboard the operator approved, shot for shot. A cast draft, when
+    named, supplies the art style and any per-piece portraits.
+    """
+    import tempfile
+
+    draft = await get_draft(pool, draft_id, site_config=site_config)
+    if draft is None or draft["kind"] not in RENDERABLE:
+        raise DraftError(f"draft {draft_id!r} is not a script or storyboard draft")
+    if draft["status"] not in ("ready", "kept"):
+        raise DraftError(f"draft {draft['id'][:8]} is {draft['status']}; render a ready draft")
+    payload = draft["payload"]
+    cast = await get_draft(pool, cast_draft, site_config=site_config) if cast_draft else None
+    cast_payload = (cast or {}).get("payload") or {}
+    out: dict[str, Any] = {}
+    if draft["kind"] == "screenplay":
+        out["screenplay"] = payload
+        if cast_payload.get("style"):
+            out["screenplay_visual_style"] = cast_payload["style"]
+        out["cast_portraits"] = dict(cast_payload.get("cast_portraits") or {})
+        return out
+    listing = payload["shot_list"]
+    timeline = list(payload.get("timeline") or [])
+    if not payload.get("audio_master_url"):
+        raise DraftError("this storyboard predates its full-quality track; storyboard the scenes again")
+    work = tempfile.mkdtemp(prefix="render-draft-")
+    out.update({
+        "screenplay": payload["screenplay"],
+        "video_shot_list": listing,
+        "dialogue_timeline": timeline,
+        "video_long_script": payload.get("spoken_script") or "\n".join(
+            str(t.get("text") or "") for t in timeline if t.get("kind") == "line"
+        ),
+        "screenplay_visual_style": str(payload.get("style") or ""),
+        "cast_portraits": dict(listing.get("cast_portraits") or {}),
+        "long_narration_audio_path": await _download(payload["audio_master_url"], os.path.join(work, "dialogue.wav")),
+    })
+    return out
+
+
+_RENDER_TAIL = (
+    ("transcribe", "media.transcribe_narration"),
+    ("render", "media.render_long_video"),
+    ("qa", "media.qa"),
+    ("persist", "media.persist"),
+)
+
+
+def render_spec(
+    kind: str, draft_id: str, *, cast_draft: str | None = None,
+    setting_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """A fixed plan from a draft to a video in the approval queue.
+
+    A script draft is voiced and directed first; a storyboard already was.
+    No architect is involved: the draft is the plan.
+    """
+    config: dict[str, Any] = {"creative_draft": draft_id}
+    if cast_draft:
+        config["cast_draft"] = cast_draft
+    steps: list[tuple[str, str]] = [("load", "story.load_draft")]
+    if kind == "screenplay":
+        steps += [("voice", "media.render_dialogue"), ("direct", "media.direct_screenplay")]
+    steps += list(_RENDER_TAIL)
+    nodes = [{"id": nid, "atom": atom, **({"config": config} if nid == "load" else {})} for nid, atom in steps]
+    edges = [{"from": a[0], "to": b[0]} for a, b in zip(steps, steps[1:], strict=False)]
+    edges.append({"from": steps[-1][0], "to": "END"})
+    spec: dict[str, Any] = {
+        "name": f"render_draft_{draft_id[:8]}",
+        "description": f"Render {kind} draft {draft_id[:8]} into a video for approval",
+        "entry": "load",
+        "nodes": nodes,
+        "edges": edges,
+    }
+    if setting_overrides:
+        spec["setting_overrides"] = dict(setting_overrides)
+    return spec
+
+
+async def start_render(
+    pool: Any,
+    db_service: Any,
+    *,
+    draft_id: str,
+    site_config: Any,
+    conversation_id: str,
+    message_id: str,
+    cast_draft: str | None = None,
+    setting_overrides: dict[str, Any] | None = None,
+    niche_slug: str | None = None,
+) -> dict[str, Any]:
+    """Queue the render of a ready script or storyboard draft; returns ``{task_id, plan_id, title}``."""
+    from poindexter.services import chat_plans
+    from poindexter.services.pipeline_architect import _validate_spec
+    from poindexter.services.setting_overrides import check_overrides
+
+    draft = await get_draft(pool, draft_id, site_config=site_config)
+    if draft is None or draft["kind"] not in RENDERABLE:
+        raise DraftError(f"draft {draft_id!r} is not a script or storyboard draft")
+    if draft["status"] not in ("ready", "kept"):
+        raise DraftError(f"draft {draft['id'][:8]} is {draft['status']}; render a ready draft")
+    if draft["kind"] == "storyboard" and not (draft["payload"] or {}).get("audio_master_url"):
+        raise DraftError("this storyboard predates its full-quality track; storyboard the scenes again")
+    cast_id = None
+    if cast_draft:
+        cast = await get_draft(pool, cast_draft, site_config=site_config)
+        if cast is None or cast["kind"] != "cast":
+            raise DraftError("cast_draft must be a cast draft id")
+        cast_id = cast["id"]
+    problems = check_overrides(setting_overrides, site_config, where="render")
+    if problems:
+        raise DraftError("; ".join(problems))
+    spec = render_spec(draft["kind"], draft["id"], cast_draft=cast_id, setting_overrides=setting_overrides)
+    ok, errors = _validate_spec(spec)
+    if not ok:
+        raise DraftError("the render plan is invalid: " + "; ".join(errors[:3]))
+    payload = draft["payload"] or {}
+    title = str(payload.get("title") or (payload.get("screenplay") or {}).get("title") or "creative draft")
+    card = await chat_plans.create_plan(
+        pool, conversation_id=conversation_id, message_id=message_id,
+        intent=f"Render {draft['kind']} draft {draft['id'][:8]}", topic=title, spec=spec,
+    )
+    run = await chat_plans.run_plan(
+        pool=pool, db_service=db_service, plan_id=card["plan_id"],
+        params={"niche_slug": niche_slug} if niche_slug else None,
+    )
+    return {"task_id": str(run.get("task_id") or ""), "plan_id": card["plan_id"], "title": title,
+            "overrides": card.get("overrides") or []}
+
+
 def describe(draft: dict[str, Any], *, max_chars: int = 6000) -> str:
     """A draft as text, for the chat model to read and discuss."""
     head = f"{draft['kind']} draft {draft['id'][:8]} v{draft['version']} ({draft['status']})"
@@ -377,6 +532,9 @@ __all__ = [
     "get_draft",
     "keep_draft",
     "list_drafts",
+    "load_for_render",
+    "render_spec",
     "revise_draft",
+    "start_render",
     "start_draft",
 ]

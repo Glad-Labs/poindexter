@@ -485,6 +485,139 @@ function CfDraftCast({ payload }) {
   );
 }
 
+// Chat drafting phase 3: a draft rendering into a video. Polls the watch
+// snapshot while it runs, then plays the render and decides it in place
+// (the same Gate-2 decision as the media inbox; the subject is the task).
+function CfRenderCard({ card, pushToast }) {
+  const [snap, setSnap] = React.useState(null);
+  const [videoUrl, setVideoUrl] = React.useState('');
+  const [decided, setDecided] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(async () => {
+    try {
+      setSnap(await PX.api.chatWatch(card.task_id));
+    } catch (e) {
+      /* the next poll retries */
+    }
+  }, [card.task_id]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const terminal = snap && snap.terminal;
+  React.useEffect(() => {
+    if (terminal) return undefined;
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [terminal, load]);
+  React.useEffect(
+    () => () => {
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    },
+    [videoUrl]
+  );
+  const watch = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const blob = await PX.api.mediaPreviewBlob(card.task_id, 'video');
+      setVideoUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      pushToast &&
+        pushToast(`Could not load the video — ${e.message}`, 'red', '✕');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const decide = async (approved) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await PX.api.mediaDecide(card.task_id, 'video', approved);
+      setDecided(approved ? 'approved' : 'rejected');
+    } catch (e) {
+      pushToast && pushToast(`Decision failed — ${e.message}`, 'red', '✕');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const status = snap ? snap.status : 'queued';
+  const done = terminal && ['completed', 'awaiting_approval'].includes(status);
+  const failed = terminal && !done;
+  const last =
+    snap && snap.nodes && snap.nodes.length
+      ? snap.nodes[snap.nodes.length - 1]
+      : null;
+  return (
+    <div className="cf-plan cf-draft">
+      <div className="cf-plan__head">
+        <Icon name="play" size={13} />
+        <span className="cf-plan__title">Render — {card.title}</span>
+        <span className="cf-plan__slug tnum">
+          {String(card.task_id).slice(0, 8)} · {status}
+        </span>
+      </div>
+      {(card.overrides || []).length > 0 && (
+        <div className="cf-plan__overrides">
+          <span className="cf-plan__overrides-label">For this render only</span>
+          {card.overrides.map((o) => (
+            <code key={o} className="cf-plan__override">
+              {o}
+            </code>
+          ))}
+        </div>
+      )}
+      {!terminal && (
+        <div className="cf-draft__note">
+          {snap && snap.expected_nodes
+            ? `Step ${snap.nodes_done} of ${snap.expected_nodes}`
+            : 'Queued'}
+          {last && last.node_id ? ` · ${last.node_id}` : ''}
+          {' — a render takes an hour or two; this card updates on its own.'}
+        </div>
+      )}
+      {failed && (
+        <div className="cf-draft__note cf-draft__note--bad">
+          The render ended as {status}. Open the task trace for the reason.
+        </div>
+      )}
+      {done && videoUrl && (
+        <video className="cf-draft__video" controls src={videoUrl} />
+      )}
+      {done && !decided && (
+        <div className="cf-plan__actions">
+          {!videoUrl && (
+            <button className="mbtn" disabled={busy} onClick={watch}>
+              <Icon name="play" size={12} />
+              {busy ? 'LOADING…' : 'Watch'}
+            </button>
+          )}
+          <button
+            className="mbtn mbtn--primary"
+            disabled={busy}
+            onClick={() => decide(true)}
+            title="Approve the video for upload"
+          >
+            <Icon name="check" size={12} />
+            Approve
+          </button>
+          <button
+            className="mbtn"
+            disabled={busy}
+            onClick={() => decide(false)}
+          >
+            Reject
+          </button>
+        </div>
+      )}
+      {decided && (
+        <div className="cf-draft__note">
+          {decided === 'approved' ? 'Approved.' : 'Rejected.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A storyboard plays as an animatic: the voiced track, with the picture of
 // whichever shot is on screen at that moment; any thumbnail seeks to its shot.
 function CfDraftStoryboard({ payload }) {
@@ -601,6 +734,8 @@ function CfCard({ card, onOpenTask, onResolved, onAdjust, pushToast }) {
     );
   if (card.kind === 'draft')
     return <CfDraftCard card={card} pushToast={pushToast} />;
+  if (card.kind === 'render')
+    return <CfRenderCard card={card} pushToast={pushToast} />;
   if (card.kind === 'approval')
     return (
       <CfApprovalCard

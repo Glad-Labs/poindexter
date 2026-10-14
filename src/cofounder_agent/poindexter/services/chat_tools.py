@@ -464,6 +464,47 @@ async def _storyboard_draft(
     return await _start_draft(ctx, "storyboard", inputs)
 
 
+async def _render_draft(
+    ctx: ChatToolContext, *, draft_id: str, cast_draft: str = "", setting_overrides: str = "",
+    niche_slug: str = "",
+) -> str:
+    from poindexter.services import creative_drafts as cd
+
+    overrides: dict[str, Any] = {}
+    if setting_overrides.strip():
+        try:
+            parsed = json.loads(setting_overrides)
+        except ValueError as exc:
+            raise ChatToolError(
+                'setting_overrides must be a JSON object, e.g. {"persona.kai.voice_exaggeration": 0.6}'
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ChatToolError("setting_overrides must be a JSON object of setting key to value")
+        overrides = parsed
+    if not ctx.conversation_id or not ctx.message_id:
+        raise ChatToolError("render_draft runs from a chat conversation")
+    try:
+        run = await cd.start_render(
+            ctx.pool, ctx.db_service, draft_id=draft_id, site_config=ctx.site_config,
+            conversation_id=ctx.conversation_id, message_id=ctx.message_id,
+            cast_draft=cast_draft.strip() or None, setting_overrides=overrides or None,
+            niche_slug=niche_slug.strip() or None,
+        )
+    except cd.DraftError as exc:
+        raise ChatToolError(str(exc)) from exc
+    ctx.linked_task_ids.append(run["task_id"])
+    ctx.emitted_cards.append({
+        "kind": "render", "task_id": run["task_id"], "draft_id": draft_id,
+        "title": run["title"], "overrides": run.get("overrides") or [],
+    })
+    changed = (" with " + "; ".join(run["overrides"])) if run.get("overrides") else ""
+    return (
+        f"Render of {run['title']!r} queued as task {run['task_id'][:8]}{changed}. A render "
+        "takes about an hour or two; the render card shows its progress and plays the "
+        "video when it is done, with Approve / Reject. Say so and stop."
+    )
+
+
 async def _revise_draft(ctx: ChatToolContext, *, draft_id: str, instruction: str) -> str:
     from poindexter.services import creative_drafts as cd
 
@@ -664,6 +705,24 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
         ),
         tier="read",
         handler=_storyboard_draft,
+    ),
+    ChatToolSpec(
+        name="render_draft",
+        description=(
+            "Render a script or storyboard draft into the full video: a "
+            "storyboard renders exactly the shots it shows, a script is voiced "
+            "and directed first. Use it when the operator says to render or make "
+            "the video. cast_draft (a cast draft id) carries the art style; "
+            "setting_overrides is an optional JSON object of creative settings "
+            "for this render only (e.g. a calmer voice). Takes an hour or two; "
+            "the render card tracks it and plays the video with Approve / Reject."
+        ),
+        parameters=_params(
+            {"draft_id": _STR, "cast_draft": _STR, "setting_overrides": _STR, "niche_slug": _STR},
+            ["draft_id"],
+        ),
+        tier="write",
+        handler=_render_draft,
     ),
     ChatToolSpec(
         name="revise_draft",

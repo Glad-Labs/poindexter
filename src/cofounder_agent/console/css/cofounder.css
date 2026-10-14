@@ -842,6 +842,14 @@
   overflow-wrap: anywhere;
 }
 
+/* Render card: the finished video plays in place */
+.cf-draft__video {
+  width: 100%;
+  border-radius: 6px;
+  background: #000;
+  margin: 4px 0;
+}
+
 /* Storyboard draft: an animatic screen above a strip of shots */
 .cf-draft__screen {
   position: relative;
