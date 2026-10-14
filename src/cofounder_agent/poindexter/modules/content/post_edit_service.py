@@ -66,11 +66,36 @@ _RETITLE_STATUSES: frozenset[str] = frozenset({"awaiting_approval"})
 #: export serves ``featured_image_url or cover_image_url``), so clearing only
 #: the featured column republished a removed image. RETURNING says which rows
 #: changed and whether any of them is live.
+#:
+#: When the image actually changes, the fields that DESCRIBE the old one go
+#: with it: the alt text in ``metadata`` and the render provenance in
+#: ``featured_image_data`` (poindexter#1105). On the right of ``SET`` the
+#: columns still read the row's old values, so the comparison is against the
+#: image being replaced.
+#: ``$1`` is cast at every use: it appears both as a column value and in a
+#: comparison, and Postgres refuses a parameter it deduces two types for
+#: ("inconsistent types deduced for parameter $1: text versus character varying").
 _UPDATE_POST_FEATURED_SQL = (
-    "UPDATE posts SET featured_image_url = $1, cover_image_url = $1, "
+    "UPDATE posts SET featured_image_url = $1::varchar, cover_image_url = $1::varchar, "
+    "metadata = CASE WHEN featured_image_url IS DISTINCT FROM $1::varchar "
+    "THEN COALESCE(metadata, '{}'::jsonb) - 'featured_image_alt' ELSE metadata END, "
+    "featured_image_data = CASE WHEN featured_image_url IS DISTINCT FROM $1::varchar "
+    "THEN '{}'::jsonb ELSE featured_image_data END, "
     "updated_at = NOW() "
     "WHERE metadata->>'pipeline_task_id' = $2 "
     "RETURNING status"
+)
+#: Keys in a task's ``result`` / ``task_metadata`` that describe the featured
+#: image rather than locate it. A swap that kept them published the old
+#: image's caption as the new one's alt text, and its model, prompt and seed
+#: as the new one's provenance (poindexter#1105).
+_FEATURED_DESCRIPTION_KEYS: tuple[str, ...] = (
+    "featured_image_alt",
+    "featured_image_data",
+    "featured_image_width",
+    "featured_image_height",
+    "featured_image_photographer",
+    "featured_image_source",
 )
 #: posts statuses that a later promotion makes public without re-reading the
 #: draft store (``scheduled_publisher``, ``publish_service._promote_or_skip_existing``).
@@ -657,7 +682,11 @@ class PostEditService:
         ``task_metadata``, the pair ``publish_post_from_task`` reads a featured
         image from (the retired generate-image route wrote the same pair). Advisory
         only — the canonical field is ``pipeline_versions.featured_image_url``,
-        already written."""
+        already written.
+
+        When the URL changes, the keys that describe the previous image
+        (:data:`_FEATURED_DESCRIPTION_KEYS`) are dropped in the same write, so
+        publish can't carry the old caption or provenance onto the new image."""
         if self._db_service is None:
             return
         import json
@@ -666,6 +695,11 @@ class PostEditService:
             task = await self._db_service.get_task(task_id)
             result = _as_dict(task.get("result"))
             meta = _as_dict(task.get("task_metadata"))
+            previous = result.get("featured_image_url") or meta.get("featured_image_url")
+            if previous != url:
+                for key in _FEATURED_DESCRIPTION_KEYS:
+                    result.pop(key, None)
+                    meta.pop(key, None)
             result["featured_image_url"] = url
             meta["featured_image_url"] = url
             await self._db_service.update_task(

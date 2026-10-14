@@ -845,6 +845,15 @@ def _parse_publish_inputs(
     # backfill migration populates this key for every existing post.
     if task_id:
         metadata["pipeline_task_id"] = str(task_id)
+    # The hero's alt text. caption_images re-captions the featured image from
+    # its pixels into featured_image_alt, and the static export serves
+    # posts.metadata->>'featured_image_alt' (og:image:alt and the page's alt).
+    # Nothing copied it across, so every post fell back to its title: 0 of 15
+    # posts published in the 30 days to 2026-09-28 carried it while all 15
+    # tasks had one (poindexter#1105). A value already on the metadata wins.
+    featured_alt = merged.get("featured_image_alt")
+    if isinstance(featured_alt, str) and featured_alt.strip() and not metadata.get("featured_image_alt"):
+        metadata["featured_image_alt"] = featured_alt.strip()
 
     if not draft_content or not topic:
         msg = "Missing content or topic — cannot create post"

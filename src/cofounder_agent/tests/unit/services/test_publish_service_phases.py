@@ -53,6 +53,26 @@ class TestParsePublishInputs:
         # pipeline_task_id seam is always stamped onto post metadata.
         assert out.metadata["pipeline_task_id"] == "abcdef12"
 
+    def test_the_vision_alt_text_reaches_the_post(self):
+        """poindexter#1105: caption_images writes featured_image_alt on the
+        task and the static export reads it from posts.metadata. Nothing
+        copied it across, so 0 of 15 recent posts carried it."""
+        task = {
+            "topic": "T", "content": "body",
+            "task_metadata": '{"featured_image_alt": "  A teal robot reading a terminal "}',
+        }
+        out = _parse_publish_inputs(task, "t1")
+        assert out.metadata["featured_image_alt"] == "A teal robot reading a terminal"
+
+    @pytest.mark.parametrize("task_metadata, expected", [
+        ('{"featured_image_alt": "   "}', None),  # blank: nothing to copy
+        ('{"metadata": {"featured_image_alt": "set upstream"}, "featured_image_alt": "vision"}', "set upstream"),
+        ('{}', None),
+    ])
+    def test_blank_or_already_set_alt_text_is_left_alone(self, task_metadata, expected):
+        out = _parse_publish_inputs({"topic": "T", "content": "body", "task_metadata": task_metadata}, "t1")
+        assert out.metadata.get("featured_image_alt") == expected
+
     def test_result_wins_over_metadata_on_merge(self):
         task = {
             "topic": "T",

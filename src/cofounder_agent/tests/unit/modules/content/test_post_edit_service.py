@@ -794,3 +794,65 @@ async def test_upload_key_prefix_is_classified_as_composed():
 
     assert infer_image_kind_from_url(brand) == "composed"
     assert infer_image_kind_from_url(plain) == "generate"
+
+
+# ---------------------------------------------------------------------------
+# A swapped hero sheds the old image's description (poindexter#1105)
+# ---------------------------------------------------------------------------
+
+
+class _FakeTaskDb:
+    def __init__(self, result, meta):
+        self.task = {"result": result, "task_metadata": meta}
+        self.updates: list[dict] = []
+
+    async def get_task(self, task_id):
+        return self.task
+
+    async def update_task(self, task_id, fields):
+        self.updates.append(fields)
+
+
+_DESCRIBED = {
+    "featured_image_url": "https://cdn/old.png",
+    "featured_image_alt": "A teal robot reading a terminal",
+    "featured_image_data": {"model": "sdxl", "seed": 7},
+    "featured_image_width": 1280,
+    "featured_image_height": 720,
+    "featured_image_photographer": "someone",
+    "featured_image_source": "pexels",
+    "title": "kept",
+}
+
+
+async def test_a_new_featured_image_drops_the_old_ones_description():
+    import json
+
+    db = _FakeTaskDb(dict(_DESCRIBED), dict(_DESCRIBED))
+    await PostEditService(pool=FakePool(), db_service=db)._sync_task_featured("t1", "https://cdn/new.png")
+
+    (fields,) = db.updates
+    for column in ("result", "task_metadata"):
+        written = json.loads(fields[column])
+        assert written == {"featured_image_url": "https://cdn/new.png", "title": "kept"}, column
+
+
+async def test_the_same_image_keeps_its_description():
+    import json
+
+    db = _FakeTaskDb(dict(_DESCRIBED), dict(_DESCRIBED))
+    await PostEditService(pool=FakePool(), db_service=db)._sync_task_featured("t1", "https://cdn/old.png")
+
+    written = json.loads(db.updates[0]["result"])
+    assert written["featured_image_alt"] == "A teal robot reading a terminal"
+
+
+async def test_the_posts_row_sheds_alt_and_provenance_only_when_the_image_changes():
+    pool = FakePool(post_statuses=("approved",))
+    await PostEditService(pool=pool)._sync_post_featured("t1", "https://cdn/new.png")
+
+    (update,) = _posts_updates(pool)
+    sql = update[0]
+    assert "featured_image_url IS DISTINCT FROM $1::varchar" in sql
+    assert "- 'featured_image_alt'" in sql
+    assert "featured_image_data = CASE" in sql
