@@ -981,6 +981,40 @@ class TestApproveFeaturedImageOverride:
         assert recorded["featured_image_url"] == self.NEW
         assert recorded["image_source"] == "pexels"
 
+    def test_approval_details_live_on_the_gate_row_not_in_result(self, edits):
+        """poindexter#1104: ``approve_task`` used to write an approval block as
+        ``result["metadata"]``. A pipeline task's own ``result.metadata``
+        won the merge, the publish backstamp erased the rest, and nothing
+        read it. The task's metadata is now left alone, and who, when and
+        why live on the ``pipeline_gate_history`` row."""
+        mock_db = self._db()
+        task = self._task()
+        task["result"]["metadata"] = {"angle": "first-party spin"}
+        mock_db.get_task = AsyncMock(return_value=task)
+
+        self._approve(
+            mock_db,
+            json_body={"approved": True, "reviewer_id": "matt", "human_feedback": "Ship it."},
+        )
+
+        first = self._result_writes(mock_db)[0]
+        assert first["metadata"] == {"angle": "first-party spin"}
+        for key in ("approved_at", "approved_by", "human_feedback"):
+            assert key not in first and key not in first["metadata"]
+        (gate,) = [
+            c for c in mock_db.pool.execute.await_args_list
+            if "pipeline_gate_history" in c.args[0]
+        ]
+        # (task_id, gate_name, event_kind, feedback, actor, metadata)
+        assert gate.args[3:6] == ("approved", "Ship it.", "matt")
+        assert json.loads(gate.args[-1])["reviewer"] == "matt"
+
+    def test_a_result_without_metadata_gets_none_added(self, edits):
+        mock_db = self._db()
+        self._approve(mock_db, json_body={"approved": False, "human_feedback": "Thin."})
+        (write,) = self._result_writes(mock_db)
+        assert "metadata" not in write
+
     def test_override_runs_the_real_writer(self):
         """End to end through the real PostEditService: the draft store's
         featured column, the result/task_metadata mirror and the audit row,

@@ -420,18 +420,6 @@ async def approve_task(
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e)) from e
 
-        # Prepare metadata
-        approval_metadata = {
-            "approved_at" if approved else "rejected_at": datetime.now(timezone.utc).isoformat(),
-            "approved_by" if approved else "rejected_by": reviewer_id or "operator",
-        }
-
-        if human_feedback:
-            approval_metadata["human_feedback"] = human_feedback
-
-        if image_source:
-            approval_metadata["image_source"] = image_source
-
         # Update task result with featured image and content from task_metadata
         # 🔑 CRITICAL: Read from task_metadata for failed/partially-generated tasks
         task_metadata = task.get("task_metadata", {})
@@ -481,8 +469,19 @@ async def approve_task(
         logger.info("   Has featured_image_url: %s", bool(merged_result.get("featured_image_url")))
         logger.info("   Has content: %s", bool(merged_result.get("content")))
 
-        # Convert any Decimal values to float before JSON serialization
-        safe_result = convert_decimals({"metadata": approval_metadata, **merged_result})
+        # Convert any Decimal values to float before JSON serialization.
+        #
+        # No approval block goes into ``result``. One used to, as
+        # ``result["metadata"]``, and it never survived: a pipeline task's
+        # ``result`` already has a ``metadata`` key, which won the dict merge
+        # (65 of 71 recent canonical_blog tasks), and the publish backstamp
+        # rewrote ``result`` for the rest. Nothing read it, and
+        # ``publish_post_from_task`` copies ``result.metadata`` into
+        # ``posts.metadata``, so it could not just be moved there. Who
+        # decided, when, why and with which image is recorded on the
+        # ``pipeline_gate_history`` row below, which the ``content_tasks``
+        # view reads (poindexter#1104).
+        safe_result = convert_decimals(merged_result)
 
         try:
             await db_service.update_task_status(
@@ -498,8 +497,7 @@ async def approve_task(
         # (`approved` / `rejected`) so the view can read it directly.
         #
         # The image the approver chose, and where they say it came from, ride
-        # on the same row. It is the only durable home image_source has: the
-        # approval block in `result` never survives an approve (poindexter#1104).
+        # on the same row. It is the only home image_source has (poindexter#1104).
         event_kind = "approved" if approved else "rejected"
         gate_metadata: dict[str, Any] = {
             "reviewer": reviewer_id or "operator",
