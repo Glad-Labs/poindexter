@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 MANIFEST = "clips.json"
 _KEY_FIELDS = (
     "source", "prompt", "frame_prompt", "motion", "speaker", "characters",
+    "after_prompt", "after_url", "transition",
     "duration_s", "narration_offset_s", "query", "demo_id", "kenburns_zoom",
 )
 

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 TALKING = "talking"
 STILL = "still"
 FOOTAGE = "footage"
-_STILL_SOURCES = ("image_gen", "image_kenburns", "generative", "wan21")
+_STILL_SOURCES = ("image_gen", "image_kenburns", "generative", "wan21", "keyframes")
 
 
 class StoryboardError(RuntimeError):
@@ -252,6 +252,18 @@ async def _draw_shots(
         urls[shot.idx] = await _upload(
             local, f"{upload_prefix}/shot_{shot.idx:02d}{version_tag}.png", "image/png", site_config,
         ) if local else None
+        if shot.source == "keyframes":
+            # Its second drawing, edited from the first: approved with the
+            # storyboard, so the render joins the two pictures the operator saw.
+            entry = next(x for x in listing["shots"] if x.get("idx") == shot.idx)
+            entry.pop("after_url", None)
+            after = str(work / f"shot_{shot.idx:02d}_after.png")
+            if local and await slr.draw_keyframe_after(
+                shot.model_copy(update={"after_url": None}), before=local, output_path=after, site_config=site_config,
+            ):
+                entry["after_url"] = await _upload(
+                    after, f"{upload_prefix}/shot_{shot.idx:02d}_after{version_tag}.png", "image/png", site_config,
+                )
     if ctx is not None and plates is not None:
         for key, local in ctx.places.items():
             if key in seeded or not os.path.exists(local):
@@ -285,6 +297,8 @@ def _rows(listing: dict[str, Any], timeline: list[dict[str, Any]], urls: dict[in
             "words": _words(timeline, start, end),
             "picture": (shot.frame_prompt if _kind(shot) == TALKING else shot.prompt) or shot.intent or "",
             "image_url": urls.get(shot.idx),
+            **({"after": shot.after_prompt, "after_url": shot.after_url, "transition": shot.transition}
+               if shot.source == "keyframes" else {}),
         })
     return rows
 

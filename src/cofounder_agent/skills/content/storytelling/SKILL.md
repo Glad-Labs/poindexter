@@ -227,11 +227,12 @@ FOR EVERY SHOT
 - Vary the framing from shot to shot (wide, medium, close-up, over the shoulder) while the place stays the same.
 - Keep pictures free of written words, signs and screens with text.
 - "visible": the ids of the characters the picture shows, from the row's visible list. A character is in it when any part of them is in the frame, a hand included; a picture of only an object, or only the place, lists nobody.
+- A "two drawings" shot is drawn twice, and its movement is the switch between the drawings. "prompt" is the first drawing: the moment as it starts. "after" is the second: the one visible change it shows, said so an illustrator can redraw the first picture with only that change (a hand now inside the jar, the water higher, a frown turned to a grin). "transition" joins them: "dissolve" for a gradual change (light spreading, water rising, something growing or bursting), "toggle" for a small repeated movement (a twitch, shaking, laughing, a flicker), "cut" for a sudden one (an impact, a snap, a slammed door). Leave "motion" empty.
 - "motion": for an animated shot, one sentence on how the camera moves and what moves in the picture. Keep it slow and deliberate: a held frame where one thing moves (hair in the wind, a light flickering, a single step) reads better than busy motion. For a still, an empty string.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"shots": [{{"id": 3, "prompt": "medium shot of dex at a cluttered workbench, holding a glowing graphics card up to the light, warm lamp glow", "visible": ["dex"], "motion": "slow push-in as dex turns the card in his paws"}}]}}
+{{"shots": [{{"id": 3, "prompt": "medium shot of dex at a cluttered workbench, holding a glowing graphics card up to the light, warm lamp glow", "visible": ["dex"], "motion": "slow push-in as dex turns the card in his paws"}}, {{"id": 4, "prompt": "...", "visible": ["..."], "after": "...", "transition": "dissolve", "motion": ""}}]}}
 ```
 
 ## story.props

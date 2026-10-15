@@ -3491,7 +3491,7 @@ async def _render_one_shot(
             clip_path=clip_path, duration_s=duration,
         )
 
-    if source in ("image_gen", "image_kenburns"):
+    if source in ("image_gen", "image_kenburns", "keyframes"):
         image_gen_prompt = shot.prompt if shot.prompt else (shot.query or "")
         if not image_gen_prompt:
             return ShotRenderResult(
@@ -3527,6 +3527,11 @@ async def _render_one_shot(
                 source=source,
                 success=False,
                 error="image-gen render returned no image",
+            )
+        if source == "keyframes":
+            return await _render_keyframes(
+                shot, before=clip_path, work_dir=work_dir, site_config=site_config,
+                http_client_factory=http_client_factory,
             )
         return ShotRenderResult(
             idx=shot.idx,
@@ -3876,6 +3881,121 @@ def _presenter_negative_prompt(site_config: Any, *, cast: bool = False) -> dict[
         # provider's shared negative applies.
         return {}
     return {"negative_prompt": text} if text else {}
+
+
+async def draw_keyframe_after(
+    shot: Shot, *, before: str, output_path: str, site_config: Any, http_client_factory: Any = None,
+) -> bool:
+    """A keyframes shot's second drawing at ``output_path``: the approved one, else an edit of ``before``.
+
+    The edit is ``story_keyframe_after_template`` with the shot's
+    ``after_prompt`` as ``{change}``, drawn with ``before`` as the only
+    reference, so it is the same picture with one thing changed.
+    """
+    from PIL import Image
+
+    from poindexter.services import reference_frames as rf
+
+    with Image.open(before) as img:
+        width, height = img.size
+    if getattr(shot, "after_url", None):
+        got = await _approved_frame(
+            shot.model_copy(update={"frame_url": shot.after_url}), Path(output_path), http_client_factory,
+            width=width, height=height,
+        )
+        if got:
+            return True
+    template = str(
+        (site_config.get("story_keyframe_after_template", None) if site_config is not None else None)
+        or DEFAULTS["story_keyframe_after_template"]
+    )
+    ok, why = await rf.render_reference_frame(
+        prompt=template.replace("{change}", str(shot.after_prompt or "").strip().rstrip(".")),
+        reference_paths=[before], output_path=output_path, width=width, height=height, site_config=site_config,
+    )
+    if not ok:
+        logger.warning("[SHOT_LIST] shot %d: the second drawing failed (%s)", shot.idx, why)
+    return bool(ok)
+
+
+def keyframe_schedule(transition: str, duration: float, fps: int) -> list[float]:
+    """How much of the second drawing each frame shows (0 = the first, 1 = the second).
+
+    dissolve: held, a blend across the middle half, held. toggle: held, then
+    switching every ~0.22 s (a twitch, a laugh, a flicker). cut: the first
+    drawing until just before the middle, then the second.
+    """
+    n = max(1, int(round(duration * fps)))
+    out = []
+    for k in range(n):
+        f = k / max(1, n - 1)
+        if transition == "dissolve":
+            out.append(max(0.0, min(1.0, (f - 0.25) / 0.5)))
+        elif transition == "toggle":
+            out.append(0.0 if f < 0.2 else float(int((k / fps) / 0.22) % 2))
+        else:
+            out.append(0.0 if f < 0.45 else 1.0)
+    return out
+
+
+def _write_keyframes_clip(before: str, after: str, transition: str, duration: float, out: str, fps: int) -> bool:
+    """Both drawings, a slow push across the shot, joined by the transition; written as an MP4."""
+    import subprocess
+
+    from PIL import Image
+
+    with Image.open(before) as a_img, Image.open(after) as b_img:
+        a = a_img.convert("RGB")
+        b = b_img.convert("RGB").resize(a.size, Image.Resampling.LANCZOS)
+    w, h = a.size
+    w, h = w - w % 2, h - h % 2
+    a, b = a.crop((0, 0, w, h)), b.crop((0, 0, w, h))
+    proc = subprocess.Popen(
+        ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(fps),
+         "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", out],
+        stdin=subprocess.PIPE,
+    )
+    schedule = keyframe_schedule(transition, duration, fps)
+    assert proc.stdin is not None
+    try:
+        for k, mix in enumerate(schedule):
+            frame = a if mix <= 0 else b if mix >= 1 else Image.blend(a, b, mix)
+            z = 1.0 + 0.05 * k / max(1, len(schedule) - 1)
+            cw, ch = int(w / z), int(h / z)
+            left, top = (w - cw) // 2, (h - ch) // 2
+            frame = frame.crop((left, top, left + cw, top + ch)).resize((w, h), Image.Resampling.BILINEAR)
+            proc.stdin.write(frame.tobytes())
+    finally:
+        proc.stdin.close()
+        proc.wait()
+    return proc.returncode == 0 and os.path.exists(out)
+
+
+async def _render_keyframes(
+    shot: Shot, *, before: str, work_dir: Path, site_config: Any, http_client_factory: Any,
+) -> ShotRenderResult:
+    """A keyframes shot: its first drawing, its second, and the clip that joins them.
+
+    No frame between the drawings is generated. When the second drawing
+    cannot be had, the shot is the first one held, as a still.
+    """
+    import asyncio
+
+    after = str(work_dir / f"shot_{shot.idx:02d}_after.png")
+    if not await draw_keyframe_after(
+        shot, before=before, output_path=after, site_config=site_config, http_client_factory=http_client_factory,
+    ):
+        return ShotRenderResult(idx=shot.idx, source="keyframes", success=True, clip_path=before,
+                                duration_s=shot.duration_s, still_path=before)
+    clip = str(work_dir / f"shot_{shot.idx:02d}.mp4")
+    ok = await asyncio.to_thread(
+        _write_keyframes_clip, before, after, str(shot.transition or "dissolve"), float(shot.duration_s), clip, 30,
+    )
+    if not ok:
+        return ShotRenderResult(idx=shot.idx, source="keyframes", success=True, clip_path=before,
+                                duration_s=shot.duration_s, still_path=before)
+    return ShotRenderResult(idx=shot.idx, source="keyframes", success=True, clip_path=clip,
+                            duration_s=shot.duration_s, still_path=before)
 
 
 async def _approved_frame(

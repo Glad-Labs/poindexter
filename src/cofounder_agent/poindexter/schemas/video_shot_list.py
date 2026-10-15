@@ -38,6 +38,7 @@ ShotSource = Literal[
     "holdover",        # Cross-fade transition from prior shot (no asset)
     "cli_demo",        # Pre-baked recording of the real CLI (see demo_clips)
     "presenter",       # Talking-head clip of the niche's persona speaking this shot's narration (S2V)
+    "keyframes",       # Two drawings of a moment (before, after) joined by a dissolve, flicker or cut
 ]
 
 
@@ -237,6 +238,27 @@ class Shot(BaseModel):
             "storyboard's pictures and backgrounds"
         ),
     )
+    # A keyframes shot (limited animation, Matt 2026-10-15): the moment is two
+    # drawings, the picture and the same picture with one change, and the
+    # movement is the switch between them. Nothing between them is generated,
+    # so nothing in it can be invented.
+    after_prompt: str | None = Field(
+        None,
+        max_length=600,
+        description="On a keyframes shot: the one change the second drawing shows",
+    )
+    after_url: str | None = Field(
+        None,
+        max_length=1000,
+        description="On a keyframes shot: the approved second drawing (a storyboard's)",
+    )
+    transition: Literal["dissolve", "toggle", "cut"] | None = Field(
+        None,
+        description=(
+            "On a keyframes shot: how the two drawings join. dissolve = a gradual change, "
+            "toggle = a small repeated movement, cut = a sudden one"
+        ),
+    )
 
     @field_validator("characters")
     @classmethod
@@ -314,7 +336,9 @@ class Shot(BaseModel):
         returns an image-gen shot with no prompt would otherwise produce an
         empty clip silently.
         """
-        if self.source in ("image_gen", "image_kenburns", "wan21", "generative"):
+        if self.source == "keyframes" and not self.after_prompt:
+            raise ValueError("source='keyframes' requires an ``after_prompt`` (the second drawing's change)")
+        if self.source in ("image_gen", "image_kenburns", "wan21", "generative", "keyframes"):
             if not self.prompt:
                 raise ValueError(
                     f"source={self.source!r} requires a non-empty ``prompt``",

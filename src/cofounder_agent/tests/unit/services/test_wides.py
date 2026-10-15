@@ -27,6 +27,8 @@ from poindexter.services.video_renderers import shot_vision_qa as sq
 
 def _sc(**extra):
     base = {
+        # These tests pin the video-model path; test_keyframes.py pins the default.
+        "story_action_motion": "animate",
         "persona.dex.display_name": "Dex", "persona.dex.enabled": "true",
         "persona.dex.portrait_url": "https://cdn/dex.png",
         "persona.nova.display_name": "Nova", "persona.nova.enabled": "true",

@@ -3516,6 +3516,16 @@ DEFAULTS: dict[str, str] = {
     'story_max_animated_shots': '-1',
     'story_max_talking_shots': '-1',
     'story_visuals_model': '',
+    # How a cartoon's action shots move: 'keyframes' (two drawings of the
+    # moment, joined by a dissolve, flicker or cut; nothing generated between
+    # them) or 'animate' (the video model). Matt, 2026-10-15: "every movement
+    # is hallucinated". The second drawing is an edit of the first, worded by
+    # story_keyframe_after_template ({change}).
+    'story_action_motion': 'keyframes',
+    'story_keyframe_after_template': (
+        'Redraw this exact picture with the same framing, characters, place, light, colours and art style. '
+        'The only change: {change}.'
+    ),
     # Production design: at most this many props (the objects a story turns
     # on) get one fixed look, carried on every picture that shows them.
     # 0 turns it off.
@@ -7867,6 +7877,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_max_animated_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_max_talking_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_visuals_model': {'owner': 'screenplay_director'},
+    'story_action_motion': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_keyframe_after_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
     'story_max_props': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'persona.presenter.personality': {'owner': 'media_policy', 'value_type': 'string'},
     'image_fanout_enabled': {'value_type': 'boolean'},

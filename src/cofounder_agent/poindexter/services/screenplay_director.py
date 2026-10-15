@@ -50,6 +50,24 @@ logger = logging.getLogger(__name__)
 
 DIRECTOR_PROMPT_VERSION = "screenplay-v2"
 _STILL_SOURCES = ("image_kenburns", "image_gen")
+_MOVING_SOURCES = ("generative", "keyframes")
+
+
+def _moving_source(site_config: Any) -> str:
+    """``story_action_motion``: how a cartoon's action shots move.
+
+    ``keyframes`` (the default) draws each moment twice, before and after, and
+    joins the drawings with a dissolve, flicker or cut. ``animate`` hands the
+    picture to the video model. Matt on The Battery Drop (2026-10-15): "every
+    movement is hallucinated"; "the talking head animations aren't bad... the
+    action animation are where it is weakest". Talking shots are lip-synced
+    either way.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    raw = site_config.get("story_action_motion", None) if site_config is not None else None
+    mode = str(raw if raw not in (None, "") else DEFAULTS["story_action_motion"]).strip().lower()
+    return "generative" if mode == "animate" else "keyframes"
 
 
 class DirectorError(RuntimeError):
@@ -403,7 +421,8 @@ def prepare_storyboard_render(
         if url:
             shot["frame_url"] = url
         if (
-            shot.get("source") in _STILL_SOURCES and shot.get("prompt")
+            _moving_source(site_config) == "generative"
+            and shot.get("source") in _STILL_SOURCES and shot.get("prompt")
             and float(shot.get("duration_s") or 0.0) >= floor and (budget < 0 or animated < budget)
         ):
             shot["source"] = "generative"
@@ -437,6 +456,7 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
         key=lambda i: (-plan[i]["length"], i),
     )
     animate = set(candidates[: max(0, hero_left)]) if hero_left >= 0 else set(candidates)
+    moving = _moving_source(site_config)
     out: list[dict[str, Any]] = []
     history: list[tuple[str, str | None]] = []
 
@@ -457,16 +477,16 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
         if shot["kind"] == "landscape" or (shot["kind"] == "master" and camera_wides):
             options = ["image_kenburns", "image_gen"]
         else:
-            options = (["generative"] if i in animate else []) + list(_STILL_SOURCES)
+            options = ([moving] if i in animate else []) + list(_STILL_SOURCES)
         # An animated shot is its own picture (the schema keys it by prompt),
         # so animated shots in a row are never a streak.
         for source in options:
-            key = (source, str(i)) if source == "generative" else (source, None)
+            key = (source, str(i)) if source in _MOVING_SOURCES else (source, None)
             if _streak_ok(key):
                 shot["source"] = source
                 break
         out.append(shot)
-        history.append((shot["source"], str(i)) if shot["source"] == "generative" else (shot["source"], None))
+        history.append((shot["source"], str(i)) if shot["source"] in _MOVING_SOURCES else (shot["source"], None))
     return out
 
 
@@ -490,7 +510,7 @@ def _visual_row(i: int, shot: dict[str, Any]) -> str:
     """One shot as the illustrator reads it. A reaction row says who is
     talking and who listens, so the picture stays on the listener in the
     scene instead of illustrating what is being said."""
-    kind = "animated" if shot["source"] == "generative" else "still"
+    kind = {"generative": "animated", "keyframes": "two drawings"}.get(shot["source"], "still")
     visible = ", ".join(shot["characters"]) or "no characters"
     head = f"- id {i}: scene {shot.get('scene_id') or '?'}: {shot['setting']}"
     if shot["kind"] in ("reaction", "cutaway") and shot.get("line_speaker"):
@@ -567,6 +587,11 @@ async def write_visuals(
             seen = _visible(item.get("visible"), plan[idx]["characters"])
             if seen is not None:
                 out[idx]["visible"] = seen
+            after = str(item.get("after") or "").strip()
+            if after and plan[idx]["source"] == "keyframes":
+                out[idx]["after"] = after[:600]
+                transition = str(item.get("transition") or "").strip().lower()
+                out[idx]["transition"] = transition if transition in ("dissolve", "toggle", "cut") else "dissolve"
     missing = len(wanted) - len(out)
     if missing:
         logger.info("[director] shot-visuals skipped %d of %d shots; they use the scene setting",
@@ -841,6 +866,13 @@ def build_shot_list(
             shot["prompt"] = _with_palette(f"{style}, {picture}" if style else picture, palette, site_config, 1500)
             if s["source"] == "generative":
                 shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
+            if s["source"] == "keyframes":
+                if seen.get("after"):
+                    shot["after_prompt"] = with_props(seen["after"], list(props or []), set(cast_words or ()))[:600]
+                    shot["transition"] = seen.get("transition") or "dissolve"
+                else:
+                    # No second drawing was planned: the moment is one held picture.
+                    shot["source"] = "image_kenburns"
             if "visible" in seen:
                 shot["characters"] = list(seen["visible"])
         if s.get("scene_id"):

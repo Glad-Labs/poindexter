@@ -33,7 +33,7 @@ ROWS = [{"idx": 0, "image_url": "https://cdn/s0.webp"}, {"idx": 1, "image_url": 
 
 class TestPrepare:
     def test_each_drawn_shot_carries_its_picture_and_stills_animate(self):
-        out = sd.prepare_storyboard_render(LISTING, ROWS, SiteConfig(initial_config={}))
+        out = sd.prepare_storyboard_render(LISTING, ROWS, SiteConfig(initial_config={"story_action_motion": "animate"}))
         shots = out["shots"]
         assert [s.get("frame_url") for s in shots] == [
             "https://cdn/s0.webp", "https://cdn/s1.webp", "https://cdn/s2.webp", None]
@@ -42,7 +42,7 @@ class TestPrepare:
         assert LISTING["shots"][1]["source"] == "image_kenburns"  # the stored listing is untouched
 
     def test_the_cartoon_budget_still_applies(self):
-        sc = SiteConfig(initial_config={"story_max_animated_shots": "1", "story_min_animated_shot_seconds": "2"})
+        sc = SiteConfig(initial_config={"story_action_motion": "animate", "story_max_animated_shots": "1", "story_min_animated_shot_seconds": "2"})
         out = sd.prepare_storyboard_render(LISTING, ROWS, sc)
         assert [s["source"] for s in out["shots"]] == ["presenter", "image_kenburns", "generative", "image_kenburns"]
 

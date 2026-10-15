@@ -96,6 +96,7 @@ async def plan_revision(
             # A changed picture is drawn anew, not taken from the storyboard.
             # A motion-only change keeps it: the shot re-animates the same picture.
             shot.pop("frame_url", None)
+            shot.pop("after_url", None)
     name = f"revision-{uuid.uuid4().hex[:8]}.json"
     (cache_dir / "revisions").mkdir(parents=True, exist_ok=True)
     (cache_dir / "revisions" / name).write_text(json.dumps(listing, default=str))
