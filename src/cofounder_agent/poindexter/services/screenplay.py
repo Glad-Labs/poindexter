@@ -218,6 +218,18 @@ def _source_tale(raw: Any, site_config: Any) -> str:
     )
 
 
+def _audience(site_config: Any) -> str:
+    """Who the piece is for (``story_audience``): it decides how dark an ending may go.
+
+    Matt, 2026-10-14: all ages. "Signal Flare" ended on Bolt's "cold,
+    motionless chassis".
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    value = site_config.get("story_audience", None) if site_config is not None else None
+    return str(DEFAULTS["story_audience"] if value in (None, "") else value).strip()
+
+
 def _source_block(request: ScreenplayRequest) -> str:
     if not request.source:
         return "SOURCE: none. This is an original story."
@@ -348,7 +360,8 @@ def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
     spine_value = raw.get("spine")
     spine_raw: dict[str, Any] = spine_value if isinstance(spine_value, dict) else {}
     translation = [
-        {"tale": str(t.get("tale") or "").strip(), "here": str(t.get("here") or "").strip()}
+        {"tale": str(t.get("tale") or "").strip(), "here": str(t.get("here") or "").strip(),
+         **({"why": str(t["why"]).strip()} if str(t.get("why") or "").strip() else {})}
         for t in raw.get("translation") or [] if isinstance(t, dict)
     ]
     return {
@@ -660,7 +673,8 @@ def _spine_text(outline: dict[str, Any]) -> str:
     if outline.get("main_event"):
         lines.append(f"Main event (shown on screen): {outline['main_event']}")
     for item in outline.get("translation") or []:
-        lines.append(f"In the tale {item['tale']}; here {item['here']}")
+        because = f", because {item['why']}" if item.get("why") else ""
+        lines.append(f"In the tale {item['tale']}; here {item['here']}{because}")
     return "\n".join(lines)
 
 
@@ -703,6 +717,7 @@ async def write_screenplay(
         "cast_block": cast_block(personas),
         "narrator_available": "yes" if request.narrator else "no",
         "source_block": _source_block(request),
+        "audience": _audience(site_config),
     }
     ask = {"model": model, "site_config": site_config, "pool": pool, "task_id": task_id}
 
@@ -844,6 +859,7 @@ async def edit_screenplay(
                     "current": json.dumps(_core(screenplay), ensure_ascii=False, indent=1)[:24000],
                     "spine_block": _spine_text(screenplay),
                     "source_block": _source_block(request),
+                    "audience": _audience(site_config),
                     "cold_read": _cold_read_text(read),
                     "continuity": "\n".join(f"- beat {c['beat']}: {c['problem']}" for c in clashes or []) or "none found",
                     "max_notes": max_notes,
@@ -857,6 +873,7 @@ async def edit_screenplay(
             break
         notes = [str(x).strip() for x in reply.get("notes") or [] if str(x).strip()][:max_notes]
         lost = list((read or {}).get("lost") or [])
+        lost.extend(_unfollowed(read))
         if read is not None and read.get("change_seen") is False:
             # "Signal Jammer" stopped at its blackout: no beat where Cinder
             # sees what she did, so the lesson never landed (2026-10-14).
@@ -900,7 +917,7 @@ async def edit_screenplay(
     final_clashes = await continuity(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
     history.append({"final_cold_read": final, "final_continuity": final_clashes})
     still = [*(f"continuity: beat {c['beat']}: {c['problem']}" for c in final_clashes or []),
-             *((final or {}).get("lost") or [])]
+             *((final or {}).get("lost") or []), *_unfollowed(final)]
     if final is not None and final.get("change_seen") is False:
         still.append("the ending never shows the main character changed")
     if still:
@@ -929,6 +946,22 @@ def _audience_view(screenplay: dict[str, Any]) -> str:
     return "\n".join(rows)
 
 
+def _unfollowed(read: dict[str, Any] | None) -> list[str]:
+    """The reader's account of each choice that does not follow from what the character knows and wants.
+
+    "Signal Flare" (2026-10-14): Mara muted Cinder, appeared anyway, saw the
+    meltdown and left; the reader followed the plot and the checks passed it.
+    """
+    out = []
+    for d in (read or {}).get("decisions") or []:
+        if isinstance(d, dict) and d.get("follows") is False:
+            out.append(
+                f"{d.get('who', 'a character')} {d.get('decision', 'makes a choice')}, which does not follow "
+                f"from what they know and want (the film's reason: {d.get('why') or 'none shown'})",
+            )
+    return out
+
+
 def _cold_read_text(read: dict[str, Any] | None) -> str:
     if not read:
         return "(no account: the cold read failed)"
@@ -937,6 +970,10 @@ def _cold_read_text(read: dict[str, Any] | None) -> str:
     if isinstance(wants, dict):
         lines += [f"{name} wants: {want}" for name, want in wants.items()]
     lines.append(f"Why it ends that way: {read.get('cause', '')}")
+    for d in read.get("decisions") or []:
+        if isinstance(d, dict):
+            verdict = "makes sense" if d.get("follows") is not False else "does NOT make sense"
+            lines.append(f"{d.get('who')} {d.get('decision')} because {d.get('why')}: {verdict}")
     lost = read.get("lost") or []
     lines.append("Could not follow:" + ("".join(f"\n- {x}" for x in lost) if lost else " nothing"))
     return "\n".join(lines)
@@ -1168,6 +1205,7 @@ async def revise_screenplay(
             "instruction": note[:2000],
             "cast_block": cast_block(personas),
             "narrator_available": "yes" if request.narrator else "no",
+            "audience": _audience(site_config),
             "word_budget": budget,
         },
         _check, model=model, site_config=site_config, pool=pool, task_id=task_id,

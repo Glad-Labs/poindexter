@@ -178,14 +178,15 @@ def test_pack_prompts_render_with_the_variables_code_passes():
     pm = get_prompt_manager()
     common = dict(site_name="Glad Labs", topic="t", brief="b", format_name="dialogue", tone="playful",
                   word_budget=200, target_seconds=80, cast_block="- dex: Dex", narrator_available="yes",
-                  source_block=sp._source_block(sp.ScreenplayRequest(topic="t", source="The Tortoise and the Hare")))
+                  source_block=sp._source_block(sp.ScreenplayRequest(topic="t", source="The Tortoise and the Hare")),
+                  audience=sp._audience(None))
     outline = pm.get_prompt("story.outline", scene_count=2, **common)
     assert '{"title"' in outline and "- dex: Dex" in outline and "about 2 scene" in outline
     assert 'adapt the traditional tale "The Tortoise and the Hare"' in outline
     editor = pm.get_prompt("story.edit_notes", site_name="Glad Labs", format_name="story", target_seconds=120,
                            cast_block="- dex: Dex", current="{}", spine_block="Want: w",
                            source_block="SOURCE: none.", cold_read="Story: s", continuity="- beat 3: x",
-                           max_notes=6)
+                           audience="all ages", max_notes=6)
     assert "Story: s" in editor and "Want: w" in editor and "at most 6 notes" in editor and "beat 3: x" in editor
     dialogue = pm.get_prompt("story.dialogue_pass", site_name="Glad Labs", cast_block="- dex: Dex",
                              spine_block="Want: w", numbered_view="  1. DEX: hi")
@@ -193,6 +194,7 @@ def test_pack_prompts_render_with_the_variables_code_passes():
     checker = pm.get_prompt("story.continuity", numbered_view="  1. DEX: hi")
     assert "1. DEX: hi" in checker and '"contradictions"' in checker
     assert "TRANSLATE AN ADAPTED TALE" in outline and '"main_event"' in outline
+    assert "Audience: all ages" in outline and "Audience: all ages" in editor
     reader = pm.get_prompt("story.cold_read", audience_view="  DEX: hi")
     assert "DEX: hi" in reader and '"lost"' in reader
     scene = pm.get_prompt(

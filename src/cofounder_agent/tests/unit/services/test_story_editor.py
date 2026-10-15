@@ -209,6 +209,32 @@ class TestEditor:
         assert out["edit_rounds"][0]["verdict"] == "ready"
 
 
+class TestMotivation:
+    """"Signal Flare": Mara muted Cinder, appeared anyway, saw the meltdown
+    and left; the reader followed the plot (2026-10-14)."""
+
+    @pytest.mark.asyncio
+    async def test_a_choice_that_does_not_follow_is_a_note(self, chat):
+        read = json.loads(_read())
+        read["decisions"] = [{"who": "Mara", "decision": "sees the meltdown and leaves", "why": "she is busy",
+                              "follows": False},
+                             {"who": "Bolt", "decision": "warns Cinder", "why": "he is worried", "follows": True}]
+        chat.side_effect = [json.dumps(read), CLEAN, READY, _revised_reply(), _read(), CLEAN, READY, *_tail()]
+        out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
+        notes = out["edit_rounds"][0]["notes"]
+        assert len(notes) == 1 and "Mara sees the meltdown and leaves, which does not follow" in notes[0]
+        assert "Mara sees the meltdown and leaves because she is busy: does NOT make sense" in chat.await_args_list[2].args[0]
+
+    def test_the_audience_is_a_setting_every_prompt_gets(self):
+        assert "no main character dies" in sp._audience(None)
+        assert sp._audience(_sc(story_audience="teens")) == "teens"
+
+    def test_a_translated_act_keeps_its_cause(self):
+        outline = sp.normalize_outline({**_outline(), "translation": [
+            {"tale": "the villagers stay home", "here": "Mara ignores the alarm", "why": "they no longer believe him"}]})
+        assert "Mara ignores the alarm, because they no longer believe him" in sp._spine_text(outline)
+
+
 class TestDialoguePass:
     """"Signal Jammer" made sense and spoke in jargon (2026-10-14)."""
 

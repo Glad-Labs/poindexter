@@ -3449,6 +3449,12 @@ DEFAULTS: dict[str, str] = {
     # lines are rewritten for plain speech, voice and jokes; actions, order
     # and speakers stay. A rewrite growing the words past max_growth x is
     # refused. Empty model = the editor's.
+    # Who the cartoons are for (Matt, 2026-10-14: all ages): read by the
+    # outline, scene, editor and revision prompts.
+    'story_audience': (
+        "all ages: the peril is real, but no main character dies or is badly hurt, "
+        "and the ending lands its lesson without being grim"
+    ),
     'story_dialogue_pass_enabled': 'true',
     'story_dialogue_model': '',
     'story_dialogue_max_growth': '1.25',
@@ -6910,6 +6916,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_editor_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_cold_read_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_continuity_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_audience': {'owner': 'screenplay', 'value_type': 'string'},
     'story_dialogue_pass_enabled': {'owner': 'screenplay', 'value_type': 'boolean'},
     'story_dialogue_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_dialogue_max_growth': {'owner': 'screenplay', 'value_type': 'float'},

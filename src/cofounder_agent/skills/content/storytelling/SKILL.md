@@ -81,6 +81,7 @@ Topic: {topic}
 Brief: {brief}
 Format: {format_name}
 Tone: {tone}
+Audience: {audience}
 Length: about {target_seconds} seconds of audio across about {scene_count} scene(s).
 
 {source_block}
@@ -107,7 +108,7 @@ When the topic is a well-known tale, tell that tale: keep its best-known moments
 - "main_event": the one event the whole piece is about, the thing its title and its turn depend on, in one sentence. It happens on screen, in an action the audience watches, never reported after it happened.
 
 TRANSLATE AN ADAPTED TALE
-When there is a SOURCE above, write "translation" first: one entry for each of the tale's key elements (its hero, what the hero guards or wants, the threat, the people around them, the key objects and the key acts), each with "tale" (the element in the tale) and "here" (its equivalent in this piece's world). Choose each equivalent so a viewer of this world reads it at a glance and it fits the world's look, technology and daily life. Then write the outline from the translation: everything on screen is this world's, and nothing from the tale's own setting appears unless it already belongs here.
+When there is a SOURCE above, write "translation" first: one entry for each of the tale's key elements (its hero, what the hero guards or wants, the threat, the people around them, the key objects and the key acts), each with "tale" (the element in the tale) and "here" (its equivalent in this piece's world). For each key act, "why" gives its cause in the tale (what makes the character do it, or not do it); the adaptation keeps that cause, so the act happens here for the same reason. Choose each equivalent so a viewer of this world reads it at a glance and it fits the world's look, technology and daily life. Then write the outline from the translation: everything on screen is this world's, and nothing from the tale's own setting appears unless it already belongs here.
 
 PLAN THE PLACES
 - List the story's locations once under "locations": each has a short "id" (lowercase words joined by hyphens) and a "description" of the place itself that a background artist could paint: its architecture, objects, scale and look. Leave the time of day and mood to the scenes.
@@ -132,7 +133,7 @@ PLAN THE SCENES
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "main_event": "...", "translation": [{{"tale": "...", "here": "..."}}], "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "palette": "deep blue night with warm amber lamplight from the bench", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
+{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "main_event": "...", "translation": [{{"tale": "...", "here": "...", "why": "..."}}], "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "palette": "deep blue night with warm amber lamplight from the bench", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
 ```
 
 ## story.scene
@@ -145,6 +146,7 @@ Topic: {topic}
 Brief: {brief}
 Format: {format_name}
 Tone: {tone}
+Audience: {audience}
 
 CAST — the only characters who may speak or appear. Use the id before the colon exactly.
 {cast_block}
@@ -272,6 +274,7 @@ CAST - the only characters who may appear or speak. Use the id before the colon 
 {cast_block}
 
 Narrator available: {narrator_available}.
+Audience: {audience}
 Length: about {word_budget} spoken words in total.
 
 HOW TO REVISE
@@ -470,6 +473,7 @@ You are the story editor at {site_name}. A writer has drafted a short animated s
 THE PIECE
 Format: {format_name}
 Length: about {target_seconds} seconds.
+Audience: {audience}
 {source_block}
 
 CAST
@@ -492,7 +496,8 @@ Where a beat contradicts what came before it:
 WHAT A GOOD ONE DOES
 - A first-time viewer can follow it: who wants what and why, what each thing does in this world, and why the ending happens. Where the viewer's account above misses or contradicts the story the writer meant, or names a moment it could not follow, that is the first note. Showing never costs understanding: when the audience needs a fact, a character says it in a way that fits them.
 - The main event happens on screen, in an action the audience watches. Everything on screen belongs to this piece's world: an adapted tale is translated, never pasted in.
-- Every character acts from what they want and know at that moment, and nothing contradicts what came before (see the continuity check above).
+- Every character acts from what they want and know at that moment, and nothing contradicts what came before (see the continuity check above). A choice the viewer could not explain from what the character sees and wants is a note.
+- Everything fits the audience above.
 - The audience learns the situation by watching it: the characters do things on screen, and the dialogue carries what they feel, want and argue about. A line that explains the premise, the stakes or something the audience can already see is worth a note.
 - Someone wants something, something real stands in the way, and the struggle plays out on screen in the middle of the piece.
 - The turn is a choice or a discovery the audience sees happen, and the payoff answers the opening.
@@ -572,11 +577,12 @@ Tell it back as a first-time viewer would:
 - "cause": why the ending happens, and what makes the turn work.
 - "change": how the main character is different at the end from the start, as the film shows it.
 - "change_seen": true when you saw that change happen on screen, in an action or a line; false when the film ends without showing one.
+- "decisions": each choice a character makes that moves the story (to act, to refuse, to stay away, to help), with "who", "decision", "why" (their reason, as far as the film shows it) and "follows": true when the choice makes sense from what that character knows, sees and wants at that moment, false when it does not.
 - "lost": every moment that stopped you following what happens or why: a line that made no sense to you, a rule of this world the story depends on that you did not understand, or something that happened without a reason. Quote the beat and say what you did not understand. Things you were only curious about, that did not stop you following the story, stay out. Leave it empty when you followed the story.
 
 OUTPUT
 Reply with one JSON object and nothing else:
-{{"story": "...", "wants": {{"name": "..."}}, "cause": "...", "change": "...", "change_seen": true, "lost": ["..."]}}
+{{"story": "...", "wants": {{"name": "..."}}, "cause": "...", "change": "...", "change_seen": true, "decisions": [{{"who": "...", "decision": "...", "why": "...", "follows": true}}], "lost": ["..."]}}
 ```
 
 ## story.screenplay_fix
