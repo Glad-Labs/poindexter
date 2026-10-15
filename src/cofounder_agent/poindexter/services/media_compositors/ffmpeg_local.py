@@ -502,7 +502,10 @@ def _build_transition_join_cmd(
             )
             acc_len += pre + durations[i] + post - seconds
         else:
-            parts.append(f"[{acc}][c{i}]concat=n=2:v=1:a=0[{out}]")
+            # concat hands back the 1/1000000 timebase, and an xfade after it
+            # refuses to mix that with the next scene's 1/fps: The Battery
+            # Drop's render (2026-10-15) lost all 112 minutes at the join.
+            parts.append(f"[{acc}][c{i}]concat=n=2:v=1:a=0,settb=1/{fps}[{out}]")
             acc_len += durations[i] + post
         acc = out
     cmd.extend([

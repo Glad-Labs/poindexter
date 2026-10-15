@@ -39,8 +39,21 @@ class TestPlan:
         assert "[0:v]tpad=start_mode=clone:start_duration=0.000:stop_mode=clone:stop_duration=0.200" in graph
         assert "[1:v]tpad=start_mode=clone:start_duration=0.200:stop_mode=clone:stop_duration=0.000" in graph
         assert "xfade=transition=fade:duration=0.400:offset=1.800" in graph
-        assert "[j1][c2]concat=n=2:v=1:a=0[j2]" in graph
+        assert "[j1][c2]concat=n=2:v=1:a=0,settb=1/30[j2]" in graph
         assert cmd[cmd.index("-t", cmd.index("-filter_complex")) + 1] == "7.000"
+
+
+    def test_a_dissolve_after_a_hard_cut_shares_its_timebase(self):
+        """The Battery Drop's render (2026-10-15) failed at the join: concat
+        outputs a 1/1000000 timebase and the xfade after it took 1/30."""
+        cmd = ff._build_transition_join_cmd(
+            binary="ffmpeg", paths=["a.mp4", "b.mp4", "c.mp4"], durations=[2.0, 1.5, 3.5],
+            transitions=[("", 0.0), ("", 0.0), ("fade", 0.4)], output_path="o.mp4", fps=30,
+            encoder="libx264", preset="fast", crf=23, audio_bitrate="192k", loglevel="error",
+        )
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "[c0][c1]concat=n=2:v=1:a=0,settb=1/30[j1]" in graph
+        assert "[j1][c2]xfade=transition=fade" in graph
 
 
 class TestRenderer:
