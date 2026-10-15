@@ -673,6 +673,8 @@ def _scene_position(outline: dict[str, Any], index: int, opening: list[str]) -> 
         first = "\n".join(opening[:2]) or "(this is also the opening scene)"
         return (
             f"This is the LAST scene. Deliver the payoff: {payoff}\n"
+            "End on the main character changed: show what they understand, decide or do now, "
+            "in an action or a line, after the main event.\n"
             f"The piece opened with:\n{first}"
         )
     nxt = scenes[index + 1]
@@ -855,6 +857,13 @@ async def edit_screenplay(
             break
         notes = [str(x).strip() for x in reply.get("notes") or [] if str(x).strip()][:max_notes]
         lost = list((read or {}).get("lost") or [])
+        if read is not None and read.get("change_seen") is False:
+            # "Signal Jammer" stopped at its blackout: no beat where Cinder
+            # sees what she did, so the lesson never landed (2026-10-14).
+            lost.append(
+                "the ending: the film never shows the main character changed; end on what they "
+                "understand, decide or do now",
+            )
         clash_notes = [f"Continuity: beat {c['beat']}: {c['problem']}" for c in clashes or []]
         if (str(reply.get("verdict")).strip().lower() == "ready" or not notes) and (lost or clash_notes):
             # The editor may not call a script ready while a first-time viewer
@@ -883,21 +892,22 @@ async def edit_screenplay(
             continue
         history.append({"round": n, "notes": notes, "cold_read": read, "continuity": clashes})
         screenplay = revised
-    else:
-        # The last round's notes were applied unread: record what a viewer
-        # makes of the final script, and say on the draft what is still
-        # unclear, so a lost reader is seen, not buried in a log.
-        if history and "notes" in history[-1] and "error" not in history[-1]:
-            final = await cold_read(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
-            final_clashes = await continuity(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
-            history.append({"final_cold_read": final, "final_continuity": final_clashes})
-            still = [*(f"continuity: beat {c['beat']}: {c['problem']}" for c in final_clashes or []),
-                     *((final or {}).get("lost") or [])]
-            if still:
-                screenplay["notes"] = [
-                    *(screenplay.get("notes") or []),
-                    *(f"a first-time viewer still could not follow: {x}" for x in still),
-                ]
+    # The dialogue pass, then what a first-time viewer and the script
+    # supervisor make of the finished script; anything still wrong goes on
+    # the draft's notes, so it is seen, not buried in a log.
+    screenplay = await dialogue_pass(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
+    final = await cold_read(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
+    final_clashes = await continuity(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
+    history.append({"final_cold_read": final, "final_continuity": final_clashes})
+    still = [*(f"continuity: beat {c['beat']}: {c['problem']}" for c in final_clashes or []),
+             *((final or {}).get("lost") or [])]
+    if final is not None and final.get("change_seen") is False:
+        still.append("the ending never shows the main character changed")
+    if still:
+        screenplay["notes"] = [
+            *(screenplay.get("notes") or []),
+            *(f"a first-time viewer still could not follow: {x}" for x in still),
+        ]
     screenplay["edit_rounds"] = history
     return screenplay
 
@@ -930,6 +940,75 @@ def _cold_read_text(read: dict[str, Any] | None) -> str:
     lost = read.get("lost") or []
     lines.append("Could not follow:" + ("".join(f"\n- {x}" for x in lost) if lost else " nothing"))
     return "\n".join(lines)
+
+
+async def dialogue_pass(
+    screenplay: dict[str, Any], *, site_config: Any, pool: Any = None,
+    task_id: str | None = None, model: str | None = None,
+) -> dict[str, Any]:
+    """Rewrite the lines of an edited screenplay for voice and plain speech (``story.dialogue_pass``).
+
+    "Signal Jammer" (2026-10-14) made sense after the editor and still spoke
+    in jargon ("The Architect of Order has descended to scrub this digital
+    disaster from existence") with no joke in it. The pass returns only the
+    lines it rewrites, by beat number; code applies them, so actions, order
+    and speakers cannot move, and a pass that would grow the script past
+    ``story_dialogue_max_growth`` is refused. ``story_dialogue_pass_enabled``;
+    ``story_dialogue_model`` (empty = ``model``). A failed pass keeps the
+    lines, logged, and is recorded under ``dialogue_pass``.
+    """
+    if str(site_config.get("story_dialogue_pass_enabled", "true") or "").strip().lower() not in ("1", "true", "yes", "on"):
+        return screenplay
+    writer = str(site_config.get("story_dialogue_model", "") or "").strip() or model or _resolve_model(site_config)
+    request = _request_from(screenplay)
+    beats = [b for scene in screenplay.get("scenes") or [] for b in scene.get("beats") or []]
+    lines = {n: b for n, b in enumerate(beats, 1) if b.get("kind") == "line"}
+    growth = site_config.get_float("story_dialogue_max_growth", 1.25)
+    before = spoken_words(screenplay)
+
+    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
+        items = reply.get("lines")
+        if not isinstance(items, list):
+            return ['FIX: "lines" is a list of {"n": beat number, "text": "..."}'], []
+        problems = []
+        added = 0
+        for item in items:
+            n = item.get("n") if isinstance(item, dict) else None
+            text = str(item.get("text") or "").strip() if isinstance(item, dict) else ""
+            if not isinstance(n, int) or n not in lines:
+                problems.append(f"FIX: beat {n!r} is not a spoken line; rewrite only line beats")
+            elif not text:
+                problems.append(f"FIX: beat {n} has no text")
+            else:
+                added += len(_WORD_RE.findall(text)) - len(_WORD_RE.findall(lines[n]["text"]))
+        if before and growth > 0 and (before + added) > before * growth:
+            problems.append(f"FIX: keep the length about the same: the rewrite grows {before} words to {before + added}")
+        return problems, []
+
+    try:
+        reply, _ = await _ask_validated(
+            "story.dialogue_pass",
+            {
+                "site_name": str(site_config.get("site_name", "") or "the studio"),
+                "cast_block": cast_block(resolve_cast(site_config, request.cast)),
+                "spine_block": _spine_text(screenplay),
+                "numbered_view": _numbered_view(screenplay)[:20000],
+            },
+            _check, model=writer, site_config=site_config, pool=pool, task_id=task_id,
+            what="dialogue pass", phase="story_dialogue_pass",
+        )
+    except ScreenplayError as exc:
+        logger.warning("[screenplay] dialogue pass failed (%s); keeping the lines", exc)
+        screenplay["dialogue_pass"] = {"error": str(exc)[:300]}
+        return screenplay
+    changed = 0
+    for item in reply["lines"]:
+        lines[item["n"]]["text"] = str(item["text"]).strip()
+        changed += 1
+    screenplay["spoken_words"] = spoken_words(screenplay)
+    screenplay["dialogue_pass"] = {"changed": changed}
+    logger.info("[screenplay] dialogue pass rewrote %d of %d lines", changed, len(lines))
+    return screenplay
 
 
 def _numbered_view(screenplay: dict[str, Any]) -> str:

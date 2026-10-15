@@ -50,6 +50,9 @@ metadata:
     - key: story.continuity
       output_format: json
       description: 'Continuity check on a drafted screenplay: the beats in order, numbered (each line with its speaker, each action) in; JSON {contradictions: [{beat, problem}]} out: every beat that contradicts what came before it (who is where, who is present, what has already happened, what a character knows or just did or said, the time of day, the cast acting against what they want). Each contradiction is a note the editor must address. Used by services.screenplay.edit_screenplay.'
+    - key: story.dialogue_pass
+      output_format: json
+      description: "A dialogue pass on an edited screenplay: the cast (with personalities), the story and the numbered beats in; JSON {lines: [{n, text}]} out with only the lines it rewrites, for plain spoken words in each character's own voice, specific jokes and no invented jargon, keeping every action, the beat order, each line's meaning and the length. Applied in code by beat number. Used by services.screenplay.dialogue_pass."
     - key: story.edit_notes
       output_format: json
       description: 'The story editor: reads a drafted screenplay (JSON) the way an audience will watch it, with the format, length and cast, and returns JSON {verdict: ready|revise, notes: [...]}, at most {max_notes} concrete notes ranked by impact, judged on a craft checklist (shown not told, a struggle on screen, a visible turn, a payoff that answers the opening, distinct voices, specific jokes). Validated in code; each round of notes is applied by story.screenplay_revise, up to story_edit_rounds rounds. Used by services.screenplay.edit_screenplay.'
@@ -496,7 +499,7 @@ WHAT A GOOD ONE DOES
 - Each character sounds like themselves: a reader could tell who is speaking without the name.
 - Jokes are specific to these characters and this world, with a setup and a release.
 - Every scene changes something, and every line earns its place.
-- The ending lands on an image or a line that works because of what came before it.
+- The ending lands on an image or a line that works because of what came before it, and the last scene shows the main character changed: what they understand, decide or do now that they would not have at the start.
 
 YOUR NOTES
 - Give at most {max_notes} notes, the most important first. Each note names the scene and the beat it is about, says what is wrong as the audience feels it, and says concretely what to write instead.
@@ -506,6 +509,32 @@ YOUR NOTES
 OUTPUT
 Reply with one JSON object and nothing else:
 {{"verdict": "ready or revise", "notes": ["scene s1, the opening lines: ... Instead, ..."]}}
+```
+
+## story.dialogue_pass
+
+```text
+You are the dialogue writer at {site_name}, doing the last pass on a short animated screenplay. The story is set; your job is the words the characters say.
+
+CAST
+{cast_block}
+
+THE STORY
+{spine_block}
+
+THE BEATS
+{numbered_view}
+
+HOW TO WRITE THE LINES
+- Each line sounds like that character talking out loud, from their personality: a viewer could tell who says it without the name.
+- Use plain, everyday words a viewer of any age understands the first time they hear them. The world shows itself in what the characters do and touch; nobody speaks in made-up jargon or gives themselves grand titles.
+- Jokes come from who the characters are and what is happening to them, with a setup and a release.
+- Characters react to each other: a line answers the one before it.
+- Keep what each line means for the story, and keep every action, the order of the beats and the length about the same.
+
+OUTPUT
+Reply with one JSON object and nothing else, listing only the lines you rewrite, by their beat number:
+{{"lines": [{{"n": 3, "text": "the new line"}}]}}
 ```
 
 ## story.continuity
@@ -541,11 +570,13 @@ Tell it back as a first-time viewer would:
 - "story": what happens, in three to five sentences of your own.
 - "wants": for each character, what they want and why, as far as the film shows it.
 - "cause": why the ending happens, and what makes the turn work.
+- "change": how the main character is different at the end from the start, as the film shows it.
+- "change_seen": true when you saw that change happen on screen, in an action or a line; false when the film ends without showing one.
 - "lost": every moment that stopped you following what happens or why: a line that made no sense to you, a rule of this world the story depends on that you did not understand, or something that happened without a reason. Quote the beat and say what you did not understand. Things you were only curious about, that did not stop you following the story, stay out. Leave it empty when you followed the story.
 
 OUTPUT
 Reply with one JSON object and nothing else:
-{{"story": "...", "wants": {{"name": "..."}}, "cause": "...", "lost": ["..."]}}
+{{"story": "...", "wants": {{"name": "..."}}, "cause": "...", "change": "...", "change_seen": true, "lost": ["..."]}}
 ```
 
 ## story.screenplay_fix

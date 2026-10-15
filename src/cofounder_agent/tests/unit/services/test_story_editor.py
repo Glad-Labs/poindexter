@@ -70,14 +70,21 @@ def _editor_sc(**extra):
     return _sc(**{"story_edit_rounds": "2", "story_length_min_ratio": "0", "story_length_max_ratio": "100", **extra})
 
 
-def _read(*lost):
+def _read(*lost, change_seen=True):
     return json.dumps({"story": "Dex asks why his card is slow; Nova shows him.", "wants": {"Dex": "a fast card"},
-                       "cause": "Nova's demonstration", "lost": list(lost)})
+                       "cause": "Nova's demonstration", "change": "Dex gets it", "change_seen": change_seen,
+                       "lost": list(lost)})
 
 
 READY = json.dumps({"verdict": "ready", "notes": []})
 CLEAN = json.dumps({"contradictions": []})
 NOTE = json.dumps({"verdict": "revise", "notes": ["scene s1: sharper"]})
+UNCHANGED = json.dumps({"lines": []})
+
+
+def _tail(*lost):
+    """The dialogue pass, then the final cold read and continuity check."""
+    return [UNCHANGED, _read(*lost), CLEAN]
 
 
 class TestEditor:
@@ -88,11 +95,12 @@ class TestEditor:
             json.dumps({"verdict": "revise", "notes": ["scene s1, Nova's line: she explains instead of showing. "
                                                        "Instead, let the card choke on screen."]}),
             _revised_reply(),
-            _read(), CLEAN, READY,
+            _read(), CLEAN, READY, *_tail(),
         ]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert out["scenes"][0]["beats"][1]["text"].startswith("Memory bandwidth. Watch:")
-        assert [r.get("verdict") or len(r["notes"]) for r in out["edit_rounds"]] == [1, "ready"]
+        assert [r.get("verdict") or len(r["notes"]) for r in out["edit_rounds"][:-1]] == [1, "ready"]
+        assert "final_cold_read" in out["edit_rounds"][-1]
         editor_prompt = chat.await_args_list[2].args[0]
         assert "story editor" in editor_prompt and "Memory bandwidth, mostly." in editor_prompt
         assert "Story: Dex asks why his card is slow" in editor_prompt  # the viewer's account
@@ -103,18 +111,26 @@ class TestEditor:
     @pytest.mark.asyncio
     async def test_a_lost_viewer_overrules_a_ready_verdict(self, chat):
         """"The Last Bus Home" read as craft and made no sense (2026-10-14)."""
-        chat.side_effect = [_read("why does wanting light the sign?"), CLEAN, READY, _revised_reply(), _read(), CLEAN, READY]
+        chat.side_effect = [_read("why does wanting light the sign?"), CLEAN, READY, _revised_reply(),
+                            _read(), CLEAN, READY, *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert out["edit_rounds"][0]["notes"] == [
             "A first-time viewer could not follow this; make it clear on screen: why does wanting light the sign?"]
-        assert out["edit_rounds"][-1]["verdict"] == "ready"
+        assert out["edit_rounds"][1]["verdict"] == "ready"
+
+    @pytest.mark.asyncio
+    async def test_an_ending_without_a_change_is_a_note(self, chat):
+        """"Signal Jammer" stopped at its blackout (2026-10-14)."""
+        chat.side_effect = [_read(change_seen=False), CLEAN, READY, _revised_reply(), _read(), CLEAN, READY, *_tail()]
+        out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
+        assert "never shows the main character changed" in out["edit_rounds"][0]["notes"][0]
 
     @pytest.mark.asyncio
     async def test_a_contradiction_overrules_a_ready_verdict(self, chat):
         """"Cinder Cries Wolf": "we came as fast as we could" after we watched
         them not come (2026-10-14)."""
         clash = json.dumps({"contradictions": [{"beat": 3, "problem": "says they came; beat 2 shows they stayed"}]})
-        chat.side_effect = [_read(), clash, READY, _revised_reply(), _read(), CLEAN, READY]
+        chat.side_effect = [_read(), clash, READY, _revised_reply(), _read(), CLEAN, READY, *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert out["edit_rounds"][0]["notes"] == ["Continuity: beat 3: says they came; beat 2 shows they stayed"]
         checker_prompt = chat.await_args_list[1].args[0]
@@ -123,7 +139,7 @@ class TestEditor:
 
     @pytest.mark.asyncio
     async def test_the_reader_sees_only_what_the_audience_sees(self, chat):
-        chat.side_effect = [_read(), CLEAN, READY]
+        chat.side_effect = [_read(), CLEAN, READY, *_tail()]
         await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         reader_prompt = chat.await_args_list[0].args[0]
         assert "DEX: Hey Nova, what makes a graphics card fast" in reader_prompt
@@ -133,25 +149,25 @@ class TestEditor:
 
     @pytest.mark.asyncio
     async def test_a_ready_draft_is_left_alone(self, chat):
-        chat.side_effect = [_read(), CLEAN, READY]
+        chat.side_effect = [_read(), CLEAN, READY, *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert out["scenes"] == _draft()["scenes"] and out["edit_rounds"][0]["verdict"] == "ready"
-        assert chat.await_count == 3
+        assert chat.await_count == 6 and out["dialogue_pass"] == {"changed": 0}
 
     @pytest.mark.asyncio
     async def test_the_rounds_are_capped_and_the_final_script_is_read(self, chat):
         chat.side_effect = [_read(), CLEAN, NOTE, _revised_reply("One."),
-                            _read(), CLEAN, NOTE, _revised_reply("Two."), _read(), CLEAN]
+                            _read(), CLEAN, NOTE, _revised_reply("Two."), *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert [("notes" in r, "final_cold_read" in r) for r in out["edit_rounds"]] == [
             (True, False), (True, False), (False, True)]
-        assert chat.await_count == 10 and out["scenes"][0]["beats"][1]["text"] == "Two."
+        assert chat.await_count == 11 and out["scenes"][0]["beats"][1]["text"] == "Two."
 
     @pytest.mark.asyncio
-    async def test_confusions_left_after_the_last_round_are_on_the_draft(self, chat):
+    async def test_confusions_left_at_the_end_are_on_the_draft(self, chat):
         """Two rounds left the wolf adaptation with five open confusions (2026-10-14)."""
         chat.side_effect = [_read("why third?"), CLEAN, NOTE, _revised_reply("One."),
-                            _read("why third?"), CLEAN, NOTE, _revised_reply("Two."), _read("why third?"), CLEAN]
+                            _read("why third?"), CLEAN, NOTE, _revised_reply("Two."), *_tail("why third?")]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert out["notes"] == ["a first-time viewer still could not follow: why third?"]
 
@@ -162,7 +178,7 @@ class TestEditor:
 
     @pytest.mark.asyncio
     async def test_a_failed_revision_does_not_end_the_edit(self, chat):
-        chat.side_effect = [_read(), CLEAN, NOTE, "not json", "still not json", _read(), CLEAN, READY]
+        chat.side_effect = [_read(), CLEAN, NOTE, "not json", "still not json", _read(), CLEAN, READY, *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert "error" in out["edit_rounds"][0] and out["edit_rounds"][1]["verdict"] == "ready"
 
@@ -173,24 +189,52 @@ class TestEditor:
 
     @pytest.mark.asyncio
     async def test_a_failed_cold_read_still_gets_an_editor(self, chat):
-        chat.side_effect = ["no", "still no", CLEAN, READY]
+        chat.side_effect = ["no", "still no", CLEAN, READY, *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert "the cold read failed" in chat.await_args_list[3].args[0]
         assert out["edit_rounds"][0]["verdict"] == "ready"
 
     @pytest.mark.asyncio
     async def test_an_editor_that_cannot_answer_keeps_the_draft_recorded(self, chat):
-        chat.side_effect = [_read(), CLEAN, "not json", "still not json"]
+        chat.side_effect = [_read(), CLEAN, "not json", "still not json", *_tail()]
         out = await sp.edit_screenplay(_draft(), site_config=_editor_sc())
         assert out["scenes"] == _draft()["scenes"] and "error" in out["edit_rounds"][0]
 
     @pytest.mark.asyncio
     async def test_the_writer_hands_its_draft_to_the_editor(self, chat):
-        chat.side_effect = [json.dumps(_outline()), json.dumps(_scene()), _read(), CLEAN, READY]
+        chat.side_effect = [json.dumps(_outline()), json.dumps(_scene()), _read(), CLEAN, READY, *_tail()]
         req = sp.build_request({"topic": "why VRAM matters", "screenplay_cast": "dex, nova",
                                 "screenplay_format": "dialogue"}, _editor_sc(story_edit_rounds="1"))
         out = await sp.write_screenplay(req, site_config=_editor_sc(story_edit_rounds="1"))
         assert out["edit_rounds"][0]["verdict"] == "ready"
+
+
+class TestDialoguePass:
+    """"Signal Jammer" made sense and spoke in jargon (2026-10-14)."""
+
+    @pytest.mark.asyncio
+    async def test_lines_are_rewritten_by_beat_number_and_nothing_else_moves(self, chat):
+        chat.side_effect = [json.dumps({"lines": [{"n": 2, "text": "Bandwidth. The weights have to get there."}]})]
+        out = await sp.dialogue_pass(_draft(), site_config=_editor_sc())
+        beats = out["scenes"][0]["beats"]
+        assert beats[1]["text"] == "Bandwidth. The weights have to get there." and beats[1]["speaker"] == "nova"
+        assert beats[0]["text"] == _draft()["scenes"][0]["beats"][0]["text"]
+        assert beats[2] == _draft()["scenes"][0]["beats"][2] and out["dialogue_pass"] == {"changed": 1}
+        assert "1. DEX: Hey Nova" in chat.await_args_list[0].args[0]
+
+    @pytest.mark.asyncio
+    async def test_an_action_or_a_bloated_rewrite_is_refused(self, chat):
+        bad = json.dumps({"lines": [{"n": 3, "text": "not a line"}]})
+        long_ = json.dumps({"lines": [{"n": 2, "text": "word " * 60}]})
+        chat.side_effect = [bad, long_]
+        out = await sp.dialogue_pass(_draft(), site_config=_editor_sc())
+        assert out["scenes"] == _draft()["scenes"] and "error" in out["dialogue_pass"]
+        assert "rewrite only line beats" in chat.await_args_list[1].args[0]
+
+    @pytest.mark.asyncio
+    async def test_it_can_be_turned_off(self, chat):
+        out = await sp.dialogue_pass(_draft(), site_config=_editor_sc(story_dialogue_pass_enabled="false"))
+        assert chat.await_count == 0 and "dialogue_pass" not in out
 
 
 class TestOutlinePlan:

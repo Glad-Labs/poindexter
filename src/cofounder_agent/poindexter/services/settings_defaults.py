@@ -3445,6 +3445,13 @@ DEFAULTS: dict[str, str] = {
     # what came before; each is a note the editor must address. Empty = the
     # editor's model.
     'story_continuity_model': '',
+    # The dialogue pass (screenplay.dialogue_pass): after the editor, the
+    # lines are rewritten for plain speech, voice and jokes; actions, order
+    # and speakers stay. A rewrite growing the words past max_growth x is
+    # refused. Empty model = the editor's.
+    'story_dialogue_pass_enabled': 'true',
+    'story_dialogue_model': '',
+    'story_dialogue_max_growth': '1.25',
     # Tales a screenplay may adapt (screenplay_source; Matt, 2026-10-14:
     # borrow a storyline that already makes sense). Public-domain traditional
     # tales only: the list is what makes a retelling free to make.
@@ -6903,6 +6910,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_editor_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_cold_read_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_continuity_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_dialogue_pass_enabled': {'owner': 'screenplay', 'value_type': 'boolean'},
+    'story_dialogue_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_dialogue_max_growth': {'owner': 'screenplay', 'value_type': 'float'},
     'story_source_tales': {'owner': 'screenplay', 'value_type': 'json'},
     'story_min_story_seconds': {'owner': 'screenplay', 'value_type': 'float'},
     'story_talking_framings': {'owner': 'screenplay_director', 'value_type': 'json'},

@@ -187,6 +187,9 @@ def test_pack_prompts_render_with_the_variables_code_passes():
                            source_block="SOURCE: none.", cold_read="Story: s", continuity="- beat 3: x",
                            max_notes=6)
     assert "Story: s" in editor and "Want: w" in editor and "at most 6 notes" in editor and "beat 3: x" in editor
+    dialogue = pm.get_prompt("story.dialogue_pass", site_name="Glad Labs", cast_block="- dex: Dex",
+                             spine_block="Want: w", numbered_view="  1. DEX: hi")
+    assert "1. DEX: hi" in dialogue and '"lines"' in dialogue
     checker = pm.get_prompt("story.continuity", numbered_view="  1. DEX: hi")
     assert "1. DEX: hi" in checker and '"contradictions"' in checker
     assert "TRANSLATE AN ADAPTED TALE" in outline and '"main_event"' in outline
