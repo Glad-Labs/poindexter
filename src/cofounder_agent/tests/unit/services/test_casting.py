@@ -120,9 +120,22 @@ class TestHelpers:
         text = sp._prompt(
             "story.casting", site_name="S", topic="t", brief="b", format_name="story",
             target_seconds=90, roster_block="- dex", required="dex", style_hint="ink",
-            voice_catalog="- am_echo: x", max_new=3,
+            voice_catalog="- am_echo: x", max_new=3, cast_rule="",
         )
         assert "at most 3 new ones" in text and '"characters"' in text
+
+    def test_a_standing_cast_rule_leads_the_casting_notes(self):
+        """Matt (2026-10-15): "table bolt and stick to human only characters"."""
+        rule = "Every character is a human person; a tale's animals are cast as people."
+        assert casting.cast_rule(_sc(story_cast_rule=rule)) == f"- {rule}"
+        assert casting.cast_rule(_sc()) == ""
+        for key in ("story.casting", "story.casting_revise"):
+            text = sp._prompt(
+                key, site_name="S", topic="t", brief="b", format_name="story", target_seconds=90,
+                roster_block="- dex", required="dex", style_hint="ink", voice_catalog="- am_echo: x", max_new=3,
+                current="{}", instruction="n", cast_rule=casting.cast_rule(_sc(story_cast_rule=rule)),
+            )
+            assert f"- {rule}" in text
 
     def test_the_request_lowercases_required_slugs(self):
         req = casting.build_casting_request(

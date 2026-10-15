@@ -436,6 +436,7 @@ async def _ask_cast(
                 "style_hint": asked_style,
                 "voice_catalog": "\n".join(f"- {k}: {v}" for k, v in catalog.items()),
                 "max_new": max_new,
+                "cast_rule": cast_rule(site_config),
             },
             _check, model=_resolve_model(site_config), site_config=site_config, pool=pool,
             task_id=task_id, what="cast", phase="story_cast_characters",
@@ -443,6 +444,18 @@ async def _ask_cast(
     except Exception as exc:  # noqa: BLE001 — the library's own error names the FIX lines
         raise CastingError(str(exc)) from exc
     return reply
+
+
+def cast_rule(site_config: Any) -> str:
+    """``story_cast_rule``: a standing rule for who may be cast, as a casting bullet, or ``""``.
+
+    Matt (2026-10-15), after The Battery Drop: "table bolt and stick to human
+    only characters". Bolt, a chrome robot mouse, was the character the image
+    and video models kept losing; the rule keeps new casts to people, so a
+    fable's animals are cast as people too.
+    """
+    rule = str((site_config.get("story_cast_rule", "") if site_config is not None else "") or "").strip()
+    return f"- {rule}" if rule else ""
 
 
 async def design_cast(

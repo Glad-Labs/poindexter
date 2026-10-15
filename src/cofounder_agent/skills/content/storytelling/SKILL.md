@@ -281,6 +281,7 @@ VOICES - choose each new character's voice from this list, by id:
 {voice_catalog}
 
 HOW TO CAST
+{cast_rule}
 - Cast the characters the story needs to be told, usually two or three and at most {max_new} new ones. A character the story only mentions, or one who never speaks, stays out of the cast and is drawn in the scenes from the screenplay.
 - For a well-known tale, cast its own characters, including every one its best-known scenes need: a character who has a famous line speaks it. Give each one a short first name that suits the tale.
 - "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear. Make the cast easy to tell apart by colour and shape. It describes only how they look; what they do in this story belongs in "role", since the character is reused in other stories.
@@ -349,6 +350,7 @@ VOICES - choose each new character's voice from this list, by id:
 {voice_catalog}
 
 HOW TO REVISE
+{cast_rule}
 - Make the change the note asks for: a character's looks, personality, voice, energy or sample line; a character added or dropped; the narrator.
 - Keep every character the note does not touch exactly as it is, under the same "id", or as the same {{"reuse": id}} entry.
 - "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear.

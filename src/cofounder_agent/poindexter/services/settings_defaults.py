@@ -3249,6 +3249,9 @@ DEFAULTS: dict[str, str] = {
     # and whether it ducks under the lines. Blog videos keep their -18 dB
     # bed. The Battery Drop (2026-10-15) carried its score at -18 dB: about
     # -42 dB in the long silent stretches of a visual piece.
+    # A standing casting rule, one sentence (empty = none). The Glad Labs
+    # studio casts people only (2026-10-15).
+    'story_cast_rule': '',
     # Each voiced line is heard back (Speaches STT) and voiced again when the
     # words heard cover less than story_line_min_recall of it (The Battery
     # Drop, 2026-10-15: "The last one!" squeezed into a 0.4 s mumble).
@@ -6985,6 +6988,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cast_check_enabled': {'owner': 'shot_list_renderer', 'value_type': 'boolean'},
+    'story_cast_rule': {'owner': 'casting', 'value_type': 'string'},
     'story_line_check_enabled': {'owner': 'dialogue_audio', 'value_type': 'boolean'},
     'story_line_min_recall': {'owner': 'dialogue_audio', 'value_type': 'float'},
     'story_line_check_retries': {'owner': 'dialogue_audio', 'value_type': 'integer'},
