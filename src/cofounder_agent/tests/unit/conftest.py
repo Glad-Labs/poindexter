@@ -476,6 +476,28 @@ def _reset_env_between_tests(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _keep_the_clip_cache_off_the_real_home():
+    """Point the default clip-cache root at the temp dir for the whole run.
+
+    A render test with exact timing and a task id keeps its inputs under
+    ``video_clip_cache_dir`` and prunes that root first. Its default is
+    ``~/.poindexter/video/clips``, the directory the worker container
+    mounts, so the suite wrote ``clips/t-1`` there as the host user on every
+    run. The worker (another uid) could then save nothing in it: The Battery
+    Drop's render (2026-10-15) kept no clips, so a revision had nothing to
+    reuse. A test that wants its own root still passes one in its SiteConfig.
+    """
+    import tempfile
+
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    old = DEFAULTS["video_clip_cache_dir"]
+    DEFAULTS["video_clip_cache_dir"] = os.path.join(tempfile.gettempdir(), "poindexter-unit-clip-cache")
+    yield
+    DEFAULTS["video_clip_cache_dir"] = old
+
+
 @pytest.fixture(autouse=True)
 def _restore_root_log_level():
     """Stop a root-logger level written by the code under test from outliving
