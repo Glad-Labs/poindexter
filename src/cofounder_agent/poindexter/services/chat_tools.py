@@ -390,7 +390,7 @@ async def _plan_pipeline(
 def _story_inputs(
     *, topic: str, brief: str = "", style: str = "", story_format: str = "",
     cast: str = "", narrator: str = "", target_seconds: int = 0, tone: str = "",
-    niche_slug: str = "",
+    niche_slug: str = "", source: str = "",
 ) -> dict[str, Any]:
     """Tool arguments as the atom input keys casting and the writer read."""
     inputs: dict[str, Any] = {"topic": topic.strip()}
@@ -398,6 +398,7 @@ def _story_inputs(
         ("screenplay_brief", brief), ("screenplay_visual_style", style),
         ("screenplay_format", story_format), ("screenplay_cast", cast),
         ("screenplay_narrator", narrator), ("screenplay_tone", tone), ("niche_slug", niche_slug),
+        ("screenplay_source", source),
     ):
         if str(value or "").strip():
             inputs[key] = str(value).strip()
@@ -444,10 +445,11 @@ async def _draft_cast(
 async def _draft_screenplay(
     ctx: ChatToolContext, *, topic: str, cast: str, brief: str = "",
     story_format: str = "story", narrator: str = "", target_seconds: int = 0, tone: str = "",
+    source: str = "",
 ) -> str:
     inputs = _story_inputs(
         topic=topic, brief=brief, story_format=story_format, cast=cast,
-        narrator=narrator, target_seconds=target_seconds, tone=tone,
+        narrator=narrator, target_seconds=target_seconds, tone=tone, source=source,
     )
     return await _start_draft(ctx, "screenplay", inputs)
 
@@ -760,12 +762,15 @@ CHAT_TOOLS: tuple[ChatToolSpec, ...] = (
             "Draft a short animated screenplay for existing characters (kept cast "
             "drafts count). Returns at once; a draft card fills in about a minute "
             "later with the script. cast is a comma-separated list of character "
-            "ids; story_format is story, explainer, dialogue or sketch."
+            "ids; story_format is story, explainer, dialogue or sketch. source "
+            "adapts a traditional public-domain tale (a fable or fairy tale, by "
+            "title) with this cast, keeping its plot; leave it empty for an "
+            "original. A story needs at least two minutes."
         ),
         parameters=_params(
             {
                 "topic": _STR, "cast": _STR, "brief": _STR, "story_format": _STR,
-                "narrator": _STR, "target_seconds": _INT, "tone": _STR,
+                "narrator": _STR, "target_seconds": _INT, "tone": _STR, "source": _STR,
             },
             ["topic", "cast"],
         ),

@@ -44,6 +44,9 @@ metadata:
     - key: story.director_notes
       output_format: json
       description: "Director's notes on a finished cartoon: the title, logline, art style, the story, the length and a table of every shot (start, length, drawn or not, who, the line, the picture, and the flaws the vision judge saw in it) in; JSON {verdict, strengths, notes: [{kind: redo|story|pacing|sound, shots, problem, fix}]} out, ranked by how much each note would improve the piece. Validated in code (real shot numbers; a redo names only drawn shots and says how to redraw them). Used by services.director_notes.write_notes; redo notes feed a render revision."
+    - key: story.cold_read
+      output_format: json
+      description: "A first-time viewer's account of a drafted screenplay: only what the audience gets (each line with its speaker, each action, in order; no outline, spine or summaries) in; JSON {story, wants, cause, lost} out: the story told back, what each character wants, why the ending happens, and every moment the viewer could not follow. Its account goes to story.edit_notes beside the story the writer meant; a lost moment is always a note. Used by services.screenplay.edit_screenplay."
     - key: story.edit_notes
       output_format: json
       description: 'The story editor: reads a drafted screenplay (JSON) the way an audience will watch it, with the format, length and cast, and returns JSON {verdict: ready|revise, notes: [...]}, at most {max_notes} concrete notes ranked by impact, judged on a craft checklist (shown not told, a struggle on screen, a visible turn, a payoff that answers the opening, distinct voices, specific jokes). Validated in code; each round of notes is applied by story.screenplay_revise, up to story_edit_rounds rounds. Used by services.screenplay.edit_screenplay.'
@@ -73,6 +76,8 @@ Brief: {brief}
 Format: {format_name}
 Tone: {tone}
 Length: about {target_seconds} seconds of audio across about {scene_count} scene(s).
+
+{source_block}
 
 CAST — the only characters who may appear. Use the id before the colon exactly.
 {cast_block}
@@ -228,7 +233,7 @@ VOICES - choose each new character's voice from this list, by id:
 HOW TO CAST
 - Cast the characters the story needs to be told, usually two or three and at most {max_new} new ones. A character the story only mentions, or one who never speaks, stays out of the cast and is drawn in the scenes from the screenplay.
 - For a well-known tale, cast its own characters, including every one its best-known scenes need: a character who has a famous line speaks it. Give each one a short first name that suits the tale.
-- "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear. Make the cast easy to tell apart by colour and shape.
+- "appearance": one sentence a character designer could draw the same way every time: age, build, hair, face, and the clothes they always wear. Make the cast easy to tell apart by colour and shape. It describes only how they look; what they do in this story belongs in "role", since the character is reused in other stories.
 - "personality": how they talk and behave, in one sentence.
 - "voice": an id from the list that fits their age and temperament. Give different characters different voices.
 - "energy": "low" for calm or dry characters, "medium" for most, "high" for lively, excitable or loud ones.
@@ -453,6 +458,7 @@ You are the story editor at {site_name}. A writer has drafted a short animated s
 THE PIECE
 Format: {format_name}
 Length: about {target_seconds} seconds.
+{source_block}
 
 CAST
 {cast_block}
@@ -460,7 +466,15 @@ CAST
 THE SCREENPLAY
 {current}
 
+THE STORY THE WRITER MEANT
+{spine_block}
+
+WHAT A FIRST-TIME VIEWER UNDERSTOOD
+A reader who saw only the film (the lines and the actions, nothing else) told it back:
+{cold_read}
+
 WHAT A GOOD ONE DOES
+- A first-time viewer can follow it: who wants what and why, what each thing does in this world, and why the ending happens. Where the viewer's account above misses or contradicts the story the writer meant, or names a moment it could not follow, that is the first note. Showing never costs understanding: when the audience needs a fact, a character says it in a way that fits them.
 - The audience learns the situation by watching it: the characters do things on screen, and the dialogue carries what they feel, want and argue about. A line that explains the premise, the stakes or something the audience can already see is worth a note.
 - Someone wants something, something real stands in the way, and the struggle plays out on screen in the middle of the piece.
 - The turn is a choice or a discovery the audience sees happen, and the payoff answers the opening.
@@ -472,11 +486,30 @@ WHAT A GOOD ONE DOES
 YOUR NOTES
 - Give at most {max_notes} notes, the most important first. Each note names the scene and the beat it is about, says what is wrong as the audience feels it, and says concretely what to write instead.
 - Notes keep the cast, the format and the length.
-- When the screenplay already does all of this well, the verdict is "ready" and the notes are empty.
+- When the screenplay already does all of this well and the viewer followed everything, the verdict is "ready" and the notes are empty.
 
 OUTPUT
 Reply with one JSON object and nothing else:
 {{"verdict": "ready or revise", "notes": ["scene s1, the opening lines: ... Instead, ..."]}}
+```
+
+## story.cold_read
+
+```text
+You are watching a short animated film for the first time. You know only what is on screen: the lines the characters say and the actions you see, listed below in order.
+
+THE FILM
+{audience_view}
+
+Tell it back as a first-time viewer would:
+- "story": what happens, in three to five sentences of your own.
+- "wants": for each character, what they want and why, as far as the film shows it.
+- "cause": why the ending happens, and what makes the turn work.
+- "lost": every moment you could not follow: a line that made no sense to you, a rule of this world you did not understand, or something that appeared or happened without a reason. Quote the beat and say what you did not understand. Leave it empty when you followed everything.
+
+OUTPUT
+Reply with one JSON object and nothing else:
+{{"story": "...", "wants": {{"name": "..."}}, "cause": "...", "lost": ["..."]}}
 ```
 
 ## story.screenplay_fix

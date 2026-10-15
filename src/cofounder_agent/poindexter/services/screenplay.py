@@ -84,6 +84,8 @@ class ScreenplayRequest:
     narrator_persona: str = ""
     target_seconds: float = 90.0
     tone: str = ""
+    #: A public-domain tale to adapt (one of ``story_source_tales``); "" = original.
+    source: str = ""
 
 
 def _csv_or_list(value: Any) -> list[str]:
@@ -160,6 +162,7 @@ def build_request(inputs: dict[str, Any], site_config: Any) -> ScreenplayRequest
             )
         target = floor  # the default length is the format's to choose
     return ScreenplayRequest(
+        source=_source_tale(inputs.get("screenplay_source"), site_config),
         topic=topic,
         brief=str(inputs.get("screenplay_brief") or "").strip(),
         format=fmt,
@@ -186,6 +189,46 @@ def resolve_cast(site_config: Any, slugs: tuple[str, ...]) -> list[Any]:
             )
         out.append(persona)
     return out
+
+
+def _source_tale(raw: Any, site_config: Any) -> str:
+    """The public-domain tale to adapt, as ``story_source_tales`` spells it; "" for an original.
+
+    Matt, 2026-10-14: borrow an existing storyline, so the plot already makes
+    sense. Only a tale on the list may be adapted: the list is the guarantee
+    that it is free to retell. Raises :class:`ScreenplayError` for any other.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    wanted = str(raw or "").strip()
+    if not wanted:
+        return ""
+    value = site_config.get("story_source_tales", None) if site_config is not None else None
+    try:
+        tales = json.loads(value if value not in (None, "") else DEFAULTS["story_source_tales"])
+    except (TypeError, ValueError):
+        tales = json.loads(DEFAULTS["story_source_tales"])
+    key = re.sub(r"[^a-z0-9]+", " ", wanted.lower()).strip()
+    for tale in tales:
+        if re.sub(r"[^a-z0-9]+", " ", str(tale).lower()).strip() == key:
+            return str(tale)
+    raise ScreenplayError(
+        f"{wanted!r} is not on story_source_tales, the public-domain tales a screenplay may "
+        f"adapt: {', '.join(map(str, tales))}",
+    )
+
+
+def _source_block(request: ScreenplayRequest) -> str:
+    if not request.source:
+        return "SOURCE: none. This is an original story."
+    return (
+        f"SOURCE: adapt the traditional tale \"{request.source}\" (the public-domain tale, "
+        "never a film or other modern version). Keep its plot: the same want, the same "
+        "obstacles in the same order, the same turn and the same ending, with its cause and "
+        "effect intact. Set it in this world with this cast and change only the surface "
+        "(names, places, objects) to fit. When the length cannot hold every beat, keep the "
+        "beats the ending depends on."
+    )
 
 
 def word_budget(target_seconds: float, site_config: Any) -> int:
@@ -626,6 +669,7 @@ async def write_screenplay(
         "target_seconds": int(round(request.target_seconds)),
         "cast_block": cast_block(personas),
         "narrator_available": "yes" if request.narrator else "no",
+        "source_block": _source_block(request),
     }
     ask = {"model": model, "site_config": site_config, "pool": pool, "task_id": task_id}
 
@@ -696,6 +740,7 @@ async def write_screenplay(
         "narrator": request.narrator,
         "narrator_persona": request.narrator_persona,
         "topic": request.topic,
+        "source": request.source,
         "target_seconds": request.target_seconds,
         "spoken_words": words,
         "writer_model": model,
@@ -722,7 +767,8 @@ async def edit_screenplay(
     ours went straight from the writer's first draft to the storyboard, and
     Midnight Patch read like it (Matt, 2026-10-14). Each round the editor
     (``story.edit_notes``, ``story_editor_model`` or the writer's model)
-    reads the whole screenplay against a craft checklist and either calls it
+    reads the whole screenplay, with a first-time viewer's account of it
+    (:func:`cold_read`) beside the story the writer meant, and either calls it
     ready or gives up to ``story_edit_max_notes`` notes, which
     :func:`revise_screenplay` applies. Up to ``story_edit_rounds`` rounds
     (0 = off). Each round is kept under ``edit_rounds``. An editor or a
@@ -749,6 +795,7 @@ async def edit_screenplay(
         return [], []
 
     for n in range(1, rounds + 1):
+        read = await cold_read(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
         try:
             reply, _ = await _ask_validated(
                 "story.edit_notes",
@@ -758,6 +805,9 @@ async def edit_screenplay(
                     "target_seconds": int(round(request.target_seconds)),
                     "cast_block": cast_block(personas),
                     "current": json.dumps(_core(screenplay), ensure_ascii=False, indent=1)[:24000],
+                    "spine_block": _spine_text(screenplay),
+                    "source_block": _source_block(request),
+                    "cold_read": _cold_read_text(read),
                     "max_notes": max_notes,
                 },
                 _check, model=model, site_config=site_config, pool=pool, task_id=task_id,
@@ -768,8 +818,14 @@ async def edit_screenplay(
             history.append({"round": n, "error": str(exc)[:300]})
             break
         notes = [str(x).strip() for x in reply.get("notes") or [] if str(x).strip()][:max_notes]
-        if str(reply.get("verdict")).strip().lower() == "ready" or not notes:
-            history.append({"round": n, "verdict": "ready"})
+        lost = list((read or {}).get("lost") or [])
+        if (str(reply.get("verdict")).strip().lower() == "ready" or not notes) and lost:
+            # The editor may not call a script ready while a first-time viewer
+            # is lost in it: "The Last Bus Home" read as craft and made no
+            # sense (2026-10-14). The viewer's confusions are the notes.
+            notes = [f"A first-time viewer could not follow this; make it clear on screen: {x}" for x in lost][:max_notes]
+        if (str(reply.get("verdict")).strip().lower() == "ready" and not lost) or not notes:
+            history.append({"round": n, "verdict": "ready", "cold_read": read})
             logger.info("[screenplay] editor round %d: ready", n)
             break
         logger.info("[screenplay] editor round %d: %d note(s): %s", n, len(notes), notes)
@@ -782,10 +838,81 @@ async def edit_screenplay(
             logger.warning("[screenplay] revision for editor round %d failed (%s); keeping the draft", n, exc)
             history.append({"round": n, "notes": notes, "error": str(exc)[:300]})
             break
-        history.append({"round": n, "notes": notes})
+        history.append({"round": n, "notes": notes, "cold_read": read})
         screenplay = revised
+    else:
+        # The last round's notes were applied unread: record what a viewer
+        # makes of the final script.
+        if history and "notes" in history[-1] and "error" not in history[-1]:
+            history.append({"final_cold_read": await cold_read(
+                screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)})
     screenplay["edit_rounds"] = history
     return screenplay
+
+
+def _audience_view(screenplay: dict[str, Any]) -> str:
+    """The film as the audience gets it: each line with its speaker, each action, in order.
+
+    No title, outline, spine or summaries: a reader given those reads the
+    writer's intent into the scenes instead of what is on screen.
+    """
+    rows: list[str] = []
+    for n, scene in enumerate(screenplay.get("scenes") or [], 1):
+        rows.append(f"Scene {n}: {scene.get('setting') or ''}".rstrip())
+        for beat in scene.get("beats") or []:
+            if beat.get("kind") == "line":
+                rows.append(f"  {str(beat.get('speaker') or '').upper()}: {beat.get('text', '')}")
+            else:
+                rows.append(f"  ({beat.get('text', '')})")
+    return "\n".join(rows)
+
+
+def _cold_read_text(read: dict[str, Any] | None) -> str:
+    if not read:
+        return "(no account: the cold read failed)"
+    wants = read.get("wants") or {}
+    lines = [f"Story: {read.get('story', '')}"]
+    if isinstance(wants, dict):
+        lines += [f"{name} wants: {want}" for name, want in wants.items()]
+    lines.append(f"Why it ends that way: {read.get('cause', '')}")
+    lost = read.get("lost") or []
+    lines.append("Could not follow:" + ("".join(f"\n- {x}" for x in lost) if lost else " nothing"))
+    return "\n".join(lines)
+
+
+async def cold_read(
+    screenplay: dict[str, Any], *, site_config: Any, pool: Any = None,
+    task_id: str | None = None, model: str | None = None,
+) -> dict[str, Any] | None:
+    """A first-time viewer's account of ``screenplay`` (``story.cold_read``), or ``None``.
+
+    The reader gets only what the audience gets (:func:`_audience_view`) and
+    tells the story back: what happens, who wants what, why it ends that way,
+    and every moment it could not follow. ``story_cold_read_model`` (empty =
+    ``model``, the editor's). ``None`` when it cannot answer, logged.
+    """
+    reader = str(site_config.get("story_cold_read_model", "") or "").strip() or model or _resolve_model(site_config)
+
+    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
+        problems = []
+        if not str(reply.get("story") or "").strip():
+            problems.append('FIX: tell the story back in "story"')
+        if not isinstance(reply.get("lost", []), list):
+            problems.append('FIX: "lost" is a list of strings (empty when you followed everything)')
+        return problems, []
+
+    try:
+        reply, _ = await _ask_validated(
+            "story.cold_read", {"audience_view": _audience_view(screenplay)[:20000]}, _check,
+            model=reader, site_config=site_config, pool=pool, task_id=task_id,
+            what="cold read", phase="story_cold_read",
+        )
+    except ScreenplayError as exc:
+        logger.warning("[screenplay] cold read failed: %s", exc)
+        return None
+    reply["lost"] = [str(x).strip() for x in reply.get("lost") or [] if str(x).strip()]
+    logger.info("[screenplay] cold read: %d moment(s) lost: %s", len(reply["lost"]), reply["lost"])
+    return reply
 
 
 def _request_from(screenplay: dict[str, Any]) -> ScreenplayRequest:
@@ -797,6 +924,7 @@ def _request_from(screenplay: dict[str, Any]) -> ScreenplayRequest:
         narrator=bool(screenplay.get("narrator", True)),
         narrator_persona=str(screenplay.get("narrator_persona") or ""),
         target_seconds=float(screenplay.get("target_seconds") or 90.0),
+        source=str(screenplay.get("source") or ""),
     )
 
 

@@ -3435,6 +3435,14 @@ DEFAULTS: dict[str, str] = {
     'story_edit_rounds': '2',
     'story_edit_max_notes': '6',
     'story_editor_model': '',
+    # The cold read (screenplay.cold_read): a reader given only the lines and
+    # actions tells the story back; what it could not follow becomes the
+    # editor's first notes. Empty = the editor's model.
+    'story_cold_read_model': '',
+    # Tales a screenplay may adapt (screenplay_source; Matt, 2026-10-14:
+    # borrow a storyline that already makes sense). Public-domain traditional
+    # tales only: the list is what makes a retelling free to make.
+    'story_source_tales': '["The Tortoise and the Hare", "The Boy Who Cried Wolf", "The Fox and the Grapes", "The Ant and the Grasshopper", "The Lion and the Mouse", "The Town Mouse and the Country Mouse", "The Crow and the Pitcher", "The North Wind and the Sun", "The Goose That Laid the Golden Eggs", "The Dog and Its Reflection", "Hansel and Gretel", "The Elves and the Shoemaker", "Rumpelstiltskin", "The Frog Prince", "The Bremen Town Musicians", "The Golden Goose", "Little Red Riding Hood", "Cinderella", "Puss in Boots", "The Ugly Duckling", "The Emperor\'s New Clothes", "The Steadfast Tin Soldier", "The Princess and the Pea", "The Nightingale", "Jack and the Beanstalk", "The Three Little Pigs", "Goldilocks and the Three Bears", "The Gingerbread Man", "Stone Soup", "The Pied Piper of Hamelin", "The Little Red Hen"]',
     'story_min_story_seconds': '120',
     # animated action shot time to play.
     'story_dialogue_gap_seconds': '0.35',
@@ -6887,6 +6895,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_edit_rounds': {'owner': 'screenplay', 'value_type': 'integer'},
     'story_edit_max_notes': {'owner': 'screenplay', 'value_type': 'integer'},
     'story_editor_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_cold_read_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_source_tales': {'owner': 'screenplay', 'value_type': 'json'},
     'story_min_story_seconds': {'owner': 'screenplay', 'value_type': 'float'},
     'story_talking_framings': {'owner': 'screenplay_director', 'value_type': 'json'},
     'story_min_insert_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},

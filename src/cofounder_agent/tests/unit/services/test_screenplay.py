@@ -177,9 +177,17 @@ def test_pack_prompts_render_with_the_variables_code_passes():
 
     pm = get_prompt_manager()
     common = dict(site_name="Glad Labs", topic="t", brief="b", format_name="dialogue", tone="playful",
-                  word_budget=200, target_seconds=80, cast_block="- dex: Dex", narrator_available="yes")
+                  word_budget=200, target_seconds=80, cast_block="- dex: Dex", narrator_available="yes",
+                  source_block=sp._source_block(sp.ScreenplayRequest(topic="t", source="The Tortoise and the Hare")))
     outline = pm.get_prompt("story.outline", scene_count=2, **common)
     assert '{"title"' in outline and "- dex: Dex" in outline and "about 2 scene" in outline
+    assert 'adapt the traditional tale "The Tortoise and the Hare"' in outline
+    editor = pm.get_prompt("story.edit_notes", site_name="Glad Labs", format_name="story", target_seconds=120,
+                           cast_block="- dex: Dex", current="{}", spine_block="Want: w",
+                           source_block="SOURCE: none.", cold_read="Story: s", max_notes=6)
+    assert "Story: s" in editor and "Want: w" in editor and "at most 6 notes" in editor
+    reader = pm.get_prompt("story.cold_read", audience_view="  DEX: hi")
+    assert "DEX: hi" in reader and '"lost"' in reader
     scene = pm.get_prompt(
         "story.scene", outline_block="- s1: x", spine_block="Want: w", scene_id="s1",
         scene_setting="lab", scene_summary="Dex asks", scene_turn="Dex gets it",
