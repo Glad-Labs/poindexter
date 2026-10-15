@@ -156,6 +156,20 @@ def chat(monkeypatch):
     return mock
 
 
+class TestMissingPictures:
+    """The Circuit and the Song (2026-10-15): the image server restarted mid-pass
+    and the storyboard reported ready with 42 of 45 pictures missing."""
+
+    def test_too_many_empty_pictures_fail_the_pass(self):
+        from poindexter.schemas.video_shot_list import VideoShotList
+
+        shot_list = VideoShotList.model_validate(_listing())
+        sb._require_pictures(shot_list, {0: "u0", 1: "u1", 2: None}, _sc())  # footage needs no picture
+        with pytest.raises(sb.StoryboardError, match=r"1 of 2 pictures could not be drawn \(shots \[1\]"):
+            sb._require_pictures(shot_list, {0: "u0", 1: None}, _sc())
+        sb._require_pictures(shot_list, {0: "u0", 1: None}, _sc(story_storyboard_max_missing="0.5"))
+
+
 class TestRevise:
     @pytest.mark.asyncio
     async def test_a_note_redraws_only_the_shots_it_changes(self, stage, chat):

@@ -276,7 +276,29 @@ async def _draw_shots(
         await gpu._unload_comfyui(hard=False)
     except Exception as exc:  # noqa: BLE001  # silent-ok: best effort, logged
         logger.warning("[storyboard] could not free ComfyUI after drawing: %s", exc)
+    _require_pictures(shot_list, urls, site_config)
     return urls
+
+
+def _require_pictures(shot_list: Any, urls: dict[int, str | None], site_config: Any) -> None:
+    """Fail when too many of the pictures this pass drew came back empty.
+
+    The Circuit and the Song (2026-10-15): the image server restarted after
+    shot 2, every later draw was refused, and the storyboard reported ready
+    with 42 of 45 pictures missing. More than story_storyboard_max_missing
+    (a share of the shots drawn) empty is a failure, with the count.
+    """
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    drawable = [shot.idx for shot in shot_list.shots if shot.idx in urls and _kind(shot) in (TALKING, STILL)]
+    missing = [idx for idx in drawable if not urls.get(idx)]
+    raw = site_config.get("story_storyboard_max_missing", None) if site_config is not None else None
+    limit = float(raw if raw not in (None, "") else DEFAULTS["story_storyboard_max_missing"])
+    if drawable and len(missing) / len(drawable) > limit:
+        raise StoryboardError(
+            f"{len(missing)} of {len(drawable)} pictures could not be drawn (shots {missing[:12]}"
+            f"{'...' if len(missing) > 12 else ''}); check the image server and storyboard again",
+        )
 
 
 def _rows(listing: dict[str, Any], timeline: list[dict[str, Any]], urls: dict[int, str | None]) -> list[dict[str, Any]]:

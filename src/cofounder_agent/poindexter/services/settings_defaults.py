@@ -3521,6 +3521,9 @@ DEFAULTS: dict[str, str] = {
     # them) or 'animate' (the video model). Matt, 2026-10-15: "every movement
     # is hallucinated". The second drawing is an edit of the first, worded by
     # story_keyframe_after_template ({change}).
+    # A storyboard pass fails when more than this share of the pictures it
+    # drew came back empty (the image server down mid-pass, 2026-10-15).
+    'story_storyboard_max_missing': '0.2',
     'story_action_motion': 'keyframes',
     'story_keyframe_after_template': (
         'Redraw this exact picture with the same framing, characters, place, light, colours and art style. '
@@ -7877,6 +7880,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_max_animated_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_max_talking_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_visuals_model': {'owner': 'screenplay_director'},
+    'story_storyboard_max_missing': {'owner': 'storyboard', 'value_type': 'float'},
     'story_action_motion': {'owner': 'screenplay_director', 'value_type': 'string'},
     'story_keyframe_after_template': {'owner': 'shot_list_renderer', 'value_type': 'string'},
     'story_max_props': {'owner': 'screenplay_director', 'value_type': 'integer'},
