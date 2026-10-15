@@ -144,3 +144,29 @@ def test_pack_prompt_renders():
 
     text = get_prompt_manager().get_prompt("story.props", title="t", logline="l", beats="1. (x)", max_props="4")
     assert '{"props"' in text and "1. (x)" in text and "At most 4." in text
+
+
+class TestVisible:
+    """The Battery Drop's extreme close-up of a bolt sinking listed Cinder, who
+    dropped it; her reference was drawn in and the close-up became her in the
+    alley. The illustrator says who the picture shows."""
+
+    def test_a_subset_of_the_row_or_nothing_said(self):
+        assert sd._visible([], ["dex", "nova"]) == []
+        assert sd._visible(["Nova"], ["dex", "nova"]) == ["nova"]
+        assert sd._visible(["mara"], ["dex", "nova"]) is None
+        assert sd._visible(None, ["dex"]) is None
+
+    @pytest.mark.asyncio
+    async def test_a_close_up_on_an_object_draws_nobody_in(self, monkeypatch):
+        import poindexter.services.llm_text as llm_text
+
+        async def reply(prompt, **kw):
+            if kw.get("phase") == "story_props":
+                return "{}"
+            return json.dumps({"shots": [{"id": 0, "prompt": "extreme close-up of a bolt sinking", "visible": []}]})
+
+        monkeypatch.setattr(llm_text, "ollama_chat_text", reply)
+        monkeypatch.setattr(llm_text, "resolve_local_writer_model", lambda **kw: "ollama/writer")
+        listing = await sd.direct_screenplay(SCREENPLAY, TIMELINE, 4.5, site_config=_sc(), style="")
+        assert listing["shots"][0]["characters"] == []

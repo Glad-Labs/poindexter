@@ -226,11 +226,12 @@ FOR EVERY SHOT
 - Draw only the characters a row lists as visible. Anyone else the row names, such as a narrator, is a voice heard over the picture.
 - Vary the framing from shot to shot (wide, medium, close-up, over the shoulder) while the place stays the same.
 - Keep pictures free of written words, signs and screens with text.
+- "visible": the ids of the characters the picture shows, from the row's visible list. A character is in it when any part of them is in the frame, a hand included; a picture of only an object, or only the place, lists nobody.
 - "motion": for an animated shot, one sentence on how the camera moves and what moves in the picture. Keep it slow and deliberate: a held frame where one thing moves (hair in the wind, a light flickering, a single step) reads better than busy motion. For a still, an empty string.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"shots": [{{"id": 3, "prompt": "medium shot of dex at a cluttered workbench, holding a glowing graphics card up to the light, warm lamp glow", "motion": "slow push-in as dex turns the card in his paws"}}]}}
+{{"shots": [{{"id": 3, "prompt": "medium shot of dex at a cluttered workbench, holding a glowing graphics card up to the light, warm lamp glow", "visible": ["dex"], "motion": "slow push-in as dex turns the card in his paws"}}]}}
 ```
 
 ## story.props
@@ -379,10 +380,11 @@ HOW TO REVISE
 - Keep the art style words at the start of a prompt that has them.
 - A talking shot shows the speaker alone in the frame with the hands out of it: change the place, framing or expression, never add people.
 - Keep pictures free of written words, signs and screens with text.
+- For a still whose new picture shows different characters than the table lists, add "visible": the ids of everyone any part of whom is in the frame, or an empty list for a picture of only an object or the place. Leave it out when the same characters stay.
 
 OUTPUT
 Reply with one JSON object and nothing else, listing only the changed shots:
-{{"shots": [{{"id": 3, "prompt": "..."}}]}}
+{{"shots": [{{"id": 3, "prompt": "..."}}, {{"id": 5, "prompt": "...", "visible": []}}]}}
 ```
 
 ## story.score

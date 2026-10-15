@@ -184,6 +184,19 @@ class TestRevise:
             "ink, the crow on the branch, wings out. The oak branch: a gnarled black oak branch"
         )
 
+    @pytest.mark.asyncio
+    async def test_a_redrawn_still_can_frame_its_characters_out(self, stage, chat):
+        board = await sb.build_storyboard(SCRIPT, scenes=[], site_config=_sc(), pool=None, upload_prefix="drafts/b1")
+        chat.side_effect = [json.dumps({"shots": [{"id": 1, "prompt": "ink, an empty branch", "visible": []}]})]
+        out = await sb.revise_storyboard(board, "shot 1 the empty branch", site_config=_sc(), pool=None,
+                                         upload_prefix="drafts/b2")
+        assert out["shot_list"]["shots"][1]["characters"] == []
+
+    def test_visible_names_only_the_cast(self):
+        reply = {"shots": [{"id": 1, "prompt": "x", "visible": ["owl"]}]}
+        assert any('"visible"' in e for e in sb.check_revision(reply, {0, 1}, {"fox", "crow"}))
+        assert sb.check_revision({"shots": [{"id": 1, "prompt": "x", "visible": ["Crow"]}]}, {0, 1}, {"fox", "crow"}) == []
+
     def test_a_reply_must_name_real_drawable_shots(self):
         assert sb.check_revision({"shots": []}, {0, 1})
         assert any("no shot 7" in e for e in sb.check_revision({"shots": [{"id": 7, "prompt": "x"}]}, {0, 1}))

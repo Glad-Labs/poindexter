@@ -345,8 +345,8 @@ async def build_storyboard(
     }
 
 
-def check_revision(reply: dict[str, Any], known: set[int]) -> list[str]:
-    """FIX lines for a storyboard revision reply."""
+def check_revision(reply: dict[str, Any], known: set[int], cast: set[str] | None = None) -> list[str]:
+    """FIX lines for a storyboard revision reply. ``cast``: who a still's ``visible`` may name."""
     shots = reply.get("shots")
     if not isinstance(shots, list) or not shots:
         return ['FIX: list the shots you change under "shots", at least one']
@@ -364,6 +364,11 @@ def check_revision(reply: dict[str, Any], known: set[int]) -> list[str]:
             errors.append(f"FIX shot {i}: there is no shot {sid}; use one of {sorted(known)}")
         if not str(item.get("prompt") or "").strip():
             errors.append(f'FIX shot {sid}: write the new "prompt"')
+        seen = item.get("visible")
+        if seen is not None and (
+            not isinstance(seen, list) or any(str(c).strip().lower() not in (cast or set()) for c in seen)
+        ):
+            errors.append(f'FIX shot {sid}: "visible" lists character ids from {sorted(cast or set())}, or is left out')
     return errors
 
 
@@ -390,8 +395,13 @@ async def revise_storyboard(
         for r in rows if r["idx"] in drawable
     )
 
+    cast = {
+        str(c).lower() for shot in listing.get("shots") or []
+        for c in [*(shot.get("characters") or []), shot.get("speaker") or ""] if c
+    }
+
     def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
-        return check_revision(reply, drawable), []
+        return check_revision(reply, drawable, cast), []
 
     reply, _ = await _ask_validated(
         "story.storyboard_revise",
@@ -400,20 +410,23 @@ async def revise_storyboard(
         task_id=None, what="storyboard revision", phase="story_revise_storyboard",
     )
     changed: dict[int, str] = {int(s["id"]): str(s["prompt"]).strip() for s in reply["shots"]}
+    visible = {
+        int(s["id"]): [str(c).strip().lower() for c in s["visible"]]
+        for s in reply["shots"] if isinstance(s.get("visible"), list)
+    }
     from poindexter.services.screenplay_director import with_props
 
     props = list(listing.get("props") or [])
-    cast_words = {
-        str(w).lower() for shot in listing.get("shots") or []
-        for w in [*(shot.get("characters") or []), shot.get("speaker") or ""] if w
-    }
     for shot in listing.get("shots") or []:
         if shot.get("idx") in changed:
             talking = shot.get("source") == "presenter" and shot.get("speaker")
             key = "frame_prompt" if talking else "prompt"
             # A rewritten picture keeps the props' one design.
-            text = changed[shot["idx"]] if talking else with_props(changed[shot["idx"]], props, cast_words)
+            text = changed[shot["idx"]] if talking else with_props(changed[shot["idx"]], props, cast)
             shot[key] = text[:2000]
+            if not talking and shot["idx"] in visible:
+                # Who the new picture shows: their references are drawn in.
+                shot["characters"] = visible[shot["idx"]]
     version = len(payload.get("revisions") or []) + 2
     before = {r["idx"]: r.get("image_url") for r in rows}
     plates = dict(payload.get("plates") or {})

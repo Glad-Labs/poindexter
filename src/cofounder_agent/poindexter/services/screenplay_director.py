@@ -470,6 +470,22 @@ def assign_sources(plan: list[dict[str, Any]], site_config: Any) -> list[dict[st
     return out
 
 
+def _visible(raw: Any, allowed: list[str]) -> list[str] | None:
+    """Who a picture shows, from the illustrator's ``visible``: a subset of ``allowed``.
+
+    "The Battery Drop" (2026-10-15): the extreme close-up of a bolt sinking
+    in the tube listed Cinder, who dropped it, so her reference was drawn
+    in and the close-up became her standing in the alley. ``None`` (no
+    answer, or a name the row does not list) keeps the row's characters.
+    """
+    if not isinstance(raw, list):
+        return None
+    names = [str(x).strip().lower() for x in raw]
+    if any(n not in allowed for n in names):
+        return None
+    return [c for c in allowed if c in names]
+
+
 def _visual_row(i: int, shot: dict[str, Any]) -> str:
     """One shot as the illustrator reads it. A reaction row says who is
     talking and who listens, so the picture stays on the listener in the
@@ -493,10 +509,12 @@ async def write_visuals(
     pool: Any = None,
     task_id: str | None = None,
     props: list[dict[str, str]] | None = None,
-) -> tuple[dict[int, dict[str, str]], str]:
+) -> tuple[dict[int, dict[str, Any]], str]:
     """One LLM call: picture + motion for every non-talking shot.
 
-    Returns ``({shot_index: {"prompt", "motion"}}, model)``. Any failure
+    Returns ``({shot_index: {"prompt", "motion"[, "visible"]}}, model)``:
+    ``visible`` is who the picture actually shows, when the illustrator
+    framed someone out (an extreme close-up of an object). Any failure
     returns what it has (possibly nothing): the caller falls back per shot.
     """
     from poindexter.services.llm_text import ollama_chat_text
@@ -534,7 +552,7 @@ async def write_visuals(
         )
         return {}, model
     blob = extract_json_object(raw or "") or {}
-    out: dict[int, dict[str, str]] = {}
+    out: dict[int, dict[str, Any]] = {}
     for item in blob.get("shots") or [] if isinstance(blob, dict) else []:
         if not isinstance(item, dict):
             continue
@@ -546,6 +564,9 @@ async def write_visuals(
         picture = str(item.get("prompt") or "").strip()
         if idx in wanted and picture:
             out[idx] = {"prompt": picture, "motion": str(item.get("motion") or "").strip()}
+            seen = _visible(item.get("visible"), plan[idx]["characters"])
+            if seen is not None:
+                out[idx]["visible"] = seen
     missing = len(wanted) - len(out)
     if missing:
         logger.info("[director] shot-visuals skipped %d of %d shots; they use the scene setting",
@@ -756,7 +777,7 @@ def _talking_intent(shot: dict[str, Any], site_config: Any) -> str:
 
 def build_shot_list(
     plan: list[dict[str, Any]],
-    visuals: dict[int, dict[str, str]],
+    visuals: dict[int, dict[str, Any]],
     *,
     style: str,
     director_model: str,
@@ -820,6 +841,8 @@ def build_shot_list(
             shot["prompt"] = _with_palette(f"{style}, {picture}" if style else picture, palette, site_config, 1500)
             if s["source"] == "generative":
                 shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
+            if "visible" in seen:
+                shot["characters"] = list(seen["visible"])
         if s.get("scene_id"):
             shot["scene_id"] = str(s["scene_id"])[:64]
         # A landscape is a wider view than the place's plate, so it is drawn
