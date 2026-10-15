@@ -381,7 +381,7 @@ HOW TO REVISE
 - A talking shot shows the speaker alone in the frame with the hands out of it: change the place, framing or expression, never add people.
 - Keep pictures free of written words, signs and screens with text.
 - For a still whose new picture shows different characters than the table lists, add "visible": the ids of everyone any part of whom is in the frame, or an empty list for a picture of only an object or the place. Leave it out when the same characters stay.
-- A shot with "moves:" is animated, and the note may be about its movement rather than its picture (it smears, the camera lurches, a face or body changes by the end). Give it a new "motion": one sentence, slow and simple, a held or gently drifting camera with one small movement in the picture. Leave "prompt" out to keep the picture as it is.
+- A shot with "moves:" is animated, and the note may be about its movement rather than its picture (it smears, the camera lurches, a face or body changes by the end). Give it a new "motion": one sentence, slow and simple, a held or gently drifting camera with one small movement in the picture. Describe only what the shot should show, from its first frame to its last: the animator draws every word, so a fault named in the note stays out of the motion. Leave "prompt" out to keep the picture as it is.
 
 OUTPUT
 Reply with one JSON object and nothing else, listing only the changed shots:
