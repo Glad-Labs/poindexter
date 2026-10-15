@@ -3203,7 +3203,8 @@ async def _render_reference_still(
         work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
         # A still is drawn from the characters' model sheets; a talking frame
         # (speakers) faces the viewer and keeps the front portrait.
-        sheets=not speakers and bool(wanted),
+        # A wider talking setup shows the body: drawn from the sheet too.
+        sheets=bool(wanted) and (not speakers or bool(getattr(shot, "frame_full_body", False))),
     )
     if not paths and wanted and not speakers:
         # Nobody the shot names can be drawn (no portrait): draw it in the

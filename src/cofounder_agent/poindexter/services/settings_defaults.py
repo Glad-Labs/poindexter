@@ -1075,8 +1075,12 @@ DEFAULTS: dict[str, str] = {
     # speaker, so a character's lines are covered from different setups
     # instead of one portrait over and over (2026-10-14). Each keeps the
     # speaker alone in the frame: the talking-frame judge rejects anyone else.
-    'story_talking_frame_template': '{style}, {framing}, alone in the frame and talking, in {setting}',
-    'story_talking_framings': '["head-and-shoulders close-up of {name}, facing the viewer, the picture cropped just below the shoulders", "medium shot of {name} from the waist up, turned three-quarters to one side", "medium-wide shot of {name} standing in the scene from the knees up, turned slightly to one side"]',
+    # {place} is the location's own description: told only "in The hub...",
+    # Signal Glitch's talking frames took the style's "rain-slick streets"
+    # and drew a street (2026-10-15). A framing with full_body draws from the
+    # model sheet's full-body view, not the head-and-shoulders portrait.
+    'story_talking_frame_template': '{style}, {framing}, alone in the frame and talking, in {place}; {setting}',
+    'story_talking_framings': '[{"framing": "head-and-shoulders close-up of {name}, facing the viewer, the picture cropped just below the shoulders", "full_body": false}, {"framing": "medium shot of {name} from the waist up, turned three-quarters to one side", "full_body": true}, {"framing": "medium-wide shot of {name} standing in the scene from the knees up, turned slightly to one side", "full_body": true}]',
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
     # PUNISHES stillness — 静态 (static), 静止 (still), 静止不动的画面 (motionless

@@ -430,6 +430,18 @@ def check_outline(
     written before them is not held to it.
     """
     errors: list[str] = []
+    if new:
+        # A setting is drawn behind every picture of its scene, the talking
+        # frames included: naming who is there put strangers beside a
+        # speaker drawn alone (Signal Glitch, 2026-10-15).
+        cast_names = _cast_names(request, site_config)
+        for scene in outline["scenes"]:
+            named = [n for n in cast_names if re.search(rf"\b{re.escape(n)}\b", scene.get("setting") or "", re.IGNORECASE)]
+            if named:
+                errors.append(
+                    f"FIX scene {scene['scene_id']!r}: the \"setting\" names {', '.join(named)}; describe "
+                    "only the place at this moment (time, light, mood), and keep who is there in \"characters\"",
+                )
     if new and request.format == "story" and not outline.get("main_event"):
         errors.append('FIX: add "main_event": the one event the piece is about, shown on screen')
     if new and request.source and len(outline.get("translation") or []) < 3:

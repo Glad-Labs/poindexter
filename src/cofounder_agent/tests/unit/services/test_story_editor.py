@@ -275,6 +275,15 @@ class TestOutlinePlan:
         outline["main_event"] = "Nova shows Dex the memory wall on screen"
         assert not [e for e in sp.check_outline(outline, req, _sc(), new=True) if "main_event" in e]
 
+    def test_a_new_setting_names_no_one(self):
+        """A setting naming the cast put strangers beside a speaker drawn alone (2026-10-15)."""
+        sc = _sc(**{"persona.dex.display_name": "Dex"})
+        req = self._req(screenplay_format="dialogue")
+        outline = sp.normalize_outline(_outline())
+        outline["scenes"][0]["setting"] = "the lab at night while Dex fidgets"
+        assert any("names Dex" in e for e in sp.check_outline(outline, req, sc, new=True))
+        assert not [e for e in sp.check_outline(outline, req, sc) if "setting" in e]  # a revision
+
     def test_an_adaptation_maps_the_tale_into_this_world(self):
         req = self._req(screenplay_format="dialogue", screenplay_source="Stone Soup")
         raw = {**_outline(), "translation": [{"tale": "a village", "here": "a block of flats"},

@@ -193,3 +193,41 @@ class TestActionMoments:
         from poindexter.services.settings_defaults import DEFAULTS
 
         assert float(DEFAULTS["story_action_beat_seconds"]) == 3.0
+
+
+class TestTalkingFramePlace:
+    """"The Signal Glitch" storyboard (2026-10-15): talking frames on a street
+    instead of the workshop, strangers beside the speaker, Bolt's body guessed."""
+
+    def _listing(self, **extra):
+        sc = _sc(story_establishing_seconds="0", **extra)
+        timeline = [_line("s1", "dex", 0.0, 4.0), _line("s1", "dex", 4.0, 8.0)]
+        screenplay = {**SCREENPLAY, "locations": [{"id": "hub", "description": "a workshop on a skyscraper ledge"}],
+                      "scenes": [{**SCREENPLAY["scenes"][0], "location": "hub"}]}
+        return sd.build_shot_list(sd.assign_sources(sd.plan_shots(screenplay, timeline, 8.0, sc), sc), {},
+                                  style="ink", director_model="m", site_config=sc)
+
+    def test_the_frame_is_told_what_the_place_looks_like(self):
+        first = self._listing()["shots"][0]
+        assert "in a workshop on a skyscraper ledge; a lab" in first["frame_prompt"]
+
+    def test_a_wider_setup_draws_from_the_full_body_view(self):
+        shots = self._listing()["shots"]
+        assert not shots[0].get("frame_full_body") and shots[1]["frame_full_body"] is True
+        assert "medium shot of Dex" in shots[1]["frame_prompt"]
+
+    def test_plain_string_framings_still_work(self):
+        assert sd._talking_setups(_sc(story_talking_framings='["profile of {name}"]')) == [("profile of {name}", False)]
+
+    def test_the_migration_moves_exactly_the_old_defaults(self):
+        import importlib
+        import pathlib
+
+        from poindexter.services.settings_defaults import DEFAULTS
+        from poindexter.services.video_renderers import shot_list_renderer as slr
+
+        path = next(pathlib.Path(slr.__file__).parents[1].joinpath("migrations").glob("*talking_frames_get_the_place*.py"))
+        mod = importlib.import_module(f"poindexter.services.migrations.{path.stem}")
+        news = {key: new for key, _, new in mod.ROWS}
+        assert news == {"story_talking_frame_template": DEFAULTS["story_talking_frame_template"],
+                        "story_talking_framings": DEFAULTS["story_talking_framings"]}

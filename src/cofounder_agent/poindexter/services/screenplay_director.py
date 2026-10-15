@@ -551,8 +551,14 @@ async def write_visuals(
     return out, model
 
 
-def _talking_framings(site_config: Any) -> list[str]:
-    """``story_talking_framings``: the camera setups a speaker's lines rotate through."""
+def _talking_setups(site_config: Any) -> list[tuple[str, bool]]:
+    """``story_talking_framings``: the camera setups a speaker's lines rotate through.
+
+    Each entry is a framing, or ``{"framing", "full_body"}``: a full-body
+    setup draws the speaker from their model sheet's full-body view, since
+    the head-and-shoulders portrait left Bolt's body to guesswork in the
+    wider setups (a dark plain mouse, a gold one, 2026-10-15).
+    """
     from poindexter.services.settings_defaults import DEFAULTS
 
     raw = site_config.get("story_talking_framings", None) if site_config is not None else None
@@ -561,9 +567,25 @@ def _talking_framings(site_config: Any) -> list[str]:
             items = json.loads(value) if isinstance(value, str) else value
         except (TypeError, ValueError):
             continue
-        if isinstance(items, list) and (framings := [str(f).strip() for f in items if str(f).strip()]):
-            return framings
-    return ["{name}"]
+        setups = []
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and str(item.get("framing") or "").strip():
+                setups.append((str(item["framing"]).strip(), bool(item.get("full_body"))))
+            elif isinstance(item, str) and item.strip():
+                setups.append((item.strip(), False))
+        if setups:
+            return setups
+    return [("{name}", False)]
+
+
+def _talking_framings(site_config: Any) -> list[str]:
+    """The framing texts of :func:`_talking_setups`."""
+    return [text for text, _ in _talking_setups(site_config)]
+
+
+def _talking_setup(shot: dict[str, Any], site_config: Any) -> tuple[str, bool]:
+    setups = _talking_setups(site_config)
+    return setups[int(shot.get("framing_idx") or 0) % len(setups)]
 
 
 def _talking_frame_prompt(shot: dict[str, Any], style: str, site_config: Any) -> str:
@@ -583,13 +605,18 @@ def _talking_frame_prompt(shot: dict[str, Any], style: str, site_config: Any) ->
         (site_config.get("story_talking_frame_template", None) if site_config is not None else None)
         or DEFAULTS["story_talking_frame_template"]
     )
-    framings = _talking_framings(site_config)
-    framing = framings[int(shot.get("framing_idx") or 0) % len(framings)].replace("{name}", name)
+    framing = _talking_setup(shot, site_config)[0].replace("{name}", name)
+    place = str(shot.get("location_desc") or "").strip()
+    if not place or place == str(shot.get("setting") or "").strip():
+        # No separate description of the place (an older script): the
+        # setting says it once.
+        template = template.replace("{place}; ", "").replace("{place}", "")
     text = (
         template.replace("{style}", style or "")
         .replace("{framing}", framing)
         .replace("{name}", name)
         .replace("{delivery}", shot.get("delivery") or "expressive")
+        .replace("{place}", shot.get("location_desc") or shot.get("setting") or "the scene")
         .replace("{setting}", shot.get("setting") or "the scene")
     )
     return text.strip(" ,")[:1500]
@@ -653,6 +680,8 @@ def build_shot_list(
                 shot["prompt"] = note[:2000]
             shot["frame_prompt"] = _with_palette(
                 _talking_frame_prompt(s, style, site_config), palette, site_config, 1500)
+            if _talking_setup(s, site_config)[1]:
+                shot["frame_full_body"] = True
         elif s["kind"] == "landscape":
             picture = _landscape_prompt(s, site_config)
             shot["intent"] = picture[:200]

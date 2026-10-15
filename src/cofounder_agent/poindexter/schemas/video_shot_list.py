@@ -192,6 +192,13 @@ class Shot(BaseModel):
             "lip-sync animates it instead of the fixed portrait (poindexter#1141)"
         ),
     )
+    frame_full_body: bool = Field(
+        False,
+        description=(
+            "Cast shots: the talking frame shows the speaker's body (a medium or wider "
+            "setup), so it is drawn from their model sheet's full-body view"
+        ),
+    )
     # Backdrop continuity (2026-10-14). Optional, so every frozen list still
     # validates. A screenplay shot carries its scene, and one shot per scene is
     # its establishing picture: every other picture of the scene is drawn with

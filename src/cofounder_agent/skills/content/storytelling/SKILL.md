@@ -124,7 +124,7 @@ PLAN THE SCENES
 - Give the piece about {scene_count} scene(s). Each scene is one step of the spine, and something is different at its end: a new understanding, a decision, a feeling.
 - Keep the characters in one main place unless the story has a reason to move. When it moves, the summary says why (they go to try something, or a demonstration takes them there).
 - "location": the id of the location the scene happens in.
-- "setting": that place at this moment, with its time of day and mood, in one sentence a background artist could paint.
+- "setting": that place at this moment, with its time of day and mood, in one sentence a background artist could paint. It describes only the place; who is there belongs in "characters".
 - "palette": the scene's entry in the colour script.
 - "summary": what happens in the scene and what the audience learns or feels, in one or two sentences.
 - "turn": what is different by the end of this scene, in one sentence.
@@ -251,7 +251,7 @@ HOW TO CAST
 - "voice": an id from the list that fits their age and temperament. Give different characters different voices.
 - "energy": "low" for calm or dry characters, "medium" for most, "high" for lively, excitable or loud ones.
 - "sample_line": one or two sentences the character might say, in their voice, used to set up their voice.
-- "style": the ART STYLE above written out as one short phrase a painter would follow. Keep everything it says and add the concrete details it implies: line, colour, texture, lighting. Design every character to look at home in it.
+- "style": the ART STYLE above written out as one short phrase a painter would follow. Keep everything it says and add the concrete details it implies: line, colour, texture, lighting. It describes how things are drawn, never a place, since every picture of every scene is drawn in it. Design every character to look at home in it.
 - "narrator": set "use" to true when the piece needs a storyteller's voice, false otherwise. A narrator is heard and never seen. Put an existing character's id in "reuse" when one fits the part; otherwise leave "reuse" empty and describe a new voice with "name", "voice", "energy" and "sample_line".
 
 OUTPUT
