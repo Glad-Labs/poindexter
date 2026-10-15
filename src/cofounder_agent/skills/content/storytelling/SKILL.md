@@ -227,7 +227,7 @@ FOR EVERY SHOT
 - Vary the framing from shot to shot (wide, medium, close-up, over the shoulder) while the place stays the same.
 - Keep pictures free of written words, signs and screens with text.
 - "visible": the ids of the characters the picture shows, from the row's visible list. A character is in it when any part of them is in the frame, a hand included; a picture of only an object, or only the place, lists nobody.
-- A "two drawings" shot is drawn twice, and its movement is the switch between the drawings. "prompt" is the first drawing: the moment as it starts. "after" is the second: the one visible change it shows, said so an illustrator can redraw the first picture with only that change (a hand now inside the jar, the water higher, a frown turned to a grin). "transition" joins them: "dissolve" for a gradual change (light spreading, water rising, something growing or bursting), "toggle" for a small repeated movement (a twitch, shaking, laughing, a flicker), "cut" for a sudden one (an impact, a snap, a slammed door). Leave "motion" empty.
+- A "two drawings" shot is drawn twice, and its movement is the switch between the drawings. "prompt" is the first drawing: the moment as it starts. "after" is the second: the one visible change it shows, said so an illustrator can redraw the first picture with only that change (a hand now inside the jar, the water higher, a frown turned to a grin). The change happens to what the first drawing already shows: name only the characters the row lists as visible, and nobody's hand or body reaches in from outside the frame. "transition" joins them: "dissolve" for a gradual change (light spreading, water rising, something growing or bursting), "toggle" for a small repeated movement (a twitch, shaking, laughing, a flicker), "cut" for a sudden one (an impact, a snap, a slammed door). Leave "motion" empty.
 - "motion": for an animated shot, one sentence on how the camera moves and what moves in the picture. Keep it slow and deliberate: a held frame where one thing moves (hair in the wind, a light flickering, a single step) reads better than busy motion. For a still, an empty string.
 
 OUTPUT
@@ -372,7 +372,7 @@ You are the storyboard artist for a short animated piece. The operator has looke
 THE NOTE
 {instruction}
 
-THE SHOTS - number | talking (a character speaking to camera) or still | who is in it | the words heard over it | the picture prompt now | how an animated shot moves
+THE SHOTS - number | talking (a character speaking to camera) or still | who is in it | the words heard over it | the picture prompt now | how an animated shot moves | a two-drawing shot's second drawing
 {shot_table}
 
 ART STYLE: {style}
@@ -384,11 +384,12 @@ HOW TO REVISE
 - A talking shot shows the speaker alone in the frame with the hands out of it: change the place, framing or expression, never add people.
 - Keep pictures free of written words, signs and screens with text.
 - For a still whose new picture shows different characters than the table lists, add "visible": the ids of everyone any part of whom is in the frame, or an empty list for a picture of only an object or the place. Leave it out when the same characters stay.
+- A shot with "then:" is two drawings: the picture, then the same picture with the one change "then:" names. When the note is about the second drawing, give a new "after": the one visible change it shows, made to what the picture already shows, with everyone in it staying once and no one added, not even a hand from outside the frame. Change "prompt" too only when the first drawing is wrong.
 - A shot with "moves:" is animated, and the note may be about its movement rather than its picture (it smears, the camera lurches, a face or body changes by the end). Give it a new "motion": one sentence, slow and simple, a held or gently drifting camera with one small movement in the picture. Describe only what the shot should show, from its first frame to its last: the animator draws every word, so a fault named in the note stays out of the motion. Leave "prompt" out to keep the picture as it is.
 
 OUTPUT
 Reply with one JSON object and nothing else, listing only the changed shots:
-{{"shots": [{{"id": 3, "prompt": "..."}}, {{"id": 5, "prompt": "...", "visible": []}}, {{"id": 7, "motion": "..."}}]}}
+{{"shots": [{{"id": 3, "prompt": "..."}}, {{"id": 5, "prompt": "...", "visible": []}}, {{"id": 7, "motion": "..."}}, {{"id": 9, "after": "..."}}]}}
 ```
 
 ## story.score

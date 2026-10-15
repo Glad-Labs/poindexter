@@ -158,7 +158,7 @@ class TestRenderer:
                                              site_config=_sc())
         kw = edit.await_args.kwargs
         assert kw["reference_paths"] == [str(before)] and (kw["width"], kw["height"]) == (64, 36)
-        assert kw["prompt"].endswith("The only change: the cup now shattered on the floor.")
+        assert "The only change: the cup now shattered on the floor. Everyone in the picture appears once" in kw["prompt"]
 
     @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
     def test_the_clip_joins_the_two_drawings(self, tmp_path):
@@ -213,3 +213,30 @@ async def test_the_storyboard_draws_and_keeps_the_second_drawing(monkeypatch, tm
     assert after.await_args.kwargs["before"] == str(tmp_path / "before.png")
     row = sb._rows(listing, [], urls)[0]
     assert (row["after_url"], row["transition"]) == ("https://cdn/drafts/x/shot_00_after.png", "cut")
+
+
+class TestReviseTheSecondDrawing:
+    """The Circuit and the Song (2026-10-15): two "after" drawings were wrong (a second
+    Cinder, an orange room) and a revision note could only redraw the first."""
+
+    def test_a_note_can_replace_the_second_drawing(self):
+        from poindexter.services import storyboard as sb
+
+        listing = {"shots": [{**_shot().model_dump(mode="json"), "after_url": "https://cdn/old_after.png"}]}
+        assert "| then: the cup now shattered on the floor" in sb.revision_table(
+            [{"idx": 0, "kind": sb.STILL, "characters": [], "picture": "dex holds a cup"}], {0}, listing)
+        assert sb.check_revision({"shots": [{"id": 0, "after": "the cup on the floor in two pieces"}]}, {0}) == []
+        redrawn, changed = sb.apply_revision(listing, {"shots": [{"id": 0, "after": "the cup on the floor in two pieces"}]})
+        assert redrawn == {0} == changed
+        assert listing["shots"][0]["after_prompt"] == "the cup on the floor in two pieces"
+        assert "after_url" not in listing["shots"][0]
+
+    def test_the_template_migration_moves_the_old_default(self):
+        import importlib
+        import pathlib
+
+        from poindexter.services.settings_defaults import DEFAULTS
+
+        path = next(pathlib.Path(slr.__file__).parents[1].joinpath("migrations").glob("*keyframe_second_drawing*.py"))
+        mod = importlib.import_module(f"poindexter.services.migrations.{path.stem}")
+        assert mod.NEW == DEFAULTS["story_keyframe_after_template"] and "no one is added" in mod.NEW

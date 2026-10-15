@@ -398,11 +398,12 @@ def check_revision(reply: dict[str, Any], known: set[int], cast: set[str] | None
             continue
         if sid not in known:
             errors.append(f"FIX shot {i}: there is no shot {sid}; use one of {sorted(known)}")
-        motion = item.get("motion")
-        if motion is not None and not isinstance(motion, str):
-            errors.append(f'FIX shot {sid}: "motion" is one sentence of text, or is left out')
-        if not str(item.get("prompt") or "").strip() and not str(motion or "").strip():
-            errors.append(f'FIX shot {sid}: write the new "prompt", or a new "motion" for an animated shot')
+        motion, after = item.get("motion"), item.get("after")
+        for field, value in (("motion", motion), ("after", after)):
+            if value is not None and not isinstance(value, str):
+                errors.append(f'FIX shot {sid}: "{field}" is one sentence of text, or is left out')
+        if not any(str(item.get(k) or "").strip() for k in ("prompt", "motion", "after")):
+            errors.append(f'FIX shot {sid}: write the new "prompt", or a new "motion" or "after"')
         seen = item.get("visible")
         if seen is not None and (
             not isinstance(seen, list) or any(str(c).strip().lower() not in (cast or set()) for c in seen)
@@ -417,10 +418,15 @@ def revision_table(rows: list[dict[str, Any]], drawable: set[int], listing: dict
         s.get("idx"): str(s.get("motion") or "").strip()
         for s in listing.get("shots") or [] if s.get("source") == "generative"
     }
+    afters = {
+        s.get("idx"): str(s.get("after_prompt") or "").strip()
+        for s in listing.get("shots") or [] if s.get("source") == "keyframes"
+    }
     return "\n".join(
         f"{r['idx']} | {r['kind']} | {r.get('speaker') or ', '.join(r.get('characters') or []) or '-'} | "
         f"{r.get('words') or '-'} | {r.get('picture') or ''}"
         + (f" | moves: {motions[r['idx']]}" if motions.get(r["idx"]) else "")
+        + (f" | then: {afters[r['idx']]}" if afters.get(r["idx"]) else "")
         for r in rows if r["idx"] in drawable
     )
 
@@ -437,7 +443,9 @@ def apply_revision(listing: dict[str, Any], reply: dict[str, Any]) -> tuple[set[
     """Apply a ``story.storyboard_revise`` reply to ``listing`` in place.
 
     Returns ``(redrawn, changed)``: the shots whose picture changes, and every
-    shot the reply touches. A reply can change only an animated shot's
+    shot the reply touches. A keyframes shot's second drawing changes with
+    ``after`` (The Circuit and the Song, 2026-10-15: an "after" that added a
+    second Cinder could not be fixed by a note). A reply can change only an animated shot's
     ``motion`` and keep its picture: The Battery Drop's render (2026-10-15)
     had right pictures whose movement went wrong ("the camera follows the
     bolt as it falls" ended in two seconds of blur; "lifted quickly" gave
@@ -467,6 +475,13 @@ def apply_revision(listing: dict[str, Any], reply: dict[str, Any]) -> tuple[set[
         motion = str(item.get("motion") or "").strip()
         if motion and shot.get("source") == "generative":
             shot["motion"] = motion[:500]
+        after = str(item.get("after") or "").strip()
+        if after and shot.get("source") == "keyframes":
+            # A new second drawing; the first is redrawn with it, since the
+            # second is an edit of the first.
+            shot["after_prompt"] = with_props(after, props, cast)[:600]
+            shot.pop("after_url", None)
+            redrawn.add(shot["idx"])
     return redrawn, set(by_id) & {s.get("idx") for s in listing.get("shots") or []}
 
 

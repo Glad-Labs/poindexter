@@ -3516,18 +3516,21 @@ DEFAULTS: dict[str, str] = {
     'story_max_animated_shots': '-1',
     'story_max_talking_shots': '-1',
     'story_visuals_model': '',
+    # A storyboard pass fails when more than this share of the pictures it
+    # drew came back empty (the image server down mid-pass, 2026-10-15).
+    'story_storyboard_max_missing': '0.2',
     # How a cartoon's action shots move: 'keyframes' (two drawings of the
     # moment, joined by a dissolve, flicker or cut; nothing generated between
     # them) or 'animate' (the video model). Matt, 2026-10-15: "every movement
     # is hallucinated". The second drawing is an edit of the first, worded by
-    # story_keyframe_after_template ({change}).
-    # A storyboard pass fails when more than this share of the pictures it
-    # drew came back empty (the image server down mid-pass, 2026-10-15).
-    'story_storyboard_max_missing': '0.2',
+    # story_keyframe_after_template ({change}). Its last sentence is earned:
+    # "she walks further away" drew a second Cinder walking beside her, and
+    # "the warm room" turned a blue workshop orange (2026-10-15).
     'story_action_motion': 'keyframes',
     'story_keyframe_after_template': (
         'Redraw this exact picture with the same framing, characters, place, light, colours and art style. '
-        'The only change: {change}.'
+        'The only change: {change}. Everyone in the picture appears once, as before, and no one is added; '
+        'the light and colours stay exactly as they are.'
     ),
     # Production design: at most this many props (the objects a story turns
     # on) get one fixed look, carried on every picture that shows them.
