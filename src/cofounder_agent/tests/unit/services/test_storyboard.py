@@ -96,7 +96,7 @@ def stage(monkeypatch):
         Path(output_path).write_bytes(b"wav")
         return {"audio_path": output_path, "timeline": TIMELINE, "duration_s": 5.0, "spoken_script": ""}
 
-    async def fake_direct(screenplay, timeline, seconds, *, site_config, style, pool, cast_portraits=None):
+    async def fake_direct(screenplay, timeline, seconds, *, site_config, style, pool, cast_portraits=None, props=None):
         seen["style"] = style
         seen["cast_portraits"] = cast_portraits
         return _listing()
@@ -171,6 +171,18 @@ class TestRevise:
         assert out["revisions"] == [{"note": "shot 0 wider, at dusk", "shots": [0]}]
         assert "0 | talking | fox" in chat.await_args.args[0]
         assert "2 | footage" not in chat.await_args.args[0]  # nothing to draw there
+
+    @pytest.mark.asyncio
+    async def test_a_redrawn_picture_keeps_the_props_design(self, stage, chat):
+        board = await sb.build_storyboard(SCRIPT, scenes=[], site_config=_sc(), pool=None, upload_prefix="drafts/b1")
+        branch = {"name": "oak branch", "look": "a gnarled black oak branch"}
+        board["shot_list"]["props"] = [branch]
+        chat.side_effect = [json.dumps({"shots": [{"id": 1, "prompt": "ink, the crow on the branch, wings out"}]})]
+        out = await sb.revise_storyboard(board, "shot 1 wings out", site_config=_sc(), pool=None,
+                                         upload_prefix="drafts/b2")
+        assert out["shot_list"]["shots"][1]["prompt"] == (
+            "ink, the crow on the branch, wings out. The oak branch: a gnarled black oak branch"
+        )
 
     def test_a_reply_must_name_real_drawable_shots(self):
         assert sb.check_revision({"shots": []}, {0, 1})

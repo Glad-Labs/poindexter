@@ -212,9 +212,16 @@ class TestTalkingFramePlace:
         assert "in a workshop on a skyscraper ledge; a lab" in first["frame_prompt"]
 
     def test_a_wider_setup_draws_from_the_full_body_view(self):
-        shots = self._listing()["shots"]
+        framings = '["close-up of {name}", {"framing": "medium shot of {name}", "full_body": true}]'
+        shots = self._listing(story_talking_framings=framings)["shots"]
         assert not shots[0].get("frame_full_body") and shots[1]["frame_full_body"] is True
         assert "medium shot of Dex" in shots[1]["frame_prompt"]
+
+    def test_every_default_setup_draws_from_the_model_sheet(self):
+        """"The Battery Drop" (2026-10-15): Bolt's portrait shows him in his
+        car, and both close-ups drawn from it were a dark mouse in a sweater."""
+        assert all(full for _, full in sd._talking_setups(_sc()))
+        assert all(s.get("frame_full_body") for s in self._listing()["shots"] if s["source"] == "presenter")
 
     def test_plain_string_framings_still_work(self):
         assert sd._talking_setups(_sc(story_talking_framings='["profile of {name}"]')) == [("profile of {name}", False)]
@@ -229,5 +236,8 @@ class TestTalkingFramePlace:
         path = next(pathlib.Path(slr.__file__).parents[1].joinpath("migrations").glob("*talking_frames_get_the_place*.py"))
         mod = importlib.import_module(f"poindexter.services.migrations.{path.stem}")
         news = {key: new for key, _, new in mod.ROWS}
-        assert news == {"story_talking_frame_template": DEFAULTS["story_talking_frame_template"],
-                        "story_talking_framings": DEFAULTS["story_talking_framings"]}
+        assert news["story_talking_frame_template"] == DEFAULTS["story_talking_frame_template"]
+        # The next migration moves the framings on from this one's value to today's default.
+        path = next(pathlib.Path(slr.__file__).parents[1].joinpath("migrations").glob("*close_up_talking_frames*.py"))
+        later = importlib.import_module(f"poindexter.services.migrations.{path.stem}")
+        assert later.OLD == news["story_talking_framings"] and later.NEW == DEFAULTS["story_talking_framings"]

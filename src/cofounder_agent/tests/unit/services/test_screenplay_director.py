@@ -291,7 +291,9 @@ class TestVisuals:
 def test_pack_prompt_renders():
     from poindexter.services.prompt_manager import get_prompt_manager
 
-    text = get_prompt_manager().get_prompt("story.shot_visuals", title="t", logline="l", shot_rows="- id 1: x")
+    text = get_prompt_manager().get_prompt(
+        "story.shot_visuals", title="t", logline="l", shot_rows="- id 1: x", props_block="(none)",
+    )
     assert '{"shots"' in text and "- id 1: x" in text
 
 

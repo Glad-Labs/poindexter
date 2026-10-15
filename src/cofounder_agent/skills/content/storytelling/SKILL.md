@@ -20,6 +20,9 @@ metadata:
     - key: story.shot_visuals
       output_format: json
       description: 'Shot visuals for a screenplay video — the piece''s title/logline and one row per non-talking shot (scene setting, what happens, who is visible, animated or still) in; JSON {"shots": [{id, prompt, motion}]} out. Style and character looks are added in code, so prompts describe composition and action only. Used by services.screenplay_director.write_visuals.'
+    - key: story.props
+      output_format: json
+      description: 'Production design for a screenplay video: the title, logline and the numbered beats in; JSON {"props": [{name, look}]} out, one fixed design for each object the story turns on (at most story_max_props). Validated in code (a name and a look each, no repeats). Each look is added to every picture that shows the prop, so the object is drawn the same in every shot. Used by services.screenplay_director.design_props.'
     - key: story.casting
       output_format: json
       description: "Casting for an animated piece: the request (topic, brief, format, length), the existing characters, a required cast, a style hint and the voice catalog in; JSON art style, narrator and characters out, each one either a reused character id or a new character with name, role, appearance, personality, voice, energy and a sample line. Validated in code (reused ids exist, voices are in the catalog, every new character has looks). Used by services.casting.cast_characters, which then draws each new character's portrait and builds its voice."
@@ -208,6 +211,10 @@ should paint for it.
 SHOTS
 {shot_rows}
 
+THE PROPS
+Each object below has one design for the whole piece. When a shot shows one, describe it with these words, at this size, so it is the same object in every shot:
+{props_block}
+
 FOR EVERY SHOT
 - "prompt": one or two sentences describing the picture: camera framing (wide, medium or close-up), where the visible characters are and what they are doing, the key objects, and the lighting and mood of the scene.
 - Compose every picture like a frame from a cinematic animated film: one clear subject, a strong silhouette, and a bold composition. Use either a wide frame with plenty of empty space around a small figure, a low or high angle that makes the moment feel big, or a tight close-up on a face, a hand or an object. The audience should read the picture in one glance.
@@ -215,6 +222,7 @@ FOR EVERY SHOT
 - A reaction row shows the listed characters listening to the speaker: their face and body answering what was just said. The speaker's words stay spoken; the picture shows the people in the room.
 - When a line uses a comparison or an analogy, picture the characters talking it through in the scene, with at most one prop from it in their hands or on a surface.
 - Name visible characters by their id; their looks and the art style are added later, so describe only composition and action.
+- Light every visible character so their face and colours read: the audience knows them by their looks, so even a dark or dramatic shot keeps them in the light.
 - Draw only the characters a row lists as visible. Anyone else the row names, such as a narrator, is a voice heard over the picture.
 - Vary the framing from shot to shot (wide, medium, close-up, over the shoulder) while the place stays the same.
 - Keep pictures free of written words, signs and screens with text.
@@ -223,6 +231,31 @@ FOR EVERY SHOT
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
 {{"shots": [{{"id": 3, "prompt": "medium shot of dex at a cluttered workbench, holding a glowing graphics card up to the light, warm lamp glow", "motion": "slow push-in as dex turns the card in his paws"}}]}}
+```
+
+## story.props
+
+```text
+You are the production designer for an animated short. Before anything is drawn, you design the objects the story turns on, once, so every shot draws the same object.
+
+THE PIECE
+Title: {title}
+Logline: {logline}
+
+THE STORY, beat by beat
+{beats}
+
+WHICH OBJECTS
+Design the objects the story depends on: an object that appears in two or more beats, or one the plot turns on. Leave out the characters, the places, and anything seen once in passing. At most {max_props}.
+
+FOR EACH OBJECT
+- "name": the plain words the script uses for it, two or three words.
+- "look": one sentence an illustrator can draw from without reading the script: its shape, its material, its colour, and its size against a person or a hand (it fits in a palm, it reaches a person's knee, it is taller than a door). When the story changes it, describe how it starts.
+- Keep each object at a size where everything the story does with it can happen: whatever a character must reach into, lift, drop things into or see inside, size it so that works.
+
+OUTPUT
+Reply with one JSON object and nothing else, shaped like this:
+{{"props": [{{"name": "...", "look": "..."}}]}}
 ```
 
 ## story.casting

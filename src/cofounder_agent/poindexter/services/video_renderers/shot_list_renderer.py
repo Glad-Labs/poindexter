@@ -3201,9 +3201,10 @@ async def _render_reference_still(
     paths, names = await _reference_portraits(
         (wanted or list(ctx.cast))[: rf.MAX_REFERENCES], ctx,
         work_dir=work_dir, site_config=site_config, http_client_factory=http_client_factory,
-        # A still is drawn from the characters' model sheets; a talking frame
-        # (speakers) faces the viewer and keeps the front portrait.
-        # A wider talking setup shows the body: drawn from the sheet too.
+        # A still is drawn from the characters' model sheets. A talking frame
+        # (speakers) uses the sheet when its setup says full_body
+        # (story_talking_framings), which every default setup does; one that
+        # does not keeps the front portrait.
         sheets=bool(wanted) and (not speakers or bool(getattr(shot, "frame_full_body", False))),
     )
     if not paths and wanted and not speakers:

@@ -435,6 +435,14 @@ class VideoShotList(BaseModel):
         default_factory=dict,
         description="Per-piece portrait URL by persona slug, overriding persona.<slug>.portrait_url",
     )
+    # The production design (screenplay_director.design_props): one fixed look
+    # per object the story turns on. Every picture that shows a prop already
+    # carries its look; kept here so a storyboard revision redraws a shot
+    # with the same design as the shots around it.
+    props: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="Prop designs: [{name, look}], one per object the story turns on",
+    )
     director_model: str = Field(..., description="LLM model that produced this shot list")
     director_prompt_version: str = Field(..., description="Prompt version (e.g. 'v1') for traceability")
     director_decided_at: datetime = Field(..., description="When the director produced this output")

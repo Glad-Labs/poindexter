@@ -1079,8 +1079,11 @@ DEFAULTS: dict[str, str] = {
     # Signal Glitch's talking frames took the style's "rain-slick streets"
     # and drew a street (2026-10-15). A framing with full_body draws from the
     # model sheet's full-body view, not the head-and-shoulders portrait.
+    # Every setup does since The Battery Drop (2026-10-15): Bolt's portrait
+    # shows him in his car, and his portrait-drawn close-ups came out a
+    # dark-faced mouse in a sweater.
     'story_talking_frame_template': '{style}, {framing}, alone in the frame and talking, in {place}; {setting}',
-    'story_talking_framings': '[{"framing": "head-and-shoulders close-up of {name}, facing the viewer, the picture cropped just below the shoulders", "full_body": false}, {"framing": "medium shot of {name} from the waist up, turned three-quarters to one side", "full_body": true}, {"framing": "medium-wide shot of {name} standing in the scene from the knees up, turned slightly to one side", "full_body": true}]',
+    'story_talking_framings': '[{"framing": "head-and-shoulders close-up of {name}, facing the viewer, the picture cropped just below the shoulders", "full_body": true}, {"framing": "medium shot of {name} from the waist up, turned three-quarters to one side", "full_body": true}, {"framing": "medium-wide shot of {name} standing in the scene from the knees up, turned slightly to one side", "full_body": true}]',
     # The presenter's OWN negative prompt for the S2V render. The shared Wan
     # negative (video_comfyui_negative_prompt) is tuned for hero i2v clips and
     # PUNISHES stillness — 静态 (static), 静止 (still), 静止不动的画面 (motionless
@@ -3491,6 +3494,10 @@ DEFAULTS: dict[str, str] = {
     'story_max_animated_shots': '-1',
     'story_max_talking_shots': '-1',
     'story_visuals_model': '',
+    # Production design: at most this many props (the objects a story turns
+    # on) get one fixed look, carried on every picture that shows them.
+    # 0 turns it off.
+    'story_max_props': '4',
     # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
@@ -7831,6 +7838,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_max_animated_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_max_talking_shots': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'story_visuals_model': {'owner': 'screenplay_director'},
+    'story_max_props': {'owner': 'screenplay_director', 'value_type': 'integer'},
     'persona.presenter.personality': {'owner': 'media_policy', 'value_type': 'string'},
     'image_fanout_enabled': {'value_type': 'boolean'},
     'image_fanout_candidates': {'value_type': 'string'},

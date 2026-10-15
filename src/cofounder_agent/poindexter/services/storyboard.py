@@ -400,10 +400,20 @@ async def revise_storyboard(
         task_id=None, what="storyboard revision", phase="story_revise_storyboard",
     )
     changed: dict[int, str] = {int(s["id"]): str(s["prompt"]).strip() for s in reply["shots"]}
+    from poindexter.services.screenplay_director import with_props
+
+    props = list(listing.get("props") or [])
+    cast_words = {
+        str(w).lower() for shot in listing.get("shots") or []
+        for w in [*(shot.get("characters") or []), shot.get("speaker") or ""] if w
+    }
     for shot in listing.get("shots") or []:
         if shot.get("idx") in changed:
-            key = "frame_prompt" if shot.get("source") == "presenter" and shot.get("speaker") else "prompt"
-            shot[key] = changed[shot["idx"]][:2000]
+            talking = shot.get("source") == "presenter" and shot.get("speaker")
+            key = "frame_prompt" if talking else "prompt"
+            # A rewritten picture keeps the props' one design.
+            text = changed[shot["idx"]] if talking else with_props(changed[shot["idx"]], props, cast_words)
+            shot[key] = text[:2000]
     version = len(payload.get("revisions") or []) + 2
     before = {r["idx"]: r.get("image_url") for r in rows}
     plates = dict(payload.get("plates") or {})
@@ -538,6 +548,10 @@ async def restory_storyboard(
         sub, list(voiced["timeline"]), float(voiced["duration_s"]),
         site_config=site_config, style=look, pool=pool,
         cast_portraits=dict(old_listing.get("cast_portraits") or {}),
+        # The props keep their design, so a carried-over picture and a redrawn
+        # one show the same object. A listing from before props were designed
+        # (no key) designs them now.
+        props=old_listing.get("props") if "props" in old_listing else None,
     )
     urls, redraw, changed = carry_over(previous, listing, list(voiced["timeline"]), sub)
     mp3 = str(work / "dialogue.mp3")

@@ -492,6 +492,7 @@ async def write_visuals(
     site_config: Any,
     pool: Any = None,
     task_id: str | None = None,
+    props: list[dict[str, str]] | None = None,
 ) -> tuple[dict[int, dict[str, str]], str]:
     """One LLM call: picture + motion for every non-talking shot.
 
@@ -518,6 +519,7 @@ async def write_visuals(
         title=str(screenplay.get("title") or ""),
         logline=str(screenplay.get("logline") or ""),
         shot_rows=rows,
+        props_block=_props_block(props or []),
     )
     try:
         raw = await ollama_chat_text(
@@ -549,6 +551,122 @@ async def write_visuals(
         logger.info("[director] shot-visuals skipped %d of %d shots; they use the scene setting",
                     missing, len(wanted))
     return out, model
+
+
+def _cast_words(screenplay: dict[str, Any], site_config: Any) -> set[str]:
+    """Every word that names a cast member (id or display name), lowercased."""
+    from poindexter.services.persona_service import get_persona
+
+    words: set[str] = set()
+    for slug in screenplay.get("cast") or []:
+        words.add(str(slug).lower())
+        persona = get_persona(site_config, slug) if site_config is not None else None
+        for w in str(getattr(persona, "display_name", "") or "").lower().split():
+            words.add(w)
+    return words
+
+
+def _mentions(text: str, name: str, cast_words: set[str]) -> bool:
+    """Whether a picture shows a prop: its whole name, or its last word.
+
+    The last word alone ("tube") finds the prop however a shot words it
+    ("the glass tube", "the tube's mouth"), except when that word also names a
+    cast member: "bolts" the scrap must not match Bolt the mouse.
+    """
+    import re
+
+    low = text.lower()
+    if name.lower() in low:
+        return True
+    head = name.lower().split()[-1] if name.split() else ""
+    stem = head[:-1] if head.endswith("s") and len(head) > 3 else head
+    if not stem or stem in cast_words or f"{stem}s" in cast_words:
+        return False
+    return re.search(rf"\b{re.escape(stem)}(e?s)?\b", low) is not None
+
+
+def with_props(picture: str, props: list[dict[str, str]], cast_words: set[str]) -> str:
+    """The picture with each prop it shows described in the prop's one design.
+
+    "The Battery Drop" storyboard (2026-10-15): the glass tube the story
+    turns on was a knee-high tube, a giant pipe Cinder stood inside, a
+    drinking glass and a manhole across 19 shots, because each prompt
+    described it afresh. A prop is designed once (``design_props``) and its
+    look rides on every picture that shows it.
+    """
+    out = picture.rstrip(" .")
+    for prop in props:
+        name, look = str(prop.get("name") or ""), str(prop.get("look") or "")
+        if name and look and look not in out and _mentions(picture, name, cast_words):
+            out = f"{out}. The {name}: {look}"
+    return out
+
+
+def _parse_props(blob: Any, limit: int) -> list[dict[str, str]]:
+    props: list[dict[str, str]] = []
+    for item in (blob.get("props") or []) if isinstance(blob, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        name = " ".join(str(item.get("name") or "").split())[:60]
+        look = " ".join(str(item.get("look") or "").split())[:300]
+        if name and look and name.lower() not in {p["name"].lower() for p in props}:
+            props.append({"name": name, "look": look})
+    return props[:limit]
+
+
+async def design_props(
+    screenplay: dict[str, Any],
+    *,
+    site_config: Any,
+    pool: Any = None,
+    task_id: str | None = None,
+) -> list[dict[str, str]]:
+    """The production design: one fixed look for each object the story turns on.
+
+    One ``story.props`` call over the final script (props change across the
+    editor's rounds, so the outline's would be stale). ``story_max_props`` = 0
+    turns it off. A failed call returns no props, logged: every shot then
+    describes its objects on its own, as before.
+    """
+    from poindexter.services.llm_text import ollama_chat_text
+    from poindexter.services.prompt_manager import get_prompt_manager
+    from poindexter.services.screenplay import _numbered_view
+    from poindexter.utils.json_extract import extract_json_object
+
+    limit = site_config.get_int("story_max_props", 4)
+    if limit <= 0:
+        return []
+    model = str(site_config.get("story_visuals_model", "") or "").strip()
+    if not model:
+        from poindexter.services.llm_text import resolve_local_writer_model
+
+        model = resolve_local_writer_model(site_config=site_config)
+    prompt = get_prompt_manager().get_prompt(
+        "story.props",
+        title=str(screenplay.get("title") or ""),
+        logline=str(screenplay.get("logline") or ""),
+        beats=_numbered_view(screenplay),
+        max_props=str(limit),
+    )
+    try:
+        raw = await ollama_chat_text(
+            prompt, model=model, site_config=site_config, pool=pool, task_id=task_id,
+            phase="story_props", timeout_setting="story_writer_timeout_seconds",
+            timeout_default=300.0, think=False, response_format={"type": "json_object"},
+        )
+    except Exception as exc:  # noqa: BLE001 — shots describe their own objects without it
+        logger.warning("[director] prop design failed (%s: %s); each shot describes its objects",
+                       type(exc).__name__, exc)
+        return []
+    props = _parse_props(extract_json_object(raw or "") or {}, limit)
+    logger.info("[director] designed %d prop(s): %s", len(props), ", ".join(p["name"] for p in props))
+    return props
+
+
+def _props_block(props: list[dict[str, str]]) -> str:
+    if not props:
+        return "(none)"
+    return "\n".join(f"- {p['name']}: {p['look']}" for p in props)
 
 
 def _talking_setups(site_config: Any) -> list[tuple[str, bool]]:
@@ -644,6 +762,8 @@ def build_shot_list(
     director_model: str,
     site_config: Any = None,
     cast_portraits: dict[str, str] | None = None,
+    props: list[dict[str, str]] | None = None,
+    cast_words: set[str] | None = None,
 ) -> dict[str, Any]:
     """Assemble and validate the ``VideoShotList``. Raises DirectorError."""
     from pydantic import ValidationError
@@ -678,8 +798,10 @@ def build_shot_list(
             note = "; ".join(p for p in (s.get("delivery"), s.get("setting")) if p)
             if note:
                 shot["prompt"] = note[:2000]
-            shot["frame_prompt"] = _with_palette(
-                _talking_frame_prompt(s, style, site_config), palette, site_config, 1500)
+            # The setting can name a prop ("light over a translucent disposal
+            # tube"), which a talking frame may then draw in the background.
+            frame = with_props(_talking_frame_prompt(s, style, site_config), list(props or []), set(cast_words or ()))
+            shot["frame_prompt"] = _with_palette(frame, palette, site_config, 1500)
             if _talking_setup(s, site_config)[1]:
                 shot["frame_full_body"] = True
         elif s["kind"] == "landscape":
@@ -694,6 +816,7 @@ def build_shot_list(
             seen = visuals.get(i) or {}
             picture = seen.get("prompt") or f"{s['setting']}. {s['beat_text']}".strip(". ")
             shot["intent"] = picture[:200] or "scene"
+            picture = with_props(picture, list(props or []), set(cast_words or ()))
             shot["prompt"] = _with_palette(f"{style}, {picture}" if style else picture, palette, site_config, 1500)
             if s["source"] == "generative":
                 shot["motion"] = (seen.get("motion") or DEFAULT_MOTION)[:500]
@@ -719,6 +842,7 @@ def build_shot_list(
             "director_prompt_version": DIRECTOR_PROMPT_VERSION,
             "director_decided_at": datetime.now(timezone.utc),
             "cast_portraits": dict(cast_portraits or {}),
+            "props": list(props or []),
         })
     except ValidationError as exc:
         raise DirectorError(f"the planned shot list does not validate: {exc}") from exc
@@ -735,12 +859,23 @@ async def direct_screenplay(
     pool: Any = None,
     task_id: str | None = None,
     cast_portraits: dict[str, str] | None = None,
+    props: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """Shot list for a voiced screenplay.
+
+    ``props``: an earlier pass's prop designs (a storyboard revision keeps
+    them, so a redrawn shot matches the ones it sits between); ``None``
+    designs them from this script.
+    """
     plan = assign_sources(plan_shots(screenplay, timeline, track_seconds, site_config), site_config)
-    visuals, model = await write_visuals(plan, screenplay, site_config=site_config, pool=pool, task_id=task_id)
+    if props is None:
+        props = await design_props(screenplay, site_config=site_config, pool=pool, task_id=task_id)
+    visuals, model = await write_visuals(
+        plan, screenplay, site_config=site_config, pool=pool, task_id=task_id, props=props,
+    )
     listing = build_shot_list(
         plan, visuals, style=style, director_model=model, site_config=site_config,
-        cast_portraits=cast_portraits,
+        cast_portraits=cast_portraits, props=props, cast_words=_cast_words(screenplay, site_config),
     )
     counts: dict[str, int] = {}
     for s in listing["shots"]:
@@ -757,7 +892,9 @@ __all__ = [
     "DirectorError",
     "assign_sources",
     "build_shot_list",
+    "design_props",
     "direct_screenplay",
     "plan_shots",
+    "with_props",
     "write_visuals",
 ]
