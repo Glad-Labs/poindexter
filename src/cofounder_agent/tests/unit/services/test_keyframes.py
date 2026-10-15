@@ -71,6 +71,21 @@ class TestSchema:
         assert _shot().transition == "cut"
 
 
+class TestStreak:
+    def test_keyframes_moments_in_a_row_are_a_scene_in_motion_not_a_repeat(self):
+        """Circuit and the Song's storyboard (2026-10-15) failed: three keyframes
+        shots in a row read as one source repeated."""
+        from datetime import datetime, timezone
+
+        from poindexter.schemas.video_shot_list import VideoShotList
+
+        shots = [_shot().model_copy(update={"idx": i, "prompt": f"moment {i}", "narration_offset_s": 4.0 * i}).model_dump()
+                 for i in range(4)]
+        VideoShotList.model_validate({"aspect": "16:9", "timing": "exact", "total_duration_s": 16.0, "shots": shots,
+                                      "director_model": "m", "director_prompt_version": "v",
+                                      "director_decided_at": datetime.now(timezone.utc)})
+
+
 class TestDirector:
     @pytest.mark.parametrize(("mode", "source"), [(None, "keyframes"), ("animate", "generative")])
     def test_action_shots_are_keyframes_unless_the_studio_animates(self, mode, source):

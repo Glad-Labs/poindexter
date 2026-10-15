@@ -514,7 +514,7 @@ class VideoShotList(BaseModel):
             key: tuple[str, str | None]
             if s.source == "presenter":
                 key = (s.source, s.speaker)
-            elif s.source == "generative":
+            elif s.source in ("generative", "keyframes"):
                 key = (s.source, s.prompt)
             else:
                 key = (s.source, None)
