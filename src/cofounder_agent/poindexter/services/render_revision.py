@@ -78,14 +78,11 @@ async def plan_revision(
     listing = kept["shot_list"]
     rows = sb._rows(listing, kept["timeline"], {})
     drawable = {r["idx"] for r in rows if r["kind"] in (sb.TALKING, sb.STILL)}
-    table = "\n".join(
-        f"{r['idx']} | {r['kind']} | {r.get('speaker') or ', '.join(r.get('characters') or []) or '-'} | "
-        f"{r.get('words') or '-'} | {r.get('picture') or ''}"
-        for r in rows if r["idx"] in drawable
-    )
+    table = sb.revision_table(rows, drawable, listing)
+    cast = sb.listing_cast(listing)
 
     def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
-        return sb.check_revision(reply, drawable), []
+        return sb.check_revision(reply, drawable, cast), []
 
     reply, _ = await _ask_validated(
         "story.storyboard_revise",
@@ -93,12 +90,11 @@ async def plan_revision(
         _check, model=_resolve_model(site_config), site_config=site_config, pool=pool,
         task_id=task_id, what="render revision", phase="story_revise_render",
     )
-    changed = {int(str(s["id"])): str(s["prompt"]).strip() for s in reply["shots"]}
+    redrawn, changed = sb.apply_revision(listing, reply)
     for shot in listing.get("shots") or []:
-        if shot.get("idx") in changed:
-            field = "frame_prompt" if shot.get("source") == "presenter" and shot.get("speaker") else "prompt"
-            shot[field] = changed[shot["idx"]][:2000]
+        if shot.get("idx") in redrawn:
             # A changed picture is drawn anew, not taken from the storyboard.
+            # A motion-only change keeps it: the shot re-animates the same picture.
             shot.pop("frame_url", None)
     name = f"revision-{uuid.uuid4().hex[:8]}.json"
     (cache_dir / "revisions").mkdir(parents=True, exist_ok=True)

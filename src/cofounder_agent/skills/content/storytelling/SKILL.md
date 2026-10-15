@@ -369,7 +369,7 @@ You are the storyboard artist for a short animated piece. The operator has looke
 THE NOTE
 {instruction}
 
-THE SHOTS - number | talking (a character speaking to camera) or still | who is in it | the words heard over it | the picture prompt now
+THE SHOTS - number | talking (a character speaking to camera) or still | who is in it | the words heard over it | the picture prompt now | how an animated shot moves
 {shot_table}
 
 ART STYLE: {style}
@@ -381,10 +381,11 @@ HOW TO REVISE
 - A talking shot shows the speaker alone in the frame with the hands out of it: change the place, framing or expression, never add people.
 - Keep pictures free of written words, signs and screens with text.
 - For a still whose new picture shows different characters than the table lists, add "visible": the ids of everyone any part of whom is in the frame, or an empty list for a picture of only an object or the place. Leave it out when the same characters stay.
+- A shot with "moves:" is animated, and the note may be about its movement rather than its picture (it smears, the camera lurches, a face or body changes by the end). Give it a new "motion": one sentence, slow and simple, a held or gently drifting camera with one small movement in the picture. Leave "prompt" out to keep the picture as it is.
 
 OUTPUT
 Reply with one JSON object and nothing else, listing only the changed shots:
-{{"shots": [{{"id": 3, "prompt": "..."}}, {{"id": 5, "prompt": "...", "visible": []}}]}}
+{{"shots": [{{"id": 3, "prompt": "..."}}, {{"id": 5, "prompt": "...", "visible": []}}, {{"id": 7, "motion": "..."}}]}}
 ```
 
 ## story.score

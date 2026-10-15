@@ -192,6 +192,16 @@ class TestRevise:
                                          upload_prefix="drafts/b2")
         assert out["shot_list"]["shots"][1]["characters"] == []
 
+    def test_a_reply_may_change_only_the_motion(self):
+        assert sb.check_revision({"shots": [{"id": 1, "motion": "a held camera"}]}, {0, 1}) == []
+        assert any('"motion"' in e for e in sb.check_revision({"shots": [{"id": 1, "motion": 3}]}, {0, 1}))
+        assert any('"prompt"' in e for e in sb.check_revision({"shots": [{"id": 1}]}, {0, 1}))
+        listing = {"shots": [{"idx": 1, "source": "generative", "prompt": "p", "motion": "m", "characters": ["crow"]},
+                             {"idx": 2, "source": "image_gen", "prompt": "q", "characters": []}]}
+        redrawn, changed = sb.apply_revision(listing, {"shots": [{"id": 1, "motion": "held"}, {"id": 2, "motion": "x"}]})
+        assert redrawn == set() and changed == {1, 2}
+        assert listing["shots"][0]["motion"] == "held" and "motion" not in listing["shots"][1]  # a still has none
+
     def test_visible_names_only_the_cast(self):
         reply = {"shots": [{"id": 1, "prompt": "x", "visible": ["owl"]}]}
         assert any('"visible"' in e for e in sb.check_revision(reply, {0, 1}, {"fox", "crow"}))

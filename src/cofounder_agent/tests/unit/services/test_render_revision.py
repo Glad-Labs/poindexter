@@ -144,6 +144,24 @@ class TestRevision:
         assert "0 | talking | fox | fox: What a voice." in chat.await_args.args[0]
 
     @pytest.mark.asyncio
+    async def test_a_note_about_movement_keeps_the_picture_and_changes_the_motion(self, chat, tmp_path):
+        """The Battery Drop (2026-10-15): right pictures whose animation went
+        wrong at the end; a revision could only redraw them."""
+        listing = _listing()
+        listing["shots"][1].update(source="generative", motion="the camera follows the bolt down",
+                                   frame_url="https://cdn/approved.png")
+        clip_cache.save_inputs(str(tmp_path / "clips" / "t1"), audio_path=None, caption_path=None,
+                               shot_list=listing, timeline=TIMELINE, screenplay={"title": "Fable"})
+        chat.side_effect = [json.dumps({"shots": [{"id": 1, "motion": "a held camera; the liquid ripples"}]})]
+        plan = await rr.plan_revision(None, task_id="t1", instruction="shot 1 smears", site_config=_sc(tmp_path))
+        revised = json.loads((tmp_path / "clips" / "t1" / plan["shot_list_file"]).read_text())
+        assert plan["changed"] == [1]
+        assert revised["shots"][1]["motion"] == "a held camera; the liquid ripples"
+        assert revised["shots"][1]["frame_url"] == "https://cdn/approved.png"  # the approved picture stays
+        assert revised["shots"][1]["prompt"] == "ink, the crow preening"
+        assert "| moves: the camera follows the bolt down" in chat.await_args.args[0]
+
+    @pytest.mark.asyncio
     async def test_a_revision_of_a_revision_finds_the_source_cache(self, kept_render, tmp_path):
         (kept_render / "refs").mkdir()
         (kept_render / "refs" / "t2.txt").write_text("t1")

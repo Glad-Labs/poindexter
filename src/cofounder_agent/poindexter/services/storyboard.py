@@ -362,14 +362,76 @@ def check_revision(reply: dict[str, Any], known: set[int], cast: set[str] | None
             continue
         if sid not in known:
             errors.append(f"FIX shot {i}: there is no shot {sid}; use one of {sorted(known)}")
-        if not str(item.get("prompt") or "").strip():
-            errors.append(f'FIX shot {sid}: write the new "prompt"')
+        motion = item.get("motion")
+        if motion is not None and not isinstance(motion, str):
+            errors.append(f'FIX shot {sid}: "motion" is one sentence of text, or is left out')
+        if not str(item.get("prompt") or "").strip() and not str(motion or "").strip():
+            errors.append(f'FIX shot {sid}: write the new "prompt", or a new "motion" for an animated shot')
         seen = item.get("visible")
         if seen is not None and (
             not isinstance(seen, list) or any(str(c).strip().lower() not in (cast or set()) for c in seen)
         ):
             errors.append(f'FIX shot {sid}: "visible" lists character ids from {sorted(cast or set())}, or is left out')
     return errors
+
+
+def revision_table(rows: list[dict[str, Any]], drawable: set[int], listing: dict[str, Any]) -> str:
+    """The shot table a revision note is read against; an animated shot shows how it moves."""
+    motions = {
+        s.get("idx"): str(s.get("motion") or "").strip()
+        for s in listing.get("shots") or [] if s.get("source") == "generative"
+    }
+    return "\n".join(
+        f"{r['idx']} | {r['kind']} | {r.get('speaker') or ', '.join(r.get('characters') or []) or '-'} | "
+        f"{r.get('words') or '-'} | {r.get('picture') or ''}"
+        + (f" | moves: {motions[r['idx']]}" if motions.get(r["idx"]) else "")
+        for r in rows if r["idx"] in drawable
+    )
+
+
+def listing_cast(listing: dict[str, Any]) -> set[str]:
+    """Everyone a listing draws, by id."""
+    return {
+        str(c).lower() for shot in listing.get("shots") or []
+        for c in [*(shot.get("characters") or []), shot.get("speaker") or ""] if c
+    }
+
+
+def apply_revision(listing: dict[str, Any], reply: dict[str, Any]) -> tuple[set[int], set[int]]:
+    """Apply a ``story.storyboard_revise`` reply to ``listing`` in place.
+
+    Returns ``(redrawn, changed)``: the shots whose picture changes, and every
+    shot the reply touches. A reply can change only an animated shot's
+    ``motion`` and keep its picture: The Battery Drop's render (2026-10-15)
+    had right pictures whose movement went wrong ("the camera follows the
+    bolt as it falls" ended in two seconds of blur; "lifted quickly" gave
+    Cinder another face by the end), and a revision could only redraw them.
+    """
+    from poindexter.services.screenplay_director import with_props
+
+    props = list(listing.get("props") or [])
+    cast = listing_cast(listing)
+    by_id = {int(str(item["id"])): item for item in reply.get("shots") or []}
+    redrawn: set[int] = set()
+    for shot in listing.get("shots") or []:
+        item = by_id.get(shot.get("idx"))
+        if item is None:
+            continue
+        talking = shot.get("source") == "presenter" and shot.get("speaker")
+        prompt = str(item.get("prompt") or "").strip()
+        if prompt:
+            # A rewritten picture keeps the props' one design.
+            text = prompt if talking else with_props(prompt, props, cast)
+            shot["frame_prompt" if talking else "prompt"] = text[:2000]
+            redrawn.add(shot["idx"])
+        if not talking and isinstance(item.get("visible"), list):
+            # Who the new picture shows: their references are drawn in.
+            shot["characters"] = [str(c).strip().lower() for c in item["visible"]]
+            redrawn.add(shot["idx"])
+        motion = str(item.get("motion") or "").strip()
+        if motion and shot.get("source") == "generative":
+            shot["motion"] = motion[:500]
+    return redrawn, set(by_id) & {s.get("idx") for s in listing.get("shots") or []}
 
 
 async def revise_storyboard(
@@ -389,16 +451,8 @@ async def revise_storyboard(
     listing = json.loads(json.dumps(payload["shot_list"]))
     rows = payload.get("shots") or []
     drawable = {r["idx"] for r in rows if r.get("kind") in (TALKING, STILL)}
-    table = "\n".join(
-        f"{r['idx']} | {r['kind']} | {r.get('speaker') or ', '.join(r.get('characters') or []) or '-'} | "
-        f"{r.get('words') or '-'} | {r.get('picture') or ''}"
-        for r in rows if r["idx"] in drawable
-    )
-
-    cast = {
-        str(c).lower() for shot in listing.get("shots") or []
-        for c in [*(shot.get("characters") or []), shot.get("speaker") or ""] if c
-    }
+    table = revision_table(rows, drawable, listing)
+    cast = listing_cast(listing)
 
     def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
         return check_revision(reply, drawable, cast), []
@@ -409,29 +463,14 @@ async def revise_storyboard(
         _check, model=_resolve_model(site_config), site_config=site_config, pool=pool,
         task_id=None, what="storyboard revision", phase="story_revise_storyboard",
     )
-    changed: dict[int, str] = {int(s["id"]): str(s["prompt"]).strip() for s in reply["shots"]}
-    visible = {
-        int(s["id"]): [str(c).strip().lower() for c in s["visible"]]
-        for s in reply["shots"] if isinstance(s.get("visible"), list)
-    }
-    from poindexter.services.screenplay_director import with_props
-
-    props = list(listing.get("props") or [])
-    for shot in listing.get("shots") or []:
-        if shot.get("idx") in changed:
-            talking = shot.get("source") == "presenter" and shot.get("speaker")
-            key = "frame_prompt" if talking else "prompt"
-            # A rewritten picture keeps the props' one design.
-            text = changed[shot["idx"]] if talking else with_props(changed[shot["idx"]], props, cast)
-            shot[key] = text[:2000]
-            if not talking and shot["idx"] in visible:
-                # Who the new picture shows: their references are drawn in.
-                shot["characters"] = visible[shot["idx"]]
+    # A storyboard is pictures: a motion-only change keeps the picture and
+    # rides on the shot list to the render.
+    redrawn, changed = apply_revision(listing, reply)
     version = len(payload.get("revisions") or []) + 2
     before = {r["idx"]: r.get("image_url") for r in rows}
     plates = dict(payload.get("plates") or {})
     urls = await _draw_shots(
-        listing, set(changed), work=Path(tempfile.mkdtemp(prefix="storyboard-")),
+        listing, redrawn, work=Path(tempfile.mkdtemp(prefix="storyboard-")),
         site_config=site_config, pool=pool, upload_prefix=upload_prefix, version_tag=f"-v{version}",
         existing=before, plates=plates,
     )
