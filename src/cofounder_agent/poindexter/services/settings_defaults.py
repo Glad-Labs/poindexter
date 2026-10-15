@@ -3432,13 +3432,19 @@ DEFAULTS: dict[str, str] = {
     # the writer revises, up to story_edit_rounds rounds (0 = off). A "story"
     # needs at least story_min_story_seconds (0 = no floor); a shorter one
     # asked for explicitly is refused with the 'sketch' format suggested.
-    'story_edit_rounds': '2',
+    # Rounds stop as soon as the reader follows it and the editor calls it
+    # ready; 2 left "The Boy Who Cried Wolf" with five confusions open.
+    'story_edit_rounds': '4',
     'story_edit_max_notes': '6',
     'story_editor_model': '',
     # The cold read (screenplay.cold_read): a reader given only the lines and
     # actions tells the story back; what it could not follow becomes the
     # editor's first notes. Empty = the editor's model.
     'story_cold_read_model': '',
+    # The continuity check (screenplay.continuity): beats that contradict
+    # what came before; each is a note the editor must address. Empty = the
+    # editor's model.
+    'story_continuity_model': '',
     # Tales a screenplay may adapt (screenplay_source; Matt, 2026-10-14:
     # borrow a storyline that already makes sense). Public-domain traditional
     # tales only: the list is what makes a retelling free to make.
@@ -6896,6 +6902,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_edit_max_notes': {'owner': 'screenplay', 'value_type': 'integer'},
     'story_editor_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_cold_read_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_continuity_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_source_tales': {'owner': 'screenplay', 'value_type': 'json'},
     'story_min_story_seconds': {'owner': 'screenplay', 'value_type': 'float'},
     'story_talking_framings': {'owner': 'screenplay_director', 'value_type': 'json'},

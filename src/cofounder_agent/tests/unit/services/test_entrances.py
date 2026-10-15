@@ -119,3 +119,29 @@ class TestDirector:
         first = next(s for s in plan if s["kind"] != "talk")
         assert set(first["characters"]) == {"nova"} or set(first["characters"]) == {"dex", "nova"}
         assert first["scene_cast"] == ["dex", "nova"]
+
+
+class TestOffscreen:
+    """A voice heard before its speaker enters (Mara through Cinder's ring,
+    the wolf adaptation, 2026-10-14) is a line, not a broken entrance."""
+
+    def test_an_offscreen_line_may_come_before_the_entrance(self):
+        beats = sp.normalize_beats([
+            {"kind": "line", "speaker": "nova", "text": "Twice now.", "offscreen": True},
+            _action("Nova flickers in", ["nova"], enters=["nova"]), _line("nova"),
+        ])
+        assert beats[0]["offscreen"] is True and "offscreen" not in beats[2]
+        assert sp.check_beats(beats, "s1", _request()) == []
+
+    def test_the_picture_stays_on_whoever_is_listening(self):
+        timeline = [
+            {"scene_id": "s1", "kind": "line", "speaker": "dex", "text": "a", "start_s": 0.0, "end_s": 4.0},
+            {"scene_id": "s1", "kind": "line", "speaker": "nova", "text": "Twice now.", "offscreen": True,
+             "start_s": 4.0, "end_s": 6.0},
+            {"scene_id": "s1", "kind": "action", "speaker": None, "text": "Nova flickers in",
+             "characters": ["nova"], "enters": ["nova"], "start_s": 6.0, "end_s": 9.0},
+        ]
+        plan = sd.plan_shots(SCREENPLAY, timeline, 9.0, _sc())
+        heard = [s for s in plan if s["beat_text"] == "Twice now."]
+        assert heard and all(s["kind"] == "reaction" and s["characters"] == ["dex"] for s in heard)
+        assert not [s for s in plan if s["kind"] == "talk" and s.get("speaker") == "nova"]

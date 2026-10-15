@@ -179,6 +179,12 @@ def plan_shots(
             seg = {**seg, "start_s": seg["start_s"] + held}
             length -= held
         established.add(seg.get("scene_id"))
+        if seg.get("kind") == "line" and seg.get("offscreen"):
+            # Heard, not seen: the picture stays on whoever is listening.
+            for start, piece in _split(seg["start_s"], length, max_shot):
+                plan.append({**base, "kind": "reaction", "start_s": start, "length": piece,
+                             "speaker": None, "characters": _listeners(scene_cast, speaker) or list(scene_cast)})
+            continue
         if seg.get("kind") == "line" and speaker in talkable and (
             max_talking < 0 or talking < max_talking
         ):

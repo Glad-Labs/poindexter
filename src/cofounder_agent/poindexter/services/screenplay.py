@@ -225,9 +225,10 @@ def _source_block(request: ScreenplayRequest) -> str:
         f"SOURCE: adapt the traditional tale \"{request.source}\" (the public-domain tale, "
         "never a film or other modern version). Keep its plot: the same want, the same "
         "obstacles in the same order, the same turn and the same ending, with its cause and "
-        "effect intact. Set it in this world with this cast and change only the surface "
-        "(names, places, objects) to fit. When the length cannot hold every beat, keep the "
-        "beats the ending depends on."
+        "effect intact. Tell it in this piece's world with this cast: translate each of "
+        "the tale's elements into this world's equivalent (see TRANSLATE AN ADAPTED TALE), "
+        "so nothing from the tale's own setting appears unless it already belongs here. "
+        "When the length cannot hold every beat, keep the beats the ending depends on."
     )
 
 
@@ -284,6 +285,10 @@ def normalize_beats(raw_beats: Any) -> list[dict[str, Any]]:
             item["delivery"] = str(beat.get("delivery") or "").strip()
             intensity = str(beat.get("intensity") or "").strip().lower()
             item["intensity"] = intensity if intensity in INTENSITIES else "medium"
+            # Heard, not seen (over a radio, through a wall): the line is
+            # voiced, the picture stays on whoever is in the scene.
+            if beat.get("offscreen") is True or str(beat.get("offscreen")).strip().lower() == "true":
+                item["offscreen"] = True
         else:
             item["characters"] = _csv_or_list(beat.get("characters"))
             # Who arrives or leaves in this action: the director keeps a
@@ -342,10 +347,19 @@ def normalize_outline(raw: dict[str, Any]) -> dict[str, Any]:
             locations.append({"id": scene["location"], "description": scene["setting"]})
     spine_value = raw.get("spine")
     spine_raw: dict[str, Any] = spine_value if isinstance(spine_value, dict) else {}
+    translation = [
+        {"tale": str(t.get("tale") or "").strip(), "here": str(t.get("here") or "").strip()}
+        for t in raw.get("translation") or [] if isinstance(t, dict)
+    ]
     return {
         "title": str(raw.get("title") or "").strip(),
         "logline": str(raw.get("logline") or "").strip(),
         "spine": {k: str(spine_raw.get(k) or "").strip() for k in SPINE_PARTS},
+        # The event the piece is about, shown on screen; and, for an adapted
+        # tale, how each of its elements translates into this world (Matt,
+        # 2026-10-14: a rooftop pasture is no cyberpunk wolf story).
+        "main_event": str(raw.get("main_event") or "").strip(),
+        "translation": [t for t in translation if t["tale"] and t["here"]],
         "locations": locations,
         "scenes": scenes,
     }
@@ -394,10 +408,22 @@ def _palette_problems(sid: str, palette: str, names: list[str], site_config: Any
 
 
 def check_outline(
-    outline: dict[str, Any], request: ScreenplayRequest, site_config: Any = None,
+    outline: dict[str, Any], request: ScreenplayRequest, site_config: Any = None, *, new: bool = False,
 ) -> list[str]:
-    """Hard problems with a normalized outline."""
+    """Hard problems with a normalized outline.
+
+    ``new``: a freshly written outline must also name its ``main_event`` (a
+    story) and, adapting a tale, its ``translation``; a revision of a script
+    written before them is not held to it.
+    """
     errors: list[str] = []
+    if new and request.format == "story" and not outline.get("main_event"):
+        errors.append('FIX: add "main_event": the one event the piece is about, shown on screen')
+    if new and request.source and len(outline.get("translation") or []) < 3:
+        errors.append(
+            'FIX: add "translation": each of the tale\'s key elements (hero, what they guard or want, '
+            'the threat, the people around them, key objects and acts) with its equivalent in this world',
+        )
     cast = set(request.cast)
     names = _cast_names(request, site_config)
     if not outline["title"]:
@@ -483,7 +509,7 @@ def _check_entrances(beats: list[dict[str, Any]], scene_id: str) -> list[str]:
     entering = {n for b in beats if b["kind"] == "action" for n in b.get("enters", [])}
     away = set(entering)  # those who enter are away until they do
     for beat in beats:
-        if beat["kind"] == "line" and beat.get("speaker") in away:
+        if beat["kind"] == "line" and beat.get("speaker") in away and not beat.get("offscreen"):
             when = "before entering" if beat["speaker"] in entering else "after leaving"
             errors.append(
                 f"FIX scene {scene_id!r}: {beat['speaker']!r} speaks {when}; move the line, "
@@ -630,7 +656,12 @@ def _outline_text(outline: dict[str, Any]) -> str:
 
 def _spine_text(outline: dict[str, Any]) -> str:
     spine = outline.get("spine") or {}
-    return "\n".join(f"{k.capitalize()}: {spine.get(k) or '(unstated)'}" for k in SPINE_PARTS)
+    lines = [f"{k.capitalize()}: {spine.get(k) or '(unstated)'}" for k in SPINE_PARTS]
+    if outline.get("main_event"):
+        lines.append(f"Main event (shown on screen): {outline['main_event']}")
+    for item in outline.get("translation") or []:
+        lines.append(f"In the tale {item['tale']}; here {item['here']}")
+    return "\n".join(lines)
 
 
 def _scene_position(outline: dict[str, Any], index: int, opening: list[str]) -> str:
@@ -674,7 +705,7 @@ async def write_screenplay(
     ask = {"model": model, "site_config": site_config, "pool": pool, "task_id": task_id}
 
     def _check_outline(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
-        return check_outline(normalize_outline(reply), request, site_config), []
+        return check_outline(normalize_outline(reply), request, site_config, new=True), []
 
     raw_outline, _ = await _ask_validated(
         "story.outline", {**common, "scene_count": scene_count(request.target_seconds, site_config)},
@@ -725,7 +756,9 @@ async def write_screenplay(
 
     screenplay: dict[str, Any] = {
         "title": outline["title"], "logline": outline["logline"],
-        "spine": outline["spine"], "locations": outline.get("locations") or [], "scenes": scenes,
+        "spine": outline["spine"], "main_event": outline.get("main_event") or "",
+        "translation": outline.get("translation") or [],
+        "locations": outline.get("locations") or [], "scenes": scenes,
     }
     hard = validate(screenplay, request, site_config)
     if hard:
@@ -770,8 +803,9 @@ async def edit_screenplay(
     reads the whole screenplay, with a first-time viewer's account of it
     (:func:`cold_read`) beside the story the writer meant, and either calls it
     ready or gives up to ``story_edit_max_notes`` notes, which
-    :func:`revise_screenplay` applies. Up to ``story_edit_rounds`` rounds
-    (0 = off). Each round is kept under ``edit_rounds``. An editor or a
+    :func:`revise_screenplay` applies. Rounds continue until the reader
+    follows it and the editor calls it ready, up to ``story_edit_rounds``
+    (0 = off); confusions left after the last round go on the draft's notes. Each round is kept under ``edit_rounds``. An editor or a
     revision that fails ends the rounds with the last good draft, logged.
     """
     rounds = site_config.get_int("story_edit_rounds", 2)
@@ -796,6 +830,7 @@ async def edit_screenplay(
 
     for n in range(1, rounds + 1):
         read = await cold_read(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
+        clashes = await continuity(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
         try:
             reply, _ = await _ask_validated(
                 "story.edit_notes",
@@ -808,6 +843,7 @@ async def edit_screenplay(
                     "spine_block": _spine_text(screenplay),
                     "source_block": _source_block(request),
                     "cold_read": _cold_read_text(read),
+                    "continuity": "\n".join(f"- beat {c['beat']}: {c['problem']}" for c in clashes or []) or "none found",
                     "max_notes": max_notes,
                 },
                 _check, model=model, site_config=site_config, pool=pool, task_id=task_id,
@@ -819,13 +855,18 @@ async def edit_screenplay(
             break
         notes = [str(x).strip() for x in reply.get("notes") or [] if str(x).strip()][:max_notes]
         lost = list((read or {}).get("lost") or [])
-        if (str(reply.get("verdict")).strip().lower() == "ready" or not notes) and lost:
+        clash_notes = [f"Continuity: beat {c['beat']}: {c['problem']}" for c in clashes or []]
+        if (str(reply.get("verdict")).strip().lower() == "ready" or not notes) and (lost or clash_notes):
             # The editor may not call a script ready while a first-time viewer
-            # is lost in it: "The Last Bus Home" read as craft and made no
-            # sense (2026-10-14). The viewer's confusions are the notes.
-            notes = [f"A first-time viewer could not follow this; make it clear on screen: {x}" for x in lost][:max_notes]
+            # is lost in it ("The Last Bus Home", 2026-10-14) or a beat
+            # contradicts an earlier one ("Cinder Cries Wolf": "we came as
+            # fast as we could" after we watched them not come).
+            notes = [*clash_notes,
+                     *(f"A first-time viewer could not follow this; make it clear on screen: {x}" for x in lost)
+                     ][:max_notes]
+            lost = lost or clash_notes
         if (str(reply.get("verdict")).strip().lower() == "ready" and not lost) or not notes:
-            history.append({"round": n, "verdict": "ready", "cold_read": read})
+            history.append({"round": n, "verdict": "ready", "cold_read": read, "continuity": clashes})
             logger.info("[screenplay] editor round %d: ready", n)
             break
         logger.info("[screenplay] editor round %d: %d note(s): %s", n, len(notes), notes)
@@ -835,17 +876,28 @@ async def edit_screenplay(
                 site_config=site_config, pool=pool, task_id=task_id,
             )
         except ScreenplayError as exc:
+            # One bad revision ends nothing: the next round reads the draft
+            # again (the wolf adaptation's round 1 stopped the whole edit).
             logger.warning("[screenplay] revision for editor round %d failed (%s); keeping the draft", n, exc)
             history.append({"round": n, "notes": notes, "error": str(exc)[:300]})
-            break
-        history.append({"round": n, "notes": notes, "cold_read": read})
+            continue
+        history.append({"round": n, "notes": notes, "cold_read": read, "continuity": clashes})
         screenplay = revised
     else:
         # The last round's notes were applied unread: record what a viewer
-        # makes of the final script.
+        # makes of the final script, and say on the draft what is still
+        # unclear, so a lost reader is seen, not buried in a log.
         if history and "notes" in history[-1] and "error" not in history[-1]:
-            history.append({"final_cold_read": await cold_read(
-                screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)})
+            final = await cold_read(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
+            final_clashes = await continuity(screenplay, site_config=site_config, pool=pool, task_id=task_id, model=model)
+            history.append({"final_cold_read": final, "final_continuity": final_clashes})
+            still = [*(f"continuity: beat {c['beat']}: {c['problem']}" for c in final_clashes or []),
+                     *((final or {}).get("lost") or [])]
+            if still:
+                screenplay["notes"] = [
+                    *(screenplay.get("notes") or []),
+                    *(f"a first-time viewer still could not follow: {x}" for x in still),
+                ]
     screenplay["edit_rounds"] = history
     return screenplay
 
@@ -878,6 +930,56 @@ def _cold_read_text(read: dict[str, Any] | None) -> str:
     lost = read.get("lost") or []
     lines.append("Could not follow:" + ("".join(f"\n- {x}" for x in lost) if lost else " nothing"))
     return "\n".join(lines)
+
+
+def _numbered_view(screenplay: dict[str, Any]) -> str:
+    """The beats in order, numbered across the piece, scene headings between."""
+    rows: list[str] = []
+    n = 0
+    for k, scene in enumerate(screenplay.get("scenes") or [], 1):
+        rows.append(f"Scene {k}: {scene.get('setting') or ''}".rstrip())
+        for beat in scene.get("beats") or []:
+            n += 1
+            if beat.get("kind") == "line":
+                heard = " (heard, not seen)" if beat.get("offscreen") else ""
+                rows.append(f"  {n}. {str(beat.get('speaker') or '').upper()}{heard}: {beat.get('text', '')}")
+            else:
+                rows.append(f"  {n}. ({beat.get('text', '')})")
+    return "\n".join(rows)
+
+
+async def continuity(
+    screenplay: dict[str, Any], *, site_config: Any, pool: Any = None,
+    task_id: str | None = None, model: str | None = None,
+) -> list[dict[str, Any]] | None:
+    """Beats that contradict what came before them (``story.continuity``), or ``None``.
+
+    "Cinder Cries Wolf" (2026-10-14) passed the cold read with Bolt saying
+    "we came as fast as we could" after the film showed him sit back down,
+    and Cinder sitting "alone" beside both of them: a reader can follow a
+    story that contradicts itself. ``story_continuity_model`` (empty =
+    ``model``). ``None`` when it cannot answer, logged.
+    """
+    checker = str(site_config.get("story_continuity_model", "") or "").strip() or model or _resolve_model(site_config)
+
+    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
+        items = reply.get("contradictions")
+        if not isinstance(items, list) or not all(isinstance(i, dict) and i.get("problem") for i in items):
+            return ['FIX: "contradictions" is a list of {"beat": number, "problem": "..."} (empty when none)'], []
+        return [], []
+
+    try:
+        reply, _ = await _ask_validated(
+            "story.continuity", {"numbered_view": _numbered_view(screenplay)[:20000]}, _check,
+            model=checker, site_config=site_config, pool=pool, task_id=task_id,
+            what="continuity", phase="story_continuity",
+        )
+    except ScreenplayError as exc:
+        logger.warning("[screenplay] continuity check failed: %s", exc)
+        return None
+    clashes = [{"beat": c.get("beat"), "problem": str(c["problem"]).strip()} for c in reply["contradictions"]]
+    logger.info("[screenplay] continuity: %d contradiction(s): %s", len(clashes), clashes)
+    return clashes
 
 
 async def cold_read(
@@ -943,6 +1045,8 @@ def _core(screenplay: dict[str, Any]) -> dict[str, Any]:
         "title": screenplay.get("title", ""),
         "logline": screenplay.get("logline", ""),
         "spine": screenplay.get("spine") or {},
+        "main_event": screenplay.get("main_event") or "",
+        "translation": screenplay.get("translation") or [],
         "locations": screenplay.get("locations") or [],
         "scenes": [
             {k: scene.get(k) for k in ("scene_id", "location", "setting", "palette", "summary", "turn", "characters", "beats")}
@@ -993,7 +1097,8 @@ async def revise_screenplay(
     revised = normalize_screenplay(reply)
     words = spoken_words(revised)
     total = length_problem(words, budget, site_config)
-    carried = {k: v for k, v in screenplay.items() if k not in ("title", "logline", "spine", "locations", "scenes")}
+    carried = {k: v for k, v in screenplay.items()
+               if k not in ("title", "logline", "spine", "main_event", "translation", "locations", "scenes")}
     revised.update({
         **carried,
         "spoken_words": words,

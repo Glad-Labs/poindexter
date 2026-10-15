@@ -184,8 +184,12 @@ def test_pack_prompts_render_with_the_variables_code_passes():
     assert 'adapt the traditional tale "The Tortoise and the Hare"' in outline
     editor = pm.get_prompt("story.edit_notes", site_name="Glad Labs", format_name="story", target_seconds=120,
                            cast_block="- dex: Dex", current="{}", spine_block="Want: w",
-                           source_block="SOURCE: none.", cold_read="Story: s", max_notes=6)
-    assert "Story: s" in editor and "Want: w" in editor and "at most 6 notes" in editor
+                           source_block="SOURCE: none.", cold_read="Story: s", continuity="- beat 3: x",
+                           max_notes=6)
+    assert "Story: s" in editor and "Want: w" in editor and "at most 6 notes" in editor and "beat 3: x" in editor
+    checker = pm.get_prompt("story.continuity", numbered_view="  1. DEX: hi")
+    assert "1. DEX: hi" in checker and '"contradictions"' in checker
+    assert "TRANSLATE AN ADAPTED TALE" in outline and '"main_event"' in outline
     reader = pm.get_prompt("story.cold_read", audience_view="  DEX: hi")
     assert "DEX: hi" in reader and '"lost"' in reader
     scene = pm.get_prompt(

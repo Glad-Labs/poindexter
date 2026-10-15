@@ -368,6 +368,7 @@ async def render_dialogue(
                     "intensity": intensity, "exaggeration": emotion,
                     "characters": list(scene.get("characters") or []),
                     "start_s": round(t, 3), "end_s": round(t + seconds, 3),
+                    **({"offscreen": True} if beat.get("offscreen") else {}),
                 })
                 t += seconds
                 spoken.append(beat["text"])

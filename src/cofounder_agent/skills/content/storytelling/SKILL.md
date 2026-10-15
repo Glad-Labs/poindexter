@@ -47,6 +47,9 @@ metadata:
     - key: story.cold_read
       output_format: json
       description: "A first-time viewer's account of a drafted screenplay: only what the audience gets (each line with its speaker, each action, in order; no outline, spine or summaries) in; JSON {story, wants, cause, lost} out: the story told back, what each character wants, why the ending happens, and every moment the viewer could not follow. Its account goes to story.edit_notes beside the story the writer meant; a lost moment is always a note. Used by services.screenplay.edit_screenplay."
+    - key: story.continuity
+      output_format: json
+      description: 'Continuity check on a drafted screenplay: the beats in order, numbered (each line with its speaker, each action) in; JSON {contradictions: [{beat, problem}]} out: every beat that contradicts what came before it (who is where, who is present, what has already happened, what a character knows or just did or said, the time of day, the cast acting against what they want). Each contradiction is a note the editor must address. Used by services.screenplay.edit_screenplay.'
     - key: story.edit_notes
       output_format: json
       description: 'The story editor: reads a drafted screenplay (JSON) the way an audience will watch it, with the format, length and cast, and returns JSON {verdict: ready|revise, notes: [...]}, at most {max_notes} concrete notes ranked by impact, judged on a craft checklist (shown not told, a struggle on screen, a visible turn, a payoff that answers the opening, distinct voices, specific jokes). Validated in code; each round of notes is applied by story.screenplay_revise, up to story_edit_rounds rounds. Used by services.screenplay.edit_screenplay.'
@@ -98,6 +101,10 @@ Every format, an explainer included, is a story about a character. Decide the sp
 - "payoff": how the last scene answers the first: the opening problem solved, a line called back, the character changed.
 The topic is what the character learns or runs into; the audience learns it by watching them.
 When the topic is a well-known tale, tell that tale: keep its best-known moments, lines and ending, retold in fresh words, and let its plot be the spine.
+- "main_event": the one event the whole piece is about, the thing its title and its turn depend on, in one sentence. It happens on screen, in an action the audience watches, never reported after it happened.
+
+TRANSLATE AN ADAPTED TALE
+When there is a SOURCE above, write "translation" first: one entry for each of the tale's key elements (its hero, what the hero guards or wants, the threat, the people around them, the key objects and the key acts), each with "tale" (the element in the tale) and "here" (its equivalent in this piece's world). Choose each equivalent so a viewer of this world reads it at a glance and it fits the world's look, technology and daily life. Then write the outline from the translation: everything on screen is this world's, and nothing from the tale's own setting appears unless it already belongs here.
 
 PLAN THE PLACES
 - List the story's locations once under "locations": each has a short "id" (lowercase words joined by hyphens) and a "description" of the place itself that a background artist could paint: its architecture, objects, scale and look. Leave the time of day and mood to the scenes.
@@ -122,7 +129,7 @@ PLAN THE SCENES
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "palette": "deep blue night with warm amber lamplight from the bench", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
+{{"title": "a short title", "logline": "the whole piece in one sentence", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "main_event": "...", "translation": [{{"tale": "...", "here": "..."}}], "locations": [{{"id": "workshop", "description": "a cluttered workshop with a long workbench, hanging tools and a tall rain-streaked window"}}], "scenes": [{{"scene_id": "s1", "location": "workshop", "setting": "the workshop at night, warm lamps, rain on the window", "palette": "deep blue night with warm amber lamplight from the bench", "summary": "what happens here", "turn": "what is different by the end", "characters": ["id"]}}]}}
 ```
 
 ## story.scene
@@ -165,15 +172,16 @@ HOW TO WRITE IT
 - Give every line a "delivery" note an actor could perform: an emotion and where the speaker looks. The emotion follows the story: frustration builds, curiosity sharpens, the turn brings surprise or relief.
 - Give every line an "intensity": "low" for quiet, thoughtful or deadpan lines, "medium" for ordinary conversation, "high" for outbursts, big surprises and the turn itself. Vary it across the scene.
 - Write each character in their own voice, from their personality.
+- When this scene holds the piece's main event (under THE STORY), it happens here as an action beat the audience watches, at full length, never reported afterwards.
 - Tell the story with what the audience sees. When something happens (a character tries, fails, finds, breaks, gives or changes something), it happens in an action beat, on screen. Lines carry what the characters feel, want and argue about; the situation, the stakes and anything the audience can watch stay out of the dialogue.
-- A character who arrives partway through the scene arrives in an action beat that lists them in "enters"; one who leaves goes in an action beat that lists them in "exits". Everyone else is in the scene from its first beat to its last. A character speaks only while they are in the scene.
+- A character who arrives partway through the scene arrives in an action beat that lists them in "enters"; one who leaves goes in an action beat that lists them in "exits". Everyone else is in the scene from its first beat to its last. A character speaks only while they are in the scene, except a line heard but not seen (over a radio, through a door, from off screen), which has "offscreen": true.
 - Keep facts accurate. Where a fact is uncertain, let a character ask or wonder rather than state it.
 - The "text" of a line is read aloud by a speech synthesizer: write words exactly as a person would say them, spell out symbols and abbreviations, and keep stage directions in "delivery".
 - Spend the full length on this scene's part of the story.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high"}}, {{"kind": "action", "text": "what we see", "characters": ["id"], "enters": [], "exits": []}}]}}
+{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high", "offscreen": false}}, {{"kind": "action", "text": "what we see", "characters": ["id"], "enters": [], "exits": []}}]}}
 ```
 
 ## story.shot_visuals
@@ -266,15 +274,16 @@ Length: about {word_budget} spoken words in total.
 HOW TO REVISE
 - Make the change the note asks for, and whatever that change needs elsewhere to stay consistent: a renamed thing, a moved beat, a line that calls back to it.
 - Keep everything the note does not touch: the same scenes, lines and order, word for word.
-- Keep the story spine (want, obstacle, turn, payoff). When the note changes one of them, update the spine to match.
+- Keep the story spine (want, obstacle, turn, payoff), the "main_event" and the "translation". When the note changes one of them, update it to match.
 - Keep the "locations" and each scene's "location". A scene the note moves somewhere new uses a listed location, or a new one added to "locations" with an id and a description of the place.
 - Keep each action's "enters" and "exits", so a character still arrives and leaves where they did; a note that moves an entrance moves its action.
+- A line a character speaks before they enter or after they leave is heard, not seen: give it "offscreen": true.
 - Keep each scene's "palette" unless the note changes the scene's feeling; a scene whose feeling changes gets a palette that fits the colour script around it.
 - Every "line" beat has "speaker", "text", "delivery" and "intensity" ("low", "medium" or "high"). Every "action" beat has "text" and "characters".
 
 OUTPUT
 Reply with the whole revised screenplay as one JSON object and nothing else, in the same shape as THE SCREENPLAY NOW:
-{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "palette": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"], "enters": [], "exits": []}}]}}]}}
+{{"title": "...", "logline": "...", "spine": {{"want": "...", "obstacle": "...", "turn": "...", "payoff": "..."}}, "main_event": "...", "translation": [{{"tale": "...", "here": "..."}}], "locations": [{{"id": "...", "description": "..."}}], "scenes": [{{"scene_id": "s1", "location": "...", "setting": "...", "palette": "...", "summary": "...", "turn": "...", "characters": ["id"], "beats": [{{"kind": "line", "speaker": "id", "text": "...", "delivery": "...", "intensity": "medium"}}, {{"kind": "action", "text": "...", "characters": ["id"], "enters": [], "exits": []}}]}}]}}
 ```
 
 ## story.casting_revise
@@ -473,8 +482,14 @@ WHAT A FIRST-TIME VIEWER UNDERSTOOD
 A reader who saw only the film (the lines and the actions, nothing else) told it back:
 {cold_read}
 
+CONTINUITY CHECK
+Where a beat contradicts what came before it:
+{continuity}
+
 WHAT A GOOD ONE DOES
 - A first-time viewer can follow it: who wants what and why, what each thing does in this world, and why the ending happens. Where the viewer's account above misses or contradicts the story the writer meant, or names a moment it could not follow, that is the first note. Showing never costs understanding: when the audience needs a fact, a character says it in a way that fits them.
+- The main event happens on screen, in an action the audience watches. Everything on screen belongs to this piece's world: an adapted tale is translated, never pasted in.
+- Every character acts from what they want and know at that moment, and nothing contradicts what came before (see the continuity check above).
 - The audience learns the situation by watching it: the characters do things on screen, and the dialogue carries what they feel, want and argue about. A line that explains the premise, the stakes or something the audience can already see is worth a note.
 - Someone wants something, something real stands in the way, and the struggle plays out on screen in the middle of the piece.
 - The turn is a choice or a discovery the audience sees happen, and the payoff answers the opening.
@@ -493,6 +508,27 @@ Reply with one JSON object and nothing else:
 {{"verdict": "ready or revise", "notes": ["scene s1, the opening lines: ... Instead, ..."]}}
 ```
 
+## story.continuity
+
+```text
+You are the script supervisor on a short animated film. Read its beats in order and find every beat that contradicts what came before it.
+
+THE BEATS
+{numbered_view}
+
+Check each beat against everything before it:
+- Who is where, and who is present: a character described as alone while others stand beside them, or speaking somewhere they have not arrived.
+- What has already happened: a line that says something happened that the film showed did not, or the other way round.
+- What each character wants and knows: a character acting against what they just said they want, with nothing in between to change their mind.
+- Time and place: the time of day or the location jumping without a cut to a new scene.
+
+Looks, colours, lighting and descriptions of style are the art department's, never a contradiction.
+
+OUTPUT
+Reply with one JSON object and nothing else. List only real contradictions in what happens, who is where, and what characters know or want; leave the list empty when there are none:
+{{"contradictions": [{{"beat": 12, "problem": "what it contradicts, quoting both beats"}}]}}
+```
+
 ## story.cold_read
 
 ```text
@@ -505,7 +541,7 @@ Tell it back as a first-time viewer would:
 - "story": what happens, in three to five sentences of your own.
 - "wants": for each character, what they want and why, as far as the film shows it.
 - "cause": why the ending happens, and what makes the turn work.
-- "lost": every moment you could not follow: a line that made no sense to you, a rule of this world you did not understand, or something that appeared or happened without a reason. Quote the beat and say what you did not understand. Leave it empty when you followed everything.
+- "lost": every moment that stopped you following what happens or why: a line that made no sense to you, a rule of this world the story depends on that you did not understand, or something that happened without a reason. Quote the beat and say what you did not understand. Things you were only curious about, that did not stop you following the story, stay out. Leave it empty when you followed the story.
 
 OUTPUT
 Reply with one JSON object and nothing else:
