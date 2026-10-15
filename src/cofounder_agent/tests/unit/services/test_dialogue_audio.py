@@ -344,3 +344,90 @@ class TestLineEmotion:
         )
         assert seen == [("kai", 1.1), ("dex", None), ("kai", 0.7)]
         assert [b["intensity"] for b in out["timeline"]] == ["high", "low", "low"]
+
+
+class TestHeardBack:
+    """The Battery Drop (2026-10-15): "The last one! Cinder, that is literally
+    the very last one!" was voiced with its first words squeezed into 0.4 s and
+    heard back as "Hust, Cinder, ..."; Matt: "his first line starts late"."""
+
+    LINE = "The last one! Cinder, that is literally the very last one!"
+    PLAY = {"title": "t", "scenes": [{"scene_id": "s1", "characters": ["dex"], "beats": [
+        {"kind": "line", "speaker": "dex", "text": LINE}]}]}
+
+    def test_word_recall_counts_each_word_as_often_as_it_is_written(self):
+        assert da.word_recall(self.LINE, "The last one. Cinder, that's... that is literally the very last one") == 1.0
+        assert round(da.word_recall(self.LINE, "Hust, Cinder, that is literally the very last one."), 2) == 0.73
+        assert da.word_recall("", "anything") == 1.0
+
+    @pytest.fixture
+    def takes(self, fake_ffmpeg, monkeypatch):
+        """Each take's bytes say which take it is; the ear hears takes by number."""
+        async def _normalize(src, dst):
+            Path(dst).write_bytes(Path(src).read_bytes())
+            fake_ffmpeg[dst] = fake_ffmpeg[src]
+
+        async def _probe(path):
+            return fake_ffmpeg.setdefault(path, 3.0)  # a line restored from the cache
+
+        monkeypatch.setattr(da, "_normalize", _normalize)
+        monkeypatch.setattr(da, "probe_seconds", _probe)
+        made: list[int] = []
+
+        async def synthesize(text, persona, path):
+            made.append(len(made) + 1)
+            Path(path).write_bytes(f"take{len(made)}".encode())
+            fake_ffmpeg[path] = 3.0
+            return path
+        return made, synthesize
+
+    @staticmethod
+    def _ear(heard: dict[str, str | None]):
+        async def transcribe(path):
+            return heard.get(Path(path).read_bytes().decode(), "")
+        return transcribe
+
+    @pytest.mark.asyncio
+    async def test_a_line_that_lost_words_is_voiced_again_and_the_clearest_take_kept(self, takes, tmp_path):
+        made, synthesize = takes
+        ear = self._ear({"take1": "Hust, Cinder, that is literally the very last one.", "take2": self.LINE})
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        await da.render_dialogue(self.PLAY, site_config=_sc(), output_path=str(tmp_path / "o.wav"),
+                                 synthesize=synthesize, transcribe=ear, line_cache=str(cache))
+        assert made == [1, 2]
+        assert [p.read_bytes() for p in cache.iterdir()] == [b"take2"]  # only the clear take is cached
+
+    @pytest.mark.asyncio
+    async def test_a_bad_cached_take_is_voiced_again(self, takes, tmp_path):
+        made, synthesize = takes
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        await da.render_dialogue(self.PLAY, site_config=_sc(), output_path=str(tmp_path / "a.wav"),
+                                 synthesize=synthesize, transcribe=self._ear({"take1": "Hust"}), line_cache=str(cache))
+        # Two retakes heard no better: take1 stands, cached.
+        assert made == [1, 2, 3]
+        await da.render_dialogue(self.PLAY, site_config=_sc(), output_path=str(tmp_path / "b.wav"),
+                                 synthesize=synthesize, transcribe=self._ear({"take4": self.LINE}),
+                                 line_cache=str(cache))
+        assert made == [1, 2, 3, 4]
+        assert [p.read_bytes() for p in cache.iterdir()] == [b"take4"]
+
+    @pytest.mark.asyncio
+    async def test_an_unheard_line_is_kept_and_the_check_can_be_off(self, takes, tmp_path):
+        made, synthesize = takes
+        await da.render_dialogue(self.PLAY, site_config=_sc(), output_path=str(tmp_path / "a.wav"),
+                                 synthesize=synthesize, transcribe=self._ear({"take1": None}))
+        assert made == [1]
+        await da.render_dialogue(self.PLAY, site_config=_sc(story_line_check_enabled="false"),
+                                 output_path=str(tmp_path / "b.wav"), synthesize=synthesize,
+                                 transcribe=self._ear({"take2": "nothing"}))
+        assert made == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_an_injected_voice_with_no_ear_is_not_heard_back(self, takes, tmp_path, monkeypatch):
+        made, synthesize = takes
+        monkeypatch.setattr(da, "_keep_the_clearest_take", AsyncMock(side_effect=AssertionError("checked")))
+        await da.render_dialogue(self.PLAY, site_config=_sc(), output_path=str(tmp_path / "a.wav"),
+                                 synthesize=synthesize)
+        assert made == [1]

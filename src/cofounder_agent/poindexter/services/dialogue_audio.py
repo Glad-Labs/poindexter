@@ -236,6 +236,93 @@ def line_exaggeration(persona: Any, intensity: str, site_config: Any) -> float |
     return round(min(high, max(low, base + offset)), 3)
 
 
+def _words(text: str) -> list[str]:
+    import re
+
+    return re.findall(r"[a-z0-9']+", text.lower().replace("\u2019", "'"))
+
+
+def word_recall(expected: str, heard: str) -> float:
+    """The share of the line's words that were heard, each counted as often as it is written."""
+    from collections import Counter
+
+    want, got = Counter(_words(expected)), Counter(_words(heard))
+    total = sum(want.values())
+    if not total:
+        return 1.0
+    return sum(min(n, got[w]) for w, n in want.items()) / total
+
+
+def line_check_settings(site_config: Any) -> tuple[Any, float, int] | None:
+    """``(transcribe, min_recall, retries)`` for the per-line check, or ``None`` when it is off."""
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    def _get(key: str) -> str:
+        raw = site_config.get(key, None) if site_config is not None else None
+        return str(DEFAULTS[key] if raw is None or str(raw).strip() == "" else raw)
+
+    if _get("story_line_check_enabled").strip().lower() not in ("true", "1", "yes", "on"):
+        return None
+
+    async def _transcribe(path: str) -> str | None:
+        from poindexter.services.caption_providers.speaches import SpeachesCaptionProvider
+
+        result = await SpeachesCaptionProvider(site_config=site_config).transcribe(
+            audio_path=path, language_hint="en", phase="story_line_check",
+        )
+        if not result.success:
+            return None
+        return " ".join(seg.text for seg in result.segments)
+
+    return _transcribe, float(_get("story_line_min_recall")), int(float(_get("story_line_check_retries")))
+
+
+async def _keep_the_clearest_take(
+    clip: str, text: str, check: tuple[Any, float, int], synthesize: Any, *, work: Path, label: str,
+) -> bool:
+    """Hear ``clip`` back; while it lost words, voice it again. True when a new take replaced it.
+
+    The Battery Drop's render (2026-10-15): Bolt's "The last one! Cinder,
+    that is literally the very last one!" came out with its first three words
+    squeezed into 0.4 s, heard back as "Hust, Cinder...". Matt: "his first
+    line starts late". Nothing listened to a line after voicing it, and the
+    line cache handed the same take to every later render. A take whose
+    words heard back cover less than ``story_line_min_recall`` of the line
+    is voiced again, up to ``story_line_check_retries`` times, and the take
+    heard best is kept. A line that cannot be heard (STT down) is kept as is.
+    """
+    transcribe, min_recall, retries = check
+    heard = await transcribe(clip)
+    if heard is None:
+        logger.warning("[dialogue] %s could not be heard back; kept unchecked", label)
+        return False
+    best = word_recall(text, heard)
+    replaced = False
+    for attempt in range(1, retries + 1):
+        if best >= min_recall:
+            break
+        logger.warning("[dialogue] %s heard back as %r (%.0f%% of its words); voicing it again (%d/%d)",
+                       label, heard[:120], best * 100, attempt, retries)
+        raw = str(work / f"retake_{os.path.basename(clip)}_{attempt}.mp3")
+        take = str(work / f"retake_{os.path.basename(clip)}_{attempt}.wav")
+        try:
+            produced = await synthesize(raw)
+        except Exception as exc:  # noqa: BLE001 — the take we have stands
+            logger.warning("[dialogue] %s retake %d failed: %s", label, attempt, exc)
+            continue
+        if not produced or not os.path.exists(produced) or os.path.getsize(produced) == 0:
+            continue
+        await _normalize(produced, take)
+        again = await transcribe(take)
+        recall = word_recall(text, again or "")
+        if recall > best:
+            shutil.copyfile(take, clip)
+            best, heard, replaced = recall, again or "", True
+    if best < min_recall:
+        logger.warning("[dialogue] %s still heard as %r after %d retakes; keeping the clearest", label, heard[:120], retries)
+    return replaced
+
+
 async def render_dialogue(
     screenplay: dict[str, Any],
     *,
@@ -244,9 +331,14 @@ async def render_dialogue(
     narrator_persona: str | None = None,
     synthesize: Any = None,
     line_cache: str | None = None,
+    transcribe: Any = None,
 ) -> dict[str, Any]:
     """Voice every line, join the track, return ``{audio_path, timeline,
     spoken_script, duration_s}``.
+
+    Each line is heard back (``transcribe(path) -> text | None``; production
+    uses the Speaches captioner) and voiced again when it lost words: see
+    ``_keep_the_clearest_take``. ``story_line_check_enabled`` turns it off.
 
     ``synthesize(text, persona, path, *, exaggeration=None) -> path`` is the
     per-line TTS seam; production passes ``PodcastService.synthesize_line``.
@@ -257,6 +349,7 @@ async def render_dialogue(
     ``synthesize`` seam) uses ``story_line_cache_dir`` when the cache is on.
     The result's ``lines_reused`` counts lines taken from it.
     """
+    injected = synthesize is not None
     if synthesize is None:
         from poindexter.services.podcast_service import PodcastService
 
@@ -280,6 +373,13 @@ async def render_dialogue(
     line_gap = site_config.get_float("story_dialogue_gap_seconds", 0.35)
     scene_gap = site_config.get_float("story_scene_gap_seconds", 0.8)
     action_s = site_config.get_float("story_action_beat_seconds", 1.5)
+
+    check = line_check_settings(site_config)
+    if check is not None and transcribe is not None:
+        check = (transcribe, check[1], check[2])
+    elif check is not None and injected:
+        # A caller with its own voice and no ear (tests) is not heard back.
+        check = None
 
     work = Path(tempfile.mkdtemp(prefix="dialogue-"))
     parts: list[str] = []
@@ -353,13 +453,24 @@ async def render_dialogue(
                         f"({speaker}: {beat['text'][:60]!r}) failed to synthesize twice"
                         + (f": {last_error}" if last_error else ""),
                     )
-                if produced != clip:
+                fresh = produced != clip
+                if fresh:
                     await _normalize(produced, clip)
-                    if cached:
-                        try:
-                            shutil.copyfile(clip, cached)
-                        except OSError as exc:
-                            logger.warning("[dialogue] line cache write failed (%s): %s", cached, exc)
+                if check is not None:
+                    # A take that dropped or mumbled words is voiced again;
+                    # a cached take is checked too, since a bad one would
+                    # otherwise come back on every render.
+                    redone = await _keep_the_clearest_take(
+                        clip, beat["text"], check,
+                        lambda path, _t=beat["text"], _p=persona, _x=extra: synthesize(_t, _p, path, **_x),
+                        work=work, label=f"line {beat_idx} ({speaker})",
+                    )
+                    fresh = fresh or redone
+                if fresh and cached:
+                    try:
+                        shutil.copyfile(clip, cached)
+                    except OSError as exc:
+                        logger.warning("[dialogue] line cache write failed (%s): %s", cached, exc)
                 seconds = await probe_seconds(clip)
                 parts.append(clip)
                 timeline.append({
@@ -407,10 +518,12 @@ async def render_dialogue(
 
 __all__ = [
     "DialogueAudioError",
+    "line_check_settings",
     "line_cache_dir",
     "line_cache_key",
     "prune_line_cache",
     "probe_seconds",
     "render_dialogue",
     "resolve_voice",
+    "word_recall",
 ]
