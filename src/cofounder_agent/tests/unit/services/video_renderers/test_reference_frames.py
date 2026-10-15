@@ -73,7 +73,7 @@ RULE = "with no letters or words."
 class TestPrompt:
     def test_names_each_picture(self):
         text = rf.compose_reference_prompt("at a desk", ["Dex", "Nova"], style_only=False, site_config=_sc())
-        assert text.startswith("Picture 1 is Dex. Picture 2 is Nova.") and "at a desk Each character keeps" in text
+        assert text.startswith("Picture 1 is Dex. Picture 2 is Nova.") and "at a desk Each character appears exactly once" in text
 
     def test_style_only_keeps_the_characters_out(self):
         text = rf.compose_reference_prompt("an empty server aisle", [], style_only=True, site_config=_sc())
@@ -510,6 +510,10 @@ class TestCastFrameParse:
         ('{"people": 2, "strangers": 0, "all_present": false}', False),
         ('{"people": 2, "all_present": true}', None),
         ("no idea", None),
+        # The Battery Drop (2026-10-15): two Cinders beside Bolt, counted as
+        # two people for two characters.
+        ('{"people": 2, "strangers": 0, "doubles": 1, "all_present": true}', False),
+        ('{"people": 2, "strangers": 0, "doubles": 0, "all_present": true}', True),
     ])
     def test_verdict(self, reply, ok):
         from poindexter.services.video_renderers.shot_vision_qa import _parse_cast_frame
@@ -573,3 +577,16 @@ class TestScenePlace:
         plan = [{"kind": "still"}, {"kind": "master"}, {"kind": "talk"}, {"kind": "still"}, {"kind": "master"}]
         sd._mark_establishing(shots, plan)
         assert [bool(s.get("establishing")) for s in shots] == [False, True, False, True, False]
+
+
+def test_the_identity_rule_migration_moves_the_old_default_to_todays():
+    """The Battery Drop (2026-10-15): two Cinders beside Bolt; the rule now says each appears once."""
+    import importlib
+    import pathlib
+
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    path = next(pathlib.Path(slr.__file__).parents[1].joinpath("migrations").glob("*appears_exactly_once.py"))
+    mod = importlib.import_module(f"poindexter.services.migrations.{path.stem}")
+    assert mod.NEW == DEFAULTS["video_reference_identity_rule"] and "exactly once" in mod.NEW
+    assert mod.OLD != mod.NEW

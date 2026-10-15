@@ -170,3 +170,10 @@ class TestVisible:
         monkeypatch.setattr(llm_text, "resolve_local_writer_model", lambda **kw: "ollama/writer")
         listing = await sd.direct_screenplay(SCREENPLAY, TIMELINE, 4.5, site_config=_sc(), style="")
         assert listing["shots"][0]["characters"] == []
+
+
+def test_two_props_join_with_one_period():
+    out = sd.with_props("the tube and the cell.", [
+        {"name": "tube", "look": "a waist-high tube."}, {"name": "cell", "look": "a gold cell."},
+    ], set())
+    assert ".." not in out and out.endswith("The cell: a gold cell.")

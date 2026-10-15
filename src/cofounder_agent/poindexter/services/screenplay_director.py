@@ -619,7 +619,7 @@ def with_props(picture: str, props: list[dict[str, str]], cast_words: set[str]) 
     for prop in props:
         name, look = str(prop.get("name") or ""), str(prop.get("look") or "")
         if name and look and look not in out and _mentions(picture, name, cast_words):
-            out = f"{out}. The {name}: {look}"
+            out = f"{out.rstrip(' .')}. The {name}: {look}"
     return out
 
 

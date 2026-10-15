@@ -885,8 +885,15 @@ def _writing_reason(parsed: dict[str, Any], reason: str) -> str:
 
 
 def _parse_cast_frame(text: str, cast_size: int) -> TalkingFrameVerdict:
-    """Pass only with no strangers, no more people than the cast, and every
-    required character present. A missing count is no verdict."""
+    """Pass only with no strangers, no more people than the cast, no cast
+    member drawn twice, and every required character present. A missing
+    count is no verdict.
+
+    ``doubles``: "The Battery Drop" (2026-10-15) drew two Cinders beside Bolt
+    twice in a row. A second Cinder is no stranger, and the judge counted
+    two people for two characters (Bolt, a robot mouse, went uncounted), so
+    the copy passed. A reply without the field is read as before.
+    """
     m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
         return TalkingFrameVerdict(ok=None, reason="unparseable vision response")
@@ -900,7 +907,11 @@ def _parse_cast_frame(text: str, cast_size: int) -> TalkingFrameVerdict:
             return TalkingFrameVerdict(ok=None, reason="vision response missing a count")
     # Scrambled writing is reported, not a reason to redraw (see _parse_talking_frame).
     reason = _writing_reason(parsed, str(parsed.get("reason", "") or "")[:200])
-    ok = strangers == 0 and people <= cast_size and parsed.get("all_present") is True
+    doubles = parsed.get("doubles")
+    doubled = isinstance(doubles, int) and not isinstance(doubles, bool) and doubles > 0
+    if doubled and "cop" not in reason.lower():
+        reason = f"a character drawn twice; {reason}"[:200]
+    ok = strangers == 0 and people <= cast_size and parsed.get("all_present") is True and not doubled
     return TalkingFrameVerdict(ok=ok, people=people, reason=reason)
 
 

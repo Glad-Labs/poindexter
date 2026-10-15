@@ -697,8 +697,13 @@ MUST APPEAR in this picture: {required}
    free of letters and words that are scrambled, half-formed or meaningless?
    A picture with no writing at all answers true.
 
+5. DOUBLES - each cast member exists once. Go through the cast one by one and
+   count how many times each is drawn in this picture. How many extra copies
+   are there in all? Two of the same character side by side is one extra copy;
+   every character drawn once is 0.
+
 Output EXACTLY one JSON object, no prose, no code fences:
-{{"people": <integer>, "strangers": <integer>, "all_present": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
+{{"people": <integer>, "strangers": <integer>, "doubles": <integer>, "all_present": <true or false>, "writing_ok": <true or false>, "reason": "<one short sentence>"}}
 ```
 
 ## qa.empty_plate

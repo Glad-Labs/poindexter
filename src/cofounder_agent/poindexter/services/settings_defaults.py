@@ -1025,9 +1025,12 @@ DEFAULTS: dict[str, str] = {
     # carries one character's marks onto another: in the "Midnight Patch"
     # storyboard (2026-10-14) Mara, a hologram, wore the grease mark from
     # Cinder's cheek in every shot they shared.
+    # "Appears exactly once": The Battery Drop (2026-10-15) drew two Cinders
+    # beside Bolt in two draws running; with this line, one.
     'video_reference_identity_rule': (
-        "Each character keeps exactly the face, skin, markings and clothes of "
-        "their own picture; nothing on one character appears on another."
+        "Each character appears exactly once in the picture, and keeps exactly "
+        "the face, skin, markings and clothes of their own picture; nothing on "
+        "one character appears on another."
     ),
     # Appended to every reference-drawn picture. The edit model writes real
     # letters wherever a prompt mentions a sign, screen or hologram, and they
