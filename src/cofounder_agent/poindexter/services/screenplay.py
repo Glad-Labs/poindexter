@@ -138,10 +138,8 @@ def build_request(inputs: dict[str, Any], site_config: Any) -> ScreenplayRequest
             "nobody can speak: screenplay_cast is empty and screenplay_narrator is 'none'",
         )
     try:
-        target = float(
-            inputs.get("screenplay_target_seconds")
-            or site_config.get_float("story_default_target_seconds", 90.0)
-        )
+        asked = inputs.get("screenplay_target_seconds")
+        target = float(asked or site_config.get_float("story_default_target_seconds", 90.0))
     except (TypeError, ValueError) as exc:
         raise ScreenplayError(
             f"screenplay_target_seconds must be a number, got "
@@ -149,6 +147,18 @@ def build_request(inputs: dict[str, Any], site_config: Any) -> ScreenplayRequest
         ) from exc
     if target <= 0:
         raise ScreenplayError("screenplay_target_seconds must be positive")
+    # A story needs room to set up, struggle and pay off. Midnight Patch was a
+    # whole Cinderella in 40 s, so its characters announced the premise
+    # instead of living it (Matt, 2026-10-14: "the script really is garbage").
+    floor = site_config.get_float("story_min_story_seconds", 120.0)
+    if fmt == "story" and floor > 0 and target < floor:
+        if asked:
+            raise ScreenplayError(
+                f"a story needs at least {floor:.0f} s to set up, struggle and pay off "
+                f"(asked for {target:.0f} s): ask for {floor:.0f} s or more, or the "
+                "'sketch' format for a single gag or moment",
+            )
+        target = floor  # the default length is the format's to choose
     return ScreenplayRequest(
         topic=topic,
         brief=str(inputs.get("screenplay_brief") or "").strip(),
@@ -696,6 +706,85 @@ async def write_screenplay(
         screenplay["title"], len(scenes), words, budget, model,
         f", notes: {notes}" if notes else "",
     )
+    return await edit_screenplay(screenplay, site_config=site_config, pool=pool, task_id=task_id)
+
+
+async def edit_screenplay(
+    screenplay: dict[str, Any],
+    *,
+    site_config: Any,
+    pool: Any = None,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    """The story editor's rounds on a drafted screenplay; returns the edited one.
+
+    A studio script goes through notes and rewrites before anyone draws it;
+    ours went straight from the writer's first draft to the storyboard, and
+    Midnight Patch read like it (Matt, 2026-10-14). Each round the editor
+    (``story.edit_notes``, ``story_editor_model`` or the writer's model)
+    reads the whole screenplay against a craft checklist and either calls it
+    ready or gives up to ``story_edit_max_notes`` notes, which
+    :func:`revise_screenplay` applies. Up to ``story_edit_rounds`` rounds
+    (0 = off). Each round is kept under ``edit_rounds``. An editor or a
+    revision that fails ends the rounds with the last good draft, logged.
+    """
+    rounds = site_config.get_int("story_edit_rounds", 2)
+    if rounds <= 0:
+        return screenplay
+    request = _request_from(screenplay)
+    personas = resolve_cast(site_config, request.cast)
+    model = str(site_config.get("story_editor_model", "") or "").strip() or _resolve_model(site_config)
+    max_notes = max(1, site_config.get_int("story_edit_max_notes", 6))
+    history: list[dict[str, Any]] = list(screenplay.get("edit_rounds") or [])
+
+    def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
+        verdict = str(reply.get("verdict") or "").strip().lower()
+        notes = reply.get("notes")
+        if verdict not in ("ready", "revise"):
+            return ['FIX: set "verdict" to "ready" or "revise"'], []
+        if not isinstance(notes, list) or not all(isinstance(n, str) for n in notes):
+            return ['FIX: "notes" is a list of strings'], []
+        if verdict == "revise" and not [n for n in notes if n.strip()]:
+            return ['FIX: a "revise" verdict needs at least one note'], []
+        return [], []
+
+    for n in range(1, rounds + 1):
+        try:
+            reply, _ = await _ask_validated(
+                "story.edit_notes",
+                {
+                    "site_name": str(site_config.get("site_name", "") or "the studio"),
+                    "format_name": request.format,
+                    "target_seconds": int(round(request.target_seconds)),
+                    "cast_block": cast_block(personas),
+                    "current": json.dumps(_core(screenplay), ensure_ascii=False, indent=1)[:24000],
+                    "max_notes": max_notes,
+                },
+                _check, model=model, site_config=site_config, pool=pool, task_id=task_id,
+                what=f"edit round {n}", phase="story_edit_screenplay",
+            )
+        except ScreenplayError as exc:
+            logger.warning("[screenplay] editor round %d failed (%s); keeping the draft", n, exc)
+            history.append({"round": n, "error": str(exc)[:300]})
+            break
+        notes = [str(x).strip() for x in reply.get("notes") or [] if str(x).strip()][:max_notes]
+        if str(reply.get("verdict")).strip().lower() == "ready" or not notes:
+            history.append({"round": n, "verdict": "ready"})
+            logger.info("[screenplay] editor round %d: ready", n)
+            break
+        logger.info("[screenplay] editor round %d: %d note(s): %s", n, len(notes), notes)
+        try:
+            revised = await revise_screenplay(
+                screenplay, "\n".join(f"{i}. {note}" for i, note in enumerate(notes, 1)),
+                site_config=site_config, pool=pool, task_id=task_id,
+            )
+        except ScreenplayError as exc:
+            logger.warning("[screenplay] revision for editor round %d failed (%s); keeping the draft", n, exc)
+            history.append({"round": n, "notes": notes, "error": str(exc)[:300]})
+            break
+        history.append({"round": n, "notes": notes})
+        screenplay = revised
+    screenplay["edit_rounds"] = history
     return screenplay
 
 

@@ -3426,6 +3426,16 @@ DEFAULTS: dict[str, str] = {
     # Silence between two lines in a scene, at a scene change, and for an
     # action beat (so the shot showing the action has screen time). 1.5 s
     # left Midnight Patch's transformation a flash (2026-10-14); 3.0 gives an
+    # Story editor (services/screenplay.edit_screenplay, 2026-10-14): after
+    # the draft, an editor (story.edit_notes; story_editor_model, empty = the
+    # writer's) gives up to story_edit_max_notes notes on a craft checklist and
+    # the writer revises, up to story_edit_rounds rounds (0 = off). A "story"
+    # needs at least story_min_story_seconds (0 = no floor); a shorter one
+    # asked for explicitly is refused with the 'sketch' format suggested.
+    'story_edit_rounds': '2',
+    'story_edit_max_notes': '6',
+    'story_editor_model': '',
+    'story_min_story_seconds': '120',
     # animated action shot time to play.
     'story_dialogue_gap_seconds': '0.35',
     'story_scene_gap_seconds': '0.8',
@@ -6874,6 +6884,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_reference_text_rule': {'owner': 'reference_frames', 'value_type': 'string'},
     'video_reference_identity_rule': {'owner': 'reference_frames', 'value_type': 'string'},
     'story_talking_frame_template': {'owner': 'screenplay_director', 'value_type': 'string'},
+    'story_edit_rounds': {'owner': 'screenplay', 'value_type': 'integer'},
+    'story_edit_max_notes': {'owner': 'screenplay', 'value_type': 'integer'},
+    'story_editor_model': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_min_story_seconds': {'owner': 'screenplay', 'value_type': 'float'},
     'story_talking_framings': {'owner': 'screenplay_director', 'value_type': 'json'},
     'story_min_insert_seconds': {'owner': 'screenplay_director', 'value_type': 'float'},
     'story_scene_master_template': {'owner': 'screenplay_director', 'value_type': 'string'},

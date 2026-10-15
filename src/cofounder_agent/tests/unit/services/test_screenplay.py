@@ -32,6 +32,10 @@ def _sc(**extra):
         "story_speech_words_per_second": "2.5",
         "story_default_target_seconds": "8",  # 20-word budget keeps fixtures small
         "site_name": "Glad Labs",
+        # The writer's own tests: the story editor and the story length floor
+        # have theirs (test_story_editor.py).
+        "story_edit_rounds": "0",
+        "story_min_story_seconds": "0",
     }
     base.update(extra)
     return SiteConfig(initial_config=base)

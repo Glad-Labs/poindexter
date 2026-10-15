@@ -44,6 +44,9 @@ metadata:
     - key: story.director_notes
       output_format: json
       description: "Director's notes on a finished cartoon: the title, logline, art style, the story, the length and a table of every shot (start, length, drawn or not, who, the line, the picture, and the flaws the vision judge saw in it) in; JSON {verdict, strengths, notes: [{kind: redo|story|pacing|sound, shots, problem, fix}]} out, ranked by how much each note would improve the piece. Validated in code (real shot numbers; a redo names only drawn shots and says how to redraw them). Used by services.director_notes.write_notes; redo notes feed a render revision."
+    - key: story.edit_notes
+      output_format: json
+      description: 'The story editor: reads a drafted screenplay (JSON) the way an audience will watch it, with the format, length and cast, and returns JSON {verdict: ready|revise, notes: [...]}, at most {max_notes} concrete notes ranked by impact, judged on a craft checklist (shown not told, a struggle on screen, a visible turn, a payoff that answers the opening, distinct voices, specific jokes). Validated in code; each round of notes is applied by story.screenplay_revise, up to story_edit_rounds rounds. Used by services.screenplay.edit_screenplay.'
     - key: story.screenplay_fix
       output_format: json
       description: 'The one repair retry for story.casting, story.casting_revise, story.outline, story.scene, story.screenplay_revise, story.storyboard_revise, story.score, story.youtube_package, story.youtube_package_revise and story.director_notes: carries the rejected reply ({previous}) and the FIX list code produced ({errors}). Used by services.screenplay.write_screenplay.'
@@ -157,7 +160,7 @@ HOW TO WRITE IT
 - Give every line a "delivery" note an actor could perform: an emotion and where the speaker looks. The emotion follows the story: frustration builds, curiosity sharpens, the turn brings surprise or relief.
 - Give every line an "intensity": "low" for quiet, thoughtful or deadpan lines, "medium" for ordinary conversation, "high" for outbursts, big surprises and the turn itself. Vary it across the scene.
 - Write each character in their own voice, from their personality.
-- Use an action beat only where something happens that the audience must see to follow the story, such as a demonstration, a reaction that replaces a line, or an entrance. Most scenes need one to three.
+- Tell the story with what the audience sees. When something happens (a character tries, fails, finds, breaks, gives or changes something), it happens in an action beat, on screen. Lines carry what the characters feel, want and argue about; the situation, the stakes and anything the audience can watch stay out of the dialogue.
 - A character who arrives partway through the scene arrives in an action beat that lists them in "enters"; one who leaves goes in an action beat that lists them in "exits". Everyone else is in the scene from its first beat to its last. A character speaks only while they are in the scene.
 - Keep facts accurate. Where a fact is uncertain, let a character ask or wonder rather than state it.
 - The "text" of a line is read aloud by a speech synthesizer: write words exactly as a person would say them, spell out symbols and abbreviations, and keep stage directions in "delivery".
@@ -440,6 +443,40 @@ GIVE NOTES
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
 {{"verdict": "...", "strengths": ["..."], "notes": [{{"kind": "redo", "shots": [0], "problem": "...", "fix": "..."}}]}}
+```
+
+## story.edit_notes
+
+```text
+You are the story editor at {site_name}. A writer has drafted a short animated screenplay. Read it the way an audience will watch it, then give the notes that would most improve it.
+
+THE PIECE
+Format: {format_name}
+Length: about {target_seconds} seconds.
+
+CAST
+{cast_block}
+
+THE SCREENPLAY
+{current}
+
+WHAT A GOOD ONE DOES
+- The audience learns the situation by watching it: the characters do things on screen, and the dialogue carries what they feel, want and argue about. A line that explains the premise, the stakes or something the audience can already see is worth a note.
+- Someone wants something, something real stands in the way, and the struggle plays out on screen in the middle of the piece.
+- The turn is a choice or a discovery the audience sees happen, and the payoff answers the opening.
+- Each character sounds like themselves: a reader could tell who is speaking without the name.
+- Jokes are specific to these characters and this world, with a setup and a release.
+- Every scene changes something, and every line earns its place.
+- The ending lands on an image or a line that works because of what came before it.
+
+YOUR NOTES
+- Give at most {max_notes} notes, the most important first. Each note names the scene and the beat it is about, says what is wrong as the audience feels it, and says concretely what to write instead.
+- Notes keep the cast, the format and the length.
+- When the screenplay already does all of this well, the verdict is "ready" and the notes are empty.
+
+OUTPUT
+Reply with one JSON object and nothing else:
+{{"verdict": "ready or revise", "notes": ["scene s1, the opening lines: ... Instead, ..."]}}
 ```
 
 ## story.screenplay_fix
