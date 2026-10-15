@@ -72,6 +72,12 @@ _CTX_EFFECTIVELY_UNBOUNDED = 1 << 20
 # read_model_arch cache — arch is immutable per model tag.
 _ARCH_CACHE: dict[str, ModelArch] = {}
 
+# Namespace prefixes LiteLLM sends to an Ollama server. A bare name takes the
+# router's default prefix (``ollama/``), so it counts as Ollama too. Every other
+# prefix (``anthropic/``, ``gemini/``, ``vllm/`` …) is served somewhere with no
+# ``/api/show`` to read and, for a cloud model, no local VRAM to budget.
+_OLLAMA_PREFIXES = frozenset({"ollama", "ollama_chat"})
+
 
 @dataclass(frozen=True)
 class ModelArch:
@@ -82,6 +88,24 @@ class ModelArch:
     # Sliding-window size in tokens; 0 means dense attention (KV scales with the
     # full context). Defaulted so existing constructions stay valid.
     sliding_window: int = 0
+
+
+def ollama_tag(model: str) -> str | None:
+    """The Ollama tag ``model`` is served under, or ``None`` if Ollama doesn't serve it.
+
+    ``ollama/gemma3:27b`` and ``ollama_chat/qwen3-vl:30b`` strip to the tag;
+    a bare ``phi4:14b`` is the tag already. ``anthropic/claude-sonnet-5-5``,
+    any other provider prefix and an inline ``http(s)://`` base are ``None``:
+    probing Ollama for them can only 404, which logged a warning on every
+    cloud-writer call (e.g. ``story_writer_model``) before this check.
+    """
+    model = (model or "").strip()
+    if not model or model.startswith("http"):
+        return None
+    if "/" not in model:
+        return model
+    prefix, tag = model.split("/", 1)
+    return tag if prefix.lower() in _OLLAMA_PREFIXES else None
 
 
 def kv_bytes_per_elem(kv_cache_type: str) -> float:
@@ -218,10 +242,18 @@ async def read_model_arch(
     model tag. Returns None — caller fails open with a finding — when either
     source is unusable, because a footprint missing its dominant term is worse
     than no guard: it reads as "plenty of room" and clamps nothing.
+
+    A model Ollama doesn't serve (see :func:`ollama_tag`) returns None with no
+    request at all. For a cloud model that is the right answer, not a
+    degraded one: it holds no local VRAM, so there is nothing to clamp (the
+    dispatcher keeps the requested context) and nothing to admit (the GPU
+    scheduler skips its fit gate).
     """
     if model in _ARCH_CACHE:
         return _ARCH_CACHE[model]
-    tag = model.split("/", 1)[-1]  # strip any "ollama/" prefix
+    tag = ollama_tag(model)
+    if tag is None:
+        return None
     try:
         resp = await client.post(f"{base_url}/api/show", json={"model": tag}, timeout=10)
         resp.raise_for_status()

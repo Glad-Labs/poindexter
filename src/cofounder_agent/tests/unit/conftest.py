@@ -638,10 +638,9 @@ def _isolate_ollama_model_arch_probe(request):
     open with a finding, so returning None is the documented degraded path,
     not a fiction invented for tests.
 
-    Opt out with ``@pytest.mark.real_model_arch``. Nothing needs it today —
-    ``test_vram_budget.py`` covers the surrounding maths and never calls this
-    function — so the hatch exists for a future test that wants the real probe
-    with its own stubbed client, not because something currently depends on it.
+    Opt out with ``@pytest.mark.real_model_arch``. ``test_vram_budget.py``
+    does, to drive the real probe through an ``httpx.MockTransport`` client and
+    assert a cloud model sends no ``/api/show`` at all.
     """
     from unittest.mock import AsyncMock, patch
 
