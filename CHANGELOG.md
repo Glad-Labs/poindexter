@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+## [0.157.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.156.0...v0.157.0) (2026-10-15)
+
+
+### Features
+
+* **media:** a "visual" story format, told in what the audience sees, filmed like a cinematic animated short ([#4471](https://github.com/Glad-Labs/glad-labs-stack/issues/4471)) ([ca3153a](https://github.com/Glad-Labs/glad-labs-stack/commit/ca3153a3ab64df17db144a8445e60c4e52105a8f))
+* **media:** a cartoon clip whose last frame is off-cast is re-rolled ([#4478](https://github.com/Glad-Labs/glad-labs-stack/issues/4478)) ([553c10c](https://github.com/Glad-Labs/glad-labs-stack/commit/553c10cf55e8d7ff949463ef20aa2ef0e4fc882d))
+* **media:** a cartoon covers each speaker from different camera setups ([#4463](https://github.com/Glad-Labs/glad-labs-stack/issues/4463)) ([ef4705b](https://github.com/Glad-Labs/glad-labs-stack/commit/ef4705b1801d08b4c44d280a0585e6c78e7913ea))
+* **media:** a cartoon ships no stand-in for any of its shots ([#4460](https://github.com/Glad-Labs/glad-labs-stack/issues/4460)) ([cba927e](https://github.com/Glad-Labs/glad-labs-stack/commit/cba927e2dfa52e542e02e7c50e65a0f2b6454cbd))
+* **media:** a cartoon's score plays up between lines and ducks under them ([#4480](https://github.com/Glad-Labs/glad-labs-stack/issues/4480)) ([ceeb169](https://github.com/Glad-Labs/glad-labs-stack/commit/ceeb169949f3adf498b57e0d6ec8fba6082bf77e))
+* **media:** a cold read checks a screenplay makes sense, and a screenplay can adapt a public-domain tale ([#4465](https://github.com/Glad-Labs/glad-labs-stack/issues/4465)) ([9d8caf7](https://github.com/Glad-Labs/glad-labs-stack/commit/9d8caf740f0cee5d9f074d3518a5d934f02f4efb))
+* **media:** a colour script, so each cartoon scene is painted in its own light ([#4455](https://github.com/Glad-Labs/glad-labs-stack/issues/4455)) ([9ee339e](https://github.com/Glad-Labs/glad-labs-stack/commit/9ee339e55e3257f29bf4ad42119b5a6180bd7c55))
+* **media:** a dialogue pass gives a cartoon's lines voice, and its ending must show the change ([#4468](https://github.com/Glad-Labs/glad-labs-stack/issues/4468)) ([a50ac40](https://github.com/Glad-Labs/glad-labs-stack/commit/a50ac4026a84f2ea856bec596c8f72258c4cff97))
+* **media:** a motivation check, all-ages stories, and an adapted tale keeps its causes ([#4469](https://github.com/Glad-Labs/glad-labs-stack/issues/4469)) ([4ed5ac8](https://github.com/Glad-Labs/glad-labs-stack/commit/4ed5ac83214d2db7f6e28153810d907f02bfe5a6))
+* **media:** a revision can change how an animated shot moves and keep its picture ([#4479](https://github.com/Glad-Labs/glad-labs-stack/issues/4479)) ([1f27cf6](https://github.com/Glad-Labs/glad-labs-stack/commit/1f27cf6586e1a8fcd727b178852a92eb33ee4e8f))
+* **media:** a story editor reviews every screenplay, and a story gets the length to be one ([#4464](https://github.com/Glad-Labs/glad-labs-stack/issues/4464)) ([711bd36](https://github.com/Glad-Labs/glad-labs-stack/commit/711bd36d2e8124a6b960e8054e419bc41d811a37))
+* **media:** a storyboard renders from its own approved pictures ([#4452](https://github.com/Glad-Labs/glad-labs-stack/issues/4452)) ([eb6209a](https://github.com/Glad-Labs/glad-labs-stack/commit/eb6209a1c74610637aef4e5af902dd23867dff9d))
+* **media:** adapted tales are translated into the cast's world, the main event is shown, and continuity is checked ([#4467](https://github.com/Glad-Labs/glad-labs-stack/issues/4467)) ([210dd55](https://github.com/Glad-Labs/glad-labs-stack/commit/210dd55b4b861f9589a44342cab234da8eda6503))
+* **media:** cartoon model sheets, wide shots drawn from the full-body view ([#4454](https://github.com/Glad-Labs/glad-labs-stack/issues/4454)) ([a29b62b](https://github.com/Glad-Labs/glad-labs-stack/commit/a29b62b05036723afd7029f74be7765f46d7bd66))
+* **media:** cartoons animate every shot, and cartoon voices centre on 0.8 ([#4451](https://github.com/Glad-Labs/glad-labs-stack/issues/4451)) ([52381a0](https://github.com/Glad-Labs/glad-labs-stack/commit/52381a06fab281cb0007f710d3299b438e4d7379))
+* **media:** cartoons dissolve between scenes and soften between shots ([#4448](https://github.com/Glad-Labs/glad-labs-stack/issues/4448)) ([e1acbb0](https://github.com/Glad-Labs/glad-labs-stack/commit/e1acbb08b7edddfc1059bb2487aad938cfff4cbd))
+* **media:** cartoons open each scene on a landscape, wides are camera moves, and plate lettering no longer costs a shot ([#4458](https://github.com/Glad-Labs/glad-labs-stack/issues/4458)) ([3636d0a](https://github.com/Glad-Labs/glad-labs-stack/commit/3636d0a4067a6a2e95189b76a1b59cabbf77a0aa))
+* **media:** characters enter and exit, and are on screen only while in the scene ([#4457](https://github.com/Glad-Labs/glad-labs-stack/issues/4457)) ([e1e33c0](https://github.com/Glad-Labs/glad-labs-stack/commit/e1e33c080a37c15ad0f746501c218566e76c05f9))
+* **media:** every action in a cartoon is its own animated shot, with three seconds to play ([#4462](https://github.com/Glad-Labs/glad-labs-stack/issues/4462)) ([5486024](https://github.com/Glad-Labs/glad-labs-stack/commit/5486024d062b9d2704628881ce98e1cb79d5a5a5))
+* **media:** props are designed once and drawn the same in every shot; talking close-ups draw from the model sheet ([#4472](https://github.com/Glad-Labs/glad-labs-stack/issues/4472)) ([11a4a15](https://github.com/Glad-Labs/glad-labs-stack/commit/11a4a15c1c35eb368115ff719ec3f463b75b1f74))
+* **media:** reusable locations, one background per place across the story ([#4453](https://github.com/Glad-Labs/glad-labs-stack/issues/4453)) ([d9af388](https://github.com/Glad-Labs/glad-labs-stack/commit/d9af3882b43e0ef64ee12490710ef5edb7d4d089))
+* **media:** the illustrator says who a picture shows, so a close-up on an object draws nobody in ([#4473](https://github.com/Glad-Labs/glad-labs-stack/issues/4473)) ([ff2aa0f](https://github.com/Glad-Labs/glad-labs-stack/commit/ff2aa0f69da38a2a6a58d500f23b22d1a6900aac))
+
+
+### Bug Fixes
+
+* **media:** a cartoon's lip sync names the character's looks and follows every syllable ([#4459](https://github.com/Glad-Labs/glad-labs-stack/issues/4459)) ([066df1a](https://github.com/Glad-Labs/glad-labs-stack/commit/066df1a3b10e98ddb49052b8cfd01f47d3c76891))
+* **media:** a cast member drawn twice fails the still check, and a shared shot draws each character once ([#4474](https://github.com/Glad-Labs/glad-labs-stack/issues/4474)) ([446ff3e](https://github.com/Glad-Labs/glad-labs-stack/commit/446ff3e50bee2b14045e0d262e18f726ec781125))
+* **media:** a colour-script palette names no character and stays one short phrase ([#4456](https://github.com/Glad-Labs/glad-labs-stack/issues/4456)) ([870d9b2](https://github.com/Glad-Labs/glad-labs-stack/commit/870d9b2a5073be069e52af7f33c0bf6e3fb33df4))
+* **media:** a dissolve after a hard cut no longer fails the whole video join ([#4476](https://github.com/Glad-Labs/glad-labs-stack/issues/4476)) ([09b3856](https://github.com/Glad-Labs/glad-labs-stack/commit/09b3856e2d5bfe37b820139d3285910acf4e1343))
+* **media:** a revised motion describes the shot, never the fault the note names ([#4481](https://github.com/Glad-Labs/glad-labs-stack/issues/4481)) ([e793f82](https://github.com/Glad-Labs/glad-labs-stack/commit/e793f829c1c94c542eb527ff4cc73e71004a573d))
+* **media:** characters keep their own marks, frames judged by other characters, soft neon backgrounds ([#4446](https://github.com/Glad-Labs/glad-labs-stack/issues/4446)) ([dbb22fd](https://github.com/Glad-Labs/glad-labs-stack/commit/dbb22fdce15ef6272a58af7bf4aae20b7daef4d8))
+* **media:** level every score piece, limit the mix, and keep the music from fading out ([#4450](https://github.com/Glad-Labs/glad-labs-stack/issues/4450)) ([5d04b89](https://github.com/Glad-Labs/glad-labs-stack/commit/5d04b8937ccd36aa6eafa876af4e4cd601751dba))
+* **media:** no flash cutaways, and each scene's place is an empty plate ([#4449](https://github.com/Glad-Labs/glad-labs-stack/issues/4449)) ([9687e2c](https://github.com/Glad-Labs/glad-labs-stack/commit/9687e2c5a19f93ca05e4e7ffb4b50a03735a8a70))
+* **media:** talking frames are drawn in the story's place, from the full body when it shows, and a setting names no one ([#4470](https://github.com/Glad-Labs/glad-labs-stack/issues/4470)) ([a417bd8](https://github.com/Glad-Labs/glad-labs-stack/commit/a417bd85f6c7c8ccbd138a28b1470b3af050a985))
+* **media:** the colour script keys each scene from its plate, not its opening landscape ([#4461](https://github.com/Glad-Labs/glad-labs-stack/issues/4461)) ([c358d32](https://github.com/Glad-Labs/glad-labs-stack/commit/c358d32868cabf9c806a67780aebd55cb1d770f8))
+* **tests:** the unit suite keeps its clip cache in the temp dir, not the worker's mounted home ([#4477](https://github.com/Glad-Labs/glad-labs-stack/issues/4477)) ([52f0d51](https://github.com/Glad-Labs/glad-labs-stack/commit/52f0d516e8bc3e6b2820e93389fab1ee3fdd55d5))
+* **vram_budget:** a cloud model sends no /api/show to Ollama ([#4466](https://github.com/Glad-Labs/glad-labs-stack/issues/4466)) ([7ca65f2](https://github.com/Glad-Labs/glad-labs-stack/commit/7ca65f2987691f0fdf6e1ab6614fafa0015be39e))
+
 ## [0.156.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.155.0...v0.156.0) (2026-10-14)
 
 

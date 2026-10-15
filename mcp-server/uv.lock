@@ -494,7 +494,7 @@ wheels = [
 
 [[package]]
 name = "poindexter-mcp"
-version = "0.156.0"
+version = "0.157.0"
 source = { editable = "." }
 dependencies = [
     { name = "apscheduler" },
