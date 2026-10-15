@@ -238,8 +238,12 @@ def mix_graph(
         else:
             n = len(inputs)
             inputs.append(p["path"])
+            # The effect's own lead-in silence is trimmed, so the sound lands
+            # on its action's cut: generated effects often open quiet, and the
+            # Battery Drop's sounds came in after the picture they belonged to.
             chains.append(
-                f"[{n}:a]atrim=0:{length:.3f},asetpts=PTS-STARTPTS,"
+                f"[{n}:a]silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.02,"
+                f"asetpts=PTS-STARTPTS,atrim=0:{length:.3f},asetpts=PTS-STARTPTS,"
                 f"loudnorm=I={music_lufs + sfx_gain_db:.1f}:TP=-3:LRA=7,aresample=44100,"
                 f"afade=t=out:st={max(0.0, length - 0.3):.3f}:d=0.3,"
                 f"adelay={delay}|{delay}[p{k}]"

@@ -98,6 +98,14 @@ class TestMix:
         assert graph.endswith("amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.700:level=disabled,"
                               "atrim=0:7.000[out]")
 
+    def test_a_sound_starts_on_its_cut_not_after_its_own_lead_in(self):
+        """Generated effects often open quiet; the Battery Drop's sounds (2026-10-15)
+        came in after the picture they belonged to."""
+        graph, _ = score.mix_graph([{"path": "s", "kind": "sfx", "start": 2.4, "end": 5.4}],
+                                   duration_s=7.0, fade_s=1.5, sfx_gain_db=9.0)
+        trim = graph.index("silenceremove=start_periods=1")
+        assert trim < graph.index("atrim=0:3.000") < graph.index("adelay=2400|2400")
+
     def test_long_music_crossfades_its_steady_part_from_separate_inputs(self):
         """Generated music fades out at its end, so only the first part is used,
         looped; asplit cannot feed an acrossfade, so each repeat is an input."""
