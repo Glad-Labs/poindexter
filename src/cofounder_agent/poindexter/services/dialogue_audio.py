@@ -375,7 +375,9 @@ async def render_dialogue(
                 previous_was_line = True
             elif kind == "action":
                 start = t
-                await _pad(action_s)
+                # The writer's own length for this action (a held moment runs
+                # long), else story_action_beat_seconds.
+                await _pad(float(beat.get("seconds") or action_s))
                 timeline.append({
                     "beat_idx": beat_idx, "scene_id": scene.get("scene_id"),
                     "kind": "action", "speaker": None, "text": beat.get("text", ""),

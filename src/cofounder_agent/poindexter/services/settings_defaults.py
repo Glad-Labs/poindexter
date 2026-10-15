@@ -3459,6 +3459,13 @@ DEFAULTS: dict[str, str] = {
         "all ages: the peril is real, but no main character dies or is badly hurt, "
         "and the ending lands its lesson without being grim"
     ),
+    # The visual format (Matt, 2026-10-15: a visual story, Samurai Jack as
+    # the bar): at most this many spoken lines per minute, each about this
+    # many words (the word budget), and at most this many characters in an
+    # action.
+    'story_visual_max_lines_per_minute': '4',
+    'story_visual_words_per_line': '9',
+    'story_max_characters_per_shot': '2',
     'story_dialogue_pass_enabled': 'true',
     'story_dialogue_model': '',
     'story_dialogue_max_growth': '1.25',
@@ -6921,6 +6928,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_cold_read_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_continuity_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_audience': {'owner': 'screenplay', 'value_type': 'string'},
+    'story_visual_max_lines_per_minute': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_visual_words_per_line': {'owner': 'screenplay', 'value_type': 'float'},
+    'story_max_characters_per_shot': {'owner': 'screenplay', 'value_type': 'integer'},
     'story_dialogue_pass_enabled': {'owner': 'screenplay', 'value_type': 'boolean'},
     'story_dialogue_model': {'owner': 'screenplay', 'value_type': 'string'},
     'story_dialogue_max_growth': {'owner': 'screenplay', 'value_type': 'float'},

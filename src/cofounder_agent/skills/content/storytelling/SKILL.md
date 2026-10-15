@@ -96,6 +96,7 @@ FORMATS — follow the one named above.
 - story: a character wants something, meets an obstacle, and changes or learns by the end. The topic is the world the story happens in.
 - dialogue: two or more cast members talk it through. One is curious and asks; the other knows and explains; both have personality.
 - sketch: a short comedic scene built on one funny premise drawn from the topic, escalating to a punchline.
+- visual: a story told in what the audience sees, like a silent short. The situation is clear from the first shots without anyone explaining it, something funny or surprising happens every ten to fifteen seconds, and it ends on a button: a last gag or image that pays off the opening. Characters speak only a few short lines, where a word lands harder than a picture.
 
 FIND THE STORY FIRST
 Every format, an explainer included, is a story about a character. Decide the spine before the scenes:
@@ -178,6 +179,7 @@ HOW TO WRITE IT
 - Give every line an "intensity": "low" for quiet, thoughtful or deadpan lines, "medium" for ordinary conversation, "high" for outbursts, big surprises and the turn itself. Vary it across the scene.
 - Write each character in their own voice, from their personality.
 - When this scene holds the piece's main event (under THE STORY), it happens here as an action beat the audience watches, at full length, never reported afterwards.
+- In a visual piece, nearly every beat is an action, and the few lines are short. Give each action a "seconds": how long the audience watches it, from 2 for a quick gag to 8 for a held, quiet moment before something happens. Each action shows at most two characters; put a third in their own action.
 - Tell the story with what the audience sees. When something happens (a character tries, fails, finds, breaks, gives or changes something), it happens in an action beat, on screen. Lines carry what the characters feel, want and argue about; the situation, the stakes and anything the audience can watch stay out of the dialogue.
 - A character who arrives partway through the scene arrives in an action beat that lists them in "enters"; one who leaves goes in an action beat that lists them in "exits". Everyone else is in the scene from its first beat to its last. A character speaks only while they are in the scene, except a line heard but not seen (over a radio, through a door, from off screen), which has "offscreen": true.
 - Keep facts accurate. Where a fact is uncertain, let a character ask or wonder rather than state it.
@@ -186,7 +188,7 @@ HOW TO WRITE IT
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
-{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high", "offscreen": false}}, {{"kind": "action", "text": "what we see", "characters": ["id"], "enters": [], "exits": []}}]}}
+{{"beats": [{{"kind": "line", "speaker": "id or narrator", "text": "what they say", "delivery": "excited, to camera", "intensity": "high", "offscreen": false}}, {{"kind": "action", "text": "what we see", "characters": ["id"], "enters": [], "exits": [], "seconds": 3}}]}}
 ```
 
 ## story.shot_visuals
@@ -208,6 +210,7 @@ SHOTS
 
 FOR EVERY SHOT
 - "prompt": one or two sentences describing the picture: camera framing (wide, medium or close-up), where the visible characters are and what they are doing, the key objects, and the lighting and mood of the scene.
+- Compose every picture like a frame from a cinematic animated film: one clear subject, a strong silhouette, and a bold composition. Use either a wide frame with plenty of empty space around a small figure, a low or high angle that makes the moment feel big, or a tight close-up on a face, a hand or an object. The audience should read the picture in one glance.
 - Set it in the row's scene, as that scene is described. The characters stay where the scene puts them.
 - A reaction row shows the listed characters listening to the speaker: their face and body answering what was just said. The speaker's words stay spoken; the picture shows the people in the room.
 - When a line uses a comparison or an analogy, picture the characters talking it through in the scene, with at most one prop from it in their hands or on a surface.
@@ -215,7 +218,7 @@ FOR EVERY SHOT
 - Draw only the characters a row lists as visible. Anyone else the row names, such as a narrator, is a voice heard over the picture.
 - Vary the framing from shot to shot (wide, medium, close-up, over the shoulder) while the place stays the same.
 - Keep pictures free of written words, signs and screens with text.
-- "motion": for an animated shot, one sentence on how the camera moves and what moves in the picture. For a still, an empty string.
+- "motion": for an animated shot, one sentence on how the camera moves and what moves in the picture. Keep it slow and deliberate: a held frame where one thing moves (hair in the wind, a light flickering, a single step) reads better than busy motion. For a still, an empty string.
 
 OUTPUT
 Reply with one JSON object and nothing else, shaped like this:
@@ -504,6 +507,7 @@ WHAT A GOOD ONE DOES
 - Each character sounds like themselves: a reader could tell who is speaking without the name.
 - Jokes are specific to these characters and this world, with a setup and a release.
 - Every scene changes something, and every line earns its place.
+- In a visual piece: the situation is clear from the first shots without anyone explaining it; something funny or surprising happens every ten to fifteen seconds; the lines are few and each one earns its place; and it ends on a button, a last gag or image that pays off the opening.
 - The ending lands on an image or a line that works because of what came before it, and the last scene shows the main character changed: what they understand, decide or do now that they would not have at the start.
 
 YOUR NOTES

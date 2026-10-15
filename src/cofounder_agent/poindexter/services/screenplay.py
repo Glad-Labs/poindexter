@@ -59,7 +59,10 @@ logger = logging.getLogger(__name__)
 NARRATOR = "narrator"
 #: Screenplay shapes the writer knows. The rules for each live in the
 #: ``story.screenplay`` prompt; this list only validates the requested one.
-FORMATS: tuple[str, ...] = ("explainer", "story", "dialogue", "sketch")
+FORMATS: tuple[str, ...] = ("explainer", "story", "dialogue", "sketch", "visual")
+#: Told in what the audience sees, with few lines (Matt, 2026-10-15: a visual
+#: story, Samurai Jack as the bar).
+VISUAL = "visual"
 BEAT_KINDS: tuple[str, ...] = ("line", "action")
 _WORD_RE = re.compile(r"[A-Za-z0-9']+")
 #: The story spine every outline names (see the module docstring).
@@ -244,6 +247,20 @@ def _source_block(request: ScreenplayRequest) -> str:
     )
 
 
+def visual_line_cap(seconds: float, site_config: Any) -> int:
+    """The most spoken lines a visual piece (or one scene of it) of ``seconds`` may have."""
+    per_minute = site_config.get_float("story_visual_max_lines_per_minute", 4.0)
+    return max(1, int(round(per_minute * seconds / 60.0)))
+
+
+def request_budget(request: ScreenplayRequest, site_config: Any) -> int:
+    """The spoken-word budget: from the length, or for a visual piece from its line cap."""
+    if request.format == VISUAL:
+        per_line = site_config.get_float("story_visual_words_per_line", 9.0)
+        return max(10, int(round(visual_line_cap(request.target_seconds, site_config) * per_line)))
+    return word_budget(request.target_seconds, site_config)
+
+
 def word_budget(target_seconds: float, site_config: Any) -> int:
     rate = site_config.get_float("story_speech_words_per_second", 2.5)
     return max(10, int(round(target_seconds * rate)))
@@ -311,6 +328,15 @@ def normalize_beats(raw_beats: Any) -> list[dict[str, Any]]:
                 names = _csv_or_list(beat.get(key))
                 if names:
                     item[key] = names
+            # How long the audience watches it: a held, quiet moment runs long
+            # (Samurai Jack), a quick gag short. Bounded so one beat cannot
+            # swallow the piece.
+            try:
+                seconds = float(beat.get("seconds") or 0)
+            except (TypeError, ValueError):
+                seconds = 0.0
+            if seconds > 0:
+                item["seconds"] = round(min(10.0, max(1.0, seconds)), 2)
         out.append(item)
     return out
 
@@ -495,7 +521,7 @@ def check_outline(
 
 
 def check_beats(
-    beats: list[dict[str, Any]], scene_id: str, request: ScreenplayRequest,
+    beats: list[dict[str, Any]], scene_id: str, request: ScreenplayRequest, site_config: Any = None,
 ) -> list[str]:
     """Hard problems with one scene's normalized beats."""
     errors: list[str] = []
@@ -520,8 +546,23 @@ def check_beats(
                     errors.append(
                         f"FIX scene {scene_id!r}: action names {name!r}, who is not in the cast",
                     )
+    if request.format == VISUAL:
+        most = _max_per_shot(site_config)
+        for beat in beats:
+            if beat["kind"] == "action" and len(beat.get("characters") or []) > most:
+                errors.append(
+                    f"FIX scene {scene_id!r}: an action shows {len(beat['characters'])} characters; keep each "
+                    f"to at most {most}, and show the others in their own action",
+                )
     errors.extend(_check_entrances(beats, scene_id))
     return errors
+
+
+def _max_per_shot(site_config: Any) -> int:
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    value = site_config.get("story_max_characters_per_shot", None) if site_config is not None else None
+    return int(float(DEFAULTS["story_max_characters_per_shot"] if value in (None, "") else value))
 
 
 def _check_entrances(beats: list[dict[str, Any]], scene_id: str) -> list[str]:
@@ -550,9 +591,13 @@ def _check_entrances(beats: list[dict[str, Any]], scene_id: str) -> list[str]:
     return errors
 
 
-def length_problem(words: int, budget: float, site_config: Any) -> str | None:
-    """A FIX line when ``words`` is outside the accepted window, else None."""
-    lo = site_config.get_float("story_length_min_ratio", 0.65)
+def length_problem(words: int, budget: float, site_config: Any, *, allow_short: bool = False) -> str | None:
+    """A FIX line when ``words`` is outside the accepted window, else None.
+
+    ``allow_short``: a visual piece is told in action, so fewer words than
+    the budget is never a problem.
+    """
+    lo = 0.0 if allow_short else site_config.get_float("story_length_min_ratio", 0.65)
     hi = site_config.get_float("story_length_max_ratio", 1.75)
     target = int(round(budget))
     if words < budget * lo:
@@ -576,11 +621,22 @@ def validate(
     errors = check_outline(screenplay, request, site_config)
     lines = 0
     for scene in screenplay["scenes"]:
-        errors.extend(check_beats(scene.get("beats") or [], scene["scene_id"], request))
+        errors.extend(check_beats(scene.get("beats") or [], scene["scene_id"], request, site_config))
         lines += sum(1 for b in scene.get("beats") or [] if b.get("kind") == "line")
     if screenplay["scenes"] and not lines:
         errors.append("FIX: add spoken \"line\" beats — the screenplay has no dialogue or narration")
     return errors
+
+
+def _visual_over_cap(screenplay: dict[str, Any], request: ScreenplayRequest, site_config: Any) -> str | None:
+    """A visual piece with more lines than its cap, as an editor note, else ``None``."""
+    if request.format != VISUAL:
+        return None
+    cap = visual_line_cap(request.target_seconds, site_config)
+    lines = sum(1 for scene in screenplay.get("scenes") or [] for b in scene.get("beats") or [] if b.get("kind") == "line")
+    if lines <= cap:
+        return None
+    return f"the piece has {lines} spoken lines; a visual piece keeps at most {cap}: show the rest in action"
 
 
 def _parse(raw: str) -> dict[str, Any] | None:
@@ -716,7 +772,7 @@ async def write_screenplay(
 ) -> dict[str, Any]:
     """Outline, then write each scene. Raises ScreenplayError on hard failure."""
     personas = resolve_cast(site_config, request.cast)
-    budget = word_budget(request.target_seconds, site_config)
+    budget = request_budget(request, site_config)
     model = _resolve_model(site_config)
     common = {
         "site_name": str(site_config.get("site_name", "") or "the studio"),
@@ -751,12 +807,21 @@ async def write_screenplay(
 
         def _check_scene(reply: dict[str, Any], sid: str = sid) -> tuple[list[str], list[str]]:
             beats = normalize_beats(reply.get("beats"))
-            hard = check_beats(beats, sid, request)
+            hard = check_beats(beats, sid, request, site_config)
             if hard:
                 return hard, []
-            if not any(b["kind"] == "line" for b in beats):
+            if request.format != VISUAL and not any(b["kind"] == "line" for b in beats):
                 return [], [f"FIX scene {sid!r}: add at least one spoken line"]
-            soft = length_problem(_scene_words(beats), per_scene, site_config)
+            if request.format == VISUAL:
+                # One line of slack per scene: the lines that matter cluster
+                # where the story turns. The piece's own cap is the editor's.
+                cap = visual_line_cap(request.target_seconds / len(outline["scenes"]), site_config) + 1
+                spoken = sum(1 for b in beats if b["kind"] == "line")
+                if spoken > cap:
+                    return [f"FIX scene {sid!r}: {spoken} spoken lines; a visual piece tells it in action, "
+                            f"so keep at most {cap} and show the rest"], []
+            soft = length_problem(_scene_words(beats), per_scene, site_config,
+                                  allow_short=request.format == VISUAL)
             return [], [f"scene {sid!r}: {soft}"] if soft else []
 
         reply, soft = await _ask_validated(
@@ -793,7 +858,7 @@ async def write_screenplay(
     if hard:
         raise ScreenplayError("the assembled screenplay is unusable: " + "; ".join(hard[:5]))
     words = spoken_words(screenplay)
-    total = length_problem(words, budget, site_config)
+    total = length_problem(words, budget, site_config, allow_short=request.format == VISUAL)
     if total:
         notes.append(f"whole piece: {total}")
     screenplay.update({
@@ -886,6 +951,8 @@ async def edit_screenplay(
         notes = [str(x).strip() for x in reply.get("notes") or [] if str(x).strip()][:max_notes]
         lost = list((read or {}).get("lost") or [])
         lost.extend(_unfollowed(read))
+        if over := _visual_over_cap(screenplay, request, site_config):
+            lost.append(over)
         if read is not None and read.get("change_seen") is False:
             # "Signal Jammer" stopped at its blackout: no beat where Cinder
             # sees what she did, so the lesson never landed (2026-10-14).
@@ -930,6 +997,8 @@ async def edit_screenplay(
     history.append({"final_cold_read": final, "final_continuity": final_clashes})
     still = [*(f"continuity: beat {c['beat']}: {c['problem']}" for c in final_clashes or []),
              *((final or {}).get("lost") or []), *_unfollowed(final)]
+    if over := _visual_over_cap(screenplay, request, site_config):
+        still.append(over)
     if final is not None and final.get("change_seen") is False:
         still.append("the ending never shows the main character changed")
     if still:
@@ -1203,7 +1272,7 @@ async def revise_screenplay(
         raise ScreenplayError("a revision needs a note saying what to change")
     request = _request_from(screenplay)
     personas = resolve_cast(site_config, request.cast)
-    budget = word_budget(request.target_seconds, site_config)
+    budget = request_budget(request, site_config)
     model = _resolve_model(site_config)
 
     def _check(reply: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -1225,7 +1294,7 @@ async def revise_screenplay(
     )
     revised = normalize_screenplay(reply)
     words = spoken_words(revised)
-    total = length_problem(words, budget, site_config)
+    total = length_problem(words, budget, site_config, allow_short=request.format == VISUAL)
     carried = {k: v for k, v in screenplay.items()
                if k not in ("title", "logline", "spine", "main_event", "translation", "locations", "scenes")}
     revised.update({
