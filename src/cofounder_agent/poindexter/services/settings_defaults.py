@@ -3241,6 +3241,10 @@ DEFAULTS: dict[str, str] = {
     # untouched for keep_days are deleted when the next render writes one.
     'video_clip_cache_enabled': 'true',
     'video_clip_cache_dir': '~/.poindexter/video/clips',
+    # A cartoon clip's final frame gets the stills' cast check (strangers,
+    # doubles, everyone present): the quality judge passed Bolt's head
+    # swelling to fill the frame (The Battery Drop, 2026-10-15).
+    'video_clip_cast_check_enabled': 'true',
     'video_clip_cache_keep_days': '14',
     # Model sheets (services/model_sheets.py, 2026-10-14): each cast
     # character's turnaround (front, three-quarter, side) drawn once from the
@@ -6968,6 +6972,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'story_score_dir': {'owner': 'score', 'value_type': 'string'},
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
+    'video_clip_cast_check_enabled': {'owner': 'shot_list_renderer', 'value_type': 'boolean'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
     'story_turnarounds_enabled': {'owner': 'model_sheets', 'value_type': 'boolean'},
     'story_turnaround_template': {'owner': 'model_sheets', 'value_type': 'string'},

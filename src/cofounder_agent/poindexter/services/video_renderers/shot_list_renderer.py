@@ -4923,12 +4923,60 @@ def _endcard_fit_target(
     return fit_target, fit_hold, None
 
 
+async def _with_final_cast(
+    result: Any,
+    shot: Shot,
+    clip_path: str,
+    *,
+    qa: _QAConfig,
+    ctx: ReferenceContext | None,
+    site_config: Any,
+) -> Any:
+    """A passing cartoon clip whose last frame is off-cast scores under the line.
+
+    The quality judge grades craft, not who is in the frame: The Battery
+    Drop's render (2026-10-15) passed all 19 shots at 60 or more while Bolt's
+    head swelled to fill the frame by the end of three clips and Cinder ended
+    one with another face. The final frame, the one the compositor holds,
+    gets the stills' cast check (strangers, doubles, everyone present); a
+    failure drops the score just under the threshold, so the shot is re-rolled
+    and, if no re-roll passes, falls back to its still (its opening passed).
+    ``video_clip_cast_check_enabled`` turns it off.
+    """
+    from poindexter.services.video_renderers.shot_vision_qa import _final_frame
+
+    if (
+        ctx is None or result is None or result.score is None or result.score < qa.threshold
+        or not shot.characters or shot.source == "presenter"
+        or str(clip_path).lower().endswith(_STILL_SUFFIXES)
+    ):
+        return result
+    enabled = str(site_config.get("video_clip_cast_check_enabled", DEFAULTS["video_clip_cast_check_enabled"])
+                  if site_config is not None else DEFAULTS["video_clip_cast_check_enabled"])
+    if enabled.strip().lower() not in ("true", "1", "yes", "on"):
+        return result
+    frame = await _final_frame(clip_path)
+    if not frame:
+        return result
+    verdict = await _check_still_cast(frame, list(shot.characters), ctx=ctx, site_config=site_config)
+    if verdict.ok is not False:
+        return result
+    logger.info("[SHOT_QA] shot %d's final frame is off-cast (%s): scored under the line",
+                shot.idx, verdict.reason)
+    result.opening_score = result.score if result.opening_score is None else result.opening_score
+    result.score = min(float(result.score), qa.threshold - 1)
+    result.frame = "final"
+    result.reason = f"final frame off-cast: {verdict.reason}"[:200]
+    return result
+
+
 async def _score_pass(
     states: list[_ShotState],
     *,
     qa: _QAConfig,
     site_config: Any,
     pool: Any,
+    reference_ctx: ReferenceContext | None = None,
 ) -> None:
     """Score every fresh, non-reused clip — vision model resident across the pass.
 
@@ -4942,10 +4990,13 @@ async def _score_pass(
     for st in states:
         if st.is_reused or st.rung == "kept" or not st.result.success or not st.result.clip_path:
             continue
-        st.qa = await score_shot_frame(
-            frame_path=st.result.clip_path, shot=st.shot,
-            site_config=site_config, pool=pool,
-            topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
+        st.qa = await _with_final_cast(
+            await score_shot_frame(
+                frame_path=st.result.clip_path, shot=st.shot,
+                site_config=site_config, pool=pool,
+                topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
+            ),
+            st.shot, str(st.result.clip_path), qa=qa, ctx=reference_ctx, site_config=site_config,
         )
 
 
@@ -5062,6 +5113,7 @@ async def _repair_pass(
     site_config: Any,
     render_kwargs: dict[str, Any],
     pool: Any,
+    reference_ctx: ReferenceContext | None = None,
 ) -> None:
     """Batched keep-best regeneration for the sub-threshold stochastic shots.
 
@@ -5131,10 +5183,13 @@ async def _repair_pass(
         for st, cand in cands:
             if not (cand.success and cand.clip_path):
                 continue
-            cand_qa = await score_shot_frame(
-                frame_path=cand.clip_path, shot=st.shot,
-                site_config=site_config, pool=pool,
-                topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
+            cand_qa = await _with_final_cast(
+                await score_shot_frame(
+                    frame_path=cand.clip_path, shot=st.shot,
+                    site_config=site_config, pool=pool,
+                    topic=qa.topic, narration=qa.narration.get(st.shot.idx, ""),
+                ),
+                st.shot, str(cand.clip_path), qa=qa, ctx=reference_ctx, site_config=site_config,
             )
             # Remembered even when this candidate loses keep-best, so the next
             # re-roll holds the camera either way.
@@ -6301,11 +6356,11 @@ async def render_shot_list(
             ),
         )
     await _score_pass(
-        states, qa=qa, site_config=site_config, pool=pool,
+        states, qa=qa, site_config=site_config, pool=pool, reference_ctx=reference_ctx,
     )
     await _repair_pass(
         states, qa=qa, site_config=site_config,
-        render_kwargs=render_kwargs, pool=pool,
+        render_kwargs=render_kwargs, pool=pool, reference_ctx=reference_ctx,
     )
     # Topic escalation: in-family retries can't fix a stock query that matched
     # unrelated footage, so a still-off-topic stock shot gets one cross-family

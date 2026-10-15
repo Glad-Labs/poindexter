@@ -1143,3 +1143,58 @@ async def test_with_re_animation_off_the_held_camera_gets_a_new_still(tmp_path, 
     ready.assert_awaited_once()
     assert st.result.still_path == str(tmp_path / "repair1" / "shot_15.png")
     assert (tmp_path / "repair1" / "shot_15.png").read_bytes() == b"png", "a new still"
+
+
+# ---------------------------------------------------------------------------
+# the cast check on a cartoon clip's final frame
+# ---------------------------------------------------------------------------
+
+
+def _cast_shot(**extra) -> Shot:
+    return Shot(idx=3, duration_s=4.0, intent="Cinder hands Bolt the cell", source="generative",
+                prompt="p", narration_offset_s=0.0, characters=["cinder", "bolt"], **extra)
+
+
+@pytest.fixture
+def last_frame(monkeypatch, tmp_path):
+    frame = tmp_path / "last.png"
+    frame.write_bytes(b"png")
+    monkeypatch.setattr(sq, "_final_frame", AsyncMock(return_value=str(frame)))
+    return frame
+
+
+@pytest.mark.parametrize(("ok", "want"), [(False, 59.0), (True, 82.0), (None, 82.0)])
+async def test_an_off_cast_final_frame_scores_under_the_line(monkeypatch, last_frame, ok, want):
+    """The Battery Drop (2026-10-15): all 19 shots passed the quality judge at
+    60+ while Bolt's head swelled to fill three clips' last frames."""
+    from poindexter.services.video_renderers.shot_vision_qa import TalkingFrameVerdict
+
+    check = AsyncMock(return_value=TalkingFrameVerdict(ok=ok, people=3, reason="two Cinders"))
+    monkeypatch.setattr(slr, "_check_still_cast", check)
+    qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
+    got = await slr._with_final_cast(ShotQAResult(score=82.0, frame="opening"), _cast_shot(), "/w/shot_03.mp4",
+                                     qa=qa, ctx=slr.ReferenceContext(cast=("cinder", "bolt")), site_config=None)
+    assert got.score == want
+    assert check.await_args.args[1] == ["cinder", "bolt"]
+    if ok is False:
+        # Its opening passed, so a shot no re-roll fixes can fall back to its still.
+        assert got.frame == "final" and got.opening_score == 82.0 and "two Cinders" in got.reason
+
+
+async def test_only_a_passing_cartoon_clip_with_characters_is_checked(monkeypatch, last_frame):
+    check = AsyncMock()
+    monkeypatch.setattr(slr, "_check_still_cast", check)
+    qa = slr._QAConfig(enabled=True, threshold=60.0, max_retries=2)
+    ctx = slr.ReferenceContext(cast=("cinder", "bolt"))
+    for result, shot, path, c in [
+        (ShotQAResult(score=82.0), _cast_shot(), "/w/shot_03.mp4", None),  # not a cartoon
+        (ShotQAResult(score=40.0), _cast_shot(), "/w/shot_03.mp4", ctx),  # already failing
+        (ShotQAResult(score=None), _cast_shot(), "/w/shot_03.mp4", ctx),  # unscored
+        (ShotQAResult(score=82.0), _cast_shot(), "/w/shot_03.png", ctx),  # a still
+        (ShotQAResult(score=82.0), _hero(), "/w/shot_03.mp4", ctx),  # nobody in it
+    ]:
+        assert await slr._with_final_cast(result, shot, path, qa=qa, ctx=c, site_config=None) is result
+    off = SiteConfig(initial_config={"video_clip_cast_check_enabled": "false"})
+    await slr._with_final_cast(ShotQAResult(score=82.0), _cast_shot(), "/w/shot_03.mp4",
+                               qa=qa, ctx=ctx, site_config=off)
+    check.assert_not_awaited()
