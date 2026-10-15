@@ -3245,6 +3245,12 @@ DEFAULTS: dict[str, str] = {
     # doubles, everyone present): the quality judge passed Bolt's head
     # swelling to fill the frame (The Battery Drop, 2026-10-15).
     'video_clip_cast_check_enabled': 'true',
+    # A cartoon's score (screenplay renders): its level where nobody speaks,
+    # and whether it ducks under the lines. Blog videos keep their -18 dB
+    # bed. The Battery Drop (2026-10-15) carried its score at -18 dB: about
+    # -42 dB in the long silent stretches of a visual piece.
+    'story_score_dbfs': '-6',
+    'story_score_duck': 'true',
     'video_clip_cache_keep_days': '14',
     # Model sheets (services/model_sheets.py, 2026-10-14): each cast
     # character's turnaround (front, three-quarter, side) drawn once from the
@@ -6973,6 +6979,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_clip_cache_enabled': {'owner': 'clip_cache', 'value_type': 'boolean'},
     'video_clip_cache_dir': {'owner': 'clip_cache', 'value_type': 'string'},
     'video_clip_cast_check_enabled': {'owner': 'shot_list_renderer', 'value_type': 'boolean'},
+    'story_score_dbfs': {'owner': 'shot_list_renderer', 'value_type': 'float'},
+    'story_score_duck': {'owner': 'shot_list_renderer', 'value_type': 'boolean'},
     'video_clip_cache_keep_days': {'owner': 'clip_cache', 'value_type': 'float'},
     'story_turnarounds_enabled': {'owner': 'model_sheets', 'value_type': 'boolean'},
     'story_turnaround_template': {'owner': 'model_sheets', 'value_type': 'string'},

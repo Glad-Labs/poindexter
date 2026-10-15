@@ -81,3 +81,14 @@ class TestRenderer:
         scenes = await slr._scenes_for_plan([(0, 2.0), (1, 2.0), (2, 2.0)], results, blog, width=8, height=8,
                                             transitions=TRANSITIONS)
         assert all(not s.transition_in for s in scenes)
+
+
+def test_a_cartoon_score_plays_up_and_ducks_while_other_renders_keep_the_bed():
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    exact, fit = SimpleNamespace(timing="exact"), SimpleNamespace(timing="fit")
+    assert slr._score_mix(exact, SiteConfig(initial_config={})) == {
+        "soundtrack_dbfs": float(DEFAULTS["story_score_dbfs"]), "soundtrack_duck": True}
+    off = SiteConfig(initial_config={"story_score_dbfs": "-12", "story_score_duck": "false"})
+    assert slr._score_mix(exact, off) == {"soundtrack_dbfs": -12.0, "soundtrack_duck": False}
+    assert slr._score_mix(fit, SiteConfig(initial_config={})) == {}

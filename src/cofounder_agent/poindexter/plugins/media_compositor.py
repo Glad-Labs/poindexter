@@ -128,6 +128,10 @@ class CompositionRequest:
     codec: str = "h264"
     container: str = "mp4"
     soundtrack_dbfs: float = -18.0
+    # Duck the soundtrack under the narration (sidechain-compressed by it):
+    # the music plays at ``soundtrack_dbfs`` where nobody speaks and drops
+    # under each line. Off = one constant level, the blog videos' bed.
+    soundtrack_duck: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

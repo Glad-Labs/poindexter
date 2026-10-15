@@ -586,9 +586,16 @@ def _build_soundtrack_mix_cmd(
     normalize: bool = True,
     video_pad_s: float = 0.0,
     loop_soundtrack: bool = False,
+    duck: bool = False,
 ) -> list[str]:
     """Mix ``soundtrack_path`` under the existing audio at the requested
     dBFS, re-muxing into a fresh MP4.
+
+    ``duck`` keys a sidechain compressor on the existing audio, so the
+    soundtrack drops under each spoken line and comes back up between
+    them. The Battery Drop (2026-10-15), a visual piece with four lines in
+    72 s, carried its score at -18 dB the whole way: about -42 dB in the
+    long stretches with nobody talking, where the music is the soundtrack.
 
     Re-encodes video too (libx264 over a stream-copy pass would be
     cheaper, but mixing audio without a re-encode is fragile across
@@ -636,6 +643,15 @@ def _build_soundtrack_mix_cmd(
             f"[0:v]tpad=stop_mode=clone:stop_duration={video_pad_s:.3f}[vpad];"
             f"[1:a]volume={soundtrack_dbfs}dB[bg];"
             f"[0:a][bg]amix=inputs=2:duration=longest:dropout_transition=2:"
+            f"normalize={1 if normalize else 0}[a]"
+        )
+    elif duck:
+        video_map = "0:v:0"
+        af = (
+            f"[1:a]volume={soundtrack_dbfs}dB[bg0];"
+            "[0:a]asplit=2[voice][key];"
+            "[bg0][key]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=400[bg];"
+            f"[voice][bg]amix=inputs=2:duration=first:dropout_transition=2:"
             f"normalize={1 if normalize else 0}[a]"
         )
     else:
@@ -1159,6 +1175,7 @@ class FFmpegLocalCompositor:
                         video_in=stage_in,
                         soundtrack_path=request.soundtrack_path,
                         soundtrack_dbfs=request.soundtrack_dbfs,
+                        duck=bool(getattr(request, "soundtrack_duck", False)) and bool(request.narration_track_path),
                         loop_soundtrack=True,  # ~47s bed under a longer video
                         encoder=encoder,
                         preset=preset,

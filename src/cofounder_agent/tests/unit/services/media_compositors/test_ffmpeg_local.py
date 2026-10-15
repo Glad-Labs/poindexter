@@ -588,6 +588,15 @@ class TestBuildSoundtrackMixCmd:
         base.update(overrides)
         return base
 
+    def test_a_ducked_score_is_compressed_by_the_voice(self):
+        """The Battery Drop (2026-10-15): a constant -18 dB score was about
+        -42 dB in a visual piece's long silent stretches."""
+        graph = lambda cmd: cmd[cmd.index("-filter_complex") + 1]  # noqa: E731
+        ducked = graph(_build_soundtrack_mix_cmd(**self._kwargs(soundtrack_dbfs=-6.0, duck=True)))
+        assert "[1:a]volume=-6.0dB[bg0]" in ducked and "[0:a]asplit=2[voice][key]" in ducked
+        assert "[bg0][key]sidechaincompress=" in ducked and "[voice][bg]amix=" in ducked
+        assert "sidechaincompress" not in graph(_build_soundtrack_mix_cmd(**self._kwargs()))
+
     def test_two_inputs_video_then_audio(self):
         cmd = _build_soundtrack_mix_cmd(**self._kwargs())
         # First -i is the composed video, second is the audio to overlay.

@@ -2754,6 +2754,22 @@ async def _retry_failed_shot(st: _ShotState, *, render_kwargs: dict[str, Any], s
 _STILL_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
 
 
+def _score_mix(shot_list: Any, site_config: Any) -> dict[str, Any]:
+    """How a screenplay render mixes its score: ``story_score_dbfs``, ducked under the lines.
+
+    A cartoon's score is its soundtrack, not a bed under narration. Other
+    renders keep the compositor's defaults (a constant -18 dB bed).
+    """
+    if getattr(shot_list, "timing", "fit") != "exact" or site_config is None:
+        return {}
+    level = site_config.get("story_score_dbfs", DEFAULTS["story_score_dbfs"])
+    duck = site_config.get("story_score_duck", DEFAULTS["story_score_duck"])
+    return {
+        "soundtrack_dbfs": float(level if level not in (None, "") else DEFAULTS["story_score_dbfs"]),
+        "soundtrack_duck": str(duck).strip().lower() in ("true", "1", "yes", "on"),
+    }
+
+
 async def _held_picture(st: _ShotState, states: list[_ShotState], ctx: ReferenceContext) -> str | None:
     """A failed cartoon shot's stand-in: its scene's place, else the picture before it.
 
@@ -6539,6 +6555,7 @@ async def render_shot_list(
         scenes.append(endcard_scene)
 
     request = CompositionRequest(
+        **_score_mix(shot_list, site_config),
         scenes=scenes,
         # Full-length narration laid over the WHOLE concat at full volume
         # (#media-render-fixes). The compositor overlays this before mixing
