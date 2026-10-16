@@ -414,3 +414,68 @@ def test_default_restart_is_the_shared_helper_given_the_pool(monkeypatch):
 
     helper.assert_awaited_once_with(cw._CONTAINER, pool=pool)
     assert summary["status"] == "recycled"
+
+
+class TestAVideoRenderHoldsTheSidecar:
+    """2026-10-16: a multi-clip render holds ``gpu.lock("video")`` for the
+    whole render, but ComfyUI's queue is empty between its clips. A recycle
+    landed in one such gap, the next clip went to the restarting sidecar, and
+    the render waited 25 minutes on a prompt that no longer existed. A held
+    video lock now counts as a busy sidecar."""
+
+    def test_the_lock_key_and_holder_tag_are_the_schedulers(self):
+        from poindexter.services import gpu_scheduler as gs
+
+        assert cw.GPU_ADVISORY_LOCK_KEY == gs.GPU_ADVISORY_LOCK_KEY
+        video = gs._holder_tag("video", "media_render", "abc12345")["application_name"]
+        llm = gs._holder_tag("ollama", "draft", None)["application_name"]
+        assert video.startswith(cw._VIDEO_HOLDER_PREFIX)
+        assert not llm.startswith(cw._VIDEO_HOLDER_PREFIX)
+
+    def test_an_idle_queue_under_a_held_video_lock_is_busy(self, monkeypatch):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(return_value=True)
+        assert asyncio.run(cw._comfyui_busy(pool)) is True
+        sql, key, holder = pool.fetchval.await_args.args
+        assert "pg_locks" in sql and key == cw.GPU_ADVISORY_LOCK_KEY
+        assert holder == "poindexter-gpu:video:%"
+
+    def test_an_idle_queue_with_no_video_lock_is_idle(self, monkeypatch):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(return_value=False)
+        assert asyncio.run(cw._comfyui_busy(pool)) is False
+
+    @pytest.mark.parametrize("queue", [True, None])
+    def test_a_busy_or_unreachable_queue_answers_without_the_lock(self, monkeypatch, queue):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=queue))
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(side_effect=AssertionError("no lock read needed"))
+        assert asyncio.run(cw._comfyui_busy(pool)) is queue
+
+    def test_an_unreadable_lock_counts_as_busy(self, monkeypatch):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("db gone"))
+        assert asyncio.run(cw._comfyui_busy(pool)) is True
+
+    def test_the_probe_never_recycles_between_two_clips_of_a_render(self, monkeypatch):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
+        pool = _make_pool()
+        settings_read = pool.fetchval.side_effect
+
+        async def fetchval(query, *args):
+            if "pg_locks" in query:
+                return True
+            return await settings_read(query, *args)
+
+        pool.fetchval = AsyncMock(side_effect=fetchval)
+        summary = asyncio.run(
+            cw.run_comfyui_ram_watch_probe(
+                pool,
+                mem_fn=MagicMock(side_effect=AssertionError("must not read memory")),
+                restart_fn=AsyncMock(side_effect=AssertionError("must not restart")),
+            )
+        )
+        assert summary["status"] == "busy"

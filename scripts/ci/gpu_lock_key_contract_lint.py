@@ -106,6 +106,7 @@ TAG_RE = re.compile(r"[\"']poindexter-gpu(?:[:\"'])")
 TAG_SANCTIONED = {
     "src/cofounder_agent/poindexter/services/gpu_scheduler.py",  # defines + parses it
     "src/cofounder_agent/poindexter/brain/health_probes.py",     # writes it (probe locks)
+    "src/cofounder_agent/poindexter/brain/comfyui_ram_watch.py", # reads it: a video holder means mid-render
     "scripts/ci/gpu_lock_key_contract_lint.py",                  # this file
 }
 

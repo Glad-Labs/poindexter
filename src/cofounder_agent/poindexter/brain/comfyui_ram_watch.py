@@ -23,7 +23,12 @@ Per cycle:
    out of scope — this probe only ever restarts a sidecar it can VERIFY
    idle (poindexter#3094 posture: an unprovable queue is treated as
    busy, because bouncing a working renderer is worse than a fat one).
-3. Anything in ``queue_running``/``queue_pending`` => busy no-op.
+3. Anything in ``queue_running``/``queue_pending``, or a ``video`` GPU lock
+   held anywhere in the stack => busy no-op. A multi-clip render holds that
+   lock for the whole render but leaves ComfyUI's queue empty between clips;
+   on 2026-10-16 a recycle landed in one of those gaps, the next clip was
+   submitted to the restarting sidecar, and the render waited out a
+   25-minute timeout on a prompt that no longer existed.
 4. Within ``comfyui_ram_recycle_cooldown_minutes`` of the last recycle
    => cooldown no-op (restart-loop protection against a watermark set
    below the sidecar's healthy working set, mirroring
@@ -77,6 +82,7 @@ from poindexter.brain.ram_recycle_common import (
 from poindexter.brain.ram_recycle_common import (
     read_setting as _read_setting,
 )
+from poindexter.brain.sidecar_ram_watch import GPU_ADVISORY_LOCK_KEY
 
 logger = logging.getLogger("brain.comfyui_ram_watch")
 
@@ -191,6 +197,50 @@ async def _queue_busy(pool: Any) -> bool | None:
     )
 
 
+# The GPU scheduler's cross-process lock: every holder takes the base advisory
+# key (the brain's one pinned copy lives in sidecar_ram_watch) and stamps its
+# connection's application_name "poindexter-gpu:<owner>:<phase>:...". Only a
+# "video" holder means ComfyUI is mid-render: an LLM call holds the same key
+# for seconds and must not keep the sidecar from ever being recycled. The
+# prefix is pinned to gpu_scheduler._holder_tag by
+# tests/unit/brain/test_comfyui_ram_watch.py.
+_VIDEO_HOLDER_PREFIX = "poindexter-gpu:video:"
+
+_VIDEO_LOCK_SQL = """
+SELECT EXISTS (
+    SELECT 1
+      FROM pg_locks l
+      JOIN pg_stat_activity a ON a.pid = l.pid
+     WHERE l.locktype = 'advisory' AND l.objsubid = 1 AND l.granted
+       AND ((l.classid::bigint << 32) | l.objid::bigint) = $1
+       AND a.application_name LIKE $2
+)
+"""
+
+
+async def _video_render_held(pool: Any) -> bool:
+    """Whether a video render holds the GPU lock right now, in any process.
+
+    A failed read counts as held: skipping one recycle costs a fat sidecar for
+    a cycle, recycling under a render costs the render (#3094 posture).
+    """
+    try:
+        return bool(await pool.fetchval(
+            _VIDEO_LOCK_SQL, GPU_ADVISORY_LOCK_KEY, _VIDEO_HOLDER_PREFIX + "%",
+        ))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[COMFYUI_RAM] GPU lock read failed — treating as busy: %s", exc)
+        return True
+
+
+async def _comfyui_busy(pool: Any) -> bool | None:
+    """The queue's answer, and busy as well while a video render holds the GPU."""
+    busy = await _queue_busy(pool)
+    if busy is None or busy:
+        return busy
+    return await _video_render_held(pool)
+
+
 # --- finding emission --------------------------------------------------------
 
 
@@ -233,7 +283,8 @@ async def run_comfyui_ram_watch_probe(
     Args:
         pool: asyncpg pool for app_settings + audit_log.
         queue_fn: ``() -> True(busy) | False(idle) | None(unreachable)`` —
-            defaults to the live ``GET /queue`` read. Called twice on the
+            defaults to the live ``GET /queue`` read plus the ``video``
+            GPU-lock check. Called twice on the
             recycle path: once to qualify, once IMMEDIATELY before the
             restart (#3094 posture).
         mem_fn: ``(container) -> (rss_gb, swap_gb) | None`` — defaults to
@@ -249,7 +300,7 @@ async def run_comfyui_ram_watch_probe(
             ``time.monotonic``.
     """
     global _last_recycle_monotonic
-    queue_fn = queue_fn or (lambda: _queue_busy(pool))
+    queue_fn = queue_fn or (lambda: _comfyui_busy(pool))
     mem_fn = mem_fn or _read_container_main_rss_swap_gb
     restart_fn = restart_fn or docker_utils.restart_container
     now_fn = now_fn or time.monotonic

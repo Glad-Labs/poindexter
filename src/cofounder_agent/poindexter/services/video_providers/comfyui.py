@@ -129,6 +129,12 @@ _DEFAULT_READY_WAIT_S = 90.0
 _POLL_INTERVAL_S = 5.0
 # How often a still-executing prompt reports progress upstream (see _poll).
 _HEARTBEAT_EVERY_S = 30.0
+# A prompt that is in neither /history nor /queue for this many polls in a
+# row is gone: the sidecar restarted under it (2026-10-16, a RAM recycle
+# between two clips of one render; the poll then waited out its 1500 s
+# timeout on a prompt the new process had never heard of). Several polls, so
+# the instant between leaving the queue and landing in history never counts.
+_LOST_PROMPT_POLLS = 3
 
 _DEFAULT_HIGH_MODEL = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
 _DEFAULT_LOW_MODEL = "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
@@ -1243,6 +1249,7 @@ class ComfyUIProvider:
         """
         deadline = time.monotonic() + timeout_s
         last_beat = time.monotonic()
+        missing = 0
         while time.monotonic() < deadline:
             await asyncio.sleep(_POLL_INTERVAL_S)
             if heartbeat_cb is not None and time.monotonic() - last_beat >= _HEARTBEAT_EVERY_S:
@@ -1273,6 +1280,15 @@ class ComfyUIProvider:
                 continue
             entry = hist.get(prompt_id)
             if not entry:
+                if await self._prompt_lost(client, server_url, prompt_id):
+                    missing += 1
+                    if missing >= _LOST_PROMPT_POLLS:
+                        return "", (
+                            f"comfyui lost prompt {prompt_id}: it is not queued, "
+                            "running or finished — the sidecar restarted mid-render"
+                        )
+                else:
+                    missing = 0
                 continue
             status = entry.get("status", {}) or {}
             if status.get("status_str") == "error":
@@ -1303,6 +1319,31 @@ class ComfyUIProvider:
             f"(prompt_id={prompt_id}) — the queue may be wedged or the "
             "render is slower than video_comfyui_timeout_s"
         )
+
+    async def _prompt_lost(
+        self, client: httpx.AsyncClient, server_url: str, prompt_id: str,
+    ) -> bool:
+        """Whether ``/queue`` shows the prompt neither running nor pending.
+
+        Only a readable queue can say so; an unreachable or odd one is not
+        evidence of anything, so it reads as not lost.
+        """
+        try:
+            resp = await client.get(f"{server_url}/queue")
+            data = resp.json() if resp.status_code == 200 else None
+        except Exception as e:  # noqa: BLE001  # silent-ok: the next poll
+            # asks again, and the timeout path still reports a render that
+            # never finishes.
+            logger.debug("[ComfyUIProvider] queue read failed: %s", e)
+            return False
+        if not isinstance(data, dict) or not {"queue_running", "queue_pending"} <= data.keys():
+            return False
+        ids = {
+            item[1]
+            for item in (data.get("queue_running") or []) + (data.get("queue_pending") or [])
+            if isinstance(item, (list, tuple)) and len(item) > 1
+        }
+        return prompt_id not in ids
 
     async def _download(
         self,

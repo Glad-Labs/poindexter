@@ -5,6 +5,10 @@ minutes inside ONE graph node; the stuck-flow probe saw "No graph-node
 progress for 21m (stall threshold 20m)" and cancelled a healthy render
 mid-clip. The poll loop now heartbeats upstream every ~30 s while the
 prompt executes, and the render atom stamps last_progress_at from it.
+
+The same loop also notices a prompt the sidecar no longer knows (2026-10-16:
+ComfyUI restarted between two clips of one render, and the poll waited out
+its 1500 s timeout on a prompt the new process had never heard of).
 """
 from __future__ import annotations
 
@@ -110,3 +114,46 @@ async def test_generative_clip_hands_the_heartbeat_to_the_provider(monkeypatch):
         site_config=None, heartbeat_cb=beat,
     )
     assert seen.get("_heartbeat_cb") is beat
+
+
+class _RestartedClient:
+    """History never has the prompt, and /queue says nothing is running:
+    the sidecar restarted under the render (2026-10-16)."""
+
+    def __init__(self, queue):
+        self.queue = queue
+        self.urls: list[str] = []
+
+    async def get(self, url):
+        self.urls.append(url)
+        if url.endswith("/queue"):
+            return _Resp(self.queue)
+        return _Resp({})
+
+
+@pytest.mark.asyncio
+async def test_a_prompt_the_sidecar_no_longer_knows_fails_fast(monkeypatch):
+    monkeypatch.setattr(cf.asyncio, "sleep", AsyncMock())
+    client = _RestartedClient({"queue_running": [], "queue_pending": []})
+    filename, reason = await cf.ComfyUIProvider()._poll(client, "http://c", "p1", 1500.0)
+    assert filename == "" and "lost prompt p1" in reason and "restarted" in reason
+    assert sum(u.endswith("/history/p1") for u in client.urls) == cf._LOST_PROMPT_POLLS
+
+
+@pytest.mark.asyncio
+async def test_a_queued_or_running_prompt_is_not_lost(monkeypatch):
+    monkeypatch.setattr(cf.asyncio, "sleep", AsyncMock())
+    clock = itertools.count(0.0, 100.0)
+    monkeypatch.setattr(cf.time, "monotonic", lambda: next(clock))
+    queued = {"queue_running": [[7, "other", {}]], "queue_pending": [[8, "p1", {}]]}
+    filename, reason = await cf.ComfyUIProvider()._poll(_RestartedClient(queued), "http://c", "p1", 1500.0)
+    assert filename == "" and "timed out" in reason
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_queue_is_no_evidence(monkeypatch):
+    monkeypatch.setattr(cf.asyncio, "sleep", AsyncMock())
+    clock = itertools.count(0.0, 100.0)
+    monkeypatch.setattr(cf.time, "monotonic", lambda: next(clock))
+    filename, reason = await cf.ComfyUIProvider()._poll(_RestartedClient({}), "http://c", "p1", 1500.0)
+    assert "timed out" in reason
