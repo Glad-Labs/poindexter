@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 _FAIL = re.compile(r"^FAILED\s+(\S+?)::(\S+?)(?:\s+-\s+(.*))?$", re.M)
 _FENCE = re.compile(r"```(?:python)?\n(.*?)```", re.S)
 _SYSTEM = (
