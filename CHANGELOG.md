@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## [0.158.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.157.0...v0.158.0) (2026-10-16)
+
+
+### Features
+
+* **media:** a cartoon's action shots are two drawings of the moment, not generated motion ([#4488](https://github.com/Glad-Labs/glad-labs-stack/issues/4488)) ([88fa263](https://github.com/Glad-Labs/glad-labs-stack/commit/88fa26345668c5ddbbb4b0433b1f87a488476da2))
+* **media:** a revision can redraw a keyframe's second drawing, which adds no one and keeps the light ([#4491](https://github.com/Glad-Labs/glad-labs-stack/issues/4491)) ([37c512c](https://github.com/Glad-Labs/glad-labs-stack/commit/37c512c3ef90da33787f6762f75676e46471850e))
+* **media:** a standing casting rule, so a studio can cast people only ([#4487](https://github.com/Glad-Labs/glad-labs-stack/issues/4487)) ([e07534e](https://github.com/Glad-Labs/glad-labs-stack/commit/e07534e84873cfc7a27aef3e90c48688feb65a22))
+
+
+### Bug Fixes
+
+* **media:** a sound effect starts on its action's cut, not after its own lead-in silence ([#4486](https://github.com/Glad-Labs/glad-labs-stack/issues/4486)) ([62a0279](https://github.com/Glad-Labs/glad-labs-stack/commit/62a02799e16f6f44e1e1a3beaa7d721a0cca7efe))
+* **media:** a storyboard that could not draw most of its pictures fails instead of reporting ready ([#4490](https://github.com/Glad-Labs/glad-labs-stack/issues/4490)) ([aadbb10](https://github.com/Glad-Labs/glad-labs-stack/commit/aadbb10b4d631ffa44261e93b5cdced0ce4f5542))
+* **media:** every voiced line is heard back, and a take that lost words is voiced again ([#4485](https://github.com/Glad-Labs/glad-labs-stack/issues/4485)) ([f7d87a1](https://github.com/Glad-Labs/glad-labs-stack/commit/f7d87a1e9f20126fc443a3bfee7c09f161ce24e0))
+* **media:** keyframes moments in a row are a scene in motion, not one source repeated ([#4489](https://github.com/Glad-Labs/glad-labs-stack/issues/4489)) ([db5d290](https://github.com/Glad-Labs/glad-labs-stack/commit/db5d2904215577a719b8de5922abc1189d8e44a9))
+
 ## [0.157.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.156.0...v0.157.0) (2026-10-15)
 
 
