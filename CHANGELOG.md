@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.158.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.158.0...v0.158.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **comfyui:** a RAM recycle never lands between two clips of a render ([#4497](https://github.com/Glad-Labs/glad-labs-stack/issues/4497)) ([dd18829](https://github.com/Glad-Labs/glad-labs-stack/commit/dd18829332e68309f7317eaf95c0c7fdd262b635))
+
 ## [0.158.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.157.0...v0.158.0) (2026-10-16)
 
 

@@ -249,7 +249,7 @@ wheels = [
 
 [[package]]
 name = "gladlabs-mcp"
-version = "0.158.0"
+version = "0.158.1"
 source = { editable = "." }
 dependencies = [
     { name = "asyncpg" },
