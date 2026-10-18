@@ -2,11 +2,12 @@
 
 ## What each upload carries
 
-| Field       | Long form                                                                                                     | Short                                                                                                                                                                             | Limit enforced                 |
-| ----------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| Title       | `posts.title`                                                                                                 | its reviewed package title (written as a title, checked, kept whole) + `#Shorts`; else the first sentence of its narration                                                        | 100 chars (adapter clamps)     |
-| Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet | its package lead (else its first two sentences) · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
-| Tags        | `posts.seo_keywords`, comma-split                                                                             | same                                                                                                                                                                              | 30 tags / 500 joined chars     |
+| Field       | Long form                                                                                                                 | Short                                                                                                                                                                             | Limit enforced                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Title       | `posts.title`                                                                                                             | its reviewed package title (written as a title, checked, kept whole) + `#Shorts`; else the first sentence of its narration                                                        | 100 chars (adapter clamps)     |
+| Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet             | its package lead (else its first two sentences) · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
+| Tags        | `posts.seo_keywords`, comma-split                                                                                         | same                                                                                                                                                                              | 30 tags / 500 joined chars     |
+| Captions    | an SRT transcribed from the uploaded video's own audio, attached after the upload (see [Caption tracks](#caption-tracks)) | same                                                                                                                                                                              | one track per language + name  |
 
 Composed by `services/jobs/youtube_payload.py`, dispatched by
 `services/jobs/media_distribute.py`. The back-link carries
@@ -194,7 +195,7 @@ each scope with the feature it unlocks. `--reset-scopes` narrows on purpose.
 | Flag               | Scope added             | Unlocks                                                                                                           |
 | ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | _(none)_           | `youtube.upload`        | uploads, custom thumbnails                                                                                        |
-| `--with-update`    | `youtube.force-ssl`     | `youtube sync-metadata` (`videos.update`)                                                                         |
+| `--with-update`    | `youtube.force-ssl`     | `youtube sync-metadata` (`videos.update`), caption tracks (`captions.insert`)                                     |
 | `--with-analytics` | `yt-analytics.readonly` | the [YouTube reporting taps](/docs/integrations/tap_youtube_reporting): reach, views, watch time, traffic sources |
 
 `poindexter integrations youtube scopes` shows what the stored token holds
@@ -241,12 +242,52 @@ which the merge satisfies by construction.
 before it tells the operator to re-consent, so a different failure doesn't
 send them down the wrong path.
 
+## Caption tracks
+
+Since 2026-10-18 every upload also gets a caption track
+(`services/youtube_captions.py`). The render already burns captions into the
+picture, but those are pixels; YouTube search reads only a caption track, and
+YouTube search is one of the channel's two biggest view sources. Until then no
+upload carried one.
+
+Right after a successful upload, `media_distribute` runs one ASR pass over the
+**uploaded file's own audio** (ffmpeg pulls a 16 kHz mono WAV; the engine is
+`video_caption_engine`, Speaches by default), keeps the result as
+`<video>.srt` beside the video, and attaches it with `captions.insert`. Before
+inserting it lists the video's tracks, so a track with the same language and
+name is never added twice (YouTube's own speech track, `trackKind=asr`, does
+not count). The outcome is stamped on the video's
+`media_assets.metadata.youtube_captions` (`set` / `already there` /
+`failed: …`). A failure never fails the upload: it raises
+`youtube_caption_failed` (Discord), and the backfill below retries it.
+
+```bash
+# Videos already on the channel. Dry run: transcribe + store <video>.srt, send nothing
+docker exec poindexter-worker python -m poindexter.cli integrations youtube captions
+# Upload exactly the stored files
+docker exec poindexter-worker python -m poindexter.cli integrations youtube captions --apply
+# One video
+docker exec poindexter-worker python -m poindexter.cli integrations youtube captions --post <video id> --apply
+```
+
+A video whose file is gone from disk is fetched from its stored URL when it
+has one; otherwise it is reported and skipped. Settings:
+`youtube_captions_enabled` (`true`), `youtube_caption_language` (`en`),
+`youtube_caption_track_name` (`English`). `captions.insert` needs the
+`youtube.force-ssl` scope (`setup --with-update`).
+
+The cues are the engine's, so they carry its slips (a Short about TileLang
+came back "tile-line"): the same class of error YouTube's own automatic
+captions make, now under our control and editable as a file.
+
 ## Quota
 
 The YouTube Data API v3 is free; quota is units, not dollars (10,000/day).
 `videos.insert` costs ~1,600 — about 6 uploads/day. `videos.list` costs 1 and
 `videos.update` 50, so a full-channel metadata resync of a few dozen videos is
-quota-trivial next to a single upload.
+quota-trivial next to a single upload. A caption track costs `captions.list`
+50 + `captions.insert` 400, so captioning the whole channel once is a few
+uploads' worth.
 
 ## Long-form vs Short: titles, descriptions, cross-links
 

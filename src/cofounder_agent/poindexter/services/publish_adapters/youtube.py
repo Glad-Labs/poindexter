@@ -625,6 +625,77 @@ class YouTubePublishAdapter:
             return False, describe_thumbnail_error(exc)
         return True, "set"
 
+    @staticmethod
+    def _set_captions_blocking(
+        *,
+        credentials: Any,
+        video_id: str,
+        srt_path: str,
+        language: str,
+        name: str,
+    ) -> dict[str, Any]:
+        """Add a caption track unless one with this language and name exists.
+
+        ``captions.list`` (50 units) first, so a re-run never stacks a second
+        copy of our track; YouTube's own speech track (``trackKind='asr'``) is
+        ignored. ``captions.insert`` is 400 units and needs the
+        ``youtube.force-ssl`` scope (``setup --with-update``).
+        Returns ``{"id": ..., "existing": bool}``.
+        """
+        from googleapiclient.discovery import build  # type: ignore[import-not-found]
+        from googleapiclient.http import MediaFileUpload  # type: ignore[import-not-found]
+
+        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+        listed = youtube.captions().list(part="snippet", videoId=video_id).execute()
+        for item in listed.get("items") or []:
+            snip = item.get("snippet") or {}
+            if (
+                str(snip.get("trackKind") or "").lower() != "asr"
+                and str(snip.get("language") or "").lower() == language.lower()
+                and str(snip.get("name") or "") == name
+            ):
+                return {"id": item.get("id"), "existing": True}
+        media = MediaFileUpload(srt_path, mimetype="application/octet-stream", resumable=False)
+        created = youtube.captions().insert(
+            part="snippet",
+            body={"snippet": {"videoId": video_id, "language": language, "name": name, "isDraft": False}},
+            media_body=media,
+        ).execute()
+        return {"id": created.get("id"), "existing": False}
+
+    async def set_captions(
+        self, *, video_id: str, srt_path: str, language: str, name: str, force: bool = False,
+    ) -> tuple[bool, str]:
+        """Attach an SRT caption track to an already-published video.
+
+        Returns ``(ok, detail)``: ``(True, "set")``, ``(True, "already there")``
+        or ``(False, why)``, naming the re-consent command when the token lacks
+        ``youtube.force-ssl``.
+        """
+        if not video_id:
+            return False, "no video id"
+        if not srt_path or not os.path.exists(srt_path):
+            return False, f"caption file missing ({srt_path})"
+        ready, error, secrets = await self._check_gating(force=force)
+        if not ready:
+            return False, str(error or "youtube adapter not ready")
+        credentials = self._build_credentials(secrets)
+        try:
+            result = await asyncio.to_thread(
+                self._set_captions_blocking,
+                credentials=credentials, video_id=video_id, srt_path=srt_path,
+                language=language, name=name,
+            )
+        except Exception as exc:  # noqa: BLE001 — the caller reports it per video
+            if _is_insufficient_scope(exc):
+                return False, (
+                    "the token lacks youtube.force-ssl, which captions need — run "
+                    "`poindexter integrations youtube setup --with-update`. "
+                    f"Google said: {str(exc)[:300]}"
+                )
+            return False, str(exc)[:400]
+        return True, "already there" if result.get("existing") else "set"
+
     async def update_metadata(
         self,
         *,

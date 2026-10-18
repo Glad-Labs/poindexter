@@ -1372,3 +1372,64 @@ def test_performance_with_no_rows(runner, monkeypatch):
     res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "performance"])
     assert res.exit_code == 0, res.output
     assert "No YouTube rows in this window" in res.output
+
+
+# ---------------------------------------------------------------------------
+# youtube captions — caption tracks for videos already on YouTube
+# ---------------------------------------------------------------------------
+
+
+def _stub_captions(monkeypatch, outcomes):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.youtube_captions as yc
+
+    calls: list[dict[str, Any]] = []
+
+    async def _backfill(_pool, _sc, **kw):
+        calls.append(kw)
+        return list(outcomes)
+
+    async def _wire(_pool):
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(yc, "backfill_captions", _backfill)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    return calls
+
+
+def _caption(**kw: Any):
+    from poindexter.services.youtube_captions import CaptionOutcome
+
+    base = dict(video_id="vidA", medium="short", title="A Short", srt_path="/v/a.srt",
+                action="transcribed — review, then --apply", cues=8)
+    base.update(kw)
+    return CaptionOutcome(**base)  # type: ignore[arg-type]
+
+
+def test_captions_default_is_a_dry_run_that_names_the_files(runner, monkeypatch):
+    calls = _stub_captions(monkeypatch, [_caption()])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "captions"])
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": None, "apply": False, "limit": None}]
+    assert "DRY RUN" in res.output and "nothing sent" in res.output
+    assert "8 cues · /v/a.srt" in res.output
+    assert "re-run with --apply" in res.output
+
+
+def test_captions_apply_passes_through_and_fails_on_a_failure(runner, monkeypatch):
+    calls = _stub_captions(monkeypatch, [_caption(action="failed: quota", failed=True, srt_path="")])
+    res = runner.invoke(
+        _integrations_mod.integrations_group, ["youtube", "captions", "--post", "vidA", "--apply"],
+    )
+    assert calls == [{"selector": "vidA", "apply": True, "limit": None}]
+    assert res.exit_code == 1
+    assert "APPLIED" in res.output and "failed: quota" in res.output

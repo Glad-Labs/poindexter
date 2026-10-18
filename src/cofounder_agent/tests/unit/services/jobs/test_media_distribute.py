@@ -51,6 +51,17 @@ def _no_upload_slot(monkeypatch):
     monkeypatch.setattr(md, "record_slot", AsyncMock())
 
 
+@pytest.fixture(autouse=True)
+def _no_live_captioning(monkeypatch):
+    """Stub the caption step a successful YouTube upload runs.
+
+    ``caption_after_upload`` runs ffmpeg on the video and calls the caption
+    engine; a unit test must do neither. The tests that assert on it read
+    this stub (``md.caption_after_upload``).
+    """
+    monkeypatch.setattr(md, "caption_after_upload", AsyncMock(return_value="set"))
+
+
 class _FakeTxn:
     """``conn.transaction()`` async-context stand-in (no-op begin/commit)."""
 
@@ -1398,3 +1409,36 @@ async def test_a_failed_upload_does_not_hold_the_slot():
     ):
         await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), {**_thumb_row(), "asset_id": "a1"}, shorts=True)
     md.record_slot.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------
+# Caption tracks (2026-10-18): a successful YouTube upload gets its captions
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_youtube_upload_gets_its_caption_track(tmp_path):
+    pool = _thumb_pool(None)
+    row = {**_thumb_row(), "asset_id": "a1"}
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID9", "url": "u"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=True)
+    md.caption_after_upload.assert_awaited_once()
+    kw = md.caption_after_upload.await_args.kwargs
+    assert kw["asset_id"] == "a1"
+    assert kw["video_id"] == "VID9"
+    assert kw["video_path"] == "/tmp/v.mp4"
+    assert kw["shorts"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_failed_upload_gets_no_captions():
+    pool = _thumb_pool(None)
+    dispatch = AsyncMock(return_value={"success": False, "error": "quota"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), _thumb_row(), shorts=False)
+    md.caption_after_upload.assert_not_awaited()

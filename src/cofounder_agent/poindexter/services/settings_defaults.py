@@ -915,6 +915,17 @@ DEFAULTS: dict[str, str] = {
     # A slot must be at least this far ahead: YouTube needs publishAt in the
     # future, and the upload itself takes minutes.
     'youtube_upload_slot_min_lead_minutes': '30',
+    # Caption tracks (services/youtube_captions.py, 2026-10-18). After each
+    # YouTube upload the video's own audio is transcribed (video_caption_engine)
+    # and the SRT is attached with captions.insert, which needs the
+    # youtube.force-ssl scope (`setup --with-update`). The render burns captions
+    # into the pixels, but YouTube search reads only a caption track. A failure
+    # never fails the upload; it raises youtube_caption_failed.
+    'youtube_captions_enabled': 'true',
+    # BCP-47 language of the narration, and the track's display name. A track
+    # with this language and name already on the video is never added twice.
+    'youtube_caption_language': 'en',
+    'youtube_caption_track_name': 'English',
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
     # Minimum usable VRAM (free + ComfyUI's reusable pool) before a presenter
@@ -5089,6 +5100,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.youtube_thumbnail_failed.fallback': 'log_only',
     'findings.youtube_thumbnail_failed.cooldown_minutes': '360',
     'findings.youtube_thumbnail_failed.min_severity': 'warn',
+    'findings.youtube_caption_failed.delivery': 'discord',
+    'findings.youtube_caption_failed.fallback': 'log_only',
+    'findings.youtube_caption_failed.cooldown_minutes': '360',
+    'findings.youtube_caption_failed.min_severity': 'warn',
     # Approved long-form videos whose RSS enclosure can't be put in the bucket
     # because the local render is gone (media_distribute's mirror pass). One
     # finding per newly blocked SET, never per cycle — the rows are parked, so
@@ -6978,6 +6993,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'youtube_upload_slots_enabled': {'owner': 'youtube_upload_slots', 'value_type': 'boolean'},
     'youtube_upload_slots': {'owner': 'youtube_upload_slots', 'value_type': 'string'},
     'youtube_upload_slot_min_lead_minutes': {'owner': 'youtube_upload_slots', 'value_type': 'integer'},
+    'youtube_captions_enabled': {'owner': 'youtube_captions', 'value_type': 'boolean'},
+    'youtube_caption_language': {'owner': 'youtube_captions', 'value_type': 'string'},
+    'youtube_caption_track_name': {'owner': 'youtube_captions', 'value_type': 'string'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},

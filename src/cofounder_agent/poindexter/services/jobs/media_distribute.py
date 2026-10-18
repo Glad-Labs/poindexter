@@ -78,6 +78,7 @@ from poindexter.services.media_approval_service import (
     record_pending_standalone,
 )
 from poindexter.services.video_r2_mirror import run_video_r2_mirror
+from poindexter.services.youtube_captions import caption_after_upload
 from poindexter.services.youtube_upload_slots import next_upload_slot, record_slot, rfc3339
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
@@ -649,6 +650,19 @@ async def _dispatch_asset(
                         pool, task_id=task_id, post_id=_subject(row),
                         video_id=result.get("post_id"),
                         status=str(result.get("thumbnail") or ""),
+                        shorts=shorts,
+                    )
+                if platform == "youtube" and result.get("post_id"):
+                    # The caption track (services/youtube_captions.py): the
+                    # render burns captions into the pixels but YouTube search
+                    # reads only a caption track. Best-effort, never raises.
+                    await caption_after_upload(
+                        pool, site_config,
+                        asset_id=row.get("asset_id"),
+                        video_path=row.get("storage_path") or "",
+                        video_id=str(result.get("post_id")),
+                        subject=_subject(row) or "",
+                        task_id=str(task_id or ""),
                         shorts=shorts,
                     )
             else:
