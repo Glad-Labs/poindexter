@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## [0.159.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.158.1...v0.159.0) (2026-10-18)
+
+
+### Features
+
+* **media:** a media rejection records why ([#4502](https://github.com/Glad-Labs/glad-labs-stack/issues/4502)) ([b3cf188](https://github.com/Glad-Labs/glad-labs-stack/commit/b3cf1888f31b5192a0fe2e9b9c8781a879001e79))
+* **qa:** an advisory taste review rides in every approval message ([#4500](https://github.com/Glad-Labs/glad-labs-stack/issues/4500)) ([1cd61cf](https://github.com/Glad-Labs/glad-labs-stack/commit/1cd61cf80521ac6030a6e7758da5f31f166bd45b))
+* **topics:** also take topics from what people type into YouTube search ([#4508](https://github.com/Glad-Labs/glad-labs-stack/issues/4508)) ([30f0615](https://github.com/Glad-Labs/glad-labs-stack/commit/30f06156f0ddd8c8323b9fd5d817174d99a70f27))
+* **topics:** the operator's rubric screens topic ideas before a draft is written ([#4507](https://github.com/Glad-Labs/glad-labs-stack/issues/4507)) ([65b19fd](https://github.com/Glad-Labs/glad-labs-stack/commit/65b19fd42c6b2c9650cd07eee3f855276bbcac77))
+* **youtube:** collect views, watch time, retention and search terms, and read them ([#4501](https://github.com/Glad-Labs/glad-labs-stack/issues/4501)) ([f7e1185](https://github.com/Glad-Labs/glad-labs-stack/commit/f7e118523340daa7324ec327756958bce0bb27e4))
+* **youtube:** every upload gets a caption track ([#4503](https://github.com/Glad-Labs/glad-labs-stack/issues/4503)) ([e66f341](https://github.com/Glad-Labs/glad-labs-stack/commit/e66f341a681fa6d798337283c024748965412fd2))
+* **youtube:** long videos carry chapters written from their transcript ([#4509](https://github.com/Glad-Labs/glad-labs-stack/issues/4509)) ([deb03c1](https://github.com/Glad-Labs/glad-labs-stack/commit/deb03c1024c7cf1c1d5a996d009e0dc2a0cd3b5c))
+* **youtube:** show each topic playlist as a shelf on the channel page ([#4512](https://github.com/Glad-Labs/glad-labs-stack/issues/4512)) ([479dfc1](https://github.com/Glad-Labs/glad-labs-stack/commit/479dfc1ef68e1895c019e2a51c25b6355ba9b745))
+* **youtube:** uploads go public at set times, not at approval ([#4505](https://github.com/Glad-Labs/glad-labs-stack/issues/4505)) ([4b83f20](https://github.com/Glad-Labs/glad-labs-stack/commit/4b83f2082b1545bc2e9e3347e884c40d7facb896))
+* **youtube:** uploads join their topic playlists ([#4504](https://github.com/Glad-Labs/glad-labs-stack/issues/4504)) ([91b088d](https://github.com/Glad-Labs/glad-labs-stack/commit/91b088db560d332bbf93f14f886b9ca4c29624d2))
+
+
+### Bug Fixes
+
+* **topics:** a search-demand suggestion no longer drowns in its own boilerplate ([#4506](https://github.com/Glad-Labs/glad-labs-stack/issues/4506)) ([5a7b737](https://github.com/Glad-Labs/glad-labs-stack/commit/5a7b737410f50a6675ff7862fc398a973193d52d))
+* **youtube:** a crowded chapter is dropped, not the whole list; names spelled from key terms ([#4513](https://github.com/Glad-Labs/glad-labs-stack/issues/4513)) ([320534d](https://github.com/Glad-Labs/glad-labs-stack/commit/320534d4c03ca4f8bb7ffba49d4ca99fbe375446))
+* **youtube:** backfills stop at the first quota error and estimate their cost ([#4510](https://github.com/Glad-Labs/glad-labs-stack/issues/4510)) ([d4d656d](https://github.com/Glad-Labs/glad-labs-stack/commit/d4d656d3d7174995460473e2fa3c182aa77f4f9d))
+
 ## [0.158.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.158.0...v0.158.1) (2026-10-17)
 
 
