@@ -9,7 +9,7 @@ cannot do. The visible symptom was a deaf bridge: every MCP-spawned
 bridge's ``<sid>.in`` transcript pipe stayed empty while a standalone
 subprocess running fresh on-disk code worked perfectly.
 
-The fix (Glad-Labs/glad-labs-stack#1010): ``voice_join_room`` spawns
+The fix (Glad-Labs/poindexter#1010): ``voice_join_room`` spawns
 *this* module as a separate Python subprocess via
 ``livekit_bridge.spawn_bridge_subprocess``. Because the OS starts a fresh
 interpreter, this process imports the *current on-disk* ``livekit_bridge``
