@@ -132,7 +132,7 @@ def get_tracer(instrumenting_module_name: str) -> Any:
 # across a NON-HTTP boundary (the ``pipeline_tasks`` enqueue -> claim handoff).
 # HTTP hops are covered by the FastAPI / httpx instrumentors; the DB queue is
 # not, so without these two helpers a content run starts a fresh root trace
-# disconnected from whatever created the task (Glad-Labs/glad-labs-stack#1997
+# disconnected from whatever created the task (Glad-Labs/poindexter#1997
 # Tier 1b).
 # ---------------------------------------------------------------------------
 
@@ -199,7 +199,7 @@ def stamp_langfuse_trace_url(span: Any, langfuse_host: str | None) -> str | None
     ``litellm.integrations.opentelemetry._get_span_context`` Priority 3), and
     Langfuse keys its trace on the ingested OTLP trace_id — so the run's
     generations land under this same id. This is the Tempo -> Langfuse
-    by-product of coherent W3C propagation (Glad-Labs/glad-labs-stack#1997
+    by-product of coherent W3C propagation (Glad-Labs/poindexter#1997
     Tier 1c): cheap precisely because Tier 1a/1b already made the trace_id shared.
 
     Returns the URL (handy for tests / a debug log) or ``None`` — stamping
