@@ -63,5 +63,5 @@ async def test_5xx_429_and_timeouts_are_counted_not_raised(monkeypatch, caplog):
     probes = [("kv cache quantization", p) for p in plan if p.startswith("kv")] + [("llm routing", "llm routing"), ("gpu offload", "gpu offload")]
     with caplog.at_level(logging.WARNING, logger=mod.logger.name):
         out = await src._fetch_all(probes, concurrency=2)
-    assert [s for _, s in out] == ["gpu offload tips", "gpu offload vram"]
+    assert [s for _, s, _engine in out] == ["gpu offload tips", "gpu offload vram"]
     assert any("3/4 probes failed" in r.getMessage() for r in caplog.records)

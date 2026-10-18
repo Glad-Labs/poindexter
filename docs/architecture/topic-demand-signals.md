@@ -12,6 +12,17 @@ conversation — HackerNews (what's discussed), Dev.to (what's blogged), RSS
 until this week neither was scheduled ([`external_taps` rows are what
 schedule ingestion](../../CLAUDE.md); the plugin row only permits).
 
+Since 2026-10-18 `search_autocomplete` asks two suggestion feeds
+(`config.engines`, default `["google", "youtube"]`): Google web search and
+YouTube search (the same endpoint with `ds=yt`). They differ: for the seed
+"local llm vram" the web suggests "...calculator" / "...requirements" while
+YouTube suggests "local llm gpu" / "local llm install". On the first live run 13
+of 60 candidates came from YouTube ("Ollama vs LM Studio vs vLLM", "Best GPU
+for local LLM", "GPU undervolting explained"). A YouTube candidate's
+`source_url` is a YouTube search link; a phrase both feeds return keeps its
+better rank and counts as a YouTube topic. YouTube search is one of the
+channel's two biggest view sources, and before this no topic was chosen from it.
+
 Three signals now act on the pre-rank score, in this order, each recorded in
 `topic_candidates.score_breakdown` so a batch shows its reasoning:
 

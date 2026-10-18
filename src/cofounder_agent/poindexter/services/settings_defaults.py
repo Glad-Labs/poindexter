@@ -6485,8 +6485,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         '"min_models": 3, "min_spread_pct": 25, "cooldown_days": 30, '
         '"new_model_days": 30, "max_topics": 2}}'
     ),
+    # engines: which suggestion feeds to ask — "youtube" (ds=yt) added
+    # 2026-10-18, since YouTube search is a top view source for the channel.
     'plugin.topic_source.search_autocomplete': (
-        '{"enabled": false, "config": {"seeds": [], "seed_from_gsc_clicks": true}}'
+        '{"enabled": false, "config": {"seeds": [], "seed_from_gsc_clicks": true, '
+        '"engines": ["google", "youtube"]}}'
     ),
     'seo.refresh.outcome_measure_after_days': '14',
     # Phase 2b (#763) — cap on refresh tasks auto-enqueued per run. Conservative:

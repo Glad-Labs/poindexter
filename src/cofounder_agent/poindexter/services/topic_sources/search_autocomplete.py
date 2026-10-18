@@ -50,6 +50,14 @@ Config (``plugin.topic_source.search_autocomplete`` in app_settings):
   alphabet trick, trimmed: a full a-z sweep is 27 requests per seed and this
   runs unauthenticated against someone else's endpoint
   (``feedback_stability_over_speed``). Set ``[]`` to disable expansion.
+- ``config.engines`` (default ``["google", "youtube"]``) — which suggestion
+  feeds to ask. ``youtube`` is the same endpoint with ``ds=yt``: what people
+  type into YouTube search, which differs from web search (seed "local llm
+  vram": web suggests "...calculator", "...requirements"; YouTube suggests
+  "local llm gpu", "local llm install"). Added 2026-10-18, when YouTube search
+  was one of the channel's two biggest view sources and no topic was chosen
+  from it. A phrase both feeds return keeps its better rank and reads as a
+  YouTube topic, so a video gets made about it.
 - ``config.max_topics`` (default 25), ``config.concurrency`` (default 3),
   ``config.min_words`` (default 3) — one- and two-word suggestions are usually
   navigational or too broad to write a post against.
@@ -77,6 +85,11 @@ logger = logging.getLogger(__name__)
 # for the same seed (13+ vs 10, measured 2026-08-09). Response content-type is
 # text/javascript but the body is plain JSON: ``[seed, [suggestions], …]``.
 _ENDPOINT = "https://suggestqueries.google.com/complete/search"
+
+# Extra query params per suggestion feed. ``ds=yt`` restricts the same endpoint
+# to YouTube search suggestions.
+_ENGINE_PARAMS: dict[str, dict[str, str]] = {"google": {}, "youtube": {"ds": "yt"}}
+_DEFAULT_ENGINES = ("google", "youtube")
 
 # Ceiling for this source's relevance_score, deliberately below the 5.0 that
 # gsc_query_gap can reach from real impression counts. Ordinal popularity is
@@ -169,15 +182,27 @@ class SearchAutocompleteSource:
             )
             return []
 
+        engines = [
+            e for e in dict.fromkeys(
+                str(x).strip().lower() for x in (config.get("engines") or _DEFAULT_ENGINES)
+            ) if e in _ENGINE_PARAMS
+        ]
+        if not engines:
+            logger.warning(
+                "SearchAutocompleteSource: config.engines names no known feed "
+                "(known: %s) — nothing to ask", ", ".join(_ENGINE_PARAMS),
+            )
+            return []
+
         probes = [(s, s) for s in seeds] + [
             (s, f"{s} {m}") for s in seeds for m in modifiers
         ]
-        suggestions = await self._fetch_all(probes, concurrency=concurrency)
+        suggestions = await self._fetch_all(probes, concurrency=concurrency, engines=engines)
 
         seen: set[str] = set()
         topics: list[DiscoveredTopic] = []
         dropped_junk = 0
-        for rank, phrase in suggestions:
+        for rank, phrase, engine in suggestions:
             phrase = phrase.strip()
             key = phrase.lower()
             if not phrase or key in seen:
@@ -194,7 +219,11 @@ class SearchAutocompleteSource:
                     title=title,
                     category=classify_category(title),
                     source=self.name,
-                    source_url=f"https://www.google.com/search?q={quote_plus(phrase)}",
+                    source_url=(
+                        f"https://www.youtube.com/results?search_query={quote_plus(phrase)}"
+                        if engine == "youtube"
+                        else f"https://www.google.com/search?q={quote_plus(phrase)}"
+                    ),
                     relevance_score=_score_for_rank(rank),
                     # No description: a candidate's description becomes its
                     # pool summary, which is embedded for dedup, scope and
@@ -211,9 +240,10 @@ class SearchAutocompleteSource:
                 break
 
         logger.info(
-            "SearchAutocompleteSource: %d topics from %d seed(s) / %d probe(s); "
-            "dropped %d junk",
-            len(topics), len(seeds), len(probes), dropped_junk,
+            "SearchAutocompleteSource: %d topics (%d from YouTube) from %d seed(s) / "
+            "%d probe(s) x %d feed(s); dropped %d junk",
+            len(topics), sum(1 for t in topics if "youtube.com" in t.source_url),
+            len(seeds), len(probes), len(engines), dropped_junk,
         )
         return topics
 
@@ -243,22 +273,23 @@ class SearchAutocompleteSource:
 
     async def _fetch_all(
         self, probes: list[tuple[str, str]], *, concurrency: int,
-    ) -> list[tuple[int, str]]:
-        """Fetch every ``(seed, probe)``. Returns (rank, suggestion), best first.
+        engines: list[str] | tuple[str, ...] = ("google",),
+    ) -> list[tuple[int, str, str]]:
+        """Fetch every ``(seed, probe)`` from each feed. Returns (rank, suggestion, engine), best first.
 
         One failing probe never sinks the run — Google throttles unauthenticated
         callers, and a partial harvest is still useful. A total wipeout is
         reported by the caller's count of zero topics.
         """
         sem = asyncio.Semaphore(max(1, concurrency))
-        results: list[tuple[int, str]] = []
+        results: list[tuple[int, str, str]] = []
 
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0),
             headers={"User-Agent": "Mozilla/5.0 (compatible; Poindexter/1.0)"},
         ) as client:
 
-            async def _one(seed: str, probe: str) -> list[tuple[int, str]] | None:
+            async def _one(seed: str, probe: str, engine: str) -> list[tuple[int, str, str]] | None:
                 # An upstream 5xx / 429 / timeout is a skipped probe, not an
                 # error: raising out of the task made Sentry's asyncio
                 # integration report every Google hiccup as an exception
@@ -267,7 +298,8 @@ class SearchAutocompleteSource:
                 async with sem:
                     try:
                         resp = await client.get(
-                            _ENDPOINT, params={"client": "chrome", "q": probe},
+                            _ENDPOINT,
+                            params={"client": "chrome", "q": probe, **_ENGINE_PARAMS[engine]},
                         )
                         resp.raise_for_status()
                         # content-type is text/javascript; the body is JSON.
@@ -284,13 +316,13 @@ class SearchAutocompleteSource:
                 if not isinstance(items, list):
                     return []
                 return [
-                    (i, str(s))
+                    (i, str(s), engine)
                     for i, s in enumerate(items)
                     if isinstance(s, str) and _retains_seed_token(seed, s)
                 ]
 
             gathered = await asyncio.gather(
-                *[_one(seed, probe) for seed, probe in probes],
+                *[_one(seed, probe, engine) for engine in engines for seed, probe in probes],
                 return_exceptions=True,
             )
 
@@ -303,19 +335,30 @@ class SearchAutocompleteSource:
         if failures:
             logger.warning(
                 "SearchAutocompleteSource: %d/%d probes failed (throttling?)",
-                failures, len(probes),
+                failures, len(probes) * len(engines),
             )
         # Best suggestion rank wins when the same phrase comes back from several
         # probes, so a phrase Google ranks first for its own seed isn't buried
-        # by a worse rank under a modifier probe.
+        # by a worse rank under a modifier probe. A phrase YouTube suggested at
+        # all is marked a YouTube topic: that is the demand this feed exists
+        # to surface, and the video lane is where it pays.
         best: dict[str, int] = {}
-        for rank, phrase in results:
+        on_youtube: set[str] = set()
+        for rank, phrase, engine in results:
             key = phrase.strip().lower()
-            if key and rank < best.get(key, 10**6):
+            if not key:
+                continue
+            if rank < best.get(key, 10**6):
                 best[key] = rank
-        by_key = {p.strip().lower(): p for _, p in results}
+            if engine == "youtube":
+                on_youtube.add(key)
+        by_key = {p.strip().lower(): p for _, p, _e in results}
         return sorted(
-            ((rank, by_key[key]) for key, rank in best.items()), key=lambda t: t[0],
+            (
+                (rank, by_key[key], "youtube" if key in on_youtube else "google")
+                for key, rank in best.items()
+            ),
+            key=lambda t: t[0],
         )
 
 

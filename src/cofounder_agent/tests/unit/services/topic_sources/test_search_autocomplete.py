@@ -101,6 +101,7 @@ class TestSeeding:
         src = SearchAutocompleteSource()
         topics = await src.extract(None, {
             "seeds": ["local llm vram"], "modifiers": [], "seed_from_gsc_clicks": False,
+            "engines": ["google"],
         })
         assert [t.keywords[0] for t in topics] == [
             "local llm vram calculator", "local llm vram requirements",
@@ -124,7 +125,7 @@ class TestSeeding:
         seen = _install_fake_http(monkeypatch, {})
         pool = _FakePool(rows=[{"query": "5090 local llm", "clicks": 1.0}])
         src = SearchAutocompleteSource()
-        await src.extract(pool, {"modifiers": []})
+        await src.extract(pool, {"modifiers": [], "engines": ["google"]})
         assert seen == ["5090 local llm"]
 
     @pytest.mark.asyncio
@@ -132,7 +133,9 @@ class TestSeeding:
         """A missing/1broken GSC tap must not take the source down."""
         seen = _install_fake_http(monkeypatch, {})
         src = SearchAutocompleteSource()
-        topics = await src.extract(_FakePool(raises=True), {"seeds": ["vram"], "modifiers": []})
+        topics = await src.extract(
+            _FakePool(raises=True), {"seeds": ["vram"], "modifiers": [], "engines": ["google"]},
+        )
         assert topics == []          # no suggestions from the fake endpoint
         assert seen == ["vram"]      # but the configured seed still ran
 
@@ -328,3 +331,63 @@ class TestShipsInert:
             getattr(s, "name", None) for s in get_core_samples().get("topic_sources", [])
         }
         assert "search_autocomplete" in names
+
+
+
+class TestYouTubeFeed:
+    """2026-10-18: YouTube search was a top view source and no topic came from
+    it. The same endpoint with ds=yt returns what people type into YouTube."""
+
+    @staticmethod
+    def _install(monkeypatch, by_feed):
+        calls: list[tuple[str, str]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            q = request.url.params.get("q", "")
+            feed = "youtube" if request.url.params.get("ds") == "yt" else "google"
+            calls.append((feed, q))
+            items = by_feed.get(feed, {}).get(q, [])
+            return httpx.Response(200, text=json.dumps([q, items, [], {}]))
+
+        real_client = httpx.AsyncClient
+
+        def _factory(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+            kwargs["transport"] = httpx.MockTransport(handler)
+            return real_client(*args, **kwargs)
+
+        monkeypatch.setattr(mod.httpx, "AsyncClient", _factory)
+        return calls
+
+    @pytest.mark.asyncio
+    async def test_both_feeds_are_asked_by_default(self, monkeypatch):
+        calls = self._install(monkeypatch, {})
+        await SearchAutocompleteSource().extract(None, {
+            "seeds": ["local llm vram"], "modifiers": [], "seed_from_gsc_clicks": False,
+        })
+        assert sorted(calls) == [("google", "local llm vram"), ("youtube", "local llm vram")]
+
+    @pytest.mark.asyncio
+    async def test_youtube_topics_point_at_youtube_search(self, monkeypatch):
+        self._install(monkeypatch, {
+            "google": {"local llm vram": ["local llm vram calculator", "local llm vram install guide"]},
+            "youtube": {"local llm vram": ["local llm vram install guide", "local llm vram explained simply"]},
+        })
+        topics = await SearchAutocompleteSource().extract(None, {
+            "seeds": ["local llm vram"], "modifiers": [], "seed_from_gsc_clicks": False,
+        })
+        by_phrase = {t.keywords[0]: t.source_url for t in topics}
+        assert by_phrase["local llm vram calculator"].startswith("https://www.google.com/search?q=")
+        assert by_phrase["local llm vram explained simply"].startswith("https://www.youtube.com/results?search_query=")
+        # Suggested by both: kept once, and read as a YouTube topic.
+        assert by_phrase["local llm vram install guide"].startswith("https://www.youtube.com/")
+        assert len(topics) == 3
+
+    @pytest.mark.asyncio
+    async def test_unknown_feeds_are_refused_loudly(self, monkeypatch, caplog):
+        calls = self._install(monkeypatch, {})
+        with caplog.at_level("WARNING"):
+            topics = await SearchAutocompleteSource().extract(None, {
+                "seeds": ["vram"], "modifiers": [], "seed_from_gsc_clicks": False, "engines": ["bing"],
+            })
+        assert topics == [] and calls == []
+        assert "names no known feed" in caplog.text
