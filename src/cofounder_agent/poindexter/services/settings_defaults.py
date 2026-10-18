@@ -465,6 +465,9 @@ DEFAULTS: dict[str, str] = {
     # poindexter/brain/comfyui_ram_watch.py.
     'comfyui_ram_recycle_watermark_gb': '16',
     'comfyui_ram_recycle_cooldown_minutes': '60',
+    # GPU-lock owners whose hold means ComfyUI is mid-render, so no RAM recycle
+    # (comma-separated; empty = the queue alone decides).
+    'comfyui_ram_recycle_busy_lock_owners': 'video',
 
     # Sidecar host-RAM recycle (2026-08-27 hard-reboot freeze). The comfyui
     # keys above cover ONE container and it was not the one that filled swap;
@@ -1323,6 +1326,9 @@ DEFAULTS: dict[str, str] = {
     # 960x544 spike render took 644s; leave headroom above the slowest
     # intended regime, because a timeout here falls the hero back to a still.
     'video_comfyui_timeout_s': '900',
+    # Polls (5 s apart) a prompt may be missing from both /history and /queue
+    # before the render fails as lost (the sidecar restarted under it).
+    'video_comfyui_lost_prompt_polls': '3',
     # Cold-boot ready-wait before the first submit (#3102 shape: a booting
     # sidecar must delay the render, not silently degrade it).
     'video_comfyui_ready_wait_s': '90',
@@ -7217,6 +7223,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_comfyui_lora_high': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_lora_low': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_timeout_s': {'owner': 'video', 'value_type': 'integer'},
+    'video_comfyui_lost_prompt_polls': {'owner': 'comfyui', 'value_type': 'integer'},
     'video_comfyui_ready_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_comfyui_workflow_override_json': {'owner': 'video', 'value_type': 'string'},
     'video_comfyui_s2v_model': {'owner': 'video', 'value_type': 'string'},

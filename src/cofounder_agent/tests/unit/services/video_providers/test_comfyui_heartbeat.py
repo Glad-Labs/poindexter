@@ -137,7 +137,7 @@ async def test_a_prompt_the_sidecar_no_longer_knows_fails_fast(monkeypatch):
     client = _RestartedClient({"queue_running": [], "queue_pending": []})
     filename, reason = await cf.ComfyUIProvider()._poll(client, "http://c", "p1", 1500.0)
     assert filename == "" and "lost prompt p1" in reason and "restarted" in reason
-    assert sum(u.endswith("/history/p1") for u in client.urls) == cf._LOST_PROMPT_POLLS
+    assert sum(u.endswith("/history/p1") for u in client.urls) == cf._DEFAULT_LOST_PROMPT_POLLS
 
 
 @pytest.mark.asyncio
@@ -157,3 +157,12 @@ async def test_an_unreadable_queue_is_no_evidence(monkeypatch):
     monkeypatch.setattr(cf.time, "monotonic", lambda: next(clock))
     filename, reason = await cf.ComfyUIProvider()._poll(_RestartedClient({}), "http://c", "p1", 1500.0)
     assert "timed out" in reason
+
+
+@pytest.mark.asyncio
+async def test_how_many_polls_count_as_lost_is_a_setting(monkeypatch):
+    monkeypatch.setattr(cf.asyncio, "sleep", AsyncMock())
+    client = _RestartedClient({"queue_running": [], "queue_pending": []})
+    _, reason = await cf.ComfyUIProvider()._poll(client, "http://c", "p1", 1500.0, lost_polls=5)
+    assert "lost prompt p1" in reason
+    assert sum(u.endswith("/history/p1") for u in client.urls) == 5

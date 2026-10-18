@@ -134,7 +134,7 @@ _HEARTBEAT_EVERY_S = 30.0
 # between two clips of one render; the poll then waited out its 1500 s
 # timeout on a prompt the new process had never heard of). Several polls, so
 # the instant between leaving the queue and landing in history never counts.
-_LOST_PROMPT_POLLS = 3
+_DEFAULT_LOST_PROMPT_POLLS = 3  # app_settings video_comfyui_lost_prompt_polls
 
 _DEFAULT_HIGH_MODEL = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
 _DEFAULT_LOW_MODEL = "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
@@ -739,6 +739,9 @@ class ComfyUIProvider:
                 filename, reason = await self._poll(
                     client, server_url, prompt_id, timeout_s,
                     heartbeat_cb=config.get("_heartbeat_cb"),
+                    lost_polls=int(_sc_num(
+                        site_config, "video_comfyui_lost_prompt_polls", _DEFAULT_LOST_PROMPT_POLLS,
+                    )),
                 )
                 if not filename:
                     self.last_error = reason
@@ -1125,6 +1128,9 @@ class ComfyUIProvider:
                 filename, reason = await self._poll(
                     client, server_url, prompt_id, timeout_s,
                     heartbeat_cb=config.get("_heartbeat_cb"),
+                    lost_polls=int(_sc_num(
+                        site_config, "video_comfyui_lost_prompt_polls", _DEFAULT_LOST_PROMPT_POLLS,
+                    )),
                 )
                 if not filename:
                     self.last_error = reason
@@ -1235,6 +1241,7 @@ class ComfyUIProvider:
         prompt_id: str,
         timeout_s: float,
         heartbeat_cb: Any = None,
+        lost_polls: int = _DEFAULT_LOST_PROMPT_POLLS,
     ) -> tuple[str, str]:
         """Poll ``/history/{id}`` until the render finishes; returns the
         output video filename.
@@ -1282,7 +1289,7 @@ class ComfyUIProvider:
             if not entry:
                 if await self._prompt_lost(client, server_url, prompt_id):
                     missing += 1
-                    if missing >= _LOST_PROMPT_POLLS:
+                    if missing >= max(1, lost_polls):
                         return "", (
                             f"comfyui lost prompt {prompt_id}: it is not queued, "
                             "running or finished — the sidecar restarted mid-render"

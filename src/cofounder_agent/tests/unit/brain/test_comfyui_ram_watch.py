@@ -429,23 +429,48 @@ class TestAVideoRenderHoldsTheSidecar:
         assert cw.GPU_ADVISORY_LOCK_KEY == gs.GPU_ADVISORY_LOCK_KEY
         video = gs._holder_tag("video", "media_render", "abc12345")["application_name"]
         llm = gs._holder_tag("ollama", "draft", None)["application_name"]
-        assert video.startswith(cw._VIDEO_HOLDER_PREFIX)
-        assert not llm.startswith(cw._VIDEO_HOLDER_PREFIX)
+        assert video.startswith(cw._HOLDER_TAG_PREFIX + "video:")
+        assert not llm.startswith(cw._HOLDER_TAG_PREFIX + "video:")
+
+    @staticmethod
+    def _lock_pool(*, held=None, owners=None, lock_error=None):
+        """A pool whose settings read returns ``owners`` and whose lock read
+        returns ``held`` (or raises ``lock_error``)."""
+        pool = MagicMock()
+
+        async def fetchval(query, *args):
+            if "pg_locks" in query:
+                if lock_error:
+                    raise lock_error
+                return held
+            return owners if args and args[0] == cw.BUSY_OWNERS_KEY else None
+
+        pool.fetchval = AsyncMock(side_effect=fetchval)
+        return pool
 
     def test_an_idle_queue_under_a_held_video_lock_is_busy(self, monkeypatch):
         monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
-        pool = MagicMock()
-        pool.fetchval = AsyncMock(return_value=True)
+        pool = self._lock_pool(held=True)
         assert asyncio.run(cw._comfyui_busy(pool)) is True
-        sql, key, holder = pool.fetchval.await_args.args
+        sql, key, patterns = pool.fetchval.await_args.args
         assert "pg_locks" in sql and key == cw.GPU_ADVISORY_LOCK_KEY
-        assert holder == "poindexter-gpu:video:%"
+        assert patterns == ["poindexter-gpu:video:%"]
+
+    def test_the_owners_are_a_setting(self, monkeypatch):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
+        pool = self._lock_pool(held=True, owners="video, image_gen")
+        assert asyncio.run(cw._comfyui_busy(pool)) is True
+        assert pool.fetchval.await_args.args[2] == ["poindexter-gpu:video:%", "poindexter-gpu:image_gen:%"]
+
+    def test_no_owners_means_the_queue_alone_decides(self, monkeypatch):
+        monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
+        pool = self._lock_pool(held=True, owners=" ")
+        assert asyncio.run(cw._comfyui_busy(pool)) is False
+        assert all("pg_locks" not in c.args[0] for c in pool.fetchval.await_args_list)
 
     def test_an_idle_queue_with_no_video_lock_is_idle(self, monkeypatch):
         monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
-        pool = MagicMock()
-        pool.fetchval = AsyncMock(return_value=False)
-        assert asyncio.run(cw._comfyui_busy(pool)) is False
+        assert asyncio.run(cw._comfyui_busy(self._lock_pool(held=False))) is False
 
     @pytest.mark.parametrize("queue", [True, None])
     def test_a_busy_or_unreachable_queue_answers_without_the_lock(self, monkeypatch, queue):
@@ -456,8 +481,7 @@ class TestAVideoRenderHoldsTheSidecar:
 
     def test_an_unreadable_lock_counts_as_busy(self, monkeypatch):
         monkeypatch.setattr(cw, "_queue_busy", AsyncMock(return_value=False))
-        pool = MagicMock()
-        pool.fetchval = AsyncMock(side_effect=RuntimeError("db gone"))
+        pool = self._lock_pool(lock_error=RuntimeError("db gone"))
         assert asyncio.run(cw._comfyui_busy(pool)) is True
 
     def test_the_probe_never_recycles_between_two_clips_of_a_render(self, monkeypatch):

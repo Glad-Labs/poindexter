@@ -199,12 +199,15 @@ async def _queue_busy(pool: Any) -> bool | None:
 
 # The GPU scheduler's cross-process lock: every holder takes the base advisory
 # key (the brain's one pinned copy lives in sidecar_ram_watch) and stamps its
-# connection's application_name "poindexter-gpu:<owner>:<phase>:...". Only a
-# "video" holder means ComfyUI is mid-render: an LLM call holds the same key
-# for seconds and must not keep the sidecar from ever being recycled. The
-# prefix is pinned to gpu_scheduler._holder_tag by
+# connection's application_name "poindexter-gpu:<owner>:<phase>:...". The
+# owners in comfyui_ram_recycle_busy_lock_owners (default "video") mean ComfyUI
+# is mid-render; an LLM call holds the same key for seconds and must not keep
+# the sidecar from ever being recycled. Empty = the queue alone decides. The
+# tag prefix is pinned to gpu_scheduler._holder_tag by
 # tests/unit/brain/test_comfyui_ram_watch.py.
-_VIDEO_HOLDER_PREFIX = "poindexter-gpu:video:"
+BUSY_OWNERS_KEY = "comfyui_ram_recycle_busy_lock_owners"
+DEFAULT_BUSY_OWNERS = "video"
+_HOLDER_TAG_PREFIX = "poindexter-gpu:"
 
 _VIDEO_LOCK_SQL = """
 SELECT EXISTS (
@@ -213,21 +216,27 @@ SELECT EXISTS (
       JOIN pg_stat_activity a ON a.pid = l.pid
      WHERE l.locktype = 'advisory' AND l.objsubid = 1 AND l.granted
        AND ((l.classid::bigint << 32) | l.objid::bigint) = $1
-       AND a.application_name LIKE $2
+       AND a.application_name LIKE ANY($2::text[])
 )
 """
 
 
+def _owner_patterns(raw: Any) -> list[str]:
+    owners = [o.strip() for o in str(raw or "").split(",") if o.strip()]
+    return [f"{_HOLDER_TAG_PREFIX}{owner}:%" for owner in owners]
+
+
 async def _video_render_held(pool: Any) -> bool:
-    """Whether a video render holds the GPU lock right now, in any process.
+    """Whether a render holds the GPU lock right now, in any process.
 
     A failed read counts as held: skipping one recycle costs a fat sidecar for
     a cycle, recycling under a render costs the render (#3094 posture).
     """
     try:
-        return bool(await pool.fetchval(
-            _VIDEO_LOCK_SQL, GPU_ADVISORY_LOCK_KEY, _VIDEO_HOLDER_PREFIX + "%",
-        ))
+        patterns = _owner_patterns(await _read_setting(pool, BUSY_OWNERS_KEY, DEFAULT_BUSY_OWNERS))
+        if not patterns:
+            return False
+        return bool(await pool.fetchval(_VIDEO_LOCK_SQL, GPU_ADVISORY_LOCK_KEY, patterns))
     except Exception as exc:  # noqa: BLE001
         logger.warning("[COMFYUI_RAM] GPU lock read failed — treating as busy: %s", exc)
         return True
