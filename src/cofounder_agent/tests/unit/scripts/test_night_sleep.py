@@ -1,0 +1,63 @@
+"""The nightly sleep window's decisions (scripts/linux/night_sleep.py).
+
+2026-10-18: the operator's box sleeps 01:00-08:00 to stop paying for 365 W around
+the clock. The I/O (psql, rtcwake, docker) is exercised by hand on the host;
+pinned here is the part that decides WHEN: inside the window or not, within
+the defer limit or past it, the wake instant, a window that crosses midnight,
+and how a container's Ollama URL is reached from the host.
+"""
+from __future__ import annotations
+
+import importlib.util
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
+
+_PATH = next(p for p in Path(__file__).resolve().parents if (p / "scripts" / "linux").is_dir()) \
+    / "scripts" / "linux" / "night_sleep.py"
+_spec = importlib.util.spec_from_file_location("night_sleep", _PATH)
+ns = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ns)
+
+NY = ZoneInfo("America/New_York")
+
+
+def _at(hh, mm, day=19):
+    return datetime(2026, 10, day, hh, mm, tzinfo=NY)
+
+
+@pytest.mark.parametrize(("now", "state"), [
+    (_at(0, 50), "outside"), (_at(1, 0), "due"), (_at(2, 59), "due"),
+    (_at(3, 0), "too_late"), (_at(7, 59), "too_late"), (_at(8, 0), "outside"), (_at(14, 0), "outside"),
+])
+def test_where_now_sits_in_the_window(now, state):
+    assert ns.window(now, "01:00", "08:00", 120)["state"] == state
+
+
+def test_the_wake_instant_is_the_same_morning():
+    win = ns.window(_at(1, 20), "01:00", "08:00", 120)
+    assert win["start_at"] == _at(1, 0) and win["wake_at"] == _at(8, 0)
+
+
+def test_a_window_that_crosses_midnight():
+    win = ns.window(_at(23, 30, day=18), "23:00", "07:00", 120)
+    assert win["state"] == "due" and win["wake_at"] == _at(7, 0)
+    assert ns.window(_at(6, 0), "23:00", "07:00", 120)["state"] == "too_late"
+    assert ns.window(_at(12, 0), "23:00", "07:00", 120)["state"] == "outside"
+
+
+def test_a_container_ollama_url_as_the_host_reaches_it():
+    assert ns.host_url("http://host.docker.internal:11435/") == "http://127.0.0.1:11435"
+    assert ns.host_url("") == ""
+    assert ns.host_url("file:///etc/passwd") == ""  # only http(s) is ever opened
+
+
+def test_the_gpu_holder_pattern_matches_what_the_scheduler_writes():
+    from poindexter.services import gpu_scheduler as gs
+
+    prefix = ns.GPU_HOLDER_PATTERN.rstrip("%")
+    for owner, phase in (("video", "media_render"), ("ollama", "draft"), ("image_gen", "hero")):
+        assert gs._holder_tag(owner, phase, None)["application_name"].startswith(prefix)
+    assert not "some-other-app".startswith(prefix)

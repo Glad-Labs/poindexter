@@ -576,17 +576,19 @@ pins are the `OPS_OLLAMA_MODEL_*` env knobs.
 
 | Session | Tier | When (local) | Does |
 | --- | --- | --- | --- |
-| `dependency-review` | deterministic | daily 06:30 | auto-merges green dependabot PRs after 6 h: patches, dev-tooling minors, and production minors off a short held list (litellm / prefect / langgraph / torch / ragas / deepeval / llama-index / langchain / next wait for a live smoke); majors and runtime base images are by hand |
-| `codebase-audit` | deterministic | Wed 02:00 | `ruff --fix` F401/F841 → lint PR (bandit moved to a CI ratchet) |
-| `doc-sync` | deterministic | Fri 05:00 | verifies/repairs CLAUDE.md path references |
-| `claude-md-sync` | deterministic | daily 02:30 | syncs DB-derived counts + surfaces migration drift |
-| `triage-sweep` | deterministic | Mon 07:00 | applies keyword area-labels + Discord digest |
-| `alert-triage` | local LLM | daily 01:00 | classifies noisy `alert_events` → probe-bug issues |
-| `test-health` | local LLM | daily 03:00 | fixes simple test failures behind a re-run gate |
-| `pro-freshness` | deterministic | Sun 04:30 | rebuilds `Glad-Labs/poindexter-pro` from the live system (tuned seed / SKILL.md prompt packs / premium boards) behind a PII-scrub gate; pushes + Discord note |
+| `dependency-review` | deterministic | daily 08:20 | auto-merges green dependabot PRs after 6 h: patches, dev-tooling minors, and production minors off a short held list (litellm / prefect / langgraph / torch / ragas / deepeval / llama-index / langchain / next wait for a live smoke); majors and runtime base images are by hand |
+| `codebase-audit` | deterministic | Wed 10:00 | `ruff --fix` F401/F841 → lint PR (bandit moved to a CI ratchet) |
+| `doc-sync` | deterministic | Fri 10:00 | verifies/repairs CLAUDE.md path references |
+| `claude-md-sync` | deterministic | daily 09:00 | syncs DB-derived counts + surfaces migration drift |
+| `triage-sweep` | deterministic | Mon 09:40 | applies keyword area-labels + Discord digest |
+| `alert-triage` | local LLM | daily 08:40 | classifies noisy `alert_events` → probe-bug issues |
+| `test-health` | local LLM | daily 09:20 | fixes simple test failures behind a re-run gate |
+| `pro-freshness` | deterministic | Sun 10:30 | rebuilds `Glad-Labs/poindexter-pro` from the live system (tuned seed / SKILL.md prompt packs / premium boards) behind a PII-scrub gate; pushes + Discord note |
 | `pin-check` | deterministic | daily 12:30 | verifies every `OPS_OLLAMA_MODEL_*` pin exists on the Ollama endpoint; notifies on a missing pin (stack#3163 — the LLM sessions also preflight at startup) |
 | `issue-resolver` | **disabled** | daily 05:00 | (frontier) fixes one scoped open issue |
 | `test-expansion` | **disabled** | daily 04:00 | (frontier) adds tests to low-coverage files |
+
+**The box sleeps 01:00-08:00** (`scripts/linux/night_sleep.py` on `poindexter-night-sleep.timer`, window in `app_settings` `host_sleep_*`; [`docs/operations/night-sleep.md`](docs/operations/night-sleep.md)), so every session runs after 08:00. Keep new timers out of the window: a fire inside it is replayed at wake by `Persistent=true`.
 
 NOTE: repo-derivable CLAUDE.md stats still auto-sync daily via the `.github/workflows/sync-claude-md.yml` GitHub Action (06:17 UTC) independent of these sessions; the deterministic `claude-md-sync` refreshes the **DB-derived** counts (posts, embeddings, app_settings totals) via a prod-DB probe. The DB half **works** — verified 2026-08-28: the 02:31 EDT fire opens, arms auto-merge on, and merges a PR daily (#3419 08-28, #3372 08-27, #3346 08-26, and every day back through #3275 08-19; the 06:31 UTC PR timestamps are the same fire). It WAS broken from 2026-06-10 to 2026-07-26 — `gh pr create` ran against the shared checkout rather than the session worktree, emitting `rc=1 stderr=must be on a branch named differently than "main"` while still logging "opened CLAUDE.md sync PR" — fixed in #2809, first clean unattended run #2825. The "currently broken" claim outlived the fix by a month; check `gh pr list --search "CLAUDE.md sync"` before believing a staleness claim here.
 

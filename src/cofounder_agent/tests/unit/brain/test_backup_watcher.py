@@ -1067,3 +1067,46 @@ class TestSentinelAlertEmission:
 
         # mtime-derived fingerprint dedups exactly the same way.
         assert _executed_alertnames(pool) == []
+
+
+@pytest.mark.unit
+class TestResumeGrace:
+    """A box that sleeps 01:00-08:00 (scripts/linux/night_sleep.py) wakes with
+    every dump hours old; the backup jobs are restarted on wake. For
+    host_sleep_resume_grace_minutes after the last host_resume row, a stale
+    tier is resume grace: no restart, no escalation."""
+
+    def _pool(self, backup_dir, since_resume):
+        pool = _make_pool(setting_values={bw.BACKUP_DIR_KEY: backup_dir})
+        settings_read = pool.fetchval.side_effect
+
+        async def fetchval(query, *args):
+            if "host_resume" in query:
+                return since_resume
+            return await settings_read(query, *args)
+
+        pool.fetchval = AsyncMock(side_effect=fetchval)
+        return pool
+
+    async def _run(self, pool):
+        restart = restart_stub()
+        summary = await bw.run_backup_watcher_probe(
+            pool, stat_fn=lambda _d, _t: 30_000.0, restart_fn=restart,
+            sleep_fn=AsyncMock(), notify_fn=lambda **k: None,
+        )
+        return summary, restart
+
+    @pytest.mark.asyncio
+    async def test_just_woken_stale_tiers_are_grace_not_retried(self, _reset_module_state):
+        summary, restart = await self._run(self._pool(_reset_module_state, 600.0))
+        # 8.3 h is stale for hourly (90 min) and still fresh for daily (26 h).
+        assert summary["tiers"]["hourly"]["status"] == "resume_grace"
+        assert summary["tiers"]["daily"]["status"] == "fresh"
+        restart.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("since_resume", [3600.0, None])
+    async def test_past_the_grace_or_never_slept_is_the_normal_stale_path(self, _reset_module_state, since_resume):
+        summary, restart = await self._run(self._pool(_reset_module_state, since_resume))
+        assert summary["tiers"]["hourly"]["status"] != "resume_grace"
+        assert restart.await_count >= 1

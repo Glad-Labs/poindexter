@@ -2551,6 +2551,19 @@ DEFAULTS: dict[str, str] = {
     # rubric is written (the operator's taste, from their rejection reasons). The
     # model defaults to the local writer; the 2026-10-17 eval found a local 31B
     # no better than the score gate, so a stronger model is worth pinning here.
+    # Nightly sleep window (scripts/linux/night_sleep.py, a host systemd timer):
+    # suspend at _start, wake by RTC at _wake (operator_timezone), deferring
+    # while work is in flight for at most _defer_limit_minutes. On wake the
+    # GPU containers are checked and the listed backup jobs restarted (their
+    # timers count only awake time). Watchers that measure freshness give a
+    # just-woken box _resume_grace_minutes before calling anything stale.
+    # Off by default: a fresh install has no reason to sleep.
+    'host_sleep_enabled': 'false',
+    'host_sleep_start': '01:00',
+    'host_sleep_wake': '08:00',
+    'host_sleep_defer_limit_minutes': '120',
+    'host_sleep_resume_grace_minutes': '30',
+    'host_sleep_resume_restart_containers': 'poindexter-backup-hourly,poindexter-backup-daily,poindexter-backup-volumes,poindexter-backup-offsite',
     'taste_review_niches': '',
     'taste_review_rubric': '',
     'taste_review_model': '',
@@ -8470,6 +8483,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_title_similarity_threshold': {'owner': 'title_generation', 'value_type': 'float'},
     'qa_topic_dedup_hours': {'value_type': 'integer'},
     'qa_validator_warning_penalty': {'owner': 'qa_programmatic', 'value_type': 'float'},
+    'host_sleep_enabled': {'owner': 'night_sleep', 'value_type': 'boolean'},
+    'host_sleep_start': {'owner': 'night_sleep'},
+    'host_sleep_wake': {'owner': 'night_sleep'},
+    'host_sleep_defer_limit_minutes': {'owner': 'night_sleep', 'value_type': 'integer'},
+    'host_sleep_resume_grace_minutes': {'owner': 'backup_watcher', 'value_type': 'integer'},
+    'host_sleep_resume_restart_containers': {'owner': 'night_sleep'},
     'taste_review_niches': {'owner': 'taste_review'},
     'taste_review_rubric': {'owner': 'taste_review'},
     'taste_review_model': {'owner': 'taste_review'},

@@ -30,14 +30,18 @@ echo "installed unit: poindexter-session@.service (User=${RUN_USER}, repo=${REPO
 
 # name|OnCalendar  (mirrors the Windows $Sessions schedule table)
 SCHED=(
-  "dependency-review|*-*-* 06:30:00"
-  "codebase-audit|Wed *-*-* 02:00:00"
-  "doc-sync|Fri *-*-* 05:00:00"
-  "claude-md-sync|*-*-* 02:30:00"
-  "triage-sweep|Mon *-*-* 07:00:00"
-  "alert-triage|*-*-* 01:00:00"
-  "test-health|*-*-* 03:00:00"
-  "pro-freshness|Sun *-*-* 04:30:00"
+  # Every session runs after 08:00: the box sleeps 01:00-08:00
+  # (scripts/linux/night_sleep.py, app_settings host_sleep_*). A fire inside
+  # the window would be replayed at wake by Persistent=true, so the morning
+  # would start with every session at once on a just-resumed stack.
+  "dependency-review|*-*-* 08:20:00"
+  "alert-triage|*-*-* 08:40:00"
+  "claude-md-sync|*-*-* 09:00:00"
+  "test-health|*-*-* 09:20:00"
+  "triage-sweep|Mon *-*-* 09:40:00"
+  "codebase-audit|Wed *-*-* 10:00:00"
+  "doc-sync|Fri *-*-* 10:00:00"
+  "pro-freshness|Sun *-*-* 10:30:00"
   # Daytime on purpose: a broken model pin should page while the operator is
   # awake, not surface as a 03:00 session failure (stack#3163).
   "pin-check|*-*-* 12:30:00"

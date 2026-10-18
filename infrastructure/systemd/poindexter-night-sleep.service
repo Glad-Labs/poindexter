@@ -1,0 +1,18 @@
+# The nightly sleep window (scripts/linux/night_sleep.py). Runs every 10 minutes
+# from poindexter-night-sleep.timer and does nothing outside the window set in
+# app_settings (host_sleep_enabled / _start / _wake). Inside it, the run that
+# suspends blocks until the machine wakes, then checks the GPU containers and
+# restarts the backup jobs before it exits, so it has no start timeout.
+#
+# Root: rtcwake sets the RTC alarm and suspends. Rendered by
+# scripts/linux/install-night-sleep.sh, which fills in the paths.
+[Unit]
+Description=Poindexter nightly sleep window
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 REPO_ROOT/scripts/linux/night_sleep.py
+Environment=NIGHT_SLEEP_SKIP_FILE=RUN_HOME/.poindexter/no-sleep-tonight
+TimeoutStartSec=infinity

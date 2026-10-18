@@ -74,6 +74,12 @@ ENABLED_KEY = "backup_watcher_enabled"
 POLL_INTERVAL_MINUTES_KEY = "backup_watcher_poll_interval_minutes"
 HOURLY_MAX_AGE_MINUTES_KEY = "backup_watcher_hourly_max_age_minutes"
 DAILY_MAX_AGE_HOURS_KEY = "backup_watcher_daily_max_age_hours"
+# A box that sleeps overnight (scripts/linux/night_sleep.py) wakes with every
+# dump hours old: the backup jobs were frozen with it and are restarted on
+# wake. For this long after the last ``host_resume`` audit row, a stale tier
+# is reported as resume grace, not retried or escalated.
+RESUME_GRACE_MINUTES_KEY = "host_sleep_resume_grace_minutes"
+DEFAULT_RESUME_GRACE_MINUTES = 30
 MAX_RETRIES_KEY = "backup_watcher_max_retries"
 RETRY_DELAY_SECONDS_KEY = "backup_watcher_retry_delay_seconds"
 BACKUP_DIR_KEY = "backup_watcher_backup_dir"
@@ -221,6 +227,10 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         await _read_setting(pool, RETRY_DELAY_SECONDS_KEY, DEFAULT_RETRY_DELAY_SECONDS),
         DEFAULT_RETRY_DELAY_SECONDS,
     )
+    resume_grace_minutes = _coerce_int(
+        await _read_setting(pool, RESUME_GRACE_MINUTES_KEY, DEFAULT_RESUME_GRACE_MINUTES),
+        DEFAULT_RESUME_GRACE_MINUTES,
+    )
     backup_dir = await _read_setting(pool, BACKUP_DIR_KEY, DEFAULT_BACKUP_DIR)
     if backup_dir is None or str(backup_dir).strip() == "":
         backup_dir = DEFAULT_BACKUP_DIR
@@ -237,6 +247,8 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "daily_max_age_hours": daily_max_age_hours,
         "max_retries": max_retries,
         "retry_delay_seconds": retry_delay_seconds,
+        "resume_grace_minutes": resume_grace_minutes,
+        "seconds_since_resume": await _seconds_since_resume(pool),
         "backup_dir": backup_dir,
         "sentinel_dir": sentinel_dir,
     }
@@ -705,6 +717,24 @@ async def _check_sentinels(
 # ---------------------------------------------------------------------------
 
 
+async def _seconds_since_resume(pool: Any) -> float | None:
+    """Seconds since the box last woke from a planned sleep, or ``None``."""
+    try:
+        value = await pool.fetchval(
+            "SELECT EXTRACT(EPOCH FROM (now() - max(timestamp))) FROM audit_log "
+            "WHERE event_type = 'host_resume'"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[BACKUP_WATCHER] host_resume read failed (no resume grace this cycle): %s", exc,
+        )
+        return None
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 async def _check_one_tier(
     pool: Any,
     *,
@@ -772,7 +802,22 @@ async def _check_one_tier(
             "retries_used": prev_retries,
         }
 
-    # 2) Stale (or missing). Decide between retry and escalate.
+    # 2) Stale, but the box only just woke from a planned sleep: the backup
+    # jobs were restarted on wake and are writing their first dumps now.
+    since_resume = config.get("seconds_since_resume")
+    grace = float(config.get("resume_grace_minutes", DEFAULT_RESUME_GRACE_MINUTES)) * 60.0
+    if since_resume is not None and since_resume < grace:
+        return {
+            "ok": True,
+            "status": "resume_grace",
+            "tier": tier,
+            "container": container,
+            "age_seconds": age,
+            "max_age_seconds": max_age_seconds,
+            "retries_used": _retry_state[tier],
+        }
+
+    # 3) Stale (or missing). Decide between retry and escalate.
     used = _retry_state[tier]
     if used >= max_retries:
         # We already burned through the allowed retries on previous

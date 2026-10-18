@@ -1,0 +1,13 @@
+# Every 10 minutes; night_sleep.py exits at once outside the window, defers
+# while work is in flight, and gives up for the night past
+# host_sleep_defer_limit_minutes. A oneshot that is still running (the machine
+# is asleep, or just woke) is not started twice.
+[Unit]
+Description=Timer for the Poindexter nightly sleep window
+
+[Timer]
+OnCalendar=*:0/10
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

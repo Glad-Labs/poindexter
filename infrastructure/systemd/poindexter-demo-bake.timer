@@ -1,8 +1,9 @@
-# Fires poindexter-demo-bake.service weekly, Sunday 04:30.
+# Fires poindexter-demo-bake.service weekly, Sunday 11:00.
 #
 # Weekly rather than daily: clips only need to track visible CLI changes, and
-# every bake costs ~5 minutes of a 13-core burst. 04:30 Sunday sits clear of
-# the daily ops sessions (01:00-07:00 weekdays) and the 03:00 DR backup.
+# every bake costs ~5 minutes of a 13-core burst. 11:00 Sunday sits clear of
+# the ops sessions (08:20-10:30) and outside the 01:00-08:00 sleep window
+# (scripts/linux/night_sleep.py).
 #
 # OnCalendar is evaluated in the HOST timezone — set that to operator_timezone.
 #
@@ -17,7 +18,7 @@
 Description=Timer for the weekly Poindexter demo-clip re-bake
 
 [Timer]
-OnCalendar=Sun *-*-* 04:30:00
+OnCalendar=Sun *-*-* 11:00:00
 Persistent=true
 RandomizedDelaySec=10min
 
