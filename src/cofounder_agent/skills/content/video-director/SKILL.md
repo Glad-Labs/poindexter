@@ -456,8 +456,12 @@ searching for that part would type. The transcript below gives each line's
 start time in seconds.
 
 VIDEO TITLE: {title}
+KEY TERMS (correct spellings): {key_terms}
 TRANSCRIPT:
 {transcript}
+
+The transcript comes from speech recognition, so it can misspell names; spell
+every product, company and tool name as it appears in the title or key terms.
 
 Write between 3 and {max_chapters} chapters that:
 - start the first chapter at 0:00

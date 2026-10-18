@@ -15,8 +15,9 @@ YouTube accepts and to the transcript:
 - the first chapter starts at 0:00 (YouTube ignores a list that does not);
 - every other start is snapped to the start of a real transcript cue, so a
   chapter never begins mid-sentence at a time the model made up;
-- starts increase and sit at least ``youtube_chapter_min_seconds`` apart
-  (YouTube's floor is 10 s);
+- starts sit at least ``youtube_chapter_min_seconds`` apart (YouTube's floor
+  is 10 s); a chapter that lands too close to the one before is dropped, and
+  the list stands if three remain;
 - 3 to ``youtube_chapter_max`` chapters, each title at most
   ``youtube_chapter_title_max_chars``, with no number the transcript lacks.
 
@@ -133,9 +134,18 @@ def check_chapters(
             earlier = [s for s in starts if s <= start + 0.5]
             snapped = earlier[-1] if earlier else starts[0]
         out.append((snapped, title))
-    for (a, _), (b, title) in zip(out, out[1:], strict=False):
-        if b - a < min_seconds:
-            return "", f"chapters under {min_seconds}s apart at {format_stamp(b)} ({title!r})"
+    # A chapter that lands too soon after the one before is dropped rather
+    # than sinking the whole list: on 2026-10-18 four of nine videos lost every
+    # chapter to one crowded final line near the end. Dropping it keeps the
+    # rest, provided three still stand.
+    kept: list[tuple[float, str]] = [out[0]]
+    for start, title in out[1:]:
+        if start - kept[-1][0] >= min_seconds:
+            kept.append((start, title))
+    if len(kept) < 3:
+        crowded = next((t for (a, _), (b, t) in zip(out, out[1:], strict=False) if b - a < min_seconds), "")
+        return "", f"chapters under {min_seconds}s apart, fewer than 3 left ({crowded!r})"
+    out = kept
     return "\n".join(f"{format_stamp(when)} {title}" for when, title in out), ""
 
 
@@ -167,8 +177,14 @@ def _model(site_config: Any) -> str:
 
 async def generate_chapters(
     *, site_config: Any, pool: Any, srt_text: str, title: str, task_id: str | None = None,
+    key_terms: str = "",
 ) -> tuple[str, str]:
-    """Chapter text for a transcript, or ``("", why)``. Never raises."""
+    """Chapter text for a transcript, or ``("", why)``. Never raises.
+
+    ``key_terms`` (the post's SEO keywords) gives the model the correct
+    spellings of names the speech recognizer misheard: on 2026-10-18 a
+    transcript's "Tielang" for TileLang went straight into a chapter title.
+    """
     if not chapters_enabled(site_config):
         return "", "youtube_chapters_enabled is off"
     model = _model(site_config)
@@ -190,7 +206,8 @@ async def generate_chapters(
         pool=pool,
         model=model,
         prompt=prompts.get_prompt(
-            "video.chapters", title=title or "(untitled)", transcript=transcript_for_prompt(cues), **limits,
+            "video.chapters", title=title or "(untitled)", transcript=transcript_for_prompt(cues),
+            key_terms=key_terms or "(none)", **limits,
         ),
         check=lambda raw: check_chapters(
             raw, cues, max_chapters=max_chapters, min_seconds=min_seconds, max_title_chars=max_title,
@@ -237,6 +254,7 @@ async def load_chapters(pool: Any, asset_id: Any) -> str:
 
 async def chapters_for_upload(
     pool: Any, site_config: Any, *, asset_id: Any, video_path: str, title: str, task_id: str = "",
+    key_terms: str = "",
 ) -> str:
     """Chapters for a long video about to upload: stored ones, else made now.
 
@@ -258,6 +276,7 @@ async def chapters_for_upload(
             srt_text = fh.read()
         text, note = await generate_chapters(
             site_config=site_config, pool=pool, srt_text=srt_text, title=title, task_id=task_id or None,
+            key_terms=key_terms,
         )
         if asset_id:
             await store_chapters(pool, asset_id, text, note)
@@ -273,7 +292,8 @@ _BACKFILL_SQL = """
 SELECT ma.id, ma.storage_path, ma.task_id,
        ma.platform_video_ids->>'youtube' AS video_id,
        ma.metadata->'youtube_chapters'->>'text' AS chapters,
-       coalesce(p.title, ma.title, '') AS title
+       coalesce(p.title, ma.title, '') AS title,
+       coalesce(p.seo_keywords, '') AS seo_keywords
   FROM media_assets ma
   LEFT JOIN posts p ON p.id = ma.post_id
  WHERE ma.type = 'video'
@@ -316,7 +336,7 @@ async def backfill_chapters(
             srt_text = fh.read()
         text, note = await generate_chapters(
             site_config=site_config, pool=pool, srt_text=srt_text, title=out.title,
-            task_id=str(row.get("task_id") or "") or None,
+            task_id=str(row.get("task_id") or "") or None, key_terms=str(row.get("seo_keywords") or ""),
         )
         await store_chapters(pool, row["id"], text, note)
         if text:

@@ -564,7 +564,7 @@ async def _dispatch_asset(
     chapters = "" if shorts else await chapters_for_upload(
         pool, site_config, asset_id=row.get("asset_id"),
         video_path=row.get("storage_path") or "", title=row.get("title") or "",
-        task_id=str(task_id or ""),
+        task_id=str(task_id or ""), key_terms=row.get("seo_keywords") or "",
     )
     description = _build_youtube_description(
         seo_description=row.get("excerpt") or "",

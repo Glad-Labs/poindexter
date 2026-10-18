@@ -72,7 +72,7 @@ class TestCheck:
     @pytest.mark.parametrize("raw, reason", [
         ("0:00 Intro\n0:31 Encoding", "fewer than 3"),
         ("0:00 A\n0:31 B\n1:05 C\n1:44 D", ""),  # 4 is fine
-        ("0:00 Intro\n0:05 Too close\n1:05 Gemini", "under 20s apart"),
+        ("0:00 Intro\n0:05 Too close\n1:05 Gemini", "fewer than 3 left"),
         ("0:00 Intro\n0:31 " + "x" * 61 + "\n1:05 Gemini", "over 60 characters"),
         ("0:00 Chapter 1\n0:31 Encoding\n1:05 Gemini", "a label, not a topic"),
         ("0:00 Intro\n0:31 The 7 encoding modes\n1:05 Gemini", "number not in the transcript"),
@@ -116,11 +116,12 @@ class TestGenerate:
         with patch("poindexter.services.checked_llm_line.generate_checked_line", _fake):
             text, note = await ch.generate_chapters(
                 site_config=SiteConfig(initial_config={"video_director_model": "m"}), pool=object(),
-                srt_text=SRT, title="The Gap",
+                srt_text=SRT, title="The Gap", key_terms="TileLang, Gemini",
             )
         assert text.startswith("0:00 Intro to RAG") and note == ""
         assert captured["model"] == "m" and captured["phase"] == "youtube_chapters"
         assert "[31] Symmetric" in captured["prompt"]
+        assert "TileLang, Gemini" in captured["prompt"]
 
 
 def _pool(fetchval=None, rows=None):
@@ -225,6 +226,22 @@ def test_the_chapter_prompts_render():
     from poindexter.services.prompt_manager import get_prompt_manager
 
     pm = get_prompt_manager()
-    text = pm.get_prompt("video.chapters", title="T", transcript="[0] hi", max_chapters=8, min_seconds=20, max_title_chars=60)
+    text = pm.get_prompt(
+        "video.chapters", title="T", transcript="[0] hi", key_terms="tilelang, ascend",
+        max_chapters=8, min_seconds=20, max_title_chars=60,
+    )
+    assert "tilelang, ascend" in text
     assert "[0] hi" in text and "0:00" in text
     assert "FIX: r." in pm.get_prompt("video.chapters_fix", reason="r", max_chapters=8, min_seconds=20, max_title_chars=60)
+
+
+def test_a_crowded_chapter_is_dropped_when_three_remain():
+    """2026-10-18: four videos lost every chapter to one crowded last line."""
+    text, why = ch.check_chapters(
+        "0:00 Intro to RAG\n0:31 Encoding\n1:05 Gemini parameters\n1:15 Too soon after Gemini\n1:44 Evaluating models",
+        CUES, **LIMITS,
+    )
+    assert why == ""
+    assert text.splitlines() == [
+        "0:00 Intro to RAG", "0:31 Encoding", "1:05 Gemini parameters", "1:44 Evaluating models",
+    ]
