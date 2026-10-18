@@ -155,6 +155,19 @@ class WebResearcher:
         logger.info("[RESEARCH] Web search: %d results for '%s'", len(results), query[:50])
         return results
 
+    async def fetch_page_text(self, url: str, *, max_chars: int | None = None) -> str:
+        """One page's readable text, through the same SSRF-guarded fetch as
+        :meth:`search` (``""`` when it cannot be fetched or read). Used where
+        the page is already known, e.g. a news Short's own story
+        (``services/news_shorts.py``). ``max_chars`` replaces the
+        ``web_research_max_content_chars`` cap, which is sized for one of
+        several search results rather than the whole of a story."""
+        failures: list[str] = []
+        text = await self._extract_content(url, failures=failures, max_chars=max_chars)
+        if failures:
+            logger.warning("[RESEARCH] page fetch failed: %s", failures[0])
+        return text
+
     async def search_simple(self, query: str, num_results: int = 5) -> list[dict[str, str]]:
         """Quick search — just titles, URLs, and snippets. No content extraction."""
         return await self._ddg_search(query, num_results)
@@ -231,7 +244,7 @@ class WebResearcher:
         return []
 
     async def _extract_content(
-        self, url: str, *, failures: list[str] | None = None,
+        self, url: str, *, failures: list[str] | None = None, max_chars: int | None = None,
     ) -> str:
         """Fetch a URL and extract clean text content.
 
@@ -293,7 +306,8 @@ class WebResearcher:
                 lines = [line.strip() for line in text.split("\n") if line.strip()]
                 clean = "\n".join(lines)
 
-                return clean[: self._web_research_int("max_content_chars", MAX_CONTENT_CHARS)]
+                cap = max_chars or self._web_research_int("max_content_chars", MAX_CONTENT_CHARS)
+                return clean[:cap]
 
         except URLScrapeError as e:
             # SSRF guard fired (internal IP / non-http redirect) or DNS/redirect

@@ -181,6 +181,36 @@ async def test_short_list_also_reviewed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_short_only_run_reviews_its_short() -> None:
+    """A news Short (services/news_shorts.py) has no long list, only the 9:16
+    one; the review runs on it instead of skipping the stage."""
+    from poindexter.modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+
+    short_revised = _valid_list(source1="wan21")
+    short_revised["aspect"] = "9:16"
+    platform = _platform(dispatch_text=json.dumps(short_revised))
+    ctx = {
+        "title": "T", "content": "C body " * 20, "podcast_script": "",
+        "short_summary_script": "short " * 30,
+        "short_shot_list": _valid_list(),
+        "platform": platform,
+        "database_service": _make_db(),
+        "task_id": "t1",
+    }
+
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        result = await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_count == 1
+    assert "video_shot_list" not in result.context_updates
+    assert result.context_updates["short_shot_list"]["shots"][1]["source"] == "wan21"
+    assert result.metrics == {"reviewed": True}
+
+
+@pytest.mark.asyncio
 async def test_review_timeout_read_from_db_setting() -> None:
     """The per-call LLM timeout is read from ``video_director_timeout_seconds``
     and threaded into the dispatch — not hardcoded. Finding: the old hardcoded

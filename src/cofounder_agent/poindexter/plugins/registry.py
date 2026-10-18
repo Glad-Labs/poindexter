@@ -1133,6 +1133,10 @@ def get_core_samples() -> dict[str, list[Any]]:
         # posts.metadata->>'pipeline_task_id' seam) and seeds the Gate-2 approval
         # rows. Same dormant master switch (``media_pipeline_trigger_enabled``).
         ("jobs", "poindexter.services.jobs.media_distribute", "MediaDistributeJob"),
+        # News Shorts (services/news_shorts.py, 2026-10-18): hourly, queues at
+        # most one ``news_short`` task (a YouTube Short from one news story, no
+        # blog post) up to news_shorts_per_day. Off behind news_shorts_enabled.
+        ("jobs", "poindexter.services.jobs.enqueue_news_shorts", "EnqueueNewsShortsJob"),
         # Stage-3 podcast lane (#689 deviation — separate isolated graph). The
         # dispatch job runs ``podcast_pipeline`` (render+persist) for Gate-1
         # pieces with a persisted podcast_script; the distribute job links the

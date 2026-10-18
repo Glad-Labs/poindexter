@@ -198,6 +198,8 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # install would rename starter-blog -> glad-labs (below) and the QA rail
     # would start flagging first-person posts on the renamed niche.
     "qa_allow_first_person_niches": "dev_diary,glad-labs",
+    # News Shorts pick their story for the branded niche, the same rename.
+    "news_shorts_niche": "glad-labs",
     # Operator infra slugs (the OSS seeds ship 'poindexter'). The compose
     # project name is the basename of the host dir that launched the stack
     # (this rig cloned into ~/glad-labs-website); the GlitchTip org slug is

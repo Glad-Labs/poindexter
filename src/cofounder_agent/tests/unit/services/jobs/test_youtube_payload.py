@@ -522,3 +522,31 @@ def test_both_strips_accept_a_curly_apostrophe():
     assert strip_preamble(
         "It’s no secret, the funnel is dead now"
     ) == "The funnel is dead now"
+
+
+def test_a_news_short_credits_its_source_and_names_the_link_as_related():
+    """A news Short (services/news_shorts.py) has no post: the story is
+    credited, and the related post's link does not claim to be its article."""
+    out = _build_youtube_description(
+        seo_description="Source: https://news.example/story",
+        body="",
+        site_config=_sc(),
+        slug="data-center-crunch",
+        shorts=True,
+        hook="Local bans have delayed only three data centers.",
+        source_url="https://news.example/story",
+        hashtags=["#Shorts"],
+    )
+    parts = out.split("\n\n")
+    assert parts[0] == "Local bans have delayed only three data centers."
+    assert parts[1] == "Source: https://news.example/story"
+    assert parts[2].startswith("More on this: https://www.gladlabs.io/posts/data-center-crunch")
+    assert "Read the full post" not in out
+
+
+def test_without_a_source_the_short_layout_is_unchanged():
+    out = _build_youtube_description(
+        seo_description="", body="", site_config=_sc(), slug="a-post", shorts=True, hook="Hook.",
+    )
+    assert "Source:" not in out
+    assert "Read the full post: https://www.gladlabs.io/posts/a-post" in out

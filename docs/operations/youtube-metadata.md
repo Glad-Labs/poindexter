@@ -10,6 +10,13 @@
 | Captions    | an SRT transcribed from the uploaded video's own audio, attached after the upload (see [Caption tracks](#caption-tracks)) | same                                                                                                                                                                              | one track per language + name  |
 | Chapters    | `M:SS Title` lines from 0:00, written from the video's transcript and checked (see [Chapters](#chapters))                 | none                                                                                                                                                                              | 3 to 8, at least 20 s apart    |
 
+A **news Short** (a Short made from one news story with no post,
+[news-shorts.md](../architecture/news-shorts.md)) differs in two places. Its
+description credits the story with `Source: <url>` under the lead, and its
+back-link goes to the most related post, labelled `More on this:` (it is
+omitted when no post is close enough). `sync-metadata` never rewrites one,
+because it reads only videos with a post.
+
 Composed by `services/jobs/youtube_payload.py`, dispatched by
 `services/jobs/media_distribute.py`. The back-link carries
 `?utm_source=youtube&utm_medium=video` (long form) or `utm_medium=shorts`

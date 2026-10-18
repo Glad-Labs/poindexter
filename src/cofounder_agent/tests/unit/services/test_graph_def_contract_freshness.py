@@ -45,6 +45,7 @@ from poindexter.services.canonical_blog_spec import CANONICAL_BLOG_GRAPH_DEF
 from poindexter.services.dev_diary_spec import DEV_DIARY_GRAPH_DEF
 from poindexter.services.image_rebuild_spec import IMAGE_REBUILD_GRAPH_DEF
 from poindexter.services.media_pipeline_spec import MEDIA_PIPELINE_GRAPH_DEF
+from poindexter.services.news_short_spec import NEWS_SHORT_GRAPH_DEF
 from poindexter.services.podcast_pipeline_spec import PODCAST_PIPELINE_GRAPH_DEF
 from poindexter.services.seo_refresh_spec import SEO_REFRESH_GRAPH_DEF
 from tests.unit._nonempty import nonempty
@@ -59,8 +60,8 @@ def _active_specs() -> dict:
     ``pipeline_templates``: ``canonical_blog`` (live content pipeline),
     ``dev_diary`` (build-in-public narrative), ``media_pipeline`` /
     ``podcast_pipeline`` (Stage-2/3 media graphs), ``seo_refresh`` (the gated
-    meta-refresh loop, #763), and ``image_rebuild`` (the queued rebuild-images
-    path). Add any NEW active graph_def spec here so the gate covers it.
+    meta-refresh loop, #763), ``image_rebuild`` (the queued rebuild-images
+    path) and ``news_short`` (a Short from a news story, no post). Add any NEW active graph_def spec here so the gate covers it.
 
     ``dev_diary`` used to be excluded from this list on the belief that it "has
     no graph_def row (it runs off the legacy ``TEMPLATES`` factory)". That was
@@ -76,6 +77,7 @@ def _active_specs() -> dict:
             DEV_DIARY_GRAPH_DEF,
             IMAGE_REBUILD_GRAPH_DEF,
             MEDIA_PIPELINE_GRAPH_DEF,
+            NEWS_SHORT_GRAPH_DEF,
             PODCAST_PIPELINE_GRAPH_DEF,
             SEO_REFRESH_GRAPH_DEF,
         )

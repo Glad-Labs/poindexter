@@ -372,6 +372,7 @@ def _build_youtube_description(
     twin_url: str = "",
     hashtags: list[str] | None = None,
     chapters: str = "",
+    source_url: str = "",
 ) -> str:
     """Compose the YouTube video description — one layout per render.
 
@@ -397,6 +398,11 @@ def _build_youtube_description(
         Read the full post: {site_url}/posts/{slug}?utm_source=youtube&utm_medium=shorts
 
         #Shorts #KeywordOne #KeywordTwo
+
+    A news Short (``services/news_shorts.py``) has no post of its own: it
+    passes the story's ``source_url``, which is credited under the opener as
+    ``Source: {url}``, and its ``slug`` is the most related post, so that link
+    reads ``More on this: …`` instead of claiming to be the Short's article.
 
     Before 2026-09-22 both renders shipped one identical description: the
     excerpt and an article link tagged ``utm_medium=video`` — so a click from
@@ -438,7 +444,8 @@ def _build_youtube_description(
         # rather than landing in the "(direct)" bucket — a video description is
         # exactly the kind of link a browser sends no referrer for. A Short's
         # link says so (utm_medium=shorts) so the two renders stay separable.
-        backlink = "Read the full post: " + tag_for(
+        label = "More on this: " if (source_url or "").strip() else "Read the full post: "
+        backlink = label + tag_for(
             site_config, f"{site_url}/posts/{slug}", surface="youtube",
             medium="shorts" if shorts else None,
         )
@@ -450,14 +457,15 @@ def _build_youtube_description(
     if twin_url and _cross_links_enabled(site_config):
         cross = ("Watch the full breakdown: " if shorts else "Watch the Short: ") + twin_url
 
+    source = f"Source: {source_url.strip()}" if (source_url or "").strip() else ""
     if shorts:
         tag_line = " ".join(hashtags or [])
-        header_parts = [p for p in (opener, cross, backlink, tag_line) if p]
+        header_parts = [p for p in (opener, source, cross, backlink, tag_line) if p]
     else:
         # services/youtube_chapters.py: "M:SS Title" lines from 0:00, which
         # YouTube turns into chapters wherever they sit in the description.
         chapter_block = f"Chapters\n{chapters.strip()}" if (chapters or "").strip() else ""
-        header_parts = [p for p in (opener, backlink, cross, chapter_block) if p]
+        header_parts = [p for p in (opener, source, backlink, cross, chapter_block) if p]
     header = "\n\n".join(header_parts)
     body_budget = 0 if shorts else _body_chars_budget(site_config)
     body_snippet = ""

@@ -772,6 +772,14 @@ class PipelineState(TypedDict, total=False):
     # undeclared key would raise ValueError at seed time.
     target_status: str           # atoms.set_task_status: status to transition the running task to
 
+    # News Shorts (services/news_shorts.py, 2026-10-18). ``news_short`` is the
+    # story the task was queued with (hydrated from its metadata), enriched by
+    # news_short.research with the page text and related post and stamped by
+    # news_short.finalize. ``short_only`` is the generate_video_shot_list node
+    # config that skips the long director (a news Short has no long lane).
+    news_short: dict             # news_short.*: the story, its page text, related post, released ids
+    short_only: bool             # stage.generate_video_shot_list node config: plan the 9:16 lane only
+
 
 # ---------------------------------------------------------------------------
 # Run record types — mirror StageRunRecord/StageRunSummary so callers that

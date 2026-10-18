@@ -37,6 +37,7 @@ import poindexter.services.pipeline_architect as pa
 from poindexter.plugins.atom import AtomMeta
 from poindexter.services import graph_def_reseed as gr
 from poindexter.services.atom_registry import discover
+from tests.unit._nonempty import nonempty
 
 MIGRATIONS_DIR = Path(gr.__file__).resolve().parent / "migrations"
 BOOTSTRAP = "20260922_021635_reseed_every_active_graph_def_declaring_the_graph_signature_it_brings_the_row_to.py"
@@ -301,6 +302,9 @@ class TestReseedGate:
             assert live != declared[slug][-1].reseed.graph_signature
 
     def test_bootstrap_declares_every_active_graph(self):
+        """Every active graph is anchored: by the bootstrap if it existed then,
+        else by the migration that first seeded it (news_short, 2026-10-18),
+        which must be newer than the bootstrap."""
         declared = gr.declared_reseeds(MIGRATIONS_DIR)
         boot = {
             d.reseed.slug
@@ -308,7 +312,13 @@ class TestReseedGate:
             for d in entries
             if d.migration == BOOTSTRAP
         }
-        assert boot == {s for s, _m, _a in gr.ACTIVE_SPECS}
+        active = {s for s, _m, _a in gr.ACTIVE_SPECS}
+        assert boot <= active
+        for slug in nonempty(sorted(active - boot), "graphs added after the bootstrap"):
+            assert slug in declared, f"{slug}: no migration declares it"
+            assert declared[slug][0].migration > BOOTSTRAP, (
+                f"{slug}: first declared by {declared[slug][0].migration}, before the bootstrap"
+            )
 
 
 def _meta(name: str) -> AtomMeta:

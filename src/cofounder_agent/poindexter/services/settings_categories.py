@@ -245,6 +245,8 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("alt_text", "media"),
     ("preferred_ai_video", "media"),
     ("youtube", "media"),
+    # A Short from one news story, no post (services/news_shorts.py).
+    ("news_short", "media"),
     # Media-lane watchdogs + recovery jobs (subsystem-first, like the
     # infra-component probes above): the narration-failure pager, the hero
     # i2v fallback pager, and the two Stage-1 backfill jobs are all knobs on

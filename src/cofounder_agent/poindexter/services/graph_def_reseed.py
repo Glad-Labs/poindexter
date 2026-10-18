@@ -77,6 +77,7 @@ ACTIVE_SPECS: tuple[tuple[str, str, str], ...] = (
     ("dev_diary", "poindexter.services.dev_diary_spec", "DEV_DIARY_GRAPH_DEF"),
     ("image_rebuild", "poindexter.services.image_rebuild_spec", "IMAGE_REBUILD_GRAPH_DEF"),
     ("media_pipeline", "poindexter.services.media_pipeline_spec", "MEDIA_PIPELINE_GRAPH_DEF"),
+    ("news_short", "poindexter.services.news_short_spec", "NEWS_SHORT_GRAPH_DEF"),
     ("podcast_pipeline", "poindexter.services.podcast_pipeline_spec", "PODCAST_PIPELINE_GRAPH_DEF"),
     ("seo_refresh", "poindexter.services.seo_refresh_spec", "SEO_REFRESH_GRAPH_DEF"),
 )

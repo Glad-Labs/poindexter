@@ -893,6 +893,39 @@ DEFAULTS: dict[str, str] = {
     'youtube_short_title_max_words': '10',
     # Two sentences. 220 rejected two good leads at 222/224 chars (2026-10-13).
     'youtube_short_description_max_chars': '300',
+    # ----- News Shorts (services/news_shorts.py, 2026-10-18) -----
+    # A YouTube Short made from one news story, with no blog post behind it.
+    # EnqueueNewsShortsJob queues at most one an hour, up to news_shorts_per_day,
+    # from fresh pooled stories the niche's scope check judges in scope; each
+    # waits for the operator's review in media_approvals. Off by default.
+    'news_shorts_enabled': 'false',
+    'news_shorts_per_day': '1',
+    # Operator-local hour before which nothing is queued, so the day's Short
+    # comes from the day's news.
+    'news_shorts_earliest_hour': '8',
+    # The niche a story is picked for and judged against (its topic_subject).
+    'news_shorts_niche': 'starter-blog',
+    # topic_pool.source values a story may come from (CSV).
+    'news_shorts_sources': 'hackernews,rss',
+    'news_shorts_max_age_hours': '24',
+    # Fresh stories sent to the scope check per pick, best-scored first.
+    'news_shorts_candidate_limit': '20',
+    # The story's page is the script's whole corpus: fewer readable characters
+    # than this and the run stops rather than writing from a headline.
+    'news_shorts_min_source_chars': '800',
+    'news_shorts_source_max_chars': '6000',
+    # Model for the script; empty = video_director_model.
+    'news_shorts_script_model': '',
+    # The upper bound comes from video_short_target_seconds x
+    # media_narration_words_per_second (+15%); this is the floor.
+    'news_shorts_script_min_words': '55',
+    'news_shorts_script_temperature': '0.5',
+    'news_shorts_script_max_tokens': '600',
+    'news_shorts_script_timeout_seconds': '180',
+    # Cosine floor (headline vs post) for linking the most related published
+    # post; 0 = no link. Measured 2026-10-18: a real match 0.649, posts that
+    # only shared a name or a part 0.58-0.61.
+    'news_shorts_related_post_min_similarity': '0.63',
     # The Short's vertical thumbnail: the long thumbnail's hook, colours and
     # mark on a 9:16 frame, words in the top band (the Shorts player covers
     # the bottom and right). Reviewed with the Short in the media drawer.
@@ -7031,6 +7064,21 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'youtube_short_package_timeout_seconds': {'owner': 'short_package', 'value_type': 'integer'},
     'youtube_short_title_max_words': {'owner': 'short_package', 'value_type': 'integer'},
     'youtube_short_description_max_chars': {'owner': 'short_package', 'value_type': 'integer'},
+    'news_shorts_enabled': {'owner': 'news_shorts', 'value_type': 'boolean'},
+    'news_shorts_per_day': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_earliest_hour': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_niche': {'owner': 'news_shorts', 'value_type': 'string'},
+    'news_shorts_sources': {'owner': 'news_shorts', 'value_type': 'csv'},
+    'news_shorts_max_age_hours': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_candidate_limit': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_min_source_chars': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_source_max_chars': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_script_model': {'owner': 'news_shorts', 'value_type': 'model'},
+    'news_shorts_script_min_words': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_script_temperature': {'owner': 'news_shorts', 'value_type': 'float'},
+    'news_shorts_script_max_tokens': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_script_timeout_seconds': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_related_post_min_similarity': {'owner': 'news_shorts', 'value_type': 'float'},
     'video_short_thumbnail_enabled': {'owner': 'video_thumbnail', 'value_type': 'boolean'},
     'video_short_thumbnail_background_order': {'owner': 'video_thumbnail', 'value_type': 'string'},
     'video_short_thumbnail_width': {'owner': 'video_thumbnail', 'value_type': 'integer'},

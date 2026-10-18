@@ -1315,6 +1315,99 @@ def youtube_short_package(
         raise SystemExit(1)
 
 
+@youtube_group.command("news-short")
+@click.option(
+    "--queue", is_flag=True,
+    help="Queue the story as a news_short task (renders, then waits for review). Default: show the pick only.",
+)
+@click.option(
+    "--draft", "draft_script", is_flag=True,
+    help="Read the story's page and write its script, without queueing or rendering.",
+)
+@click.option("--url", default=None, help="Use this story instead of picking one from the pool.")
+@click.option("--title", "story_title", default=None, help="The story's headline (with --url).")
+def youtube_news_short(queue: bool, draft_script: bool, url: str | None, story_title: str | None) -> None:
+    """Pick, draft or queue a news Short: a Short from one news story, no blog post.
+
+    \b
+    With no flags, shows the story the scheduled job would pick (fresh,
+    unused, judged in scope), and nothing is written. --draft also reads the
+    story's page and writes the checked script. --queue makes the task; the
+    Short renders, then waits in the media review queue. --url/--title name a
+    story yourself. Works while news_shorts_enabled is off.
+
+    Runs in the worker container, which reaches the model:
+    `docker exec poindexter-worker python -m poindexter.cli integrations youtube news-short --draft`.
+    """
+    from poindexter.cli._dataplane import run_service
+    from poindexter.services import news_shorts
+
+    if (url is None) != (story_title is None):
+        click.echo("Error: --url and --title go together.", err=True)
+        raise SystemExit(2)
+
+    async def _go(pool):
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        sc, _container = await build_and_wire_subprocess_with_container(pool)
+        try:
+            if url is not None:
+                story = news_shorts.NewsStory(pool_id="", source="manual", title=story_title or "", url=url)
+                picked = news_shorts.PickResult(story=story, considered=1, in_scope=1)
+            else:
+                picked = await news_shorts.pick_story(pool, sc)
+            drafted = (
+                await news_shorts.draft(pool, sc, picked.story)
+                if draft_script and picked.story is not None else None
+            )
+            task_id = (
+                await news_shorts.enqueue_news_short(
+                    pool, picked.story, niche=news_shorts.niche_slug(sc),
+                )
+                if queue and picked.story is not None else None
+            )
+            return picked, drafted, task_id
+        finally:
+            await flush_read_telemetry(pool, sc)
+
+    try:
+        picked, drafted, task_id = run_service(_go)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+    click.echo(f"Stories considered: {picked.considered}, judged in scope: {picked.in_scope}")
+    for err in picked.errors:
+        click.secho(f"  scope check: {err}", fg="yellow")
+    if picked.story is None:
+        click.echo(f"No story: {picked.note}")
+        raise SystemExit(1)
+    story = picked.story
+    click.echo(f"\nStory   {story.title}\n        {story.url}  ({story.source}, score {story.score:.2f})")
+    if drafted is not None:
+        if drafted.error:
+            click.secho(f"\nResearch failed: {drafted.error}", fg="red")
+        else:
+            related = drafted.related_post
+            click.echo(f"Page    {drafted.source_chars} readable characters")
+            click.echo(
+                f"Link    /posts/{related['slug']} ({related.get('similarity', '?')})"
+                if related else "Link    (no related post above news_shorts_related_post_min_similarity)"
+            )
+            if drafted.script:
+                click.echo(
+                    f"\nScript  ({len(drafted.script.split())} words"
+                    + (f", {drafted.note}" if drafted.note else "") + ")"
+                )
+                click.echo(drafted.script)
+            else:
+                click.secho(f"\nNo usable script: {drafted.note}", fg="red")
+    if task_id:
+        click.echo(f"\nQueued news_short task {task_id}. It renders, then waits in the media review queue.")
+    if drafted is not None and (drafted.error or not drafted.script):
+        raise SystemExit(1)
+
+
 @youtube_group.command("performance")
 @click.option("--days", default=28, show_default=True, type=int, help="Window, ending today.")
 @click.option("--limit", default=25, show_default=True, type=int, help="Videos to list, most viewed first.")

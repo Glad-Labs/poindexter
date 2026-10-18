@@ -717,6 +717,81 @@ async def test_short_failure_does_not_break_long() -> None:
 
 
 # ---------------------------------------------------------------------------
+# short_only (news Shorts, services/news_shorts.py): the long director is
+# skipped and only the 9:16 lane is planned.
+# ---------------------------------------------------------------------------
+
+
+def _short_only_context(platform: MagicMock) -> dict:
+    return {
+        "title": "Nvidia shipment goes missing",
+        "content": "Some content " * 50,
+        # A news Short has no long narration: the graph writes "".
+        "podcast_script": "",
+        "short_summary_script": "short narration " * 15,
+        "short_only": True,
+        "task_id": "task-1",
+        "database_service": _make_db_service(),
+        "platform": platform,
+    }
+
+
+async def _execute(context: dict):
+    with patch("poindexter.services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("poindexter.services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        return await GenerateVideoShotListStage().execute(context, {})
+
+
+@pytest.mark.asyncio
+async def test_short_only_plans_the_short_and_skips_the_long_director() -> None:
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text=_make_valid_short_director_output()), model="director-model-x",
+    )
+
+    result = await _execute(_short_only_context(platform))
+
+    assert result.ok
+    assert platform.dispatch.complete.call_count == 1, "only the 9:16 director runs"
+    assert "video_shot_list" not in result.context_updates
+    assert result.context_updates["short_shot_list"]["aspect"] == "9:16"
+    assert result.detail.startswith("short-only: 2-shot")
+    assert result.metrics == {"short_shot_count": 2}
+
+
+@pytest.mark.asyncio
+async def test_short_only_reports_a_failed_short_director() -> None:
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text="I refuse to output JSON."), model="director-model-x",
+    )
+
+    result = await _execute(_short_only_context(platform))
+
+    assert result.ok
+    assert result.metrics == {"failed": True}
+    assert "short_shot_list" not in result.context_updates
+
+
+@pytest.mark.asyncio
+async def test_without_short_only_an_empty_long_script_still_skips() -> None:
+    """The flag is the only way past the no-narration guard: a blog run with no
+    long script still plans nothing, as before."""
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text=_make_valid_short_director_output()), model="director-model-x",
+    )
+    context = _short_only_context(platform)
+    context.pop("short_only")
+
+    result = await _execute(context)
+
+    assert result.metrics.get("skipped") is True
+    assert platform.dispatch.complete.call_count == 0
+
+
+# ---------------------------------------------------------------------------
 # Model pin — the "auto"/unset sentinel skips the (non-critical) director
 # ---------------------------------------------------------------------------
 

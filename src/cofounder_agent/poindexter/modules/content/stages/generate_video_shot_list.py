@@ -857,13 +857,20 @@ class GenerateVideoShotListStage:
 
         _presenter_format = _presenter_format_of(_policy)
 
+        # Short-only (node config ``short_only: true``, 2026-10-18): a news
+        # Short (services/news_shorts.py) has a Short and nothing else, so the
+        # long director is skipped and only the 9:16 lane is planned. Node
+        # config reaches a stage on its state, not in ``config`` (that is the
+        # plugin's own app_settings config). Every other graph leaves the flag
+        # unset and runs exactly as before.
+        short_only = bool(context.get("short_only"))
         if not content_text or not title:
             return StageResult(
                 ok=True,
                 detail="nothing to direct (missing content or title)",
                 metrics={"skipped": True},
             )
-        if not narration_script:
+        if not narration_script and not short_only:
             # The director needs the narration script to align shot
             # durations to. Without it, we'd produce a shot list that
             # didn't actually correspond to any audio.
@@ -943,7 +950,7 @@ class GenerateVideoShotListStage:
         # (video_long_script, fallback podcast_script — resolved above). The
         # prompt's template var is still named {podcast_script} for backcompat
         # with frozen prompt overrides; the CONTENT is the narration script.
-        long_shot_list = await self._produce_shot_list(
+        long_shot_list = None if short_only else await self._produce_shot_list(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
                 presenter_format=_presenter_format,
             platform=platform,
@@ -968,7 +975,7 @@ class GenerateVideoShotListStage:
             max_retries=director_max_retries,
         )
 
-        if long_shot_list is None:
+        if long_shot_list is None and not short_only:
             # The long-form director failed — the stage is non-critical, so
             # record + skip (per-phase audit was already logged in the helper).
             return StageResult(
@@ -1025,30 +1032,38 @@ class GenerateVideoShotListStage:
                 max_retries=director_max_retries,
             )
 
+        if short_only and short_shot_list is None:
+            return StageResult(
+                ok=True,
+                detail="short-only: the director did not produce a 9:16 shot list",
+                metrics={"failed": True},
+            )
+
         # Success — return via context_updates so it survives the graph_def
         # state merge (#674: direct context writes are dropped on graph_def).
         stages = context.setdefault("stages", {})
-        stages["video_shot_list"] = True
-
-        context_updates: dict[str, Any] = {
-            "video_shot_list": long_shot_list,
-            "stages": stages,
-        }
-        metrics: dict[str, Any] = {
-            "shot_count": len(long_shot_list["shots"]),
-            "total_duration_s": long_shot_list["total_duration_s"],
-        }
+        context_updates: dict[str, Any] = {"stages": stages}
+        metrics: dict[str, Any] = {}
+        if long_shot_list is not None:
+            stages["video_shot_list"] = True
+            context_updates["video_shot_list"] = long_shot_list
+            metrics["shot_count"] = len(long_shot_list["shots"])
+            metrics["total_duration_s"] = long_shot_list["total_duration_s"]
         if short_shot_list is not None:
             stages["short_shot_list"] = True
             context_updates["short_shot_list"] = short_shot_list
             metrics["short_shot_count"] = len(short_shot_list["shots"])
 
-        detail = (
-            f"{len(long_shot_list['shots'])} shots, "
-            f"{long_shot_list['total_duration_s']:.1f}s total"
-        )
-        if short_shot_list is not None:
-            detail += f" (+ {len(short_shot_list['shots'])}-shot 9:16 short)"
+        if long_shot_list is not None:
+            detail = (
+                f"{len(long_shot_list['shots'])} shots, "
+                f"{long_shot_list['total_duration_s']:.1f}s total"
+            )
+            if short_shot_list is not None:
+                detail += f" (+ {len(short_shot_list['shots'])}-shot 9:16 short)"
+        else:
+            short_shots = short_shot_list["shots"] if short_shot_list else []
+            detail = f"short-only: {len(short_shots)}-shot 9:16 short"
 
         return StageResult(
             ok=True,

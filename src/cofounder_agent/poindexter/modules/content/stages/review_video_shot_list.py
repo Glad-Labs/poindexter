@@ -224,7 +224,10 @@ class ReviewVideoShotListStage:
         config: dict[str, Any],
     ) -> StageResult:
         current = context.get("video_shot_list")
-        if not current:
+        # A Short-only run (a news Short, services/news_shorts.py) has no long
+        # list, only the 9:16 one, and that one is still reviewed.
+        short = context.get("short_shot_list")
+        if not current and not short:
             return StageResult(
                 ok=True,
                 detail="no shot list to review",
@@ -291,22 +294,23 @@ class ReviewVideoShotListStage:
             (context.get("video_long_script") or "").strip()
             or context.get("podcast_script", "")
         )
-        revised = await self._review_one(
+        revised = None
+        updates: dict[str, Any] = {}
+        if current:
+            revised = await self._review_one(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
                 presenter_format=_presenter_format,
-            platform=platform, pool=pool, model=model, timeout_s=review_timeout,
-            prompt_key="video.review_v1", script_var="podcast_script",
-            script=long_narration_script, current=current,
-            title=title, content_text=content_text, site_name=site_name,
-            task_id=task_id, now_iso=now_iso, think=director_think,
-            max_tokens=review_max_tokens, max_retries=review_max_retries,
-        )
-        updates: dict[str, Any] = {
-            "video_shot_list": revised if revised is not None else current,
-        }
+                platform=platform, pool=pool, model=model, timeout_s=review_timeout,
+                prompt_key="video.review_v1", script_var="podcast_script",
+                script=long_narration_script, current=current,
+                title=title, content_text=content_text, site_name=site_name,
+                task_id=task_id, now_iso=now_iso, think=director_think,
+                max_tokens=review_max_tokens, max_retries=review_max_retries,
+            )
+            updates["video_shot_list"] = revised if revised is not None else current
 
         # SHORT (best-effort, only when present).
-        short = context.get("short_shot_list")
+        revised_short = None
         if short:
             revised_short = await self._review_one(
                 policy_vars=_policy_vars, human_subjects=_policy.human_subjects,
@@ -324,9 +328,12 @@ class ReviewVideoShotListStage:
         stages["review_video_shot_list"] = True
         updates["stages"] = stages
 
+        # The lane that was reviewed decides the verdict: the long list when
+        # there is one, else the Short's.
+        reviewed = revised is not None if current else revised_short is not None
         return StageResult(
             ok=True,
-            detail="reviewed" if revised is not None else "review fell back to draft",
+            detail="reviewed" if reviewed else "review fell back to draft",
             context_updates=updates,
-            metrics={"reviewed": revised is not None},
+            metrics={"reviewed": reviewed},
         )

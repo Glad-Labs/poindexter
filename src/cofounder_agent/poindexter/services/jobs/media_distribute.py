@@ -168,8 +168,10 @@ _PRUNE_ORPHAN_SQL = (
 # The second is a standalone video (poindexter#1140): a creative-studio piece
 # with no post, keyed on its task, described by its own asset (the
 # screenplay's title and logline, stored by media.persist, or the YouTube
-# package written in the chat, services/video_package.py) and with no
-# article to link back to. ``subject_id`` is the approval row's key in both
+# package written in the chat, services/video_package.py), or a news Short
+# (services/news_shorts.py), which carries its story's URL and the slug of the
+# most related post on its asset (``source_url`` / ``slug`` below; both ''
+# for a creative piece). ``subject_id`` is the approval row's key in both
 # halves (the post id, or the task id) and is what the dispatch stamps use;
 # ``post_id`` is NULL for a standalone row.
 _APPROVED_UNDISPATCHED_SQL = """
@@ -185,7 +187,8 @@ _APPROVED_UNDISPATCHED_SQL = """
                    p.video_shot_list, pt.niche_slug,
                    mas.id::text AS asset_id,
                    mas.task_id,
-                   mas.storage_path
+                   mas.storage_path,
+                   ''::text AS source_url
               FROM media_approvals ma
               JOIN posts p ON p.id = ma.post_id
               JOIN media_assets mas
@@ -226,11 +229,14 @@ _APPROVED_UNDISPATCHED_SQL = """
                                FROM jsonb_array_elements_text(
                                     CASE WHEN jsonb_typeof(mas.metadata->'youtube_package'->'tags') = 'array'
                                          THEN mas.metadata->'youtube_package'->'tags' END) t), '') AS seo_keywords,
-                   ''::text AS slug,
+                   -- a news Short links the most related post (services/news_shorts.py);
+                   -- a creative-studio video has none.
+                   COALESCE(mas.metadata->>'related_post_slug', '')::text AS slug,
                    mas.metadata->'video_shot_list' AS video_shot_list, pt.niche_slug,
                    mas.id::text AS asset_id,
                    mas.task_id,
-                   mas.storage_path
+                   mas.storage_path,
+                   COALESCE(mas.metadata->>'news_source_url', '')::text AS source_url
               FROM media_approvals ma
               JOIN media_assets mas
                 ON mas.task_id = ma.task_id
@@ -576,6 +582,7 @@ async def _dispatch_asset(
         twin_url=twin_url,
         hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
         chapters=chapters,
+        source_url=row.get("source_url") or "",
     )
     payload = {
         "media_path": row["storage_path"],
