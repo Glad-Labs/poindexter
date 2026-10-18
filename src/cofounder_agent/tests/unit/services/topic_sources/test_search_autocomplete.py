@@ -252,19 +252,20 @@ class TestScoringIsOrdinalNotVolume:
         assert mod._score_for_rank(0) <= mod._SCORE_CEILING
 
     @pytest.mark.asyncio
-    async def test_description_does_not_claim_a_volume(self, monkeypatch):
-        """feedback_no_dummy_data: autocomplete reports no counts, so the
-        description must not imply one."""
-        _install_fake_http(monkeypatch, {"vram": ["vram calculator for llm"]})
+    async def test_a_suggestion_carries_no_description(self, monkeypatch):
+        """feedback_no_dummy_data, and 2026-10-17: the description becomes the
+        pool summary that dedup, scope and goal ranking embed and the writer
+        reads as the angle. A provenance sentence shared by every suggestion
+        made them all embed as one string (22 of 25 dropped as duplicates of
+        one unrelated post), so a suggestion carries only its query; its
+        rank is in relevance_score."""
+        _install_fake_http(monkeypatch, {"vram": ["vram calculator for llm", "vram for 70b models"]})
         src = SearchAutocompleteSource()
         topics = await src.extract(None, {
             "seeds": ["vram"], "modifiers": [], "seed_from_gsc_clicks": False,
         })
-        desc = topics[0].description.lower()
-        assert "rank" in desc
-        assert "no volume" in desc
-        for fabricated in ("impression", "searches per", "/mo", "volume:"):
-            assert fabricated not in desc.replace("no volume", "")
+        assert [t.description for t in topics] == ["", ""]
+        assert topics[0].relevance_score > topics[1].relevance_score
 
 
 class TestResilience:

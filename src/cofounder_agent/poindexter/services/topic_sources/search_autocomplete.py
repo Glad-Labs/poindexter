@@ -17,6 +17,13 @@ returns "local llm vram calculator", "local llm vram requirements",
 "local llm 16gb vram", "local llm 8gb vram" — demand, in the exact cluster whose
 human queries already convert at 7-20% CTR.
 
+**No description.** A suggestion carries only its query: the description
+becomes the pool summary, which dedup, the scope check and the goal ranking
+embed and which the writer receives as the angle. A shared provenance sentence
+made every suggestion embed as the same string (2026-10-17: 22 of 25 dropped
+as duplicates of one unrelated post), and it would have reached the writer as
+an angle that says nothing about the topic.
+
 **Scoring is ordinal, never volume.** Autocomplete returns rank, not counts, so
 this source must not invent an impressions-like number
 (``feedback_no_dummy_data``). Earlier suggestions score higher, and the ceiling
@@ -189,11 +196,14 @@ class SearchAutocompleteSource:
                     source=self.name,
                     source_url=f"https://www.google.com/search?q={quote_plus(phrase)}",
                     relevance_score=_score_for_rank(rank),
-                    description=(
-                        "Google autocomplete suggests this query, so people are "
-                        f"typing it (suggestion rank {rank + 1}). Ordinal "
-                        "popularity — autocomplete reports no volume."
-                    ),
+                    # No description: a candidate's description becomes its
+                    # pool summary, which is embedded for dedup, scope and
+                    # goal ranking and handed to the writer as the ANGLE.
+                    # The old provenance sentence was identical on every
+                    # suggestion, so all of them embedded as one string and
+                    # 22 of 25 were dropped as duplicates of one unrelated
+                    # post (2026-10-17). The rank lives in relevance_score.
+                    description="",
                     keywords=[phrase],
                 )
             )
