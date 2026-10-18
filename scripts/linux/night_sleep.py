@@ -15,7 +15,13 @@ outside the window. Inside it:
    across suspend by copying it to /var on the small root drive (up to 56 GB
    across the 5090 and 3090), so a loaded card makes suspend slow and can fill
    that drive.
-3. Suspends to RAM with the RTC set for the wake time (``rtcwake``).
+   It then waits for the cards to settle: the 2026-10-18 test suspend was
+   aborted because an Ollama runner told to unload seconds earlier was still
+   releasing 21 GB on the 3090, stuck in an uninterruptible exit, and the
+   kernel's process freezer gave up after 20 s.
+3. Arms the RTC alarm (``rtcwake -m no``) and suspends through
+   ``systemctl suspend``, so the NVIDIA suspend hooks run. Writing
+   ``/sys/power/state`` directly (``rtcwake -m mem``) skips them.
 4. On resume: records the sleep, checks that every GPU container can still
    see its GPU and restarts any that cannot, and restarts the backup jobs so
    each runs at once. Their timers count only awake time, so without the
@@ -210,6 +216,68 @@ def free_vram(settings: dict[str, str]) -> None:
             log(f"could not unload models at {base}: {exc}")
 
 
+def _ollama_loaded(settings: dict[str, str]) -> bool:
+    for base in {host_url(settings["ollama_base_url"]) or "http://127.0.0.1:11434",
+                 host_url(settings["ollama_vision_base_url"])} - {""}:
+        try:
+            with urllib.request.urlopen(f"{base}/api/ps", timeout=10) as resp:  # nosec B310 - host_url admits http(s) only
+                if json.load(resp).get("models"):
+                    return True
+        except Exception as exc:  # noqa: BLE001 — an unreachable instance holds nothing we can see
+            log(f"could not read loaded models at {base}: {exc}")
+    return False
+
+
+def _gpu_memory_used() -> tuple[int, ...]:
+    out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                         capture_output=True, text=True, timeout=30).stdout
+    return tuple(int(v) for v in out.split() if v.strip().isdigit())
+
+
+def wait_gpus_settled(settings: dict[str, str], timeout_s: float = 180.0, interval_s: float = 5.0) -> bool:
+    """True once no Ollama model is loaded and GPU memory is unchanged across
+    three readings ``interval_s`` apart: the runners have finished exiting."""
+    deadline = time.monotonic() + timeout_s
+    last: tuple[int, ...] | None = None
+    stable = 0
+    while time.monotonic() < deadline:
+        used = _gpu_memory_used()
+        stable = stable + 1 if (used == last and not _ollama_loaded(settings)) else 0
+        if stable >= 2:
+            log(f"GPUs settled at {used} MiB")
+            return True
+        last = used
+        time.sleep(interval_s)
+    log(f"GPUs did not settle within {timeout_s:.0f}s (last {last} MiB)")
+    return False
+
+
+def _suspended_seconds() -> float:
+    """CLOCK_BOOTTIME counts suspend and CLOCK_MONOTONIC does not; their gap is
+    the total time this boot has spent asleep."""
+    return time.clock_gettime(time.CLOCK_BOOTTIME) - time.monotonic()
+
+
+def suspend_until(wake_at: datetime, start_timeout_s: float = 180.0) -> bool:
+    """Arm the RTC for ``wake_at``, suspend through systemd, and return once the
+    machine has slept and woken. False if it never went to sleep."""
+    subprocess.run(["rtcwake", "-m", "no", "-t", str(int(wake_at.timestamp()))],
+                   check=True, capture_output=True, text=True)
+    asleep_before = _suspended_seconds()
+    result = subprocess.run(["systemctl", "suspend", "-i"], capture_output=True, text=True)
+    if result.returncode != 0:
+        log(f"systemctl suspend failed: {result.stderr.strip()}")
+        subprocess.run(["rtcwake", "-m", "disable"], capture_output=True)
+        return False
+    deadline = time.monotonic() + start_timeout_s
+    while time.monotonic() < deadline:
+        time.sleep(5)
+        if _suspended_seconds() - asleep_before > 15:
+            return True
+    subprocess.run(["rtcwake", "-m", "disable"], capture_output=True)
+    return False
+
+
 def gpu_containers() -> list[str]:
     names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True).stdout.split()
     out = []
@@ -273,14 +341,15 @@ def main() -> int:
         return 0
 
     free_vram(settings)
+    if not wait_gpus_settled(settings):
+        log("deferring: the GPUs are still releasing memory")
+        return 0
     slept_at = datetime.now(tz)
     audit("host_sleep", {"slept_at": slept_at.isoformat(), "planned_wake": win["wake_at"].isoformat()})
     log(f"suspending until {win['wake_at'].isoformat()}")
-    result = subprocess.run(["rtcwake", "-m", "mem", "-t", str(int(win["wake_at"].timestamp()))],
-                            capture_output=True, text=True)
-    if result.returncode != 0:
-        audit("host_sleep_failed", {"stderr": result.stderr.strip()[:500]}, severity="warning")
-        log(f"rtcwake failed: {result.stderr.strip()}")
+    if not suspend_until(win["wake_at"]):
+        audit("host_sleep_failed", {"slept_at": slept_at.isoformat()}, severity="warning")
+        log("the machine did not go to sleep; see journalctl -k for the PM: lines")
         return 1
     after_resume(settings, slept_at, win["wake_at"])
     return 0

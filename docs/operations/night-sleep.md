@@ -22,7 +22,17 @@ minutes. Outside the window it exits at once. Inside it:
    root drive: up to 56 GB across the 5090 and the 3090. So the scheduler's
    reclaim ladder runs, then every model on every Ollama instance is unloaded
    (the ladder deliberately skips the pinned 3090 judge).
-3. **Suspends** with `rtcwake -m mem -t <wake>` (audit `host_sleep`).
+   Then it **waits for the cards to settle** (no model loaded, memory
+   unchanged across three readings 5 s apart, up to 3 minutes). The first test
+   suspend on 2026-10-18 was aborted by the kernel because an Ollama runner,
+   told to unload seconds earlier, was still releasing 21 GB on the 3090 in an
+   uninterruptible exit, and the process freezer gave up after 20 s.
+3. **Suspends**: arms the RTC with `rtcwake -m no -t <wake>`, then
+   `systemctl suspend -i`, so the `nvidia-suspend` hook runs (writing
+   `/sys/power/state` directly with `rtcwake -m mem` skips it). The script
+   knows it slept when CLOCK_BOOTTIME pulls ahead of CLOCK_MONOTONIC, which
+   does not count suspend. If it never goes to sleep within 3 minutes it
+   disarms the alarm and records `host_sleep_failed` (audit `host_sleep`).
 4. **On resume**: writes `host_resume` (`slept_at`, `resumed_at`), checks that
    every container with a GPU device request can still run `nvidia-smi` and
    restarts any that cannot (`host_resume_checked`), then restarts the backup
@@ -60,6 +70,12 @@ Every ops session and the demo bake run after 08:00
 `infrastructure/systemd/poindexter-demo-bake.timer`). A timer that fires
 inside the window is replayed at wake by `Persistent=true`, so keep new ones
 out of it.
+
+## Tested
+
+2026-10-18, a 2-minute test through the same functions: asleep 121 s, woke on
+the RTC, both GPUs and all eight GPU containers could run `nvidia-smi`, both
+Ollama instances answered, no container unhealthy, no alert fired.
 
 ## Not covered yet
 
