@@ -1135,6 +1135,56 @@ def youtube_playlists(selector: str | None, limit: int | None, do_apply: bool) -
         raise SystemExit(1)
 
 
+@youtube_group.command("chapters")
+@click.option("--post", "selector", default=None, help="One post id or YouTube video id. Default: every long video on YouTube.")
+@click.option("--limit", default=None, type=int, help="Cap how many videos are processed.")
+@click.option("--regenerate", is_flag=True, help="Replace stored chapters with freshly written ones.")
+def youtube_chapters(selector: str | None, limit: int | None, regenerate: bool) -> None:
+    """Write and store chapters for long videos already on YouTube.
+
+    \b
+    A LOCAL write: nothing is sent. The director model splits each video's
+    transcript (its caption SRT) into "M:SS Title" chapters, checked in code
+    and stored on the video's row. Then:
+      sync-metadata --apply   puts them into the descriptions on YouTube.
+    New long uploads get chapters automatically (youtube_chapters_enabled).
+
+    Runs in the worker container, which reaches the model:
+    `docker exec poindexter-worker python -m poindexter.cli integrations youtube chapters`.
+    """
+    from poindexter.cli._dataplane import run_service
+    from poindexter.services.youtube_chapters import backfill_chapters
+
+    async def _go(pool):
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        sc, _container = await build_and_wire_subprocess_with_container(pool)
+        try:
+            return await backfill_chapters(pool, sc, selector=selector, regenerate=regenerate, limit=limit)
+        finally:
+            await flush_read_telemetry(pool, sc)
+
+    try:
+        outcomes = run_service(_go)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+    if not outcomes:
+        click.echo("No long video matched." if selector else "No long videos on YouTube yet.")
+        return
+    click.echo("YouTube chapters — stored locally, nothing sent\n")
+    for o in outcomes:
+        line = f"{o.video_id:<14}{o.action}  {o.title[:55]}"
+        click.secho(line, fg="red") if o.failed else click.echo(line)
+        for chapter in (o.chapters or "").splitlines():
+            click.echo(f"{'':<16}{chapter}")
+    if any(o.chapters for o in outcomes):
+        click.echo("\nReview the chapters above, then push them with: poindexter integrations youtube sync-metadata --apply")
+    if any(o.failed for o in outcomes):
+        raise SystemExit(1)
+
+
 @youtube_group.command("short-package")
 @click.option(
     "--post", "selector", default=None,

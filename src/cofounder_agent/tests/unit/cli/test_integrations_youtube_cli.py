@@ -1491,3 +1491,41 @@ def test_playlists_apply_fails_on_a_failure(runner, monkeypatch):
     res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "playlists", "--apply", "--limit", "3"])
     assert calls == [{"selector": None, "apply": True, "limit": 3}]
     assert res.exit_code == 1 and "APPLIED" in res.output
+
+
+# ---------------------------------------------------------------------------
+# youtube chapters — chapters for long videos already on YouTube
+# ---------------------------------------------------------------------------
+
+
+def test_chapters_stores_locally_and_names_the_push(runner, monkeypatch):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.youtube_chapters as ych
+    from poindexter.services.youtube_chapters import ChapterOutcome
+
+    calls: list[dict[str, Any]] = []
+
+    async def _backfill(_pool, _sc, **kw):
+        calls.append(kw)
+        return [ChapterOutcome(video_id="vidA", title="The Gap", chapters="0:00 A\n0:44 B\n1:15 C",
+                               action="stored — push with sync-metadata --apply")]
+
+    async def _wire(_pool):
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(ych, "backfill_chapters", _backfill)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "chapters", "--regenerate"])
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": None, "regenerate": True, "limit": None}]
+    assert "nothing sent" in res.output and "0:44 B" in res.output
+    assert "sync-metadata --apply" in res.output

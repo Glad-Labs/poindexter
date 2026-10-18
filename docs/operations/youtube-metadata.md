@@ -8,6 +8,7 @@
 | Description | `posts.excerpt` · tagged back-link (`utm_medium=video`) · "Watch the Short" when live · optional body snippet             | its package lead (else its first two sentences) · "Watch the full breakdown" when the long form is live · tagged back-link (`utm_medium=shorts`) · `#Shorts` + N keyword hashtags | 4,800 composed / 5,000 API cap |
 | Tags        | `posts.seo_keywords`, comma-split                                                                                         | same                                                                                                                                                                              | 30 tags / 500 joined chars     |
 | Captions    | an SRT transcribed from the uploaded video's own audio, attached after the upload (see [Caption tracks](#caption-tracks)) | same                                                                                                                                                                              | one track per language + name  |
+| Chapters    | `M:SS Title` lines from 0:00, written from the video's transcript and checked (see [Chapters](#chapters))                 | none                                                                                                                                                                              | 3 to 8, at least 20 s apart    |
 
 Composed by `services/jobs/youtube_payload.py`, dispatched by
 `services/jobs/media_distribute.py`. The back-link carries
@@ -241,6 +242,40 @@ which the merge satisfies by construction.
 `_is_insufficient_scope` requires both the status code and a scope-ish reason
 before it tells the operator to re-consent, so a different failure doesn't
 send them down the wrong path.
+
+## Chapters
+
+Since 2026-10-18 a long video's description carries chapters
+(`services/youtube_chapters.py`). YouTube turns `M:SS Title` lines that start at
+0:00 into labelled sections on the progress bar and into "key moments" in
+search, so one video can be found by each part it covers. Before this none
+had them.
+
+Before the upload, the video's own audio is transcribed (the same
+`<video>.srt` the caption track reuses) and the director model
+(`youtube_chapters_model`, else `video_director_model`) proposes the split.
+Code then holds it to the transcript and to YouTube's rules: the first chapter
+is moved to 0:00, every other start is **snapped back to a real cue start** so
+nothing begins at a time nobody speaks, starts must be at least
+`youtube_chapter_min_seconds` (20) apart, 3 to `youtube_chapter_max` (8)
+chapters, titles at most `youtube_chapter_title_max_chars` (60) with no number
+the transcript lacks and no "Chapter 1" labels. One corrective retry
+(`video.chapters_fix`), then no chapters: a wrong list in public is worse than
+none. A Short never gets chapters.
+
+The list is stored on `media_assets.metadata.youtube_chapters` and composed into
+the description at upload and by every `sync-metadata`, so a later re-sync keeps
+it. For videos already up:
+
+```bash
+# Write + store (local, nothing sent), then push them into the descriptions
+docker exec poindexter-worker python -m poindexter.cli integrations youtube chapters
+docker exec poindexter-worker python -m poindexter.cli integrations youtube sync-metadata --post <video id> --apply
+```
+
+First live runs: "The Gap Nobody Names" split into five (0:00 RAG retrieval
+challenges and embedding limits · 0:44 Symmetric vs Asymmetric encoding · …);
+the ASML video into three, because the gap rule kept it from crowding.
 
 ## Caption tracks
 

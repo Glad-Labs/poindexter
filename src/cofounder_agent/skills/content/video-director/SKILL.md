@@ -41,6 +41,12 @@ metadata:
     - key: video.short_description_fix
       output_format: text
       description: 'The one corrective retry for video.short_description: carries the reason code rejected the first reply ({reason}) and the length limit ({max_chars}). Used by services.short_package.generate_short_package.'
+    - key: video.chapters
+      output_format: text
+      description: "Splits a long video's timed transcript into YouTube chapters: 3 to {max_chapters} lines of 'M:SS Title', the first at 0:00, each title naming what that stretch covers. Checked in code (first at 0:00, times snapped to real cue starts, ascending, at least {min_seconds}s apart, title length, no numbers absent from the transcript). Used by services.youtube_chapters."
+    - key: video.chapters_fix
+      output_format: text
+      description: 'The one corrective retry for video.chapters: carries the reason code rejected the first reply ({reason}) and the limits ({max_chapters}, {min_seconds}, {max_title_chars}). Used by services.youtube_chapters.'
     - key: video.review_v1
       output_format: json
       description: 'Director self-critique — revise the long-form shot list (coverage, variety, hero selection, on-brand)'
@@ -437,6 +443,44 @@ most {max_chars} characters, opening with the point, with numbers only from
 the text above and no links or hashtags.
 
 Output ONLY the sentences.
+```
+
+## video.chapters
+
+```text
+Split this video into YouTube chapters.
+
+YouTube turns the chapter list in a description into labelled sections on the
+progress bar and into "key moments" in search, so each title is what a viewer
+searching for that part would type. The transcript below gives each line's
+start time in seconds.
+
+VIDEO TITLE: {title}
+TRANSCRIPT:
+{transcript}
+
+Write between 3 and {max_chapters} chapters that:
+- start the first chapter at 0:00
+- begin each chapter where the transcript turns to a new point
+- leave at least {min_seconds} seconds between chapter starts
+- give each a title of at most {max_title_chars} characters naming what that
+  part covers, with the concrete subject first
+- write numbers as digits and use only numbers that appear in the transcript
+
+Output ONLY the chapters, one per line, as M:SS followed by the title, for
+example:
+0:00 Why 32GB of VRAM still runs out
+```
+
+## video.chapters_fix
+
+```text
+FIX: {reason}. Write the chapters again: 3 to {max_chapters} lines of M:SS
+followed by the title, the first at 0:00, starts in increasing order at least
+{min_seconds} seconds apart, each title at most {max_title_chars} characters
+naming what that part covers.
+
+Output ONLY the chapters, one per line.
 ```
 
 ## video.director_short_v1

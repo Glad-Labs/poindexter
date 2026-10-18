@@ -69,6 +69,12 @@ def _no_live_playlists(monkeypatch):
     monkeypatch.setattr(md, "playlists_after_upload", AsyncMock(return_value="ok"))
 
 
+@pytest.fixture(autouse=True)
+def _no_live_chapters(monkeypatch):
+    """Stub chapter-making (it transcribes and calls the model) before a long upload."""
+    monkeypatch.setattr(md, "chapters_for_upload", AsyncMock(return_value=""))
+
+
 class _FakeTxn:
     """``conn.transaction()`` async-context stand-in (no-op begin/commit)."""
 
@@ -1480,3 +1486,32 @@ async def test_a_failed_upload_joins_no_playlist():
     ):
         await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), _thumb_row(), shorts=False)
     md.playlists_after_upload.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------
+# Chapters (2026-10-18): a long upload's description carries them, a Short's never
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_long_upload_carries_its_chapters():
+    md.chapters_for_upload.return_value = "0:00 A\n0:31 B\n1:05 C"
+    pool = _thumb_pool(None)
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID9", "url": "u"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), {**_thumb_row(), "asset_id": "a1"}, shorts=False)
+    assert "Chapters\n0:00 A" in dispatch.await_args.args[2]["description"]
+    assert md.chapters_for_upload.await_args.kwargs["asset_id"] == "a1"
+
+
+@pytest.mark.asyncio
+async def test_a_short_never_asks_for_chapters():
+    pool = _thumb_pool(None)
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID9", "url": "u"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), _thumb_row(), shorts=True)
+    md.chapters_for_upload.assert_not_awaited()

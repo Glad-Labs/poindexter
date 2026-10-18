@@ -79,6 +79,7 @@ from poindexter.services.media_approval_service import (
 )
 from poindexter.services.video_r2_mirror import run_video_r2_mirror
 from poindexter.services.youtube_captions import caption_after_upload
+from poindexter.services.youtube_chapters import chapters_for_upload
 from poindexter.services.youtube_playlists import playlists_after_upload, video_text
 from poindexter.services.youtube_upload_slots import next_upload_slot, record_slot, rfc3339
 from poindexter.utils.exception_format import describe_exception
@@ -557,6 +558,14 @@ async def _dispatch_asset(
         twin_is_short=not shorts,
     )
     tags = _parse_seo_keywords(row.get("seo_keywords") or "")
+    # Chapters for a long video (services/youtube_chapters.py): made from its
+    # transcript before the upload so the first description already has them;
+    # the caption track reuses the same SRT. "" when there are none.
+    chapters = "" if shorts else await chapters_for_upload(
+        pool, site_config, asset_id=row.get("asset_id"),
+        video_path=row.get("storage_path") or "", title=row.get("title") or "",
+        task_id=str(task_id or ""),
+    )
     description = _build_youtube_description(
         seo_description=row.get("excerpt") or "",
         body=row.get("content") or "",
@@ -566,6 +575,7 @@ async def _dispatch_asset(
         hook=short_lead(package, script) if shorts else "",
         twin_url=twin_url,
         hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
+        chapters=chapters,
     )
     payload = {
         "media_path": row["storage_path"],

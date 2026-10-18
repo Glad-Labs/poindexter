@@ -84,6 +84,8 @@ _TARGETS_SQL = """
            -- Its reviewed package (title + description lead written as such,
            -- 2026-10-13), which wins over the narration when present.
            pkg.youtube_package,
+           -- The long video's chapters (services/youtube_chapters.py, 2026-10-18).
+           chap.chapters,
            -- The pair's other render, only while it is LIVE: the cross-link is
            -- composed from this and recomposed when the twin lands or vanishes.
            twin.external_id AS twin_video_id,
@@ -112,6 +114,13 @@ _TARGETS_SQL = """
               AND pd.medium = 'video_short'
             ORDER BY m.created_at DESC LIMIT 1
       ) pkg ON TRUE
+      LEFT JOIN LATERAL (
+           SELECT m.metadata -> 'youtube_chapters' ->> 'text' AS chapters FROM media_assets m
+            WHERE m.task_id::text = pd.task_id
+              AND m.type = 'video'
+              AND pd.medium = 'video'
+            ORDER BY m.created_at DESC LIMIT 1
+      ) chap ON TRUE
      WHERE pd.target = 'youtube'
        AND pd.status = 'published'
        AND pd.external_id IS NOT NULL
@@ -390,6 +399,7 @@ def _compose(row: dict[str, Any], site_config: Any) -> tuple[str, str, list[str]
         hook=short_lead(package, script) if shorts else "",
         twin_url=twin_url,
         hashtags=hashtags_for_short(tags, site_config=site_config) if shorts else None,
+        chapters="" if shorts else str(row.get("chapters") or ""),
     )
     title = _build_youtube_title(
         row.get("title") or "",

@@ -371,6 +371,7 @@ def _build_youtube_description(
     hook: str = "",
     twin_url: str = "",
     hashtags: list[str] | None = None,
+    chapters: str = "",
 ) -> str:
     """Compose the YouTube video description — one layout per render.
 
@@ -381,6 +382,9 @@ def _build_youtube_description(
         Read the full post: {site_url}/posts/{slug}?utm_source=youtube&utm_medium=video
 
         Watch the Short: https://www.youtube.com/shorts/{twin}     (only when the Short is live)
+
+        Chapters                                                   (only when the video has them)
+        0:00 ...
 
         {optional body snippet — youtube_description_body_chars}
 
@@ -450,7 +454,10 @@ def _build_youtube_description(
         tag_line = " ".join(hashtags or [])
         header_parts = [p for p in (opener, cross, backlink, tag_line) if p]
     else:
-        header_parts = [p for p in (opener, backlink, cross) if p]
+        # services/youtube_chapters.py: "M:SS Title" lines from 0:00, which
+        # YouTube turns into chapters wherever they sit in the description.
+        chapter_block = f"Chapters\n{chapters.strip()}" if (chapters or "").strip() else ""
+        header_parts = [p for p in (opener, backlink, cross, chapter_block) if p]
     header = "\n\n".join(header_parts)
     body_budget = 0 if shorts else _body_chars_budget(site_config)
     body_snippet = ""

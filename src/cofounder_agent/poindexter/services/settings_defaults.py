@@ -904,6 +904,20 @@ DEFAULTS: dict[str, str] = {
     # from Partner Program channels; elsewhere the upload still succeeds and a
     # youtube_thumbnail_failed finding says to set this false.
     'youtube_short_custom_thumbnail_enabled': 'true',
+    # Chapters on long videos (services/youtube_chapters.py, 2026-10-18): the
+    # director model splits the video's own transcript into "M:SS Title" lines
+    # from 0:00, which YouTube shows as chapters and as search "key moments".
+    # Code snaps each start to a real transcript cue and holds the list to
+    # YouTube's rules; one corrective retry, then no chapters. Empty model =
+    # video_director_model.
+    'youtube_chapters_enabled': 'true',
+    'youtube_chapters_model': '',
+    'youtube_chapter_min_seconds': '20',
+    'youtube_chapter_max': '8',
+    'youtube_chapter_title_max_chars': '60',
+    'youtube_chapters_temperature': '0.3',
+    'youtube_chapters_max_tokens': '400',
+    'youtube_chapters_timeout_seconds': '120',
     # Topic playlists (services/youtube_playlists.py, 2026-10-18). Each upload
     # joins every playlist one of whose keywords is in its title or SEO
     # keywords (list order, at most youtube_playlist_max_per_video). Keywords of
@@ -7016,6 +7030,14 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_short_thumbnail_max_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_short_thumbnail_min_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'youtube_short_custom_thumbnail_enabled': {'owner': 'media_distribute', 'value_type': 'boolean'},
+    'youtube_chapters_enabled': {'owner': 'youtube_chapters', 'value_type': 'boolean'},
+    'youtube_chapters_model': {'owner': 'youtube_chapters', 'value_type': 'model'},
+    'youtube_chapter_min_seconds': {'owner': 'youtube_chapters', 'value_type': 'integer'},
+    'youtube_chapter_max': {'owner': 'youtube_chapters', 'value_type': 'integer'},
+    'youtube_chapter_title_max_chars': {'owner': 'youtube_chapters', 'value_type': 'integer'},
+    'youtube_chapters_temperature': {'owner': 'youtube_chapters', 'value_type': 'float'},
+    'youtube_chapters_max_tokens': {'owner': 'youtube_chapters', 'value_type': 'integer'},
+    'youtube_chapters_timeout_seconds': {'owner': 'youtube_chapters', 'value_type': 'integer'},
     'youtube_playlists_enabled': {'owner': 'youtube_playlists', 'value_type': 'boolean'},
     'youtube_playlists': {'owner': 'youtube_playlists', 'value_type': 'json'},
     'youtube_playlist_max_per_video': {'owner': 'youtube_playlists', 'value_type': 'integer'},
