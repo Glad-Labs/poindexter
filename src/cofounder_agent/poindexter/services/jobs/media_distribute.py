@@ -79,6 +79,7 @@ from poindexter.services.media_approval_service import (
 )
 from poindexter.services.video_r2_mirror import run_video_r2_mirror
 from poindexter.services.youtube_captions import caption_after_upload
+from poindexter.services.youtube_playlists import playlists_after_upload, video_text
 from poindexter.services.youtube_upload_slots import next_upload_slot, record_slot, rfc3339
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
@@ -663,6 +664,20 @@ async def _dispatch_asset(
                         video_id=str(result.get("post_id")),
                         subject=_subject(row) or "",
                         task_id=str(task_id or ""),
+                        shorts=shorts,
+                    )
+                if platform == "youtube" and result.get("post_id"):
+                    # Topic playlists (services/youtube_playlists.py), matched
+                    # on the post's title + SEO keywords and the upload's own
+                    # title. Best-effort, never raises.
+                    await playlists_after_upload(
+                        pool, site_config,
+                        asset_id=row.get("asset_id"),
+                        video_id=str(result.get("post_id")),
+                        text=video_text(
+                            row.get("title") or "", row.get("seo_keywords") or "", payload["title"],
+                        ),
+                        subject=_subject(row) or "",
                         shorts=shorts,
                     )
             else:

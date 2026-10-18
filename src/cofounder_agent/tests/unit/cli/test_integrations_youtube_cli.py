@@ -1433,3 +1433,61 @@ def test_captions_apply_passes_through_and_fails_on_a_failure(runner, monkeypatc
     assert calls == [{"selector": "vidA", "apply": True, "limit": None}]
     assert res.exit_code == 1
     assert "APPLIED" in res.output and "failed: quota" in res.output
+
+
+# ---------------------------------------------------------------------------
+# youtube playlists — topic playlists for videos already on YouTube
+# ---------------------------------------------------------------------------
+
+
+def _stub_playlists(monkeypatch, outcomes):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.youtube_playlists as ypl
+
+    calls: list[dict[str, Any]] = []
+
+    async def _backfill(_pool, _sc, **kw):
+        calls.append(kw)
+        return list(outcomes)
+
+    async def _wire(_pool):
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(ypl, "backfill_playlists", _backfill)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    return calls
+
+
+def _pl(**kw: Any):
+    from poindexter.services.youtube_playlists import PlaylistOutcome
+
+    base = dict(video_id="vidA", medium="long", title="VRAM budgeting", playlists=["Local AI on Your Own GPU"],
+                action="would add — review, then --apply")
+    base.update(kw)
+    return PlaylistOutcome(**base)  # type: ignore[arg-type]
+
+
+def test_playlists_dry_run_lists_matches_and_unmatched(runner, monkeypatch):
+    calls = _stub_playlists(monkeypatch, [_pl(), _pl(video_id="vidB", title="Cats", playlists=[], action="no playlist matched")])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "playlists"])
+    assert res.exit_code == 0, res.output
+    assert calls == [{"selector": None, "apply": False, "limit": None}]
+    assert "DRY RUN" in res.output and "Local AI on Your Own GPU" in res.output
+    assert "1 video(s) matched no playlist" in res.output
+    assert "re-run with --apply" in res.output
+
+
+def test_playlists_apply_fails_on_a_failure(runner, monkeypatch):
+    calls = _stub_playlists(monkeypatch, [_pl(action="failed: quota", failed=True)])
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "playlists", "--apply", "--limit", "3"])
+    assert calls == [{"selector": None, "apply": True, "limit": 3}]
+    assert res.exit_code == 1 and "APPLIED" in res.output

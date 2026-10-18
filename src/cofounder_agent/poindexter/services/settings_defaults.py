@@ -904,6 +904,18 @@ DEFAULTS: dict[str, str] = {
     # from Partner Program channels; elsewhere the upload still succeeds and a
     # youtube_thumbnail_failed finding says to set this false.
     'youtube_short_custom_thumbnail_enabled': 'true',
+    # Topic playlists (services/youtube_playlists.py, 2026-10-18). Each upload
+    # joins every playlist one of whose keywords is in its title or SEO
+    # keywords (list order, at most youtube_playlist_max_per_video). Keywords of
+    # 3 characters or fewer match whole words; longer ones match a word start.
+    # A playlist is created on YouTube by this exact title on first use, so
+    # renaming one here starts a new playlist. Needs youtube.force-ssl.
+    'youtube_playlists_enabled': 'true',
+    'youtube_playlists': (
+        '[{"title": "Local AI on Your Own GPU", "description": "Running AI models on hardware you own: VRAM, drivers, tuning and what actually fits.", "keywords": ["vram", "undervolt", "local llm", "local ai", "ollama", "quantiz", "rtx", "cuda", "single gpu", "your gpu", "home lab", "homelab"]}, {"title": "AI Models and Industry News", "description": "New models, the labs behind them, and the chips and money underneath.", "keywords": ["openai", "deepseek", "qwen", "moonshot", "kimi", "anthropic", "claude", "gemini", "llama", "gpt", "huawei", "ascend", "asml", "semiconductor", "chip", "ai infrastructure", "big tech"]}, {"title": "Building AI Systems", "description": "How the pieces of a real AI system fit together: retrieval, pipelines, training and the bugs in between.", "keywords": ["rag", "embedding", "vector", "pipeline", "schema", "docker", "lora", "grpo", "training", "agent", "poindexter", "glitchtip", "programming", "compiler", "code"]}, {"title": "Content and Distribution", "description": "Getting technical writing found: search, zero-click, and distribution.", "keywords": ["content marketing", "content strategy", "content distribution", "content amplification", "zero click", "zeroclick", "seo", "click through"]}]'
+    ),
+    'youtube_playlist_max_per_video': '2',
+    'youtube_playlist_privacy': 'public',
     # Upload slots (services/youtube_upload_slots.py, 2026-10-18). An approved
     # video is uploaded right away but private with publishAt, so YouTube makes
     # it public at the next free slot for its type (operator_timezone), never
@@ -5100,6 +5112,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.youtube_thumbnail_failed.fallback': 'log_only',
     'findings.youtube_thumbnail_failed.cooldown_minutes': '360',
     'findings.youtube_thumbnail_failed.min_severity': 'warn',
+    'findings.youtube_playlist_failed.delivery': 'discord',
+    'findings.youtube_playlist_failed.fallback': 'log_only',
+    'findings.youtube_playlist_failed.cooldown_minutes': '360',
+    'findings.youtube_playlist_failed.min_severity': 'warn',
     'findings.youtube_caption_failed.delivery': 'discord',
     'findings.youtube_caption_failed.fallback': 'log_only',
     'findings.youtube_caption_failed.cooldown_minutes': '360',
@@ -6990,6 +7006,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_short_thumbnail_max_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_short_thumbnail_min_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'youtube_short_custom_thumbnail_enabled': {'owner': 'media_distribute', 'value_type': 'boolean'},
+    'youtube_playlists_enabled': {'owner': 'youtube_playlists', 'value_type': 'boolean'},
+    'youtube_playlists': {'owner': 'youtube_playlists', 'value_type': 'json'},
+    'youtube_playlist_max_per_video': {'owner': 'youtube_playlists', 'value_type': 'integer'},
+    'youtube_playlist_privacy': {'owner': 'youtube_playlists', 'value_type': 'string'},
     'youtube_upload_slots_enabled': {'owner': 'youtube_upload_slots', 'value_type': 'boolean'},
     'youtube_upload_slots': {'owner': 'youtube_upload_slots', 'value_type': 'string'},
     'youtube_upload_slot_min_lead_minutes': {'owner': 'youtube_upload_slots', 'value_type': 'integer'},

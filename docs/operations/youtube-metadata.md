@@ -289,6 +289,45 @@ quota-trivial next to a single upload. A caption track costs `captions.list`
 50 + `captions.insert` 400, so captioning the whole channel once is a few
 uploads' worth.
 
+## Topic playlists
+
+Since 2026-10-18 each upload joins its topic playlists
+(`services/youtube_playlists.py`). The channel had none, while "related videos"
+was already its third-biggest view source; a playlist keeps a viewer on the
+next video of the same topic. Post categories cannot do the grouping (27 of the
+first 29 videos were "Technology", all in one niche), so the playlists are the
+`youtube_playlists` setting, a JSON list of `{title, description, keywords}`:
+
+| Playlist (seeded)           | Joins when the title or SEO keywords mention                              |
+| --------------------------- | ------------------------------------------------------------------------- |
+| Local AI on Your Own GPU    | vram, undervolt, local llm / local ai, ollama, quantiz…, rtx, cuda…       |
+| AI Models and Industry News | openai, deepseek, qwen, moonshot, anthropic, gemini, asml, chip…          |
+| Building AI Systems         | rag, embedding, pipeline, schema, docker, lora, training, code, compiler… |
+| Content and Distribution    | content marketing / strategy / distribution, zero click, seo…             |
+
+A video joins every playlist it matches, in list order, at most
+`youtube_playlist_max_per_video` (2). A keyword of three characters or fewer
+must be a whole word (`ci` never matches "circuit"); a longer one matches the
+start of a word (`undervolt` matches "undervolting"). "gpu" and "content" are
+deliberately absent: they put ASML lead times in the local-AI playlist and a
+RAG bug in the content one.
+
+On YouTube a playlist is found by its **exact title** among the channel's own
+and created on first use (`youtube_playlist_privacy`, `public`), so renaming
+one in the setting starts a new playlist. A video already in a playlist is never
+added twice. A just-created playlist answers 404 for a few seconds (seen live),
+so its first insert skips the membership check and retries briefly. The outcome
+is stamped on `media_assets.metadata.youtube_playlists`; a failure never fails
+the upload and raises `youtube_playlist_failed`. Needs `youtube.force-ssl`
+(`setup --with-update`); `playlistItems.insert` and `playlists.insert` are 50
+units each.
+
+```bash
+# Videos already on the channel: dry run prints each video's matches
+docker exec poindexter-worker python -m poindexter.cli integrations youtube playlists
+docker exec poindexter-worker python -m poindexter.cli integrations youtube playlists --apply
+```
+
 ## Long-form vs Short: titles, descriptions, cross-links
 
 A post can produce both a long-form video and a Short. Until 2026-09-22 the

@@ -1071,6 +1071,70 @@ def youtube_captions(selector: str | None, limit: int | None, do_apply: bool) ->
         raise SystemExit(1)
 
 
+@youtube_group.command("playlists")
+@click.option(
+    "--post", "selector", default=None,
+    help="One post id, task id or YouTube video id. Default: every video on YouTube.",
+)
+@click.option("--limit", default=None, type=int, help="Cap how many videos are processed.")
+@click.option(
+    "--apply", "do_apply", is_flag=True,
+    help=(
+        "Add each video to its matched playlists on YouTube, creating any playlist "
+        "that does not exist yet. Without it, the matches are printed and nothing is sent."
+    ),
+)
+def youtube_playlists(selector: str | None, limit: int | None, do_apply: bool) -> None:
+    """Put videos already on YouTube into their topic playlists.
+
+    \b
+    The playlists and their keywords are the youtube_playlists setting; a
+    video joins those whose keywords appear in its title or SEO keywords
+    (at most youtube_playlist_max_per_video). New uploads join automatically.
+    1. Dry run (default): print each video's matches.
+    2. --apply: add them, oldest video first. A video already in a playlist
+       is never added twice.
+
+    Needs the youtube.force-ssl scope (`setup --with-update`). Runs in the
+    worker container: `docker exec poindexter-worker python -m poindexter.cli
+    integrations youtube playlists`.
+    """
+    from poindexter.cli._dataplane import run_service
+    from poindexter.services.youtube_playlists import backfill_playlists
+
+    async def _go(pool):
+        from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+        from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+        sc, _container = await build_and_wire_subprocess_with_container(pool)
+        try:
+            return await backfill_playlists(pool, sc, selector=selector, apply=do_apply, limit=limit)
+        finally:
+            await flush_read_telemetry(pool, sc)
+
+    try:
+        outcomes = run_service(_go)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+    if not outcomes:
+        click.echo("No video matched." if selector else "No videos on YouTube yet.")
+        return
+    mode = "APPLIED" if do_apply else "DRY RUN — nothing sent"
+    click.echo(f"YouTube playlists — {mode}\n")
+    for o in outcomes:
+        line = f"{o.video_id:<14}{o.medium:<6}{o.title[:60]}"
+        click.secho(line, fg="red") if o.failed else click.echo(line)
+        click.echo(f"{'':<20}{' + '.join(o.playlists) or '—'}  ({o.action})")
+    unmatched = [o for o in outcomes if not o.playlists]
+    if unmatched:
+        click.echo(f"\n{len(unmatched)} video(s) matched no playlist; add keywords to youtube_playlists to place them.")
+    if not do_apply and any(o.playlists for o in outcomes):
+        click.echo("Review the matches above, then re-run with --apply.")
+    if any(o.failed for o in outcomes):
+        raise SystemExit(1)
+
+
 @youtube_group.command("short-package")
 @click.option(
     "--post", "selector", default=None,

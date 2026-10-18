@@ -82,6 +82,11 @@ _SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 _UPDATE_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 _SCOPES_WITH_UPDATE = [*_SCOPES, _UPDATE_SCOPE]
 
+# A playlist created moments ago 404s for a few seconds; its first insert is
+# retried this many times, waiting BACKOFF * attempt seconds between tries.
+_PLAYLIST_INSERT_ATTEMPTS = 4
+_PLAYLIST_INSERT_BACKOFF_S = 2.0
+
 # Read-only channel analytics, for the ``youtube_reporting`` tap (thumbnail
 # impressions + click-through from the Reporting API). Opt-in for the same
 # reason as the update scope: an install that never measures reach never
@@ -695,6 +700,107 @@ class YouTubePublishAdapter:
                 )
             return False, str(exc)[:400]
         return True, "already there" if result.get("existing") else "set"
+
+    @staticmethod
+    def _add_to_playlists_blocking(
+        *,
+        credentials: Any,
+        video_id: str,
+        playlists: list[tuple[str, str]],
+        privacy: str,
+    ) -> dict[str, str]:
+        """Put the video in each ``(title, description)`` playlist, creating any missing.
+
+        Playlists are found by exact title among the channel's own
+        (``playlists.list mine=true``, 1 unit a page) and created when absent
+        (``playlists.insert``, 50). Membership is checked first
+        (``playlistItems.list`` filtered by ``videoId``, 1), so a re-run never
+        adds the video twice; ``playlistItems.insert`` is 50. Needs
+        ``youtube.force-ssl``. Returns ``{title: "added" | "already in"}``.
+        """
+        from googleapiclient.discovery import build  # type: ignore[import-not-found]
+
+        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+        existing: dict[str, str] = {}
+        page_token = None
+        while True:
+            kwargs: dict[str, Any] = {"part": "snippet", "mine": True, "maxResults": 50}
+            if page_token:
+                kwargs["pageToken"] = page_token
+            resp = youtube.playlists().list(**kwargs).execute()
+            for item in resp.get("items") or []:
+                title = str((item.get("snippet") or {}).get("title") or "")
+                existing.setdefault(title, str(item.get("id")))
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        outcome: dict[str, str] = {}
+        for title, description in playlists:
+            playlist_id = existing.get(title)
+            created_now = False
+            if not playlist_id:
+                created = youtube.playlists().insert(
+                    part="snippet,status",
+                    body={
+                        "snippet": {"title": title[:150], "description": description[:5000]},
+                        "status": {"privacyStatus": privacy},
+                    },
+                ).execute()
+                playlist_id = str(created.get("id"))
+                existing[title] = playlist_id
+                created_now = True
+            # A playlist created a moment ago is empty, and YouTube answers 404
+            # for it for a few seconds (seen live 2026-10-18), so it skips the
+            # membership check and its insert retries a not-found briefly.
+            if not created_now:
+                member = youtube.playlistItems().list(
+                    part="id", playlistId=playlist_id, videoId=video_id, maxResults=1,
+                ).execute()
+                if member.get("items"):
+                    outcome[title] = "already in"
+                    continue
+            body = {"snippet": {"playlistId": playlist_id, "resourceId": {"kind": "youtube#video", "videoId": video_id}}}
+            for attempt in range(_PLAYLIST_INSERT_ATTEMPTS):
+                try:
+                    youtube.playlistItems().insert(part="snippet", body=body).execute()
+                    break
+                except Exception as exc:  # noqa: BLE001 — only a fresh playlist's not-found is retried
+                    if not created_now or "404" not in str(exc) or attempt == _PLAYLIST_INSERT_ATTEMPTS - 1:
+                        raise
+                    time.sleep(_PLAYLIST_INSERT_BACKOFF_S * (attempt + 1))
+            outcome[title] = "added"
+        return outcome
+
+    async def add_to_playlists(
+        self, *, video_id: str, playlists: list[tuple[str, str]], privacy: str = "public", force: bool = False,
+    ) -> tuple[bool, str, dict[str, str]]:
+        """Add an already-published video to playlists by title.
+
+        Returns ``(ok, detail, {title: status})``; ``detail`` names the
+        re-consent command when the token lacks ``youtube.force-ssl``.
+        """
+        if not video_id:
+            return False, "no video id", {}
+        if not playlists:
+            return True, "no playlist matched", {}
+        ready, error, secrets = await self._check_gating(force=force)
+        if not ready:
+            return False, str(error or "youtube adapter not ready"), {}
+        credentials = self._build_credentials(secrets)
+        try:
+            outcome = await asyncio.to_thread(
+                self._add_to_playlists_blocking,
+                credentials=credentials, video_id=video_id, playlists=playlists, privacy=privacy,
+            )
+        except Exception as exc:  # noqa: BLE001 — the caller reports it per video
+            if _is_insufficient_scope(exc):
+                return False, (
+                    "the token lacks youtube.force-ssl, which playlists need — run "
+                    "`poindexter integrations youtube setup --with-update`. "
+                    f"Google said: {str(exc)[:300]}"
+                ), {}
+            return False, str(exc)[:400], {}
+        return True, "ok", outcome
 
     async def update_metadata(
         self,

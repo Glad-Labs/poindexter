@@ -62,6 +62,13 @@ def _no_live_captioning(monkeypatch):
     monkeypatch.setattr(md, "caption_after_upload", AsyncMock(return_value="set"))
 
 
+@pytest.fixture(autouse=True)
+def _no_live_playlists(monkeypatch):
+    """Stub the playlist step a successful YouTube upload runs (it calls Google).
+    The tests that assert on it read this stub (``md.playlists_after_upload``)."""
+    monkeypatch.setattr(md, "playlists_after_upload", AsyncMock(return_value="ok"))
+
+
 class _FakeTxn:
     """``conn.transaction()`` async-context stand-in (no-op begin/commit)."""
 
@@ -1442,3 +1449,34 @@ async def test_a_failed_upload_gets_no_captions():
     ):
         await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), _thumb_row(), shorts=False)
     md.caption_after_upload.assert_not_awaited()
+
+
+# --------------------------------------------------------------------------
+# Topic playlists (2026-10-18): a successful YouTube upload joins its playlists
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_youtube_upload_joins_its_playlists():
+    pool = _thumb_pool(None)
+    row = {**_thumb_row(), "asset_id": "a1", "title": "VRAM budgeting", "seo_keywords": "local llm"}
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID9", "url": "u"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=False)
+    md.playlists_after_upload.assert_awaited_once()
+    kw = md.playlists_after_upload.await_args.kwargs
+    assert kw["asset_id"] == "a1" and kw["video_id"] == "VID9"
+    assert "VRAM budgeting" in kw["text"] and "local llm" in kw["text"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_upload_joins_no_playlist():
+    pool = _thumb_pool(None)
+    dispatch = AsyncMock(return_value={"success": False, "error": "quota"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), _thumb_row(), shorts=False)
+    md.playlists_after_upload.assert_not_awaited()
