@@ -85,6 +85,60 @@ def _validate_medium(medium: str) -> None:
         )
 
 
+class UnknownRejectReasonError(ValueError):
+    """A reject reason code that is not in the ``media_reject_reasons`` setting."""
+
+
+#: The setting that lists the reject reasons (seeded in settings_defaults).
+_REJECT_REASON_SETTING = "media_reject_reasons"
+
+
+def parse_reject_reasons(raw: str | None) -> list[tuple[str, str]]:
+    """``"voice=Voice; hook=Weak opening"`` → ``[("voice", "Voice"), ("hook", "Weak opening")]``.
+
+    A pair without ``=`` uses its code as the label. Blank pairs and repeated
+    codes are dropped (first wins). Codes are lower-cased.
+    """
+    reasons: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for part in (raw or "").split(";"):
+        code, _, label = part.partition("=")
+        code = code.strip().lower()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        reasons.append((code, label.strip() or code))
+    return reasons
+
+
+def reject_reasons(site_config: Any) -> list[tuple[str, str]]:
+    """The configured reject reasons, as ``(code, label)`` in display order."""
+    return parse_reject_reasons(site_config.get(_REJECT_REASON_SETTING, "") or "")
+
+
+def _checked_reject_reason(reason: str | None, *, approved: bool, site_config: Any) -> str | None:
+    """Normalise ``reason`` and refuse one the setting does not list.
+
+    An approval never carries a reason. A reason needs a ``site_config`` to be
+    checked against; without one it is refused rather than stored unchecked.
+    """
+    code = (reason or "").strip().lower() or None
+    if code is None:
+        return None
+    if approved:
+        raise UnknownRejectReasonError("a reject reason was given for an approval")
+    if site_config is None:
+        raise UnknownRejectReasonError(
+            "a reject reason needs site_config to be checked against media_reject_reasons"
+        )
+    known = [c for c, _ in reject_reasons(site_config)]
+    if code not in known:
+        raise UnknownRejectReasonError(
+            f"unknown reject reason {code!r}; media_reject_reasons lists: {', '.join(known) or '(none)'}"
+        )
+    return code
+
+
 async def _niche_auto_approve_enabled(
     db: Any, post_id: str, medium: str,
 ) -> tuple[bool, str | None]:
@@ -616,8 +670,17 @@ async def decide(
     decided_by: str,
     notes: str | None = None,
     site_config: Any = None,
+    reason: str | None = None,
 ) -> None:
     """Operator decision — set status to ``approved`` or ``rejected``.
+
+    ``reason`` is why a rejection was made: a code from the
+    ``media_reject_reasons`` setting, stored in ``reject_reason`` next to the
+    free-text ``notes``. An unknown code raises
+    :class:`UnknownRejectReasonError` before anything is written. Optional, so
+    older callers keep working, but every operator surface asks for one: until
+    2026-10-18 no rejection said why, and the media grade had nothing to be
+    checked against.
 
     ``decided_by`` should be the operator identity (``operator:<user>``
     in production). Tests + CLI default to ``operator:cli`` /
@@ -656,16 +719,17 @@ async def decide(
     """
     _validate_medium(medium)
     new_status = "approved" if approved else "rejected"
+    reject_reason = _checked_reject_reason(reason, approved=approved, site_config=site_config)
 
     row = await db.fetchrow(
         """
         UPDATE media_approvals
         SET status = $3, decided_at = now(),
-            decided_by = $4, notes = $5
+            decided_by = $4, notes = $5, reject_reason = $6
         WHERE subject_id = $1 AND medium = $2
         RETURNING status
         """,
-        str(post_id), medium, new_status, decided_by, notes,
+        str(post_id), medium, new_status, decided_by, notes, reject_reason,
     )
     if row is None:
         raise ValueError(
@@ -674,8 +738,9 @@ async def decide(
             f"pre-approve un-generated media.",
         )
     logger.info(
-        "[media_approval] %s by %s: %s for post %s",
+        "[media_approval] %s by %s: %s for post %s%s",
         new_status, decided_by, medium, post_id,
+        f" (reason: {reject_reason})" if reject_reason else "",
     )
 
     # Propagate the decision to the published feed now, in both directions

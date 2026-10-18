@@ -11,7 +11,7 @@ Examples
     poindexter media pending --medium podcast
     poindexter media approve <post_id> podcast
     poindexter media approve <post_id> video --note "great pacing"
-    poindexter media reject  <post_id> podcast --note "tts glitches at 0:42"
+    poindexter media reject  <post_id> podcast --reason voice --note "tts glitches at 0:42"
 
 ``<post_id>`` is the id ``media pending`` prints: a post, or for a standalone
 video with no post (a creative-studio cartoon, poindexter#1140) its task.
@@ -231,12 +231,22 @@ def cmd_approve(post_id: str, medium: str, note: str | None):
 @click.argument("post_id")
 @click.argument("medium", type=click.Choice(_VALID_MEDIA, case_sensitive=False))
 @click.option("--note", default=None, help="Optional rationale for the decision.")
-def cmd_reject(post_id: str, medium: str, note: str | None):
+@click.option(
+    "--reason", default=None,
+    help=(
+        "Why, as one code from the media_reject_reasons setting "
+        "(voice, visuals, captions, hook, pacing, facts, title, topic, other "
+        "as seeded). An unknown code is refused and the list is printed."
+    ),
+)
+def cmd_reject(post_id: str, medium: str, note: str | None, reason: str | None):
     """Reject a generated medium — file stays on disk, never published."""
-    _decide(post_id, medium, approved=False, note=note)
+    _decide(post_id, medium, approved=False, note=note, reason=reason)
 
 
-def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
+def _decide(
+    post_id: str, medium: str, *, approved: bool, note: str | None, reason: str | None = None,
+):
     async def _go():
         from poindexter.services import media_approval_service
 
@@ -274,6 +284,7 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
                 decided_by="operator:cli",
                 notes=note,
                 site_config=site_config,
+                reason=reason,
             )
             return resolved
         finally:
@@ -294,7 +305,7 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
 
     verb = "approved" if approved else "rejected"
     click.secho(
-        f"{verb}: {medium} for {resolved_id[:8]}",
+        f"{verb}: {medium} for {resolved_id[:8]}" + (f" ({reason.strip().lower()})" if reason else ""),
         fg="green" if approved else "yellow",
     )
 

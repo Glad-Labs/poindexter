@@ -4018,6 +4018,18 @@ DEFAULTS: dict[str, str] = {
     # min_dispatches) take precedence over the global value when set.
     'media.gate2.earned_autonomy_enabled': 'false',
     'media.gate2.earned_autonomy_min_dispatches': '5',
+    # Why a render was rejected (media_approvals.reject_reason, 2026-10-18).
+    # "code=Label" pairs separated by ";". The console shows the labels as
+    # chips on Reject, `poindexter media reject --reason <code>` takes a code,
+    # and media_approval_service.decide refuses a code not listed here. Before
+    # this every rejection was blank, so the media grade (95-100 on most
+    # rejected renders) had nothing to be checked against. Add, rename or drop
+    # codes freely; an old row keeps the code it was given.
+    'media_reject_reasons': (
+        'voice=Voice or narration; visuals=Visuals; captions=Captions or on-screen text; '
+        'hook=Weak opening; pacing=Too long or slow; facts=Wrong or made-up fact; '
+        'title=Title or thumbnail; topic=Not worth a video; other=Other (say in the note)'
+    ),
     'podcast_description': '',
     'podcast_name': '',
     # Podcast distribution assets — empty on OSS; the operator overlay
@@ -8014,6 +8026,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media.cta.video_short': {'value_type': 'string'},
     'media.gate2.earned_autonomy_enabled': {'owner': 'media_approval_service', 'value_type': 'boolean'},
     'media.gate2.earned_autonomy_min_dispatches': {'owner': 'media_approval_service', 'value_type': 'integer'},
+    'media_reject_reasons': {'owner': 'media_approval_service', 'value_type': 'string'},
     'media.layer2.enabled': {'owner': 'media_quality_service', 'value_type': 'boolean'},
     'media.podcast.faithfulness_min': {'owner': 'media_quality_service', 'value_type': 'integer'},
     'media.podcast.faithfulness_model': {'owner': 'media_quality_service'},

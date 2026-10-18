@@ -252,6 +252,12 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
   // Approve STAGES the post; Reject sends it back to edit with operator notes.
   const [rejectOpen, setRejectOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
+  // Media reject: the reason chips (GET /api/media-approval/reject-reasons)
+  // and the one picked. A media reject now says why, so the grade can be
+  // checked against the operator's calls (none of them said why before
+  // 2026-10-18). Reuses rejectOpen/feedback for the panel and the note.
+  const [mediaReasons, setMediaReasons] = useState(null);
+  const [mediaReason, setMediaReason] = useState('');
   // Slot-picker sub-state, same shape as rejectOpen: an inline panel that
   // takes over the body extension + footer rather than a nested modal.
   // `slot` is a datetime-local string (local wall clock, no zone).
@@ -282,6 +288,7 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
   useEffect(() => {
     setRejectOpen(!!(entity && entity.openReject));
     setFeedback('');
+    setMediaReason('');
     setScheduleOpen(false);
     setSlot('');
     setImagesOpen(false);
@@ -291,6 +298,20 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
     setAllowStock(false);
     setImgBusy('');
   }, [entity]);
+
+  // Fetch the reject reasons the first time a media reject panel opens.
+  useEffect(() => {
+    const kind = entity && entity.data && entity.data.kind;
+    if (!rejectOpen || kind !== 'media' || mediaReasons) return;
+    let alive = true;
+    window.PX.api
+      .mediaRejectReasons()
+      .then((r) => alive && setMediaReasons(Array.isArray(r) ? r : []))
+      .catch(() => alive && setMediaReasons([]));
+    return () => {
+      alive = false;
+    };
+  }, [rejectOpen, entity, mediaReasons]);
 
   // Load the draft's image list when the Images panel opens. The task detail
   // read serves content from the same max-version pipeline_versions row the
@@ -1100,11 +1121,101 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
                   ['Shot list', e.detail.shots || '—'],
                 ]}
               />
+              {rejectOpen ? (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label>Why reject it?</label>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                      margin: '4px 0 10px',
+                    }}
+                  >
+                    {mediaReasons === null ? (
+                      <span className="mono c-dim" style={{ fontSize: 11 }}>
+                        Loading reasons…
+                      </span>
+                    ) : mediaReasons.length === 0 ? (
+                      <span className="mono c-dim" style={{ fontSize: 11 }}>
+                        No reasons configured (media_reject_reasons). Say why in
+                        the note.
+                      </span>
+                    ) : (
+                      mediaReasons.map((r) => (
+                        <button
+                          key={r.code}
+                          type="button"
+                          aria-pressed={mediaReason === r.code}
+                          className={
+                            mediaReason === r.code ? 'mbtn mbtn--amber' : 'mbtn'
+                          }
+                          style={{ padding: '6px 10px', fontSize: 12 }}
+                          onClick={() =>
+                            setMediaReason(mediaReason === r.code ? '' : r.code)
+                          }
+                        >
+                          {r.label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={feedback}
+                    onChange={(ev) => setFeedback(ev.target.value)}
+                    placeholder="Anything specific? (optional, e.g. voice cracks at 0:12)"
+                    style={{ resize: 'vertical' }}
+                  />
+                  <p
+                    className="c-dim"
+                    style={{ fontSize: 11, margin: '6px 0 0', lineHeight: 1.5 }}
+                  >
+                    The reason is stored with the rejection, so the media grade
+                    can be checked against your calls.
+                  </p>
+                </div>
+              ) : null}
             </>
           );
           // Gate-2 approve/reject → media-approval decide (not the post-approval
-          // reject). The handlers close the drawer + roll back on failure.
-          foot = (
+          // reject). Reject opens the reason panel first; the handlers close
+          // the drawer + roll back on failure.
+          const needsReason = !!(mediaReasons && mediaReasons.length);
+          foot = rejectOpen ? (
+            <>
+              <button
+                className="mbtn mbtn--danger"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                disabled={needsReason && !mediaReason}
+                title={
+                  needsReason && !mediaReason
+                    ? 'Pick a reason first'
+                    : 'Reject — it regenerates'
+                }
+                onClick={() =>
+                  actions.mediaReject(e.detail, {
+                    reason: mediaReason,
+                    notes: feedback,
+                  })
+                }
+              >
+                <Icon name="x" size={13} />
+                Reject
+              </button>
+              <button
+                className="mbtn mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => {
+                  setRejectOpen(false);
+                  setMediaReason('');
+                  setFeedback('');
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
             <>
               <button
                 className="mbtn mbtn--primary"
@@ -1117,7 +1228,7 @@ function Drawer({ entity, onClose, actions, schedule, spacingHours }) {
               <button
                 className="mbtn mbtn--danger mbtn--ghost"
                 style={{ padding: '10px 14px' }}
-                onClick={() => actions.mediaReject(e.detail)}
+                onClick={() => setRejectOpen(true)}
               >
                 <Icon name="x" size={13} />
                 Reject

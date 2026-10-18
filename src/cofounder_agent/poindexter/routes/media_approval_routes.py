@@ -3,7 +3,8 @@
 Operator surfaces previously only reachable in-process:
 
 - ``GET  /api/media-approval/pending``                    → list pending media
-- ``POST /api/media-approval/{post_id}/{medium}/decide``  → approve or reject
+- ``POST /api/media-approval/{post_id}/{medium}/decide``  → approve or reject (``reason`` on reject)
+- ``GET  /api/media-approval/reject-reasons``            → the reasons a reject can give
 - ``GET  /api/media-approval/{post_id}/{medium}/preview``  → stream the local render
 - ``GET  /api/media-approval/{post_id}/{video|video_short}/thumbnail`` → the composed YouTube thumbnail
 
@@ -37,6 +38,25 @@ router = APIRouter(
 class DecideRequest(BaseModel):
     approved: bool
     notes: str | None = None
+    # Why it was rejected: a code from GET /reject-reasons (the
+    # media_reject_reasons setting). Ignored-by-absence on approve.
+    reason: str | None = None
+
+
+@router.get(
+    "/reject-reasons",
+    summary="The reasons an operator can give for rejecting media",
+    response_model=dict[str, Any],
+    status_code=200,
+)
+async def get_reject_reasons(
+    token: str = Depends(verify_api_token),
+    site_config: Any = Depends(get_site_config_dependency),
+) -> dict[str, Any]:
+    """``{reasons: [{code, label}]}`` from the ``media_reject_reasons`` setting."""
+    from poindexter.services.media_approval_service import reject_reasons
+
+    return {"reasons": [{"code": c, "label": label} for c, label in reject_reasons(site_config)]}
 
 
 @router.get(
@@ -97,6 +117,7 @@ async def decide(
     rejecting an already-approved item removes it (poindexter#1088).
     Non-fatal.
     """
+    from poindexter.services.media_approval_service import UnknownRejectReasonError
     from poindexter.services.media_approval_service import decide as _decide
 
     operator = get_operator_identity()
@@ -111,7 +132,10 @@ async def decide(
             decided_by=decided_by,
             notes=body.notes,
             site_config=site_config,
+            reason=body.reason,
         )
+    except UnknownRejectReasonError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -121,6 +145,7 @@ async def decide(
         "medium": medium,
         "approved": body.approved,
         "decided_by": decided_by,
+        "reason": (body.reason or "").strip().lower() or None,
     }
 
 

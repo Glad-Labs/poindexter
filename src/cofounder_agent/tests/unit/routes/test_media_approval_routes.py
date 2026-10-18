@@ -161,3 +161,60 @@ class TestThumbnail:
     def test_requires_auth(self):
         resp = TestClient(_build_app(authed=False)).get("/api/media-approval/post-1/video/thumbnail")
         assert resp.status_code in (401, 403)
+
+
+class TestRejectReasons:
+    """A media reject says why (2026-10-18): the console's reason chips come
+    from GET /reject-reasons, and decide() takes the chosen code."""
+
+    @staticmethod
+    def _app(raw: str = "voice=Voice or narration; hook=Weak opening") -> FastAPI:
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.utils.route_utils import get_site_config_dependency
+
+        app = _build_app()
+        sc = SiteConfig(initial_config={"media_reject_reasons": raw})
+        app.dependency_overrides[get_site_config_dependency] = lambda: sc
+        return app
+
+    def test_lists_the_configured_reasons(self):
+        resp = TestClient(self._app()).get("/api/media-approval/reject-reasons")
+        assert resp.status_code == 200
+        assert resp.json() == {"reasons": [
+            {"code": "voice", "label": "Voice or narration"},
+            {"code": "hook", "label": "Weak opening"},
+        ]}
+
+    def test_decide_passes_the_reason_through(self):
+        decide = AsyncMock()
+        with patch("poindexter.services.media_approval_service.decide", new=decide), \
+             patch("poindexter.services.media_feed_rebuild.rebuild_feed_for_medium", new=AsyncMock()):
+            resp = TestClient(self._app()).post(
+                "/api/media-approval/post-1/video_short/decide",
+                json={"approved": False, "notes": "cracks", "reason": "Voice"},
+            )
+        assert resp.status_code == 200, resp.text
+        assert decide.await_args.kwargs["reason"] == "Voice"
+        assert decide.await_args.kwargs["notes"] == "cracks"
+        assert resp.json()["reason"] == "voice"
+
+    def test_an_unknown_reason_is_a_422_not_a_404(self):
+        """404 means 'no such row'; a bad reason is the caller's input."""
+        db_row = AsyncMock(return_value={"status": "rejected"})
+        app = self._app()
+        from poindexter.utils.route_utils import get_database_dependency
+
+        db = MagicMock()
+        db.pool.fetchrow = db_row
+        app.dependency_overrides[get_database_dependency] = lambda: db
+        resp = TestClient(app).post(
+            "/api/media-approval/post-1/video/decide",
+            json={"approved": False, "reason": "boring"},
+        )
+        assert resp.status_code == 422
+        assert "boring" in resp.json()["detail"]
+        db_row.assert_not_called()
+
+    def test_requires_auth(self):
+        resp = TestClient(_build_app(authed=False)).get("/api/media-approval/reject-reasons")
+        assert resp.status_code in (401, 403)

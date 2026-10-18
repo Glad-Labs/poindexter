@@ -169,3 +169,48 @@ test('approve() stages only — approved:true with auto_publish:false on the wir
   // feedback_human_approval: approve = stage, never go-live from this button.
   assert.equal(r.body.auto_publish, false);
 });
+
+// Media reject reasons (2026-10-18). A media reject now says why: a code from
+// the media_reject_reasons setting, which DecideRequest.reason carries. Before
+// this every console reject sent no reason, and the 45 days of rejects that
+// prompted it held nothing to learn from.
+test('mediaDecide() reject sends the reason and the note', async () => {
+  const { api, requests } = makeRecordingAdapter();
+  await api.mediaDecide(
+    'post-1',
+    'video_short',
+    false,
+    'voice cracks at 0:12',
+    'voice'
+  );
+
+  const r = requests[0];
+  assert.equal(r.method, 'POST');
+  assert.ok(r.url.endsWith('/api/media-approval/post-1/video_short/decide'));
+  assert.deepEqual(r.body, {
+    approved: false,
+    notes: 'voice cracks at 0:12',
+    reason: 'voice',
+  });
+});
+
+test('mediaDecide() approve never carries a reason', async () => {
+  const { api, requests } = makeRecordingAdapter();
+  await api.mediaDecide('post-2', 'video', true, '', 'voice');
+
+  // decide() refuses a reason on an approval, so the adapter must not send one.
+  assert.deepEqual(requests[0].body, { approved: true, notes: null });
+});
+
+test('mediaDecide() reject without a reason omits the field', async () => {
+  const { api, requests } = makeRecordingAdapter();
+  await api.mediaDecide('post-3', 'podcast', false);
+  assert.deepEqual(requests[0].body, { approved: false, notes: null });
+});
+
+test('mediaRejectReasons() reads the reject-reasons route', async () => {
+  const { api, requests } = makeRecordingAdapter();
+  await api.mediaRejectReasons();
+  assert.equal(requests[0].method, 'GET');
+  assert.ok(requests[0].url.endsWith('/api/media-approval/reject-reasons'));
+});

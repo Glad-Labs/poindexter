@@ -2464,7 +2464,7 @@
       },
       "gridPos": {
         "h": 5,
-        "w": 24,
+        "w": 12,
         "x": 0,
         "y": 126
       },
@@ -2517,6 +2517,47 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Operator rejections in the window by the reason given (media_approvals.reject_reason, a code from the media_reject_reasons setting). '(none given)' is a rejection with no reason: every rejection before 2026-10-18, and any made from a surface that does not ask. Automatic quality rejections are left out; they have their own panel. This is what the media grade should learn to predict.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 126
+      },
+      "id": 210,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT coalesce(reject_reason, '(none given)') AS \"Reason\", medium AS \"Medium\", count(*)::int AS \"Rejects\", max(left(nullif(notes, ''), 80)) AS \"A note\" FROM media_approvals WHERE status = 'rejected' AND decided_by LIKE 'operator%' AND $__timeFilter(decided_at) GROUP BY 1, 2 ORDER BY 3 DESC, 1"
+        }
+      ],
+      "title": "Why media was rejected (window)",
+      "type": "table"
     },
     {
       "id": 63,

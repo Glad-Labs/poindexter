@@ -43,6 +43,7 @@
      budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
+                   · GET /reject-reasons (the chips a media reject offers)
                    · GET /{post_id}/{medium}/preview (raw asset bytes, for the drawer player)
                    · GET /{post_id}/{video|video_short}/thumbnail (composed YouTube thumbnail, drawer)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
@@ -1287,18 +1288,44 @@
       );
     },
 
-    // POST /api/media-approval/{post_id}/{medium}/decide {approved, notes?}.
+    // POST /api/media-approval/{post_id}/{medium}/decide {approved, notes?, reason?}.
     // approved=true clears the post for dispatch; approved=false marks it
     // rejected so it regenerates. The Gate-2 mutation (write surface).
-    mediaDecide(postId, medium, approved, notes = '') {
+    // `reason` is a code from mediaRejectReasons() and only goes with a reject:
+    // until 2026-10-18 no reject said why, so nothing could learn from them.
+    mediaDecide(postId, medium, approved, notes = '', reason = '') {
+      const body = { approved: !!approved, notes: notes || null };
+      if (!approved && reason) body.reason = reason;
       return pick(
         () =>
           http(
             'POST',
             `/api/media-approval/${encodeURIComponent(postId)}/${encodeURIComponent(medium)}/decide`,
-            { approved: !!approved, notes: notes || null }
+            body
           ),
         () => ({ ok: true, post_id: postId, medium, approved: !!approved })
+      );
+    },
+
+    // GET /api/media-approval/reject-reasons → [{code, label}], the
+    // media_reject_reasons setting. Mock mode returns the seeded list.
+    mediaRejectReasons() {
+      return pick(
+        () =>
+          http('GET', '/api/media-approval/reject-reasons').then(
+            (r) => (r && r.reasons) || []
+          ),
+        () => [
+          { code: 'voice', label: 'Voice or narration' },
+          { code: 'visuals', label: 'Visuals' },
+          { code: 'captions', label: 'Captions or on-screen text' },
+          { code: 'hook', label: 'Weak opening' },
+          { code: 'pacing', label: 'Too long or slow' },
+          { code: 'facts', label: 'Wrong or made-up fact' },
+          { code: 'title', label: 'Title or thumbnail' },
+          { code: 'topic', label: 'Not worth a video' },
+          { code: 'other', label: 'Other (say in the note)' },
+        ]
       );
     },
 

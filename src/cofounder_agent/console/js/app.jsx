@@ -1241,7 +1241,10 @@ function App() {
         pushToast(`Media approve failed — ${err.message}`, 'red', '✕');
       }
     },
-    mediaReject: async (it) => {
+    // opts.reason is a code from the drawer's reason chips (media_reject_reasons),
+    // opts.notes the optional free text. The list surfaces open the drawer's
+    // reason panel rather than calling this bare, so a reject says why.
+    mediaReject: async (it, opts = {}) => {
       const prev = media;
       mediaR.mutate((m) => ({
         ...m,
@@ -1250,15 +1253,21 @@ function App() {
       }));
       closeDrawer();
       try {
-        await PX.api.mediaDecide(it.post_id || it.id, it.medium, false);
+        await PX.api.mediaDecide(
+          it.post_id || it.id,
+          it.medium,
+          false,
+          opts.notes || '',
+          opts.reason || ''
+        );
         pushToast(
-          `${it.medium || 'Media'} rejected — will regenerate`,
+          `${it.medium || 'Media'} rejected${opts.reason ? ` (${opts.reason})` : ''} — will regenerate`,
           'amber',
           '⚠'
         );
         pushFeed(
           ['amber', 'MEDIA'],
-          `operator rejected <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
+          `operator rejected <b>${it.medium || 'media'}</b>${opts.reason ? ` (${opts.reason})` : ''} · ${trunc(it.title || '', 36)}`
         );
       } catch (err) {
         mediaR.mutate(() => prev);
@@ -1940,7 +1949,9 @@ function App() {
                   onSocialApprove={(it) => A.socialApproveDraft(it)}
                   onSocialReject={(it) => A.socialRejectDraft(it)}
                   onMediaApprove={(it) => A.mediaApprove(it.detail)}
-                  onMediaReject={(it) => A.mediaReject(it.detail)}
+                  onMediaReject={(it) =>
+                    open('inbox', it, { openReject: true })
+                  }
                   onGateApprove={(it) => A.gateApprove(it)}
                   onGateReject={(it) => A.gateReject(it)}
                 />
@@ -2011,7 +2022,16 @@ function App() {
                     })
                   }
                   onApprove={A.mediaApprove}
-                  onReject={A.mediaReject}
+                  onReject={(it) =>
+                    open(
+                      'inbox',
+                      {
+                        kind: 'media',
+                        detail: { ...it, stage: 'gate_2_review' },
+                      },
+                      { openReject: true }
+                    )
+                  }
                   fresh={mediaR}
                 />
               </div>

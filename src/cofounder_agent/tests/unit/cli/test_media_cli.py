@@ -326,3 +326,52 @@ class TestDecideResolvesPrefix:
         assert decide_calls[0][0] == full
         assert decide_calls[0][1] == "video"
         assert "approved: video for b938661c" in result.output
+
+
+class TestRejectReason:
+    """`media reject --reason <code>` hands the code to decide(), which checks
+    it against media_reject_reasons (2026-10-18)."""
+
+    def _invoke(self, runner, monkeypatch, args):
+        import types
+
+        media = _import_media_module()
+        full = "b938661c-1111-2222-3333-444455556666"
+        pool = _make_pool_with(exact=None, prefix_rows=[{"subject_id": full}])
+        pool.close = AsyncMock()
+
+        async def _fake_pool():
+            return pool
+
+        monkeypatch.setattr(media, "_make_pool", _fake_pool)
+        calls: list[dict] = []
+
+        async def _fake_decide(_db, post_id, medium, **kwargs):
+            calls.append(kwargs)
+            if kwargs.get("reason") == "boring":
+                raise ValueError("unknown reject reason 'boring'; media_reject_reasons lists: voice")
+
+        fake_service = types.ModuleType("poindexter.services.media_approval_service")
+        fake_service.decide = _fake_decide  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "poindexter.services.media_approval_service", fake_service)
+        import poindexter.services as _services_pkg
+
+        monkeypatch.setattr(_services_pkg, "media_approval_service", fake_service, raising=False)
+        return runner.invoke(media.media_group, args), calls
+
+    def test_the_reason_reaches_decide(self, runner, monkeypatch):
+        result, calls = self._invoke(
+            runner, monkeypatch, ["reject", "b938661c", "video_short", "--reason", "voice", "--note", "cracks"],
+        )
+        assert result.exit_code == 0, result.output
+        assert calls[0]["reason"] == "voice"
+        assert calls[0]["notes"] == "cracks"
+        assert calls[0]["approved"] is False
+        assert "rejected: video_short for b938661c (voice)" in result.output
+
+    def test_an_unknown_reason_exits_2_with_the_list(self, runner, monkeypatch):
+        result, _calls = self._invoke(
+            runner, monkeypatch, ["reject", "b938661c", "video", "--reason", "boring"],
+        )
+        assert result.exit_code == 2
+        assert "media_reject_reasons lists: voice" in result.output

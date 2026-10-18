@@ -343,7 +343,7 @@ async def test_reject_burst_past_max_shrink_publishes_where_one_reconcile_refuse
     eligible = list(live)  # what the feed route renders from the DB
     bucket = {"video/feed.xml": _rss(live)}  # what subscribers read
 
-    async def _update(_sql, post_id, _medium, status, _by, _notes):
+    async def _update(_sql, post_id, _medium, status, _by, _notes, _reason):
         # decide()'s UPDATE: a rejected item leaves the feed's eligible set.
         if status == "rejected":
             eligible.remove(post_id)
@@ -1519,3 +1519,117 @@ async def test_preview_media_does_not_guess_without_a_public_base(
         mock_db, site_config=sc, post_id="p1",
     )
     assert media == {"podcast": None, "video": "https://cdn.example/video/p1.mp4"}
+
+
+# ---------------------------------------------------------------------------
+# Reject reasons (2026-10-18): a rejection says why
+# ---------------------------------------------------------------------------
+
+
+def _reasons_config(raw: str = "voice=Voice or narration; hook=Weak opening; other"):
+    from poindexter.services.site_config import SiteConfig
+
+    return SiteConfig(initial_config={"media_reject_reasons": raw})
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("voice=Voice; hook=Weak opening", [("voice", "Voice"), ("hook", "Weak opening")]),
+        (" Voice = Voice ;; other ", [("voice", "Voice"), ("other", "other")]),
+        ("voice=A; voice=B", [("voice", "A")]),
+        ("", []),
+        (None, []),
+    ],
+)
+def test_parse_reject_reasons(raw, expected):
+    assert media_approval_service.parse_reject_reasons(raw) == expected
+
+
+def test_the_seeded_reasons_parse_to_codes_and_labels():
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    reasons = media_approval_service.parse_reject_reasons(DEFAULTS["media_reject_reasons"])
+    codes = [c for c, _ in reasons]
+    assert {"voice", "visuals", "hook", "pacing", "facts", "other"} <= set(codes)
+    assert all(label and label != code for code, label in reasons)
+
+
+async def test_decide_reject_stores_the_reason(mock_db: MagicMock) -> None:
+    mock_db.fetchrow.return_value = {"status": "rejected"}
+
+    with patch("poindexter.services.media_feed_rebuild.rebuild_feed_for_medium", new=AsyncMock()):
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "video_short",
+            approved=False, decided_by="operator:http", notes="cracks at 0:12",
+            site_config=_reasons_config(), reason=" Voice ",
+        )
+
+    sql, *args = mock_db.fetchrow.call_args.args
+    assert "reject_reason = $6" in sql
+    assert args[2] == "rejected"
+    assert args[4] == "cracks at 0:12"
+    assert args[5] == "voice"  # normalised
+
+
+async def test_decide_without_a_reason_stores_null(mock_db: MagicMock) -> None:
+    mock_db.fetchrow.return_value = {"status": "rejected"}
+    await media_approval_service.decide(
+        mock_db, "00000000-0000-0000-0000-000000000001", "video",
+        approved=False, decided_by="operator:cli",
+    )
+    assert mock_db.fetchrow.call_args.args[6] is None
+
+
+async def test_decide_refuses_an_unknown_reason_before_writing(mock_db: MagicMock) -> None:
+    with pytest.raises(media_approval_service.UnknownRejectReasonError, match="voice, hook, other"):
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "video",
+            approved=False, decided_by="operator:cli",
+            site_config=_reasons_config(), reason="boring",
+        )
+    mock_db.fetchrow.assert_not_called()
+
+
+async def test_decide_refuses_a_reason_on_an_approval(mock_db: MagicMock) -> None:
+    with pytest.raises(media_approval_service.UnknownRejectReasonError):
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "video",
+            approved=True, decided_by="operator:cli",
+            site_config=_reasons_config(), reason="voice",
+        )
+    mock_db.fetchrow.assert_not_called()
+
+
+async def test_decide_refuses_an_unchecked_reason(mock_db: MagicMock) -> None:
+    """With no site_config the code cannot be checked, so it is refused rather
+    than stored as whatever the caller typed."""
+    with pytest.raises(media_approval_service.UnknownRejectReasonError, match="site_config"):
+        await media_approval_service.decide(
+            mock_db, "00000000-0000-0000-0000-000000000001", "video",
+            approved=False, decided_by="operator:cli", reason="voice",
+        )
+    mock_db.fetchrow.assert_not_called()
+
+
+def test_an_unknown_reason_is_a_value_error():
+    """The CLI's existing `except ValueError` prints it and exits 2."""
+    assert issubclass(media_approval_service.UnknownRejectReasonError, ValueError)
+
+
+def test_the_console_mock_reasons_match_the_seeded_setting():
+    """api.js keeps a copy of the reasons for mock mode. Derived from the seed,
+    so a reason added to the setting fails here until the mock has it too."""
+    import re
+    from pathlib import Path
+
+    from poindexter.services.settings_defaults import DEFAULTS
+
+    api_js = (
+        Path(media_approval_service.__file__).resolve().parents[2] / "console" / "js" / "api.js"
+    ).read_text(encoding="utf-8")
+    block = api_js[api_js.index("mediaRejectReasons() {"):]
+    block = block[: block.index("},\n\n")]
+    mock = re.findall(r"\{ code: '([a-z_]+)', label: '([^']+)' \}", block)
+    seeded = media_approval_service.parse_reject_reasons(DEFAULTS["media_reject_reasons"])
+    assert mock == seeded

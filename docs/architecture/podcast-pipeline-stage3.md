@@ -757,6 +757,18 @@ the code.
   Whatever made those unshippable, nothing in this stack measures. Fix 1 should
   move the numbers; if a real judge still reports ~100 on an episode the
   operator rejects, the missing signal is a new rail, not a threshold.
+  It was not only podcasts: in the 45 days to 2026-10-18 the operator rejected
+  10 of 19 Shorts and 24 of 29 long videos, most graded 95-100, and **not one
+  rejection said why**. Since then a rejection records a reason code
+  (`media_approvals.reject_reason`, from the `media_reject_reasons` setting:
+  voice, visuals, captions, hook, pacing, facts, title, topic, other) plus an
+  optional note. The console's Reject opens those as chips (the inbox and Media
+  page buttons open the drawer on them rather than rejecting blind),
+  `poindexter media reject --reason <code>` takes one, and `decide()` refuses a
+  code the setting does not list. The Pipeline board's "Why media was
+  rejected" panel counts them. Those reasons are what a new rail, or
+  earned-autonomy auto-approval, has to be checked against: earned autonomy
+  today counts successful uploads, not the operator's calls.
 - **Layer 1 has never fired.** Zero `auto:layer1` rows on any podcast. Its
   thresholds (30s, 50% silence, 10KB) are loose enough to only catch a
   catastrophically broken render, which is the intent — but it means Layer 1 is
