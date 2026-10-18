@@ -34,12 +34,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.publish_adapters.youtube import is_quota_exhausted
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
 logger = get_logger(__name__)
 
 PLAYLISTS_KEY = "youtube_playlists"
+QUOTA_NOT_TRIED = (
+    "not tried — the day's YouTube API quota is used up "
+    "(resets at midnight Pacific); re-run then"
+)
 _VIDEO_TYPES = ("video", "video_short")
 
 
@@ -242,9 +247,16 @@ async def backfill_playlists(
     async with pool.acquire() as conn:
         rows = [dict(r) for r in await conn.fetch(_BACKFILL_SQL, list(_VIDEO_TYPES), selector)]
     outcomes: list[PlaylistOutcome] = []
+    quota_spent = False
     for row in rows:
         if limit is not None and len(outcomes) >= limit:
             break
+        if quota_spent:
+            outcomes.append(PlaylistOutcome(
+                video_id=row["video_id"], medium="short" if row["type"] == "video_short" else "long",
+                title=row["title"] or "", action=QUOTA_NOT_TRIED,
+            ))
+            continue
         matched = match_playlists(
             video_text(row["post_title"], row["seo_keywords"], row["title"]), rules, limit=per_video,
         )
@@ -272,7 +284,23 @@ async def backfill_playlists(
         await _stamp(pool, row["id"], status, outcome)
         out.action = ", ".join(f"{t}: {s}" for t, s in outcome.items()) if ok else status
         out.failed = not ok
+        # Every later call would fail the same way and the day's uploads need
+        # the quota too, so stop here (2026-10-18).
+        quota_spent = not ok and is_quota_exhausted(detail)
     return outcomes
+
+
+def estimate_quota_units(outcomes: list[PlaylistOutcome]) -> int:
+    """Rough --apply cost of these dry-run outcomes: per video one playlist
+    listing, and per playlist one membership check + one insert. A playlist
+    created on the way adds 50 more each."""
+    from poindexter.services.publish_adapters.youtube import QUOTA_UNITS
+
+    per_playlist = QUOTA_UNITS["playlistItems.list"] + QUOTA_UNITS["playlistItems.insert"]
+    return sum(
+        QUOTA_UNITS["playlists.list"] + per_playlist * len(o.playlists)
+        for o in outcomes if o.action.startswith("would add")
+    )
 
 
 __all__ = [
@@ -281,6 +309,7 @@ __all__ = [
     "PlaylistOutcome",
     "PlaylistRule",
     "backfill_playlists",
+    "estimate_quota_units",
     "match_playlists",
     "parse_rules",
     "playlists_after_upload",

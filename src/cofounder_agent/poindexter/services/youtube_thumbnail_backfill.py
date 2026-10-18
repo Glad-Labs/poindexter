@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.publish_adapters.youtube import is_quota_exhausted
 
 logger = get_logger(__name__)
 
@@ -78,6 +79,11 @@ SELECT stage_data->'task_metadata'->'video_shot_list' AS shot_list,
  WHERE task_id::text = $1
  ORDER BY version DESC LIMIT 1
 """
+
+QUOTA_NOT_TRIED = (
+    "not tried — the day's YouTube API quota is used up "
+    "(resets at midnight Pacific); re-run then"
+)
 
 
 @dataclass
@@ -236,6 +242,7 @@ async def backfill_youtube_thumbnails(
         adapter = YouTubePublishAdapter(site_config=site_config)
 
     outcomes: list[ThumbnailOutcome] = []
+    quota_spent = False
     for row in rows:
         task_id = str(row["task_id"])
         video_id, title = str(row.get("video_id") or ""), str(row.get("title") or task_id)
@@ -275,7 +282,13 @@ async def backfill_youtube_thumbnails(
             if error:
                 outcomes.append(ThumbnailOutcome(video_id, title, "compose failed", error=error, task_id=task_id))
                 continue
+        if quota_spent:
+            outcomes.append(ThumbnailOutcome(video_id, title, QUOTA_NOT_TRIED, path, task_id=task_id))
+            continue
         ok, detail = await adapter.set_thumbnail(video_id=video_id, thumbnail_path=path)
+        # Every later upload would fail the same way and the day's video
+        # uploads need the quota too, so stop uploading (2026-10-18).
+        quota_spent = not ok and is_quota_exhausted(detail)
         try:
             await _stamp(pool, task_id, video_id, "set" if ok else f"failed: {detail}", shorts=shorts)
         except Exception as exc:  # noqa: BLE001 — the upload already happened; report, don't undo

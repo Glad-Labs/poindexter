@@ -324,6 +324,18 @@ quota-trivial next to a single upload. A caption track costs `captions.list`
 50 + `captions.insert` 400, so captioning the whole channel once is a few
 uploads' worth.
 
+**Backfills share the day's quota with uploads.** On 2026-10-18 a caption
+backfill (20 videos x 450 units) spent most of the 10,000, and the playlist
+backfill run straight after it failed on every remaining video with the same
+403, while any upload that day would have failed too. Since then:
+
+- the `captions`, `playlists` and `sync-metadata` dry runs print what `--apply`
+  would spend (`QUOTA_UNITS` in `publish_adapters/youtube.py` holds the
+  per-call costs);
+- every backfill (`captions`, `playlists`, `sync-metadata`, `thumbnails`) stops
+  at the first quota error (`is_quota_exhausted`) and lists the rest as "not
+  tried", so re-running after midnight Pacific picks up where it stopped.
+
 ## Topic playlists
 
 Since 2026-10-18 each upload joins its topic playlists

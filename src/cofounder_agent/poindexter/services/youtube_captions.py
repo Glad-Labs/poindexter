@@ -45,12 +45,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from poindexter.services.logger_config import get_logger
+from poindexter.services.publish_adapters.youtube import is_quota_exhausted
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
 logger = get_logger(__name__)
 
 CAPTIONS_KEY = "youtube_captions"
+QUOTA_NOT_TRIED = (
+    "not tried — the day's YouTube API quota is used up "
+    "(resets at midnight Pacific); re-run then"
+)
+#: Units one caption track costs on --apply (captions.list + captions.insert).
+CAPTION_QUOTA_UNITS = 450
 _VIDEO_TYPES = ("video", "video_short")
 
 
@@ -257,9 +264,16 @@ async def backfill_captions(
     language = caption_language(site_config)
     name = caption_track_name(site_config)
     outcomes: list[CaptionOutcome] = []
+    quota_spent = False
     for row in rows:
         if limit is not None and len(outcomes) >= limit:
             break
+        if quota_spent:
+            outcomes.append(CaptionOutcome(
+                video_id=row["video_id"], medium="short" if row["type"] == "video_short" else "long",
+                title=row["title"] or "", action=QUOTA_NOT_TRIED,
+            ))
+            continue
         out = CaptionOutcome(
             video_id=row["video_id"], medium="short" if row["type"] == "video_short" else "long",
             title=row["title"] or "",
@@ -304,6 +318,9 @@ async def backfill_captions(
         status = detail if ok else f"failed: {detail}"
         await _stamp(pool, row["id"], status, language)
         out.action, out.failed = status, not ok
+        # Every later call would fail the same way and the day's uploads need
+        # the quota too, so stop here (2026-10-18).
+        quota_spent = not ok and is_quota_exhausted(detail)
     return outcomes
 
 

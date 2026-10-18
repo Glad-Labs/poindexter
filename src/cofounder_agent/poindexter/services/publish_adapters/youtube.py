@@ -46,6 +46,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -92,6 +93,37 @@ _PLAYLIST_INSERT_BACKOFF_S = 2.0
 # reason as the update scope: an install that never measures reach never
 # holds it. ``setup --with-analytics`` requests it.
 _ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"
+
+
+#: YouTube Data API v3 units per call (developers.google.com/youtube/v3/determine_quota_cost).
+#: The daily allowance is 10,000 and resets at midnight Pacific; an upload is
+#: 1,600 of it, so a backfill that spends the day's quota also blocks uploads.
+QUOTA_UNITS = {
+    "videos.insert": 1600,
+    "videos.list": 1,
+    "videos.update": 50,
+    "thumbnails.set": 50,
+    "captions.list": 50,
+    "captions.insert": 400,
+    "playlists.list": 1,
+    "playlists.insert": 50,
+    "playlistItems.list": 1,
+    "playlistItems.insert": 50,
+}
+DAILY_QUOTA_UNITS = 10_000
+
+_QUOTA_EXHAUSTED = re.compile(r"quotaExceeded|dailyLimitExceeded|exceeded your\W.{0,120}?quota", re.IGNORECASE)
+
+
+def is_quota_exhausted(text: Any) -> bool:
+    """True when a Google error says the day's API quota is spent.
+
+    Matched on the message because the reason code is not always present and
+    the human text wraps "quota" in a link (``exceeded your <a ...>quota</a>``).
+    Seen 2026-10-18, when a caption backfill (450 units a video) spent the day
+    and every later call of a playlist backfill failed the same way.
+    """
+    return bool(_QUOTA_EXHAUSTED.search(str(text or "")))
 
 
 def describe_thumbnail_error(exc: Exception) -> str:

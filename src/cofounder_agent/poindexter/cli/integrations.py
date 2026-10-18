@@ -1066,7 +1066,16 @@ def youtube_captions(selector: str | None, limit: int | None, do_apply: bool) ->
             click.echo(f"{'':<20}{o.cues} cues · {o.srt_path}")
     failed = [o for o in outcomes if o.failed]
     if not do_apply and any(o.srt_path for o in outcomes):
-        click.echo("\nReview the files above, then re-run with --apply to upload them.")
+        from poindexter.services.publish_adapters.youtube import DAILY_QUOTA_UNITS
+        from poindexter.services.youtube_captions import CAPTION_QUOTA_UNITS
+
+        ready = sum(1 for o in outcomes if o.srt_path and not o.failed)
+        click.echo(
+            f"\n--apply would spend about {ready * CAPTION_QUOTA_UNITS:,} of the "
+            f"{DAILY_QUOTA_UNITS:,} daily YouTube API units ({ready} x {CAPTION_QUOTA_UNITS}); "
+            "an upload needs 1,600, so leave room for the day's videos."
+        )
+        click.echo("Review the files above, then re-run with --apply to upload them.")
     if failed:
         raise SystemExit(1)
 
@@ -1130,6 +1139,13 @@ def youtube_playlists(selector: str | None, limit: int | None, do_apply: bool) -
     if unmatched:
         click.echo(f"\n{len(unmatched)} video(s) matched no playlist; add keywords to youtube_playlists to place them.")
     if not do_apply and any(o.playlists for o in outcomes):
+        from poindexter.services.publish_adapters.youtube import DAILY_QUOTA_UNITS
+        from poindexter.services.youtube_playlists import estimate_quota_units
+
+        click.echo(
+            f"--apply would spend about {estimate_quota_units(outcomes):,} of the "
+            f"{DAILY_QUOTA_UNITS:,} daily YouTube API units (+50 per playlist created)."
+        )
         click.echo("Review the matches above, then re-run with --apply.")
     if any(o.failed for o in outcomes):
         raise SystemExit(1)
@@ -1470,4 +1486,11 @@ def youtube_sync_metadata(selector: str | None, limit: int | None, do_apply: boo
         click.echo(f"\nFirst error ({first.video_id}):\n  {first.error}", err=True)
         raise SystemExit(1)
     if not do_apply:
-        click.echo("\nRe-run with --apply to push these to YouTube.")
+        from poindexter.services.publish_adapters.youtube import DAILY_QUOTA_UNITS, QUOTA_UNITS
+
+        per_video = QUOTA_UNITS["videos.list"] + QUOTA_UNITS["videos.update"]
+        click.echo(
+            f"\n--apply would spend about {len(outcomes) * per_video:,} of the "
+            f"{DAILY_QUOTA_UNITS:,} daily YouTube API units ({len(outcomes)} x {per_video})."
+        )
+        click.echo("Re-run with --apply to push these to YouTube.")

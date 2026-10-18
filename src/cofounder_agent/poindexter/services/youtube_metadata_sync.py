@@ -39,7 +39,7 @@ from poindexter.services.jobs.youtube_payload import (
     short_title_hook,
     twin_watch_url,
 )
-from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND
+from poindexter.services.publish_adapters.youtube import STATUS_NOT_FOUND, is_quota_exhausted
 from poindexter.services.short_hook import (
     content_defects,
     first_sentence,
@@ -163,6 +163,12 @@ _MARK_DELETED_SQL = """
        AND external_id = $1
        AND status <> 'deleted'
 """
+
+
+QUOTA_NOT_TRIED = (
+    "not tried — the day's YouTube API quota is used up "
+    "(resets at midnight Pacific); re-run then"
+)
 
 
 @dataclass(frozen=True)
@@ -465,7 +471,16 @@ async def sync_youtube_metadata(
         adapter = YouTubePublishAdapter(site_config=site_config)
 
     outcomes: list[SyncOutcome] = []
+    quota_spent = False
     for row in rows:
+        if quota_spent:
+            # The day's quota is gone: every later update would fail the same
+            # way, and today's uploads need what is left (2026-10-18).
+            outcomes.append(SyncOutcome(
+                video_id=row["video_id"], post_id=row["post_id"], title="",
+                applied=False, error=QUOTA_NOT_TRIED,
+            ))
+            continue
         # Computed BEFORE any repair, so it reports what was stored.
         defects = stored_hook_defects(row, site_config)
         repaired = False
@@ -523,6 +538,7 @@ async def sync_youtube_metadata(
                 "[YOUTUBE_SYNC] update failed for %s: %s",
                 row["video_id"], outcomes[-1].error,
             )
+            quota_spent = is_quota_exhausted(reason)
 
     return outcomes
 
