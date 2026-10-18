@@ -1085,6 +1085,69 @@ def youtube_short_package(
         raise SystemExit(1)
 
 
+@youtube_group.command("performance")
+@click.option("--days", default=28, show_default=True, type=int, help="Window, ending today.")
+@click.option("--limit", default=25, show_default=True, type=int, help="Videos to list, most viewed first.")
+def youtube_performance(days: int, limit: int) -> None:
+    """How each video is doing: views, watch time, retention, reach, sources.
+
+    \b
+    Read-only, from the three YouTube reporting taps in external_metrics:
+      youtube_activity  views, watch minutes, likes, subscribers;
+      youtube_traffic   where the views came from, and the search terms;
+      youtube_reach     thumbnail impressions and click-through rate.
+    Retention is the average share of a video watched (watch time / views /
+    length); a video the pipeline did not render has no length, so none.
+    YouTube's reports trail by about two days.
+    """
+    from poindexter.cli._dataplane import run_service
+    from poindexter.services.youtube_performance import channel_performance
+
+    try:
+        perf = run_service(lambda pool: channel_performance(pool, days=days))
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    click.echo(f"YouTube, {perf.start} to {perf.end}\n")
+    if not perf.videos:
+        click.echo("No YouTube rows in this window. The reporting taps may not have run yet.")
+        return
+    if not perf.has_activity:
+        click.echo(
+            "No views recorded yet: the youtube_activity tap has not landed a report "
+            "(YouTube writes the first within 48 hours of the job). Reach only below.\n"
+        )
+
+    def pct(value: float | None) -> str:
+        return f"{value * 100:.0f}%" if value is not None else "—"
+
+    click.echo(f"{'video':<12} {'type':<5} {'views':>6} {'avg s':>6} {'kept':>5} {'subs':>5} {'impr':>6} {'ctr':>5}  title")
+    for v in perf.videos[:limit]:
+        avg = v.average_view_seconds
+        click.echo(
+            f"{v.video_id:<12} {v.medium[:5]:<5} {v.views:>6.0f} "
+            f"{(f'{avg:.0f}' if avg is not None else '—'):>6} {pct(v.retention):>5} "
+            f"{v.net_subscribers:>+5.0f} {v.impressions:>6.0f} {pct(v.click_through_rate):>5}  {v.title[:50]}"
+        )
+    by_medium: dict[str, list] = {}
+    for v in perf.videos:
+        by_medium.setdefault(v.medium, []).append(v)
+    click.echo("")
+    for medium, vids in sorted(by_medium.items()) if perf.has_activity else []:
+        views = sum(v.views for v in vids)
+        click.echo(f"{medium}: {len(vids)} videos, {views:.0f} views ({views / len(vids):.1f} per video)")
+    if perf.sources:
+        total = sum(perf.sources.values()) or 1
+        click.echo("\nWhere the views came from:")
+        for name, views in perf.sources.items():
+            click.echo(f"  {name:<30} {views:>6.0f}  {views / total * 100:>3.0f}%")
+    if perf.search_terms:
+        click.echo("\nTop YouTube search terms:")
+        for term, views in perf.search_terms:
+            click.echo(f"  {views:>4.0f}  {term}")
+
+
 @youtube_group.command("sync-metadata")
 @click.option(
     "--post", "selector", default=None,

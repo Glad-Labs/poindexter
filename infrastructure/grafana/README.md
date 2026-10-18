@@ -25,19 +25,20 @@ All boards under `dashboards/` ship in this repo and are
 auto-provisioned by the Docker stack on first boot — no import step
 needed.
 
-| File                        | Description                                                                |
-| --------------------------- | -------------------------------------------------------------------------- |
-| `pipeline-merged.json`      | Pipeline throughput, approval queue, quality/QA rows, media approval queue |
-| `cost-analytics.json`       | LLM spend, model costs, electricity tracking                               |
-| `qa-rails.json`             | Per-reviewer pass-rate, score distribution, latest QA passes               |
-| `observability-merged.json` | Tempo traces, Pyroscope flame graphs, Loki logs, API HTTP RED metrics      |
-| `system-health-merged.json` | Service up/down, scheduled-publish queue, approved-queue                   |
-| `database.json`             | Postgres internals — size, connections, table stats, cache-hit ratio       |
-| `hardware-power.json`       | GPU live metrics, PSU/wall/CPU power sensors + electricity cost            |
-| `integrations-admin.json`   | qa_gates / publishing_adapters / external_taps declarative-config tables   |
-| `experiments-dryrun.json`   | Auto-publish gate dry-run observability + variant experiments              |
-| `findings.json`             | Probe-findings routing — emitted vs. pending-delivery, by kind/severity    |
-| `seo-harvest.json`          | SEO harvest metrics                                                        |
+| File                        | Description                                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `pipeline-merged.json`      | Pipeline throughput, approval queue, quality/QA rows, media approval queue                      |
+| `cost-analytics.json`       | LLM spend, model costs, electricity tracking                                                    |
+| `qa-rails.json`             | Per-reviewer pass-rate, score distribution, latest QA passes                                    |
+| `observability-merged.json` | Tempo traces, Pyroscope flame graphs, Loki logs, API HTTP RED metrics                           |
+| `system-health-merged.json` | Service up/down, scheduled-publish queue, approved-queue                                        |
+| `database.json`             | Postgres internals — size, connections, table stats, cache-hit ratio                            |
+| `hardware-power.json`       | GPU live metrics, PSU/wall/CPU power sensors + electricity cost                                 |
+| `integrations-admin.json`   | qa_gates / publishing_adapters / external_taps declarative-config tables                        |
+| `experiments-dryrun.json`   | Auto-publish gate dry-run observability + variant experiments                                   |
+| `findings.json`             | Probe-findings routing — emitted vs. pending-delivery, by kind/severity                         |
+| `seo-harvest.json`          | SEO harvest metrics                                                                             |
+| `youtube.json`              | YouTube views, watch time, retention, subscribers, traffic sources, search terms, thumbnail CTR |
 
 One board is intentionally absent from the public `Glad-Labs/poindexter`
 mirror: `mission-control.json` is the operator's own top-level glance

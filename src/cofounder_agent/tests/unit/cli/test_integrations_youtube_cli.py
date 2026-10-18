@@ -1296,3 +1296,79 @@ def test_short_package_failures_and_refusals_exit_non_zero(runner, monkeypatch):
     _stub_packages(monkeypatch, [], exc=ValueError("--title/--description need --post naming exactly one Short; 9 matched"))
     res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "short-package", "--title", "x"])
     assert res.exit_code == 1 and "exactly one Short" in res.output
+
+
+# ---------------------------------------------------------------------------
+# youtube performance — the read-only per-video report
+# ---------------------------------------------------------------------------
+
+
+def _stub_performance(monkeypatch, perf):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.youtube_performance as yp
+
+    calls: list[dict[str, Any]] = []
+
+    async def _channel_performance(_pool, **kw):
+        calls.append(kw)
+        return perf
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(yp, "channel_performance", _channel_performance)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    return calls
+
+
+def _perf(videos, *, sources=None, terms=None):
+    import datetime as dt
+
+    from poindexter.services.youtube_performance import ChannelPerformance
+
+    return ChannelPerformance(
+        start=dt.date(2026, 9, 20), end=dt.date(2026, 10, 17), videos=videos,
+        sources=sources or {}, search_terms=terms or [],
+    )
+
+
+def _video(**kw):
+    from poindexter.services.youtube_performance import VideoPerformance
+
+    base = dict(video_id="vidA", medium="short", title="A Short", duration_seconds=40.0)
+    base.update(kw)
+    return VideoPerformance(**base)  # type: ignore[arg-type]
+
+
+def test_performance_lists_views_retention_sources_and_terms(runner, monkeypatch):
+    calls = _stub_performance(monkeypatch, _perf(
+        [_video(views=20, watch_minutes=4, subscribers_gained=2, impressions=100, impression_clicks=4)],
+        sources={"Shorts feed": 15, "YouTube search": 5},
+        terms=[("gpu undervolting", 5)],
+    ))
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "performance", "--days", "28"])
+    assert res.exit_code == 0, res.output
+    assert calls == [{"days": 28}]
+    line = next(ln for ln in res.output.splitlines() if ln.startswith("vidA"))
+    # 20 views, 12 s average of a 40 s Short = 30% kept, +2 subs, 4% CTR.
+    assert line.split()[:8] == ["vidA", "short", "20", "12", "30%", "+2", "100", "4%"]
+    assert "short: 1 videos, 20 views (20.0 per video)" in res.output
+    assert "Shorts feed" in res.output and "75%" in res.output
+    assert "gpu undervolting" in res.output
+
+
+def test_performance_says_when_views_have_not_landed_yet(runner, monkeypatch):
+    _stub_performance(monkeypatch, _perf([_video(impressions=50, impression_clicks=1)]))
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "performance"])
+    assert res.exit_code == 0, res.output
+    assert "No views recorded yet" in res.output
+    assert "per video)" not in res.output  # no all-zero per-type summary
+
+
+def test_performance_with_no_rows(runner, monkeypatch):
+    _stub_performance(monkeypatch, _perf([]))
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "performance"])
+    assert res.exit_code == 0, res.output
+    assert "No YouTube rows in this window" in res.output

@@ -177,8 +177,9 @@ exactly one video, since either would upload text nobody reviewed.
 
 The [`youtube_reach` tap](../integrations/tap_youtube_reporting.md) lands
 thumbnail impressions and thumbnail click-through rate per video per day in
-`external_metrics`. To compare CTR before and after a video got its custom
-thumbnail:
+`external_metrics` (`poindexter integrations youtube performance` and the
+YouTube Grafana board show it per video). To compare CTR before and after a
+video got its custom thumbnail:
 
 ```sql
 WITH set_at AS (

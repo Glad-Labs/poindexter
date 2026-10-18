@@ -6,6 +6,12 @@ packaging change (a custom thumbnail, a new title style) could not be measured.
 The reach report carries thumbnail impressions and click-through rate per video
 per day, which is the number a thumbnail exists to move.
 
+One row subscribes to one report. Since 2026-10-18 three are seeded:
+``youtube_reach`` (reach), ``youtube_activity`` (``channel_basic_a3``: views,
+watch time, subscribers) and ``youtube_traffic`` (``channel_traffic_source_a3``:
+traffic sources and search terms), each under its own ``source``.
+``services/youtube_performance.py`` reads all three.
+
 ## How the Reporting API delivers data
 
 (https://developers.google.com/youtube/reporting/v1/reports)

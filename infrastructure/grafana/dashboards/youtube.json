@@ -1,0 +1,567 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Mission Control",
+      "tooltip": "Top-level operator overview",
+      "type": "link",
+      "url": "/d/mission-control"
+    }
+  ],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "All views in the window, from the youtube_activity tap (channel_basic_a3). YouTube's reports trail by about two days, so the last two days read low.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "Views",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(metric_value), 0)::float AS \"Views\" FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) AND metric_name = 'views'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Hours watched in the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 2,
+      "title": "Watch time",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(metric_value) / 60, 0)::float AS \"Watch hours\" FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) AND metric_name = 'watch_time_minutes'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Subscribers gained minus lost in the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 3,
+      "title": "Net subscribers",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(CASE metric_name WHEN 'subscribers_gained' THEN metric_value WHEN 'subscribers_lost' THEN -metric_value END), 0)::float AS \"Net subscribers\" FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) AND metric_name IN ('subscribers_gained', 'subscribers_lost')",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Views divided by the number of Shorts that had any views in the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "title": "Views per Short",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(metric_value) / nullif(count(DISTINCT dimensions->>'video_id'), 0), 0)::float AS \"Views per Short\" FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) AND metric_name = 'views' AND dimensions->>'medium' = 'short'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Views divided by the number of long videos that had any views in the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "id": 5,
+      "title": "Views per long video",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(sum(metric_value) / nullif(count(DISTINCT dimensions->>'video_id'), 0), 0)::float AS \"Views per long video\" FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) AND metric_name = 'views' AND dimensions->>'medium' = 'long'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Share of thumbnail impressions that became a view, from the youtube_reach tap. Each day's rate is weighted by that day's impressions. Shorts-feed swipes are not thumbnail impressions, so this is mostly long videos and browse.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 6,
+      "title": "Thumbnail CTR",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT (sum(imp * coalesce(ctr, 0)) / nullif(sum(imp), 0))::float AS \"CTR\" FROM (SELECT date, dimensions->>'video_id' AS vid, max(metric_value) FILTER (WHERE metric_name = 'video_thumbnail_impressions') AS imp, max(metric_value) FILTER (WHERE metric_name = 'video_thumbnail_impressions_ctr') AS ctr FROM external_metrics WHERE source = 'youtube' AND $__timeFilter(date) GROUP BY 1, 2) d",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Views per day by video type. Views spike on upload days and fall to near zero between them, so a steady upload rhythm shows here first.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 7,
+      "title": "Daily views \u2014 Shorts vs long",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date::timestamp AS time, coalesce(dimensions->>'medium', 'unknown') AS metric, sum(metric_value)::float AS value FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) AND metric_name = 'views' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "fillOpacity": 80,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "One row per video in the window. 'Avg view s' is watch time / views. 'Kept %' is that over the video's length (media_assets.duration_ms; blank for videos the pipeline did not render). Averages are derived here, never summed from the report's own average columns, because the report splits each day by country and subscriber status.",
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 8,
+      "title": "Per video \u2014 views, retention, reach",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH a AS (SELECT dimensions->>'video_id' AS vid, max(dimensions->>'medium') AS medium, sum(metric_value) FILTER (WHERE metric_name = 'views') AS views, sum(metric_value) FILTER (WHERE metric_name = 'watch_time_minutes') AS mins, sum(metric_value) FILTER (WHERE metric_name = 'subscribers_gained') - coalesce(sum(metric_value) FILTER (WHERE metric_name = 'subscribers_lost'), 0) AS subs, sum(metric_value) FILTER (WHERE metric_name = 'likes') AS likes FROM external_metrics WHERE source = 'youtube_activity' AND $__timeFilter(date) GROUP BY 1), r AS (SELECT vid, max(medium) AS medium, sum(imp) AS imp, sum(imp * coalesce(ctr, 0)) AS clicks FROM (SELECT date, dimensions->>'video_id' AS vid, max(dimensions->>'medium') AS medium, max(metric_value) FILTER (WHERE metric_name = 'video_thumbnail_impressions') AS imp, max(metric_value) FILTER (WHERE metric_name = 'video_thumbnail_impressions_ctr') AS ctr FROM external_metrics WHERE source = 'youtube' AND $__timeFilter(date) GROUP BY 1, 2) d GROUP BY 1), m AS (SELECT DISTINCT ON (ma.platform_video_ids->>'youtube') ma.platform_video_ids->>'youtube' AS vid, ma.duration_ms, coalesce(nullif(ma.metadata->'youtube_package'->>'title', ''), p.title, ma.title) AS title FROM media_assets ma LEFT JOIN posts p ON p.id = ma.post_id WHERE ma.platform_video_ids ? 'youtube' ORDER BY ma.platform_video_ids->>'youtube', ma.updated_at DESC NULLS LAST) SELECT coalesce(m.title, coalesce(a.vid, r.vid)) AS \"Video\", coalesce(a.medium, r.medium, 'unknown') AS \"Type\", coalesce(a.views, 0)::float AS \"Views\", round((a.mins * 60 / nullif(a.views, 0))::numeric, 0)::float AS \"Avg view s\", round((100 * a.mins * 60 / nullif(a.views, 0) / nullif(m.duration_ms / 1000.0, 0))::numeric, 0)::float AS \"Kept %\", coalesce(a.subs, 0)::float AS \"Net subs\", coalesce(a.likes, 0)::float AS \"Likes\", coalesce(r.imp, 0)::float AS \"Impressions\", round((100 * r.clicks / nullif(r.imp, 0))::numeric, 1)::float AS \"CTR %\", 'https://youtu.be/' || coalesce(a.vid, r.vid) AS \"Link\" FROM a FULL OUTER JOIN r ON r.vid = a.vid LEFT JOIN m ON m.vid = coalesce(a.vid, r.vid) ORDER BY 3 DESC, 8 DESC",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Views and watch minutes by traffic source (youtube_traffic tap, channel_traffic_source_a3).",
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 9,
+      "title": "Where the views come from",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE dimensions->>'traffic_source_type' WHEN '0' THEN 'direct or unknown' WHEN '1' THEN 'YouTube advertising' WHEN '3' THEN 'browse features' WHEN '4' THEN 'channel pages' WHEN '5' THEN 'YouTube search' WHEN '7' THEN 'suggested videos' WHEN '8' THEN 'other YouTube features' WHEN '9' THEN 'external websites' WHEN '11' THEN 'cards and annotations' WHEN '14' THEN 'playlists' WHEN '17' THEN 'notifications' WHEN '18' THEN 'playlist pages' WHEN '20' THEN 'end screens' WHEN '24' THEN 'Shorts feed' WHEN '26' THEN 'hashtag pages' WHEN '32' THEN 'related in the Shorts player' ELSE 'source ' || coalesce(dimensions->>'traffic_source_type', '?') END AS \"Source\", sum(metric_value) FILTER (WHERE metric_name = 'views')::float AS \"Views\", round(sum(metric_value) FILTER (WHERE metric_name = 'watch_time_minutes')::numeric, 0)::float AS \"Watch min\" FROM external_metrics WHERE source = 'youtube_traffic' AND $__timeFilter(date) GROUP BY 1 ORDER BY 2 DESC NULLS LAST",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "fields": ""
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "What people typed into YouTube search before watching (traffic source 5). The words to put in titles.",
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 10,
+      "title": "Top YouTube search terms",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT dimensions->>'traffic_source_detail' AS \"Search term\", sum(metric_value)::float AS \"Views\" FROM external_metrics WHERE source = 'youtube_traffic' AND metric_name = 'views' AND $__timeFilter(date) AND dimensions->>'traffic_source_type' = '5' AND coalesce(dimensions->>'traffic_source_detail', '') <> '' GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 25",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "fields": ""
+        }
+      }
+    }
+  ],
+  "refresh": "1h",
+  "schemaVersion": 39,
+  "tags": ["youtube", "distribution", "video"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-28d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "YouTube",
+  "uid": "youtube",
+  "version": 1,
+  "weekStart": "",
+  "description": "CHARTER: how the YouTube channel is doing and why. Views, watch time, retention and subscribers per video (youtube_activity tap), where views come from and which searches found them (youtube_traffic), and thumbnail reach (youtube_reach). All three are YouTube Reporting API reports landed in external_metrics; they trail by about two days."
+}

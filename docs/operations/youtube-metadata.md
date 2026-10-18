@@ -166,11 +166,11 @@ re-consent that named only a new scope used to drop the old ones: running
 grant from Google and requests it again alongside anything new, and it prints
 each scope with the feature it unlocks. `--reset-scopes` narrows on purpose.
 
-| Flag               | Scope added             | Unlocks                                                                                           |
-| ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------- |
-| _(none)_           | `youtube.upload`        | uploads, custom thumbnails                                                                        |
-| `--with-update`    | `youtube.force-ssl`     | `youtube sync-metadata` (`videos.update`)                                                         |
-| `--with-analytics` | `yt-analytics.readonly` | the [`youtube_reach` tap](/docs/integrations/tap_youtube_reporting) (thumbnail impressions + CTR) |
+| Flag               | Scope added             | Unlocks                                                                                                           |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| _(none)_           | `youtube.upload`        | uploads, custom thumbnails                                                                                        |
+| `--with-update`    | `youtube.force-ssl`     | `youtube sync-metadata` (`videos.update`)                                                                         |
+| `--with-analytics` | `yt-analytics.readonly` | the [YouTube reporting taps](/docs/integrations/tap_youtube_reporting): reach, views, watch time, traffic sources |
 
 `poindexter integrations youtube scopes` shows what the stored token holds
 right now. It asks Google with one refresh exchange; it does not read code.

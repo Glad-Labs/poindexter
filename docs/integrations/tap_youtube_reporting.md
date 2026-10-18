@@ -1,6 +1,16 @@
 # Handler: `tap.youtube_reporting`
 
-Pull YouTube Reporting API bulk reports and land them in `external_metrics`, through the same [`external_metrics_writer`](/docs/integrations/tap_external_metrics_writer) every other metrics tap uses. The seeded row, `youtube_reach`, reads the **reach report**: thumbnail impressions and thumbnail click-through rate per video per day. A thumbnail exists to move exactly that number, and before this tap no YouTube number reached the database at all.
+Pull YouTube Reporting API bulk reports and land them in `external_metrics`, through the same [`external_metrics_writer`](/docs/integrations/tap_external_metrics_writer) every other metrics tap uses. One `external_taps` row subscribes to one report. Three rows are seeded:
+
+| Row                | Report                      | `source`           | What it holds                                                                              |
+| ------------------ | --------------------------- | ------------------ | ------------------------------------------------------------------------------------------ |
+| `youtube_reach`    | `channel_reach_basic_a1`    | `youtube`          | Thumbnail impressions and thumbnail click-through rate.                                    |
+| `youtube_activity` | `channel_basic_a3`          | `youtube_activity` | Views, engaged views, watch minutes, likes, comments, shares, subscribers gained and lost. |
+| `youtube_traffic`  | `channel_traffic_source_a3` | `youtube_traffic`  | Views and watch minutes per traffic source; for YouTube search, the search term.           |
+
+Until 2026-10-18 only `youtube_reach` existed. A Short is mostly watched from the Shorts feed, where a swipe is not a thumbnail impression, so the one number collected missed most of the channel, and nothing read it. The activity and traffic rows close that gap, and [`youtube_performance`](#reading-it) reads all three.
+
+**Each row writes its own `source`.** Both new reports have a `views` column, and a shared source would let anything summing `views` count every view twice.
 
 ## How the Reporting API delivers data
 
@@ -12,6 +22,8 @@ From Google's [bulk reports guide](https://developers.google.com/youtube/reporti
 - A corrected day arrives as a NEW report with a new id. The writer's natural-key upsert makes it overwrite the earlier value.
 
 ## Row configuration
+
+The `youtube_reach` row; the other two differ only in `name`, `tap_type` and `config`.
 
 ```
 name:             youtube_reach
@@ -74,22 +86,25 @@ failing run raises a finding at most once per `findings.tap_failure.cooldown_min
 ## Failure posture
 
 - **YouTube publishing not set up** (`plugin.publish_adapter.youtube.enabled` false or the OAuth secrets missing): a quiet 0-record run. Most installs never publish to YouTube, so that zero is legitimate.
-- **Missing scope or disabled API:** the run raises with the fix above. The tap runner records it on the row (`poindexter taps show youtube_reach`) and raises a `tap_failure` finding, routed from `tap_failure_alert_after_consecutive` failures on.
+- **Missing scope or disabled API:** the run raises with the fix above. The tap runner records it on the row (`poindexter taps show <row>`) and raises a `tap_failure` finding, routed from `tap_failure_alert_after_consecutive` failures on.
 - **Anything else** (5xx, network): raises and retries on the next run. Landed reports are remembered one at a time, so a run that dies half-way resumes where it stopped.
+
+## Split rows: store counts, derive averages
+
+`channel_basic_a3` and `channel_traffic_source_a3` split each video's day by `live_or_on_demand`, `subscribed_status` and `country_code` (the traffic report also by `traffic_source_type` and `traffic_source_detail`). Those columns are all in the rows' `dimension_fields`, so they are part of the writer's natural key and one split row never overwrites the next.
+
+Only additive counts are stored. The reports also carry `average_view_duration_seconds` and `average_view_duration_percentage`, but each is the average of one split row, and summing them across rows gives nonsense. Average view duration is therefore watch minutes × 60 / views, and retention is that over the video's length from `media_assets.duration_ms`. A video the pipeline did not render has no length there, so it has no retention.
+
+`traffic_source_type` is a numeric code (`5` = YouTube search, `7` = suggested videos, `24` = Shorts feed; the full table is in [the dimensions reference](https://developers.google.com/youtube/reporting/v1/reports/dimensions) and in `services/youtube_performance.py::TRAFFIC_SOURCE_NAMES`). For code `5`, `traffic_source_detail` is the search term.
 
 ## Reading it
 
-```sql
--- Thumbnail CTR per video over its reported days, with the post it belongs to.
-SELECT p.title,
-       m.dimensions->>'medium'  AS medium,
-       sum(m.metric_value) FILTER (WHERE m.metric_name = 'video_thumbnail_impressions') AS impressions,
-       avg(m.metric_value) FILTER (WHERE m.metric_name = 'video_thumbnail_impressions_ctr') AS avg_daily_ctr
-  FROM external_metrics m
-  LEFT JOIN posts p ON p.id = m.post_id
- WHERE m.source = 'youtube'
- GROUP BY 1, 2
- ORDER BY impressions DESC NULLS LAST;
+```bash
+poindexter integrations youtube performance --days 28
 ```
 
-The docs do not say whether `video_thumbnail_impressions_ctr` is a fraction or a percentage. The handler stores the value exactly as delivered. Compare the first reports with YouTube Studio's Reach tab before building thresholds on it.
+prints, per video, views, average view seconds, the share kept, net subscribers, thumbnail impressions and CTR, then views by type, where the views came from, and the top search terms. The **YouTube** Grafana board (`/d/youtube`) shows the same numbers over the dashboard's time range. Both read through `services/youtube_performance.py` (the board repeats its SQL), so the same rules apply to each.
+
+`video_thumbnail_impressions_ctr` is a **fraction**: measured values run 0.005–0.25 (a Short with 293 impressions at 0.0443 is 13 clicks). It is a per-day rate, so a window's CTR weights each day by its impressions rather than averaging the days.
+
+YouTube's reports trail by about two days, so the last two days of any window read low.
