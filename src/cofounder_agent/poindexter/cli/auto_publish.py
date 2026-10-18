@@ -16,6 +16,8 @@ Subcommands:
   Shows when the trailing-N clean-run criterion is satisfied.
 - ``decisions`` — recent gate decisions from audit_log with would_fire
   + reason text.
+- ``taste`` — how often the advisory taste review (services.taste_review)
+  agrees with the operator's approve/reject decisions.
 """
 
 from __future__ import annotations
@@ -362,3 +364,48 @@ async def _run_decisions(last_n: int, would_fire_only: bool, as_json: bool) -> N
 
 
 __all__ = ["auto_publish_group"]
+
+
+@auto_publish_group.command("taste")
+@click.option(
+    "--days", type=int, default=60,
+    help="Look back this many days of taste reviews (default 60).",
+)
+@click.option(
+    "--json", "as_json", is_flag=True,
+    help="Emit JSON for LLM/script consumers.",
+)
+def cmd_taste(days: int, as_json: bool) -> None:
+    """How often the advisory taste review agrees with your decisions.
+
+    The review (services.taste_review) puts a verdict in each approval
+    message. This compares it with what you then decided; "leaked" (it said
+    approve, you rejected) is the number that decides whether it can ever
+    gate auto-publish.
+    """
+    asyncio.run(_run_taste(days, as_json))
+
+
+async def _run_taste(days: int, as_json: bool) -> None:
+    from poindexter.services.taste_review import agreement
+
+    pool = await _open_pool()
+    try:
+        out = await agreement(pool, days=days)
+    finally:
+        await close_cli_pool(pool)
+    if as_json:
+        click.echo(json.dumps(out, indent=2, default=str))
+        return
+    decided = out["both_approve"] + out["both_reject"] + len(out["leaked"]) + len(out["over_strict"])
+    click.echo(f"Taste review vs your decisions, last {days} days: {decided} decided, {out['pending']} awaiting you")
+    if not decided:
+        click.echo("(nothing decided yet; the review writes one row per draft that reaches awaiting_approval)")
+        return
+    click.echo(f"  agreed:        {out['both_approve']} approve, {out['both_reject']} reject")
+    click.echo(f"  leaked:        {len(out['leaked'])} (it said approve, you rejected)")
+    click.echo(f"  over-strict:   {len(out['over_strict'])} (it said reject, you published)")
+    for item in out["leaked"]:
+        click.echo(f"    leaked       {item['task_id'][:8]}  {item['topic'][:70]}")
+    for item in out["over_strict"]:
+        click.echo(f"    over-strict  {item['task_id'][:8]}  {item['topic'][:60]}  ({(item['reason'] or '')[:60]})")

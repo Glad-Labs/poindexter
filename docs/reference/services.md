@@ -263,6 +263,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `task_failure_alerts.py` | Task-failure alert dedup + severity routing. |
 | `tasks_db.py` | Tasks Database Module |
 | `tasks_mcp.py` | ``services.tasks_mcp`` — read helpers for the MCP server's task tools. |
+| `taste_review.py` | Advisory taste review: would the operator approve this draft? |
 | `telegram_config.py` | Telegram configuration — single source of truth. |
 | `telemetry.py` | — |
 | `template_runner.py` | TemplateRunner — LangGraph-based orchestration backbone (v1 POC). |

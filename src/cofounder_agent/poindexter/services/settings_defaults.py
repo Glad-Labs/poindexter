@@ -2455,6 +2455,18 @@ DEFAULTS: dict[str, str] = {
     # scoring an otherwise-clean draft. Default 5 (was a hard-coded 10): soft
     # nits should nudge the score, not sink a clean post under the QA gate.
     'qa_validator_warning_penalty': '5.0',
+    # Advisory taste review (services/taste_review.py): a judge reads each draft
+    # that reaches awaiting_approval against the operator's own rubric and puts
+    # its verdict in the approval message. Off until a niche is listed AND a
+    # rubric is written (the operator's taste, from their rejection reasons). The
+    # model defaults to the local writer; the 2026-10-17 eval found a local 31B
+    # no better than the score gate, so a stronger model is worth pinning here.
+    'taste_review_niches': '',
+    'taste_review_rubric': '',
+    'taste_review_model': '',
+    'taste_review_recent_titles': '40',
+    'taste_review_max_tokens': '6000',
+    'taste_review_timeout_seconds': '180',
     'title_max_length': '90',
     # Draft excerpt size for the TITLE-GENERATION digest (content.generate_title
     # + seo.generate_all_metadata prompts; excerpt + section-heading skeleton).
@@ -8315,6 +8327,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_title_similarity_threshold': {'owner': 'title_generation', 'value_type': 'float'},
     'qa_topic_dedup_hours': {'value_type': 'integer'},
     'qa_validator_warning_penalty': {'owner': 'qa_programmatic', 'value_type': 'float'},
+    'taste_review_niches': {'owner': 'taste_review'},
+    'taste_review_rubric': {'owner': 'taste_review'},
+    'taste_review_model': {'owner': 'taste_review'},
+    'taste_review_recent_titles': {'owner': 'taste_review', 'value_type': 'integer'},
+    'taste_review_max_tokens': {'owner': 'taste_review', 'value_type': 'integer'},
+    'taste_review_timeout_seconds': {'owner': 'taste_review', 'value_type': 'integer'},
     'qa_web_factcheck_match_ratio': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_web_factcheck_max_claims': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_web_factcheck_min_term_len': {'owner': 'multi_model_qa', 'value_type': 'integer'},

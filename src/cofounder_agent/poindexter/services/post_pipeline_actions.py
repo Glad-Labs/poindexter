@@ -27,7 +27,8 @@ operator-visible side-effects to run:
 4. Operator notification — a single Discord-or-Telegram message
    that links to the rendered preview (``services.preview_links``, the
    operator's tailnet URL) and quotes the in-graph ``rendered_preview``
-   vision verdict when ``qa.vision`` produced one.
+   vision verdict when ``qa.vision`` produced one, and the advisory taste
+   review's verdict (``services.taste_review``) when the niche opts in.
 
 These steps used to live inline in
 ``services/task_executor.py::_process_loop`` (lines 678-810 before
@@ -566,9 +567,25 @@ async def _notify_operator(
     # through so Prefect subprocesses + the worker share the same base URL.
     preview_url = operator_preview_url(site_config, preview_token)
     preview_qa_note = _rendered_preview_note(result)
+    # The advisory taste review (services.taste_review): its verdict next to
+    # the preview turns a full read into a glance. Off unless the niche opts
+    # in; a failed review never holds the notification back.
+    taste_note = ""
+    try:
+        from poindexter.services.taste_review import note_for, review_draft
+
+        taste_note = note_for(await review_draft(
+            pool=getattr(database_service, "pool", None), site_config=site_config, task_id=task_id,
+        ))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[POST_PIPELINE] taste review failed for %s (non-critical): %s", task_id, exc,
+        )
 
     msg = f"Awaiting approval: \"{topic}\"\n"
     msg += f"Score: {quality_score:.0f}/100\n"
+    if taste_note:
+        msg += taste_note + "\n"
     if preview_qa_note:
         msg += preview_qa_note + "\n"
     if preview_url:

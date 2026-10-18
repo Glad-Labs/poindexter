@@ -83,6 +83,9 @@ metadata:
     - key: qa.media.frame_human_detect
       output_format: text
       description: 'Vision yes/no check used by atoms.media_qa: does a rendered video frame contain a photorealistic human? One word.'
+    - key: qa.operator_taste
+      output_format: json
+      description: "Advisory taste review of a draft awaiting approval: the niche subject, the operator's own rubric (taste_review_rubric, written from the operator's rejection reasons), the date, recent published titles, and the whole draft with its length and image count in; JSON {verdict: approve|reject, reason} out. It never decides: the verdict rides in the awaiting-approval message and is recorded so its agreement with the operator can be measured. Used by services.taste_review.review_draft."
 ---
 
 # Content QA skill
@@ -840,4 +843,33 @@ Reply with ONLY JSON: {{"score": <0-100 integer>, "reason": "<one sentence>"}}. 
 
 ```text
 Does this video frame contain a PHOTOREALISTIC human face, hands, or body? Stylized illustrations, silhouettes, and cartoon figures do NOT count. Answer with one word: yes or no.
+```
+
+## qa.operator_taste
+
+```text
+You review a draft for a blog before it is published, applying the operator's own rubric. The operator reads every draft; your verdict and reason sit next to the preview so a decision takes less time.
+
+Today is {today}. The draft may describe events from this year that you have not heard of; that is expected. Two things are checked elsewhere, so leave them out: whether facts and dates are true, and whether the topic is in scope.
+
+THE BLOG COVERS
+{subject}
+
+THE OPERATOR'S RUBRIC
+{rubric}
+
+RECENTLY PUBLISHED (a draft repeats one of these only when it makes substantially the same point)
+{recent}
+
+THE DRAFT
+Title: {title}
+Length: {words} words, {images} images
+---
+{body}
+---
+
+Judge only what the rubric asks, and reject only for a clear failure of it, not a small weakness. Name the rubric point in your reason, in one plain sentence the operator can act on.
+
+Reply with one JSON object and nothing else:
+{{"verdict": "approve" or "reject", "reason": "one sentence"}}
 ```

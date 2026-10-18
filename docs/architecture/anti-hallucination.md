@@ -1797,6 +1797,30 @@ both are no-ops on clean output and the gate is DB-toggleable via
 - **Prompt-level fabrication discipline** in the public OSS release.
   The freemium prompt gap is intentional; production-grade
   fabrication-avoidance language ships in Glad Labs Premium Prompts.
+- **Taste.** A draft can clear every rail and still be one the operator
+  rejects: off topic, dull, a theme the blog has already covered, or someone
+  else's work told as our own. On glad-labs the auto-publish gate passed 24
+  drafts in 90 days and the operator rejected 9 of them (2026-10-17).
+
+### The advisory taste review (2026-10-17)
+
+`services/taste_review.py` reads each draft that reaches
+`awaiting_approval` against the operator's own rubric
+(`taste_review_rubric`, written from the operator's rejection reasons) and puts a
+verdict and a one-line reason in the approval message (`Taste check: reject:
+…`). It never approves or rejects anything. Each verdict is written to
+`audit_log` as `operator_taste_review`, and `poindexter auto-publish taste`
+compares those rows with the task's final status: **leaked** (it said approve,
+the operator rejected) is the number that decides whether it may ever gate
+auto-publish. Off unless the niche is in `taste_review_niches` and a rubric is
+set; the model is `taste_review_model` (empty = the local writer).
+
+Measured before it shipped, on a held-out half of the operator's past
+decisions (the rubric came from the other half): a local 31B judge was no
+better than the score gate (11 of its 32 passes were drafts the operator rejected), and
+Claude Sonnet caught all 20 reasoned rejections but passed only 4 of 20
+approvals, all from an earlier, broader scope. Live agreement on current
+drafts is the evidence that counts.
 
 ## Judge model identity (2026-09-09)
 
