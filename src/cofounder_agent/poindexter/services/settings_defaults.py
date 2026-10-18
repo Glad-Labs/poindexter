@@ -904,6 +904,17 @@ DEFAULTS: dict[str, str] = {
     # from Partner Program channels; elsewhere the upload still succeeds and a
     # youtube_thumbnail_failed finding says to set this false.
     'youtube_short_custom_thumbnail_enabled': 'true',
+    # Upload slots (services/youtube_upload_slots.py, 2026-10-18). An approved
+    # video is uploaded right away but private with publishAt, so YouTube makes
+    # it public at the next free slot for its type (operator_timezone), never
+    # two of a type in one slot. A type with no times publishes immediately.
+    # Before this, videos went public whenever they were approved and views
+    # fell to almost nothing between uploads.
+    'youtube_upload_slots_enabled': 'true',
+    'youtube_upload_slots': 'short=12:00,19:00; long=17:00',
+    # A slot must be at least this far ahead: YouTube needs publishAt in the
+    # future, and the upload itself takes minutes.
+    'youtube_upload_slot_min_lead_minutes': '30',
     # Free VRAM the render insists on before starting a chunk; below it the
     # shot falls back rather than OOM-ing the card mid-video.
     # Minimum usable VRAM (free + ComfyUI's reusable pool) before a presenter
@@ -6964,6 +6975,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_short_thumbnail_max_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'video_short_thumbnail_min_font_px': {'owner': 'video_thumbnail', 'value_type': 'integer'},
     'youtube_short_custom_thumbnail_enabled': {'owner': 'media_distribute', 'value_type': 'boolean'},
+    'youtube_upload_slots_enabled': {'owner': 'youtube_upload_slots', 'value_type': 'boolean'},
+    'youtube_upload_slots': {'owner': 'youtube_upload_slots', 'value_type': 'string'},
+    'youtube_upload_slot_min_lead_minutes': {'owner': 'youtube_upload_slots', 'value_type': 'integer'},
     'video_presenter_min_free_vram_gb': {'owner': 'video', 'value_type': 'float'},
     'video_presenter_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},
     'video_hero_reclaim_wait_s': {'owner': 'video', 'value_type': 'integer'},

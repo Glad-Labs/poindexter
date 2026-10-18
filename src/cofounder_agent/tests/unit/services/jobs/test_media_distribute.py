@@ -44,6 +44,13 @@ def _no_live_video_feed_render(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_upload_slot(monkeypatch):
+    """Publish immediately unless a test picks a slot (``md.next_upload_slot``)."""
+    monkeypatch.setattr(md, "next_upload_slot", AsyncMock(return_value=None))
+    monkeypatch.setattr(md, "record_slot", AsyncMock())
+
+
 class _FakeTxn:
     """``conn.transaction()`` async-context stand-in (no-op begin/commit)."""
 
@@ -1342,3 +1349,52 @@ def test_approved_undispatched_sql_offers_standalone_videos():
     sql = " ".join(md._APPROVED_UNDISPATCHED_SQL.split())
     assert "UNION ALL" in sql
     assert "WHERE ma.post_id IS NULL AND ma.status = 'approved'" in sql
+
+
+# --------------------------------------------------------------------------
+# Upload slots (2026-10-18): an upload goes public at its slot, not at approval
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_slotted_upload_is_scheduled_and_its_slot_stamped():
+    import datetime as dt
+
+    slot = dt.datetime(2026, 10, 18, 16, 0, tzinfo=dt.timezone.utc)
+    md.next_upload_slot.return_value = slot
+    pool = _thumb_pool(None)
+    row = {**_thumb_row(), "asset_id": "a1"}
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID9", "url": "u"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=True)
+    assert dispatch.await_args.args[2]["scheduled_at"] == "2026-10-18T16:00:00Z"
+    assert md.next_upload_slot.await_args.kwargs == {"shorts": True}
+    md.record_slot.assert_awaited_once_with(pool, "a1", slot)
+
+
+@pytest.mark.asyncio
+async def test_no_slot_publishes_now_and_stamps_nothing():
+    pool = _thumb_pool(None)
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID9", "url": "u"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), {**_thumb_row(), "asset_id": "a1"}, shorts=False)
+    assert "scheduled_at" not in dispatch.await_args.args[2]
+    md.record_slot.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_upload_does_not_hold_the_slot():
+    import datetime as dt
+
+    md.next_upload_slot.return_value = dt.datetime(2026, 10, 18, 16, tzinfo=dt.timezone.utc)
+    pool = _thumb_pool(None)
+    dispatch = AsyncMock(return_value={"success": False, "error": "quota"})
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), {**_thumb_row(), "asset_id": "a1"}, shorts=True)
+    md.record_slot.assert_not_awaited()

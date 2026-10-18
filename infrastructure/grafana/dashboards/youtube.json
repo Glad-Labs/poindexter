@@ -545,6 +545,47 @@
           "fields": ""
         }
       }
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Videos uploaded but still private, waiting for their slot (youtube_upload_slots). YouTube makes each public at the time shown, operator-local. Empty when nothing is queued.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT (ma.metadata->>'youtube_publish_at')::timestamptz AS \"Goes public\", CASE ma.type WHEN 'video_short' THEN 'short' ELSE 'long' END AS \"Type\", coalesce(nullif(ma.metadata->'youtube_package'->>'title', ''), p.title, ma.title) AS \"Video\", 'https://youtu.be/' || (ma.platform_video_ids->>'youtube') AS \"Link\" FROM media_assets ma LEFT JOIN posts p ON p.id = ma.post_id WHERE ma.metadata ? 'youtube_publish_at' AND (ma.metadata->>'youtube_publish_at')::timestamptz > now() ORDER BY 1"
+        }
+      ],
+      "title": "Queued to go public",
+      "type": "table"
     }
   ],
   "refresh": "1h",

@@ -26,6 +26,31 @@ the 12 uploads to that point carried the entire stripped article as one
 4,800-character paragraph, complete with raw markdown, a duplicated opener,
 and a mid-word truncation.
 
+## When an upload goes public: upload slots
+
+Since 2026-10-18 an approved video no longer goes public the moment it is
+approved (`services/youtube_upload_slots.py`). Before, uploads landed at
+whatever hour the approval happened, and daily views spiked on upload days and
+fell to almost nothing between them.
+
+The upload still happens right after approval, but **private with
+`publishAt`**: YouTube's own scheduled publishing makes it public at the next
+free slot for its type, so nothing of ours has to be running at slot time.
+`youtube_upload_slots` lists the times, operator-local (`operator_timezone`):
+`short=12:00,19:00; long=17:00` as seeded. Each upload takes the earliest slot
+at least `youtube_upload_slot_min_lead_minutes` (30) away that no other upload
+of the same type holds, so an evening of approvals spreads over the following
+slots. A type with no times, `youtube_upload_slots_enabled=false`, or no free
+slot within 14 days publishes immediately, as before. The chosen time is stamped
+on `media_assets.metadata.youtube_publish_at`; the YouTube board's "Queued to go
+public" table lists what is waiting. The slot scan is the social scheduler's
+(`social_drafts.next_prime_slot`), so both queues pick slots the same way.
+
+One visible gap: the Short and the long form link to each other once both are
+uploaded, so for the hours between their two slots one of those links opens a
+video that is not public yet. The link is still written at upload time, because
+nothing rewrites descriptions when a video goes public.
+
 ## Editing videos already on the channel
 
 ```bash

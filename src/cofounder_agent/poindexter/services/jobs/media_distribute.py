@@ -78,6 +78,7 @@ from poindexter.services.media_approval_service import (
     record_pending_standalone,
 )
 from poindexter.services.video_r2_mirror import run_video_r2_mirror
+from poindexter.services.youtube_upload_slots import next_upload_slot, record_slot, rfc3339
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -588,6 +589,13 @@ async def _dispatch_asset(
         if thumbnail_path:
             payload["thumbnail_path"] = thumbnail_path
 
+    # Upload slot (services/youtube_upload_slots.py): uploaded now, private
+    # with publishAt, so YouTube makes it public at the next free slot for
+    # this type instead of the moment it was approved. None = public now.
+    publish_at = await next_upload_slot(pool, site_config, shorts=shorts)
+    if publish_at is not None:
+        payload["scheduled_at"] = rfc3339(publish_at)
+
     from poindexter.services.publishing_adapters_db import record_adapter_run
 
     results: list[_PlatformDispatchResult] = []
@@ -628,6 +636,14 @@ async def _dispatch_asset(
                     platform, _subject(row), shorts, result.get("post_id"),
                 )
                 await _record(True)
+                if publish_at is not None and row.get("asset_id"):
+                    try:
+                        await record_slot(pool, row["asset_id"], publish_at)
+                    except Exception as exc:  # noqa: BLE001 — the upload landed; a lost stamp only risks a shared slot
+                        logger.warning(
+                            "[MEDIA_DISTRIBUTE] slot stamp failed for %s: %s",
+                            row["asset_id"], describe_exception(exc),
+                        )
                 if payload.get("thumbnail_path"):
                     await _record_thumbnail_outcome(
                         pool, task_id=task_id, post_id=_subject(row),
