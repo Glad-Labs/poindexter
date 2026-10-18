@@ -375,6 +375,18 @@ docker exec poindexter-worker python -m poindexter.cli integrations youtube play
 docker exec poindexter-worker python -m poindexter.cli integrations youtube playlists --apply
 ```
 
+**Shelves on the channel page** (2026-10-18). Each playlist is also shown as a
+section on the channel home page, in the order of `youtube_playlists`
+(`youtube_playlist_shelves_enabled`; `channelSections.insert`, 50 units). A
+placement that adds a video checks the shelves afterwards, so a playlist created
+by its first video gets its shelf the same run; one that already has a shelf is
+left alone. The channel had no sections at all before this.
+
+```bash
+docker exec poindexter-worker python -m poindexter.cli integrations youtube playlists --shelves          # dry run
+docker exec poindexter-worker python -m poindexter.cli integrations youtube playlists --shelves --apply
+```
+
 ## Long-form vs Short: titles, descriptions, cross-links
 
 A post can produce both a long-form video and a Short. Until 2026-09-22 the

@@ -930,6 +930,9 @@ DEFAULTS: dict[str, str] = {
     ),
     'youtube_playlist_max_per_video': '2',
     'youtube_playlist_privacy': 'public',
+    # Show each playlist as a shelf (section) on the channel home page, in the
+    # order of youtube_playlists (2026-10-18). channelSections.insert, 50 units.
+    'youtube_playlist_shelves_enabled': 'true',
     # Upload slots (services/youtube_upload_slots.py, 2026-10-18). An approved
     # video is uploaded right away but private with publishAt, so YouTube makes
     # it public at the next free slot for its type (operator_timezone), never
@@ -7042,6 +7045,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'youtube_playlists': {'owner': 'youtube_playlists', 'value_type': 'json'},
     'youtube_playlist_max_per_video': {'owner': 'youtube_playlists', 'value_type': 'integer'},
     'youtube_playlist_privacy': {'owner': 'youtube_playlists', 'value_type': 'string'},
+    'youtube_playlist_shelves_enabled': {'owner': 'youtube_playlists', 'value_type': 'boolean'},
     'youtube_upload_slots_enabled': {'owner': 'youtube_upload_slots', 'value_type': 'boolean'},
     'youtube_upload_slots': {'owner': 'youtube_upload_slots', 'value_type': 'string'},
     'youtube_upload_slot_min_lead_minutes': {'owner': 'youtube_upload_slots', 'value_type': 'integer'},

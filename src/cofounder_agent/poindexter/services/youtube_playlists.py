@@ -185,6 +185,12 @@ async def playlists_after_upload(
                 video_id=video_id, playlists=[(r.title, r.description) for r in matched], privacy=privacy,
             )
             status = "ok" if ok else f"failed: {detail}"
+            if ok and "added" in outcome.values():
+                # A first video may have just created a playlist; give it its
+                # shelf (a no-op for playlists already shown). Best-effort.
+                shelf_ok, shelf_detail, _ = await sync_shelves(site_config)
+                if not shelf_ok:
+                    logger.warning("[youtube_playlists] shelves not updated: %s", shelf_detail)
     except Exception as exc:  # noqa: BLE001 — playlists never fail an upload
         status = f"failed: {describe_exception(exc)}"
     try:
@@ -206,6 +212,29 @@ async def playlists_after_upload(
             extra={"video_id": video_id, "subject": subject, "status": status[:300]},
         )
     return status
+
+
+def shelves_enabled(site_config: Any) -> bool:
+    raw = site_config.get("youtube_playlist_shelves_enabled", "true") if site_config is not None else "true"
+    return str(raw).strip().lower() in {"true", "1", "yes", "on"}
+
+
+async def sync_shelves(site_config: Any, *, apply: bool = True) -> tuple[bool, str, dict[str, str]]:
+    """Show every configured playlist as a shelf on the channel home page.
+
+    Since 2026-10-18. Shelves come in the order of the ``youtube_playlists``
+    setting, appended after any section already on the page; a playlist not
+    created yet (no video has joined it) is skipped until one does. Safe to
+    re-run: a playlist that already has a shelf is left alone.
+    """
+    if not shelves_enabled(site_config):
+        return True, "youtube_playlist_shelves_enabled is off", {}
+    rules, _limit, _privacy = _rules_and_limit(site_config)
+    from poindexter.services.publish_adapters.youtube import YouTubePublishAdapter
+
+    return await YouTubePublishAdapter(site_config=site_config).ensure_playlist_shelves(
+        titles=[r.title for r in rules], apply=apply, force=True,
+    )
 
 
 _BACKFILL_SQL = """
@@ -314,5 +343,7 @@ __all__ = [
     "parse_rules",
     "playlists_after_upload",
     "playlists_enabled",
+    "shelves_enabled",
+    "sync_shelves",
     "video_text",
 ]

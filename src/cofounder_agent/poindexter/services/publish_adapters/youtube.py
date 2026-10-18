@@ -109,6 +109,8 @@ QUOTA_UNITS = {
     "playlists.insert": 50,
     "playlistItems.list": 1,
     "playlistItems.insert": 50,
+    "channelSections.list": 1,
+    "channelSections.insert": 50,
 }
 DAILY_QUOTA_UNITS = 10_000
 
@@ -828,6 +830,78 @@ class YouTubePublishAdapter:
             if _is_insufficient_scope(exc):
                 return False, (
                     "the token lacks youtube.force-ssl, which playlists need — run "
+                    "`poindexter integrations youtube setup --with-update`. "
+                    f"Google said: {str(exc)[:300]}"
+                ), {}
+            return False, str(exc)[:400], {}
+        return True, "ok", outcome
+
+    @staticmethod
+    def _ensure_shelves_blocking(*, credentials: Any, titles: list[str], apply: bool) -> dict[str, str]:
+        """Show each titled playlist as a section (shelf) on the channel home page.
+
+        ``playlists.list`` (1 unit a page) maps titles to ids;
+        ``channelSections.list`` (1) says which playlists already have a
+        section; ``channelSections.insert`` (50) adds a ``singlePlaylist``
+        section for each one that has none, appended after the existing ones.
+        ``apply=False`` only reports. Returns ``{title: "added" |
+        "already shown" | "would add" | "no playlist yet"}``.
+        """
+        from googleapiclient.discovery import build  # type: ignore[import-not-found]
+
+        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+        ids: dict[str, str] = {}
+        page_token = None
+        while True:
+            kwargs: dict[str, Any] = {"part": "snippet", "mine": True, "maxResults": 50}
+            if page_token:
+                kwargs["pageToken"] = page_token
+            resp = youtube.playlists().list(**kwargs).execute()
+            for item in resp.get("items") or []:
+                ids.setdefault(str((item.get("snippet") or {}).get("title") or ""), str(item.get("id")))
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+        sections = youtube.channelSections().list(part="contentDetails", mine=True).execute()
+        shown: set[str] = set()
+        for section in sections.get("items") or []:
+            shown.update((section.get("contentDetails") or {}).get("playlists") or [])
+        outcome: dict[str, str] = {}
+        for title in titles:
+            playlist_id = ids.get(title)
+            if not playlist_id:
+                outcome[title] = "no playlist yet"
+            elif playlist_id in shown:
+                outcome[title] = "already shown"
+            elif not apply:
+                outcome[title] = "would add"
+            else:
+                youtube.channelSections().insert(
+                    part="snippet,contentDetails",
+                    body={"snippet": {"type": "singlePlaylist"}, "contentDetails": {"playlists": [playlist_id]}},
+                ).execute()
+                shown.add(playlist_id)
+                outcome[title] = "added"
+        return outcome
+
+    async def ensure_playlist_shelves(
+        self, *, titles: list[str], apply: bool = True, force: bool = False,
+    ) -> tuple[bool, str, dict[str, str]]:
+        """Show these playlists as shelves on the channel page. ``(ok, detail, {title: status})``."""
+        if not titles:
+            return True, "no playlists configured", {}
+        ready, error, secrets = await self._check_gating(force=force)
+        if not ready:
+            return False, str(error or "youtube adapter not ready"), {}
+        credentials = self._build_credentials(secrets)
+        try:
+            outcome = await asyncio.to_thread(
+                self._ensure_shelves_blocking, credentials=credentials, titles=titles, apply=apply,
+            )
+        except Exception as exc:  # noqa: BLE001 — the caller reports it
+            if _is_insufficient_scope(exc):
+                return False, (
+                    "the token lacks youtube.force-ssl, which channel sections need — run "
                     "`poindexter integrations youtube setup --with-update`. "
                     f"Google said: {str(exc)[:300]}"
                 ), {}

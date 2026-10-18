@@ -90,7 +90,9 @@ class TestAfterUpload:
         adapter.add_to_playlists = AsyncMock(return_value=(True, "ok", {"News": "added"}))
         with patch(
             "poindexter.services.publish_adapters.youtube.YouTubePublishAdapter", return_value=adapter,
-        ), patch.object(yp, "emit_finding") as finding:
+        ), patch.object(yp, "emit_finding") as finding, patch.object(
+            yp, "sync_shelves", AsyncMock(return_value=(True, "ok", {})),
+        ):
             status = await yp.playlists_after_upload(
                 pool, _sc(), asset_id="00000000-0000-0000-0000-000000000001",
                 video_id="VID9", text="OpenAI ships nothing",

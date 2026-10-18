@@ -1093,7 +1093,14 @@ def youtube_captions(selector: str | None, limit: int | None, do_apply: bool) ->
         "that does not exist yet. Without it, the matches are printed and nothing is sent."
     ),
 )
-def youtube_playlists(selector: str | None, limit: int | None, do_apply: bool) -> None:
+@click.option(
+    "--shelves", is_flag=True,
+    help=(
+        "Instead: show each playlist as a shelf on the channel home page (dry run "
+        "lists what would be added; --apply adds them)."
+    ),
+)
+def youtube_playlists(selector: str | None, limit: int | None, do_apply: bool, shelves: bool) -> None:
     """Put videos already on YouTube into their topic playlists.
 
     \b
@@ -1109,7 +1116,35 @@ def youtube_playlists(selector: str | None, limit: int | None, do_apply: bool) -
     integrations youtube playlists`.
     """
     from poindexter.cli._dataplane import run_service
-    from poindexter.services.youtube_playlists import backfill_playlists
+    from poindexter.services.youtube_playlists import backfill_playlists, sync_shelves
+
+    if shelves:
+        async def _shelves(pool):
+            from poindexter.services.di_wiring import build_and_wire_subprocess_with_container
+            from poindexter.services.settings_read_telemetry import flush_read_telemetry
+
+            sc, _container = await build_and_wire_subprocess_with_container(pool)
+            try:
+                return await sync_shelves(sc, apply=do_apply)
+            finally:
+                await flush_read_telemetry(pool, sc)
+
+        try:
+            ok, detail, outcome = run_service(_shelves)
+        except Exception as exc:
+            click.echo(f"Error: {exc}", err=True)
+            raise SystemExit(1) from exc
+        click.echo(f"Channel page shelves — {'APPLIED' if do_apply else 'DRY RUN — nothing sent'}\n")
+        if not ok:
+            click.secho(detail, fg="red")
+            raise SystemExit(1)
+        for title, status in outcome.items():
+            click.echo(f"  {status:<16}{title}")
+        if not outcome:
+            click.echo(f"  {detail}")
+        if not do_apply and "would add" in outcome.values():
+            click.echo("\nRe-run with --apply to add them.")
+        return
 
     async def _go(pool):
         from poindexter.services.di_wiring import build_and_wire_subprocess_with_container

@@ -1529,3 +1529,33 @@ def test_chapters_stores_locally_and_names_the_push(runner, monkeypatch):
     assert calls == [{"selector": None, "regenerate": True, "limit": None}]
     assert "nothing sent" in res.output and "0:44 B" in res.output
     assert "sync-metadata --apply" in res.output
+
+
+def test_playlists_shelves_dry_run(runner, monkeypatch):
+    import poindexter.cli._dataplane as dp
+    import poindexter.services.di_wiring as di
+    import poindexter.services.youtube_playlists as ypl
+
+    calls: list[bool] = []
+
+    async def _shelves(_sc, *, apply):
+        calls.append(apply)
+        return True, "ok", {"Local AI on Your Own GPU": "would add", "News": "already shown"}
+
+    async def _wire(_pool):
+        from poindexter.services.site_config import SiteConfig
+
+        return SiteConfig(), None
+
+    def _run_service(factory):
+        import asyncio
+
+        return asyncio.run(factory(object()))
+
+    monkeypatch.setattr(ypl, "sync_shelves", _shelves)
+    monkeypatch.setattr(di, "build_and_wire_subprocess_with_container", _wire)
+    monkeypatch.setattr(dp, "run_service", _run_service)
+    res = runner.invoke(_integrations_mod.integrations_group, ["youtube", "playlists", "--shelves"])
+    assert res.exit_code == 0, res.output
+    assert calls == [False]
+    assert "would add" in res.output and "Re-run with --apply" in res.output
