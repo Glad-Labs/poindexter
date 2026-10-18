@@ -184,3 +184,126 @@ class TestApprovalMessage:
     async def test_a_broken_review_never_holds_the_message_back(self):
         msg = await self._notify(AsyncMock(side_effect=RuntimeError("boom")))
         assert msg.startswith('Awaiting approval: "Decode speed"') and "Taste check" not in msg
+
+
+class TestScreenTopics:
+    """The rubric one step earlier: ideas that can only become a repeat or a
+    recap are dropped before a draft is written. Verdicts are cached per idea,
+    because the open batch refreshes every 30 minutes."""
+
+    IDEAS = [("a", "Best GPUs for Local LLMs in 2026", ""),
+             ("b", "Homelab AI Server Build", "what a quiet 2-GPU box needs"),
+             ("c", "Surface Laptop Ultra Review", "")]
+
+    def _pool(self, cached=()):
+        pool = MagicMock()
+
+        async def fetch(sql, *args):
+            if "audit_log" in sql:
+                return [{"key": k, "verdict": v, "reason": r} for k, v, r in cached]
+            return [{"title": "Best NVIDIA GPUs for Local LLMs in 2026, Ranked by Use Case"}]
+
+        pool.fetch = AsyncMock(side_effect=fetch)
+        return pool
+
+    @pytest.mark.asyncio
+    async def test_one_call_judges_every_new_idea_and_records_each(self, chat, audit):
+        chat.return_value = ('{"topics": [{"id": "c0", "keep": false, "reason": "Rubric 3: repeats the GPU ranking."},'
+                             ' {"id": "c1", "keep": true, "reason": "new"},'
+                             ' {"id": "c2", "keep": false, "reason": "Rubric 7: a recap of outside reviews."}]}')
+        drops = await tr.screen_topics(pool=self._pool(), site_config=_sc(), niche_slug="glad-labs",
+                                       subject="AI and hardware", candidates=self.IDEAS, today="2026-10-18")
+        assert drops == {"a": "Rubric 3: repeats the GPU ranking.", "c": "Rubric 7: a recap of outside reviews."}
+        prompt = chat.await_args.args[0]
+        assert "[c1] Homelab AI Server Build — what a quiet 2-GPU box needs" in prompt
+        assert "- Best NVIDIA GPUs for Local LLMs in 2026, Ranked by Use Case" in prompt
+        assert chat.await_args.kwargs["phase"] == "topic_taste_screen"
+        assert [(e, d["key"], d["verdict"]) for e, _, d, _ in audit] == [
+            ("topic_taste_screen", "best gpus for local llms in 2026", "drop"),
+            ("topic_taste_screen", "homelab ai server build", "keep"),
+            ("topic_taste_screen", "surface laptop ultra review", "drop"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_cached_verdict_is_reused_without_a_call(self, chat, audit):
+        cached = [("best gpus for local llms in 2026", "drop", "repeat"),
+                  ("homelab ai server build", "keep", ""), ("surface laptop ultra review", "keep", "")]
+        drops = await tr.screen_topics(pool=self._pool(cached), site_config=_sc(), niche_slug="glad-labs",
+                                       subject="s", candidates=self.IDEAS)
+        assert drops == {"a": "repeat"}
+        chat.assert_not_awaited()
+        assert audit == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("extra", [{"taste_review_niches": "dev_diary"}, {"taste_review_rubric": ""},
+                                       {"taste_review_screen_topics": "false"}])
+    async def test_off_unless_listed_with_a_rubric_and_switched_on(self, chat, audit, extra):
+        assert await tr.screen_topics(pool=self._pool(), site_config=_sc(**extra), niche_slug="glad-labs",
+                                      subject="s", candidates=self.IDEAS) == {}
+        chat.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reply", ["no json here", '{"topics": [{"id": "c9", "keep": false}, {"id": "c0"}]}'])
+    async def test_an_unusable_reply_drops_nothing(self, chat, audit, reply):
+        chat.return_value = reply
+        assert await tr.screen_topics(pool=self._pool(), site_config=_sc(), niche_slug="glad-labs",
+                                      subject="s", candidates=self.IDEAS) == {}
+        assert audit == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_call_keeps_every_new_idea(self, chat, audit):
+        chat.side_effect = RuntimeError("provider down")
+        cached = [("surface laptop ultra review", "drop", "recap")]
+        drops = await tr.screen_topics(pool=self._pool(cached), site_config=_sc(), niche_slug="glad-labs",
+                                       subject="s", candidates=self.IDEAS)
+        assert drops == {"c": "recap"}
+
+
+def test_screen_pack_prompt_renders():
+    from poindexter.services.prompt_manager import get_prompt_manager
+
+    text = get_prompt_manager().get_prompt(
+        "topic.taste_screen", subject="s", rubric="r", today="2026-10-18", recent="- t", ideas="[c0] Idea",
+    )
+    assert '"keep": true' in text and "[c0] Idea" in text and "Today is 2026-10-18." in text
+
+
+class TestSweepScreen:
+    """In the sweep, a dropped idea is replaced from deeper in its pool."""
+
+    def _service(self, **extra):
+        from poindexter.services.topic_batch_service import TopicBatchService
+
+        svc = TopicBatchService.__new__(TopicBatchService)
+        svc._pool = MagicMock()
+        svc._site_config = _sc(**extra)
+        return svc
+
+    @staticmethod
+    def _cands(prefix, n):
+        from poindexter.services.topic_ranking import ScoredCandidate
+
+        return [ScoredCandidate(id=f"{prefix}{i}", title=f"{prefix} idea {i}", summary=None,
+                                embedding_score=1.0 - i / 100) for i in range(n)]
+
+    @pytest.mark.asyncio
+    async def test_drops_are_backfilled_from_the_next_ideas(self, monkeypatch):
+        ext, intl = self._cands("e", 6), self._cands("i", 6)
+        calls = []
+
+        async def screen(*, candidates, **kw):
+            calls.append([c[0] for c in candidates])
+            return {"e0": "repeat", "e1": "recap", "i2": "thin"} if len(calls) == 1 else {}
+
+        monkeypatch.setattr(tr, "screen_topics", screen)
+        niche = MagicMock(slug="glad-labs", topic_subject="s")
+        kept = await self._service()._screen_by_taste(niche, ext, intl, 3)
+        assert [c.id for c in kept] == ["e2", "e3", "e4", "i0", "i1", "i3"]
+        assert calls == [["e0", "e1", "e2", "i0", "i1", "i2"], ["e3", "e4", "e5", "i3", "i4", "i5"]]
+
+    @pytest.mark.asyncio
+    async def test_a_raising_screen_keeps_the_plain_slice(self, monkeypatch):
+        monkeypatch.setattr(tr, "screen_topics", AsyncMock(side_effect=RuntimeError("boom")))
+        ext, intl = self._cands("e", 6), self._cands("i", 6)
+        kept = await self._service()._screen_by_taste(MagicMock(slug="glad-labs"), ext, intl, 3)
+        assert [c.id for c in kept] == ["e0", "e1", "e2", "i0", "i1", "i2"]

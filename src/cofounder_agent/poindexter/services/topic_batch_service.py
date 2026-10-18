@@ -299,7 +299,10 @@ class TopicBatchService:
             # candidates. Same key gates the slice inside
             # _embed_and_pre_rank so both ends of the funnel stay consistent.
             top_n = self._site_config.get_int("niche_top_n_per_pool", 5)
-            top10 = pool_external[:top_n] + pool_internal[:top_n]
+            # The operator's rubric, before a draft is spent on an idea that
+            # can only be a repeat or a recap (services.taste_review). Ideas it
+            # drops are replaced from further down each pre-ranked pool.
+            top10 = await self._screen_by_taste(niche, pool_external, pool_internal, top_n)
 
             # Lazy import so tests can patch services.topic_ranking.llm_final_score.
             from poindexter.services.topic_ranking import llm_final_score
@@ -1075,6 +1078,54 @@ class TopicBatchService:
             )
             rows.append({"pool": pool, "title": title, "verdict": verdict})
         return rows, list(result.errors)
+
+    async def _screen_by_taste(
+        self, niche: Niche, pool_external: list, pool_internal: list, top_n: int,
+    ) -> list:
+        """The top ``top_n`` of each pool that the operator's rubric keeps.
+
+        Screens the shortlist with :func:`services.taste_review.screen_topics`
+        and, when ideas are dropped, judges the next ``top_n`` of each pool,
+        for at most ``taste_review_screen_max_rounds`` rounds. A failed screen
+        keeps every idea, so the result is never worse than the plain slice.
+        """
+        from poindexter.services.taste_review import screen_topics
+
+        rounds = max(1, self._site_config.get_int("taste_review_screen_max_rounds", 3))
+        dropped: dict[str, str] = {}
+        judged: set[str] = set()
+        today = datetime.now(timezone.utc).date().isoformat()
+
+        def survivors(pool: list, depth: int) -> list:
+            return [c for c in pool[:depth] if c.id not in dropped][:top_n]
+
+        depth = top_n
+        for round_no in range(rounds):
+            depth = top_n * (round_no + 1)
+            fresh = [c for c in pool_external[:depth] + pool_internal[:depth] if c.id not in judged]
+            if not fresh:
+                break
+            try:
+                dropped.update(await screen_topics(
+                    pool=self._pool, site_config=self._site_config, niche_slug=niche.slug,
+                    subject=getattr(niche, "topic_subject", None),
+                    candidates=[(c.id, c.title, c.summary or "") for c in fresh], today=today,
+                ))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[TASTE] topic screen raised for %s (keeping the slice): %s", niche.slug, exc)
+                break
+            judged.update(c.id for c in fresh)
+            full_ext = len(survivors(pool_external, depth)) >= min(top_n, len(pool_external))
+            full_int = len(survivors(pool_internal, depth)) >= min(top_n, len(pool_internal))
+            if full_ext and full_int:
+                break
+        if dropped:
+            logger.info(
+                "[TASTE] %s: the rubric dropped %d idea(s) before drafting: %s", niche.slug, len(dropped),
+                "; ".join(f"{c.title[:50]!r} ({dropped[c.id][:60]})"
+                          for c in pool_external + pool_internal if c.id in dropped),
+            )
+        return survivors(pool_external, depth) + survivors(pool_internal, depth)
 
     async def _embed_and_pre_rank(
         self,

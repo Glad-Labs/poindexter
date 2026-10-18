@@ -101,6 +101,28 @@ resolves inside the containers (`host.docker.internal`). Run it in the worker
 instead: `docker exec poindexter-worker python -m poindexter topics niche
 check-scope <slug>`.
 
+## After scope: the operator's taste (2026-10-18)
+
+Scope answers "is this our subject?". A second check on the sweep's shortlist
+answers "would the operator reject the post?": `services.taste_review.screen_topics`
+reads the top ideas of each pre-ranked pool against the operator's rubric
+(`taste_review_rubric`, the same one the advisory draft review uses) and drops
+an idea only when it would clearly fail as a post: a near-repeat of a published
+post, a recap of other people's reviews or news with nothing of our own, dated
+framing, or too thin. Dropped ideas are replaced from deeper in the same pool
+(`taste_review_screen_max_rounds`, default 3).
+
+It runs only for a niche in `taste_review_niches` with a rubric set and
+`taste_review_screen_topics` on. Each verdict is an `audit_log` row
+(`topic_taste_screen`) keyed on the idea's normalised title, and is reused for
+`taste_review_screen_cache_days` (30): the open batch refreshes every 30 minutes,
+so without the cache the same ten titles would be judged 29 times a day. A
+failed screen keeps every idea.
+
+Earned by the two drafts awaiting review on 2026-10-18, both of which the draft
+review rejected for reasons visible in the idea alone: a roundup of four outside
+laptop reviews, and a near-duplicate of a live GPU ranking.
+
 ## Other niche controls
 
 ```bash

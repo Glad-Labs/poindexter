@@ -2501,6 +2501,13 @@ DEFAULTS: dict[str, str] = {
     'taste_review_recent_titles': '40',
     'taste_review_max_tokens': '6000',
     'taste_review_timeout_seconds': '180',
+    # The same rubric one step earlier: topic ideas on a sweep's shortlist are
+    # screened before a draft is written (taste_review.screen_topics), with
+    # verdicts cached per idea for this many days, and dropped ideas replaced
+    # from deeper in the pre-rank for at most this many rounds.
+    'taste_review_screen_topics': 'true',
+    'taste_review_screen_cache_days': '30',
+    'taste_review_screen_max_rounds': '3',
     'title_max_length': '90',
     # Draft excerpt size for the TITLE-GENERATION digest (content.generate_title
     # + seo.generate_all_metadata prompts; excerpt + section-heading skeleton).
@@ -8385,6 +8392,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'taste_review_recent_titles': {'owner': 'taste_review', 'value_type': 'integer'},
     'taste_review_max_tokens': {'owner': 'taste_review', 'value_type': 'integer'},
     'taste_review_timeout_seconds': {'owner': 'taste_review', 'value_type': 'integer'},
+    'taste_review_screen_topics': {'owner': 'taste_review', 'value_type': 'boolean'},
+    'taste_review_screen_cache_days': {'owner': 'taste_review', 'value_type': 'integer'},
+    'taste_review_screen_max_rounds': {'owner': 'taste_review', 'value_type': 'integer'},
     'qa_web_factcheck_match_ratio': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_web_factcheck_max_claims': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_web_factcheck_min_term_len': {'owner': 'multi_model_qa', 'value_type': 'integer'},

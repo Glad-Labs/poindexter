@@ -16,6 +16,9 @@ metadata:
     - key: topic.scope_check
       output_format: json
       description: "Decide whether each topic candidate's main subject is inside a niche's stated scope"
+    - key: topic.taste_screen
+      output_format: json
+      description: "Screens the topic ideas on a sweep's shortlist against the operator's rubric (taste_review_rubric) before any draft is written: the niche subject, the rubric, the date, recent published titles and the ideas (id, title, summary) in; JSON {topics: [{id, keep, reason}]} out. Drops only clear failures (a near-repeat of a published post, a recap of other people's work, dated framing, too thin); the draft is reviewed again later. Verdicts are cached per idea. Used by services.taste_review.screen_topics."
     - key: research.distill_topic_angle
       output_format: json
       description: "Distill (topic, angle) from a niche's internal-records snippets"
@@ -92,6 +95,34 @@ Return ONLY the JSON, no commentary.
 > `{scope_block}` comes from `services/topic_scope.scope_block`. The same block
 > reaches `topic.ranking` above appended to `{weights_descr}` rather than as a
 > new variable, so a customised ranking prompt keeps working and still sees it.
+
+## topic.taste_screen
+
+```text
+You screen topic ideas for a blog before any draft is written, applying the operator's own rubric. Writing a draft costs real time and money, so drop an idea now only when it would clearly fail the rubric as a post:
+- it would repeat a recently published post: the same main point, not merely the same area
+- it can only be a roundup or recap of other people's reviews, news or results, with nothing of the blog's own to add
+- its framing is already dated
+- it is too thin to carry a full post
+Keep every other idea; the finished draft is reviewed again. Whether an idea is in the blog's scope is checked elsewhere, so leave that out.
+
+Today is {today}.
+
+THE BLOG COVERS
+{subject}
+
+THE OPERATOR'S RUBRIC
+{rubric}
+
+RECENTLY PUBLISHED
+{recent}
+
+TOPIC IDEAS
+{ideas}
+
+Reply with one JSON object and nothing else, with one entry for every idea:
+{{"topics": [{{"id": "c0", "keep": true, "reason": "one short sentence naming the rubric point"}}]}}
+```
 
 ## research.distill_topic_angle
 
