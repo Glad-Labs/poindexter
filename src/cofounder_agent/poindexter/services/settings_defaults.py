@@ -4334,8 +4334,19 @@ DEFAULTS: dict[str, str] = {
     # Numbers as words at the TTS boundary: digit forms read right in every
     # probe yet the rendered narration still said "2036.7" for 236.7 and
     # "218" for 2218 — the engine's number parser is context-sensitive.
-    # Money, identifiers glued to letters, versions and times stay digits.
+    # Identifiers glued to letters, versions and times stay digits; money is
+    # spelled by tts_spell_money_enabled below.
     'tts_spell_numbers_enabled': 'true',
+    # Money amounts ("$470,000", "$12.99", "$2.5M") as spoken words (2026-10-18):
+    # with the thousands comma stripped, "$470000" was read "47000 dollars".
+    'tts_spell_money_enabled': 'true',
+    # Four-digit model numbers after these prefixes (CSV, case-sensitive) are read
+    # in pairs: "RTX 5090" -> "RTX fifty ninety", not "five thousand ninety".
+    # "off" disables it.
+    'tts_model_number_prefixes': 'RTX,GTX,RX,GT,MX,Titan,Quadro',
+    # Currency symbol -> [singular, plural, minor-unit plural] (JSON). Empty = the
+    # built-in $ / € / £ map; entries here add to it or replace a symbol's names.
+    'tts_currency_names': '{"$": ["dollar", "dollars", "cents"], "€": ["euro", "euros", "cents"], "£": ["pound", "pounds", "pence"]}',
     # "large language model (LLM)" is a written device; spoken it became
     # "large language model, L L L M". Drop an initialism that follows its
     # own expansion (initials match); standalone acronyms are untouched.
@@ -8653,6 +8664,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tts_unit_expansions': {'owner': 'podcast_service', 'value_type': 'json'},
     'tts_strip_quotes': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_spell_numbers_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'tts_spell_money_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
+    'tts_model_number_prefixes': {'owner': 'podcast_service', 'value_type': 'csv'},
+    'tts_currency_names': {'owner': 'podcast_service', 'value_type': 'json'},
     'tts_drop_redundant_initialism': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_voice_pool': {'owner': 'podcast_service'},
     'tts_voice_rotation_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},

@@ -614,8 +614,11 @@ def _normalize_numbers_for_speech(text: str, *, site_config: "SiteConfig | None"
 # to every engine. A whisper round-trip still verifies the result, because
 # whisper writes spoken numbers back as digits.
 #
-# Left as digits, deliberately: money ("$1.65 trillion" — the engine reads
-# currency well and the words form is awkward), anything glued to a letter
+# Money is spelled too, since 2026-10-18 (see _spell_money_for_speech below).
+# It used to be left as digits on the belief that "the engine reads currency
+# well", but the thousands comma is stripped first, and "$470,000" reached the
+# engine as "$470000". The first news Short said "47000 dollars". Left as
+# digits, deliberately: anything glued to a letter
 # ("7b", "14B", "phi4", "v2" — identifiers, not quantities), and dotted or
 # colon-joined sequences (versions, times, IPs). Four-digit 1900–2099 numbers
 # that stand alone are spoken as years ("twenty twenty-six", "two thousand
@@ -664,12 +667,176 @@ _NUMBER_RE = re.compile(r"(?<![\w$€£.:/-])(\d+)(?:\.(\d+))?(?![\w:/]|\.\d)")
 _YEAR_UNIT_RE = re.compile(r"^\s*(percent|milliseconds|seconds|tokens|ms|GB|MB|TB|bytes|users|calls|posts|points?)\b", re.I)
 
 
+# Money as WORDS (2026-10-18, the first news Short). The thousands-comma pass
+# leaves "$470000", and the engine read it as "47000 dollars". Measured on the
+# prod voice with whisper over the render (Kokoro via speaches):
+#
+#   reached the engine     heard
+#   ---------------------  ------------------------------
+#   "$470000"              "R$47,700" / "47000 dollars"
+#   "$5300"                "$5,009"
+#   the words form below   "$470,000" / "$5,300" (exact)
+#
+# "$1.5 billion" read correctly either way, so a scaled amount keeps its scale
+# word and only the number is spelled. Symbols map to the currency's name
+# (``tts_currency_names``, JSON symbol -> [singular, plural, minor plural]);
+# K/M/B suffixes are read as thousand/million/billion. A two-digit fraction on
+# an unscaled amount is cents ("$12.99" -> "twelve dollars and ninety-nine
+# cents"); any other fraction is read as a decimal. After "a"/"an" the amount
+# describes a noun ("an $8,500 card"), so the currency word is singular ("an
+# eight thousand five hundred dollar card"), and the article is re-chosen for
+# the first spoken word ("a $8 fee" -> "an eight dollar fee").
+_DEFAULT_CURRENCY_NAMES: dict[str, tuple[str, str, str]] = {
+    "$": ("dollar", "dollars", "cents"),
+    "€": ("euro", "euros", "cents"),
+    "£": ("pound", "pounds", "pence"),
+}
+_SCALE_WORDS = {"thousand", "million", "billion", "trillion"}
+_SCALE_SUFFIXES = {"k": "thousand", "m": "million", "b": "billion", "bn": "billion", "t": "trillion"}
+_MONEY_RE = re.compile(
+    r"(?<![\w$€£])([$€£])\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?"
+    r"(?:(?:\s+(thousand|million|billion|trillion)\b)|(bn|[kKmMbBtT])\b)?(?![\w$€£])",
+)
+
+
+def _get_currency_names(*, site_config: "SiteConfig | None" = None) -> dict[str, tuple[str, str, str]]:
+    _sc = _resolve_site_config(site_config)
+    raw = str(_sc.get("tts_currency_names", "") or "").strip()
+    if not raw:
+        return dict(_DEFAULT_CURRENCY_NAMES)
+    try:
+        import json
+
+        data = json.loads(raw)
+    except ValueError:
+        logger.warning("[TTS] tts_currency_names is not valid JSON — using the built-in map")
+        return dict(_DEFAULT_CURRENCY_NAMES)
+    out = dict(_DEFAULT_CURRENCY_NAMES)
+    if isinstance(data, dict):
+        for symbol, names in data.items():
+            if isinstance(names, list) and len(names) == 3 and all(str(n).strip() for n in names):
+                out[str(symbol)] = (str(names[0]).strip(), str(names[1]).strip(), str(names[2]).strip())
+    return out
+
+
+def _spell_money_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Replace money amounts ("$470,000", "$12.99", "$2.5M") with their spoken words."""
+    _sc = _resolve_site_config(site_config)
+    enabled_raw = str(_sc.get("tts_spell_money_enabled", "") or "").strip().lower()
+    if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
+        return text
+    names = _get_currency_names(site_config=site_config)
+    article_re = re.compile(r"\b([Aa]n?)\s+$")
+
+    def _spoken(m: "re.Match[str]", attributive: bool) -> str:
+        symbol, whole_raw, frac, scale_word, suffix = m.groups()
+        if symbol not in names:
+            return m.group(0)
+        singular, plural, minor = names[symbol]
+        if attributive:
+            plural = singular
+        whole_digits = whole_raw.replace(",", "")
+        if len(whole_digits) > 15:
+            return m.group(0)
+        whole = int(whole_digits)
+        scale = scale_word.lower() if scale_word else _SCALE_SUFFIXES.get((suffix or "").lower(), "")
+        if scale:
+            number = _int_to_words(whole)
+            if frac:
+                number += " point " + " ".join(_ONES[int(d)] if d != "0" else "zero" for d in frac)
+            return f"{number} {scale} {plural}"
+        if frac is not None and len(frac) == 2:
+            cents = int(frac)
+            if whole == 0:
+                return f"{_int_to_words(cents)} {minor}" if cents else f"zero {plural}"
+            unit = singular if whole == 1 else plural
+            if cents == 0:
+                return f"{_int_to_words(whole)} {unit}"
+            return f"{_int_to_words(whole)} {unit} and {_int_to_words(cents)} {minor}"
+        if frac is not None:
+            digits = " ".join(_ONES[int(d)] if d != "0" else "zero" for d in frac)
+            return f"{_int_to_words(whole)} point {digits} {plural}"
+        return f"{_int_to_words(whole)} {singular if whole == 1 else plural}"
+
+    out: list[str] = []
+    last = 0
+    for m in _MONEY_RE.finditer(text):
+        before = text[last:m.start()]
+        article = article_re.search(before)
+        spoken = _spoken(m, attributive=article is not None)
+        if article is not None and spoken != m.group(0):
+            word = article.group(1)
+            # By sound, not letter: of the spelled numbers only "eight..." and
+            # "eleven" open with a vowel sound ("a one point five", "an eighty").
+            want = "an" if spoken.lower().startswith(("eight", "eleven")) else "a"
+            if word.lower() != want:
+                fixed = want.capitalize() if word[0].isupper() else want
+                before = before[:article.start(1)] + fixed + before[article.end(1):]
+        out.append(before)
+        out.append(spoken)
+        last = m.end()
+    out.append(text[last:])
+    return "".join(out)
+
+
+# Product model numbers in PAIRS (2026-10-18). "RTX 5090" was spelled "RTX five
+# thousand ninety"; a reader says "fifty ninety" (and "thirty ninety", "ten
+# eighty", "seventy-nine hundred" for an RX 7900, but "two thousand" for an
+# RTX 2000). A four-digit number right
+# after one of ``tts_model_number_prefixes`` (CSV, case-sensitive, default the
+# GPU lines) is read as two pairs, like a year; a plural "5090s" becomes "fifty
+# nineties". Only after a listed prefix: "5090 units" is still a quantity.
+_DEFAULT_MODEL_NUMBER_PREFIXES = "RTX,GTX,RX,GT,MX,Titan,Quadro"
+
+
+def _model_number_words(n: int) -> str:
+    hi, lo = divmod(n, 100)
+    if lo == 0:
+        # "RTX 2000 Ada" is "two thousand"; "RX 7900" is "seventy-nine hundred".
+        return _int_to_words(n) if hi % 10 == 0 else f"{_int_to_words(hi)} hundred"
+    if lo < 10:
+        return f"{_int_to_words(hi)} oh {_ONES[lo]}"
+    return f"{_int_to_words(hi)} {_int_to_words(lo)}"
+
+
+def _plural_word(word: str) -> str:
+    return word[:-1] + "ies" if word.endswith("y") else word + "s"
+
+
+def _spell_model_numbers_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Read a product model number after a listed prefix in pairs ("RTX 5090" -> "RTX fifty ninety")."""
+    _sc = _resolve_site_config(site_config)
+    raw = str(_sc.get("tts_model_number_prefixes", "") or "").strip() or _DEFAULT_MODEL_NUMBER_PREFIXES
+    if raw.lower() in ("off", "none", "false"):
+        return text
+    prefixes = [re.escape(p.strip()) for p in raw.split(",") if p.strip()]
+    if not prefixes:
+        return text
+    # A full stop or a hyphenated word may follow ("RTX 4060.", "5090-class");
+    # a digit after either ("4.0", "3090-5090") means a version or a range.
+    pattern = re.compile(rf"\b({'|'.join(prefixes)})\s+(\d{{4}})(s?)(?![\w:/]|[.-]\d)")
+
+    def _repl(m: "re.Match[str]") -> str:
+        words = _model_number_words(int(m.group(2)))
+        if m.group(3):
+            head, _, last = words.rpartition(" ")
+            words = f"{head} {_plural_word(last)}" if head else _plural_word(last)
+        return f"{m.group(1)} {words}"
+
+    return pattern.sub(_repl, text)
+
+
 def _spell_numbers_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Replace standalone digit sequences with their spoken words."""
     _sc = _resolve_site_config(site_config)
     enabled_raw = str(_sc.get("tts_spell_numbers_enabled", "") or "").strip().lower()
     if enabled_raw and enabled_raw not in ("true", "1", "yes", "on"):
         return text
+
+    # Money first, while its symbol still marks it (see _spell_money_for_speech),
+    # then model numbers, while their prefix still names them.
+    text = _spell_money_for_speech(text, site_config=site_config)
+    text = _spell_model_numbers_for_speech(text, site_config=site_config)
 
     # A thousands-grouped number is ONE number. Strip its commas here as well
     # (idempotent with the units pass), or with that pass switched off

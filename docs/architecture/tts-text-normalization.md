@@ -70,7 +70,7 @@ Measured on the first presenter video, running whisper over the **rendered** nar
 | `a 2,068 ms overhead`         | "a 2068 misses overhead"        | "a 2068 milliseconds overhead"          |
 | `from 2,218 production calls` | "from 2000 to 2008 production…" | "from 2218 production calls"            |
 | `calls "evalduration."`       | quote voiced as a break         | "calls evalduration."                   |
-| `Ms. Smith`, `it's`, `$1.65`  | unchanged                       | unchanged                               |
+| `Ms. Smith`, `it's`           | unchanged                       | unchanged                               |
 
 Every raw form reads correctly in a short isolated sentence; the damage only appears in the
 real utterance where they cluster (a slash unit next to a percent, a thousands comma two
@@ -104,6 +104,57 @@ Model names: the collapse now puts a comma between a version and the size that f
 (`qwen2.5:7b` → "qwen 2.5, 7b"). Spoken as "qwen 2.5 7b" the engine fused the numbers
 ("QN2.57b", "PHY 414b" in the rendered narration); with the comma the same voice separated them
 ("QN2.5-7B"). Spacing the size ("7 B") did not help.
+
+## Money is spoken as words (2026-10-18)
+
+Money used to be left as digits, on the belief that the engine reads currency
+well. But the thousands-comma rule above runs first, so `$470,000` reached the
+engine as `$470000`. The first news Short narrated it as "47000 dollars".
+Measured on the prod voice, with whisper over the render:
+
+| reached the engine | heard                         |
+| ------------------ | ----------------------------- |
+| `$470000`          | "R$47,700" / "47000 dollars"  |
+| `$5300`            | "$5,009"                      |
+| the words form     | "$470,000" / "$5,300" (exact) |
+
+`_spell_money_for_speech` runs at the start of the number-spelling pass, while
+the symbol still marks the amount:
+
+| written          | spoken                                                         |
+| ---------------- | -------------------------------------------------------------- |
+| `$470,000`       | four hundred seventy thousand dollars                          |
+| `$12.99`         | twelve dollars and ninety nine cents                           |
+| `$1.5 billion`   | one point five billion dollars                                 |
+| `$470K`, `$2.5M` | four hundred seventy thousand / two point five million dollars |
+| `an $8,500 card` | an eight thousand five hundred dollar card                     |
+| `a $8 fee`       | an eight dollar fee                                            |
+
+After "a" or "an" the amount describes a noun, so the currency word is
+singular. The article is also re-chosen by the first spoken word's sound:
+"eight…" and "eleven" take "an", and "one" takes "a".
+
+Symbols map to names through `tts_currency_names` (JSON:
+`symbol -> [singular, plural, minor-unit plural]`; the built-in map covers `$`,
+`€` and `£`, and an entry adds to it or replaces one). The switch is
+`tts_spell_money_enabled`.
+
+## Model numbers are read in pairs (2026-10-18)
+
+A four-digit number right after one of `tts_model_number_prefixes` (CSV,
+case-sensitive, default `RTX,GTX,RX,GT,MX,Titan,Quadro`; `off` disables it) is
+read the way people say it:
+
+- "RTX 5090" is "RTX fifty ninety", not "five thousand ninety";
+- "GTX 1080" is "ten eighty";
+- "RX 7900" is "seventy-nine hundred";
+- "RTX 2000" is "two thousand";
+- "RTX 5090s" is "fifty nineties".
+
+Without a listed prefix, a number is still a quantity: "5090 units" is "five
+thousand ninety units". Whisper writes both readings back as "5090", so a
+round trip cannot tell them apart. This rule is a reading convention, not a
+measured fix.
 
 ## Measuring a pronunciation fix — pick the right instrument
 

@@ -2259,15 +2259,99 @@ class TestNumbersAsWordsAtTheBoundary:
         assert "fifty five point four percent" in out
         assert "two thousand sixty eight milliseconds" in out
 
-    def test_money_identifiers_versions_and_times_stay_digits(self):
+    def test_identifiers_versions_and_times_stay_digits(self):
         out = _normalize_for_speech(
             "phi4:14b costs $1.65 trillion on v2.0 at 12:30 with 10 GB", site_config=_pron_sc(),
         )
         assert "14b" in out
-        assert "$1.65 trillion" in out
+        assert "one point six five trillion dollars" in out
         assert "2.0" in out
         assert "12:30" in out
         assert "ten GB" in out
+
+    def test_money_is_spoken_as_words(self):
+        """The first news Short (2026-10-18): the comma pass turned "$470,000"
+        into "$470000", which the engine read as "47000 dollars", and "$5,300"
+        came back from the voice as "5,009". The words forms came back exact."""
+        out = _normalize_for_speech(
+            "GPUs worth $470,000 went missing; a prebuilt costs $5,300.", site_config=_pron_sc(),
+        )
+        assert "four hundred seventy thousand dollars went missing" in out
+        assert "costs five thousand three hundred dollars." in out
+        assert "$" not in out
+
+    @pytest.mark.parametrize(
+        ("written", "spoken"),
+        [
+            ("costs $12.99 now", "costs twelve dollars and ninety nine cents now"),
+            ("only $1 each", "only one dollar each"),
+            ("$0.99 a month", "ninety nine cents a month"),
+            ("$1,000.00 flat", "one thousand dollars flat"),
+            ("a $2.5M round", "a two point five million dollar round"),
+            ("raised $470K", "raised four hundred seventy thousand dollars"),
+            ("€30,000 grant", "thirty thousand euros grant"),
+            ("£1.20 stamp", "one pound and twenty pence stamp"),
+            ("between $5 and $10,", "between five dollars and ten dollars,"),
+        ],
+    )
+    def test_money_forms(self, written, spoken):
+        assert _normalize_for_speech(written, site_config=_pron_sc()) == spoken
+
+    @pytest.mark.parametrize(
+        ("written", "spoken"),
+        [
+            ("an $8,500 card", "an eight thousand five hundred dollar card"),
+            ("a $8 fee", "an eight dollar fee"),
+            ("A $1.5 billion deal", "A one point five billion dollar deal"),
+            ("an $100 board", "a one hundred dollar board"),
+            ("a $11 ticket", "an eleven dollar ticket"),
+        ],
+    )
+    def test_money_describing_a_noun_is_singular_with_the_article_by_sound(self, written, spoken):
+        assert _normalize_for_speech(written, site_config=_pron_sc()) == spoken
+
+    def test_the_money_switch_leaves_amounts_as_digits(self):
+        from poindexter.services.site_config import SiteConfig
+
+        sc = SiteConfig(initial_config={"tts_spell_money_enabled": "false"})
+        out = _normalize_for_speech("worth $470,000", site_config=sc)
+        assert "$470000" in out
+
+    def test_a_configured_currency_adds_to_the_built_in_names(self):
+        from poindexter.services.site_config import SiteConfig
+
+        sc = SiteConfig(initial_config={"tts_currency_names": '{"£": ["quid", "quid", "pence"]}'})
+        assert _normalize_for_speech("£5 and $5", site_config=sc) == "five quid and five dollars"
+
+    @pytest.mark.parametrize(
+        ("written", "spoken"),
+        [
+            ("Nvidia RTX 5090 GPUs", "Nvidia RTX fifty ninety GPUs"),
+            ("an RTX 3090 judge", "an RTX thirty ninety judge"),
+            ("GTX 1080 Ti", "GTX ten eighty Ti"),
+            ("AMD RX 7900 XTX", "AMD RX seventy nine hundred XTX"),
+            ("RTX 2000 Ada", "RTX two thousand Ada"),
+            ("two RTX 5090s.", "two RTX fifty nineties."),
+            ("on an RTX 4060.", "on an RTX forty sixty."),
+            ("RTX 5090-class", "RTX fifty ninety class"),
+        ],
+    )
+    def test_gpu_model_numbers_are_read_in_pairs(self, written, spoken):
+        """"RTX 5090" was spoken "RTX five thousand ninety"; a reader says
+        "fifty ninety" (2026-10-18, the first news Short)."""
+        assert _normalize_for_speech(written, site_config=_pron_sc()) == spoken
+
+    def test_a_number_without_a_model_prefix_is_still_a_quantity(self):
+        out = _normalize_for_speech("5090 units shipped", site_config=_pron_sc())
+        assert out == "five thousand ninety units shipped"
+
+    def test_model_number_prefixes_are_configurable(self):
+        from poindexter.services.site_config import SiteConfig
+
+        off = SiteConfig(initial_config={"tts_model_number_prefixes": "off"})
+        assert _normalize_for_speech("RTX 5090", site_config=off) == "RTX five thousand ninety"
+        arc = SiteConfig(initial_config={"tts_model_number_prefixes": "Arc,RTX"})
+        assert _normalize_for_speech("Arc 7700", site_config=arc) == "Arc seventy seven hundred"
 
     def test_a_number_ending_a_sentence_is_spelled_too(self):
         """The full stop after a number read as a version separator, so the last
