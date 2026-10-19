@@ -273,16 +273,57 @@ _SHORT_SCRIPT_SQL = """
 # pipeline_distributions (the row the dispatcher writes with the upload and the
 # only record carrying a status) — never from the approval row: approved is not
 # uploaded, and a rejected twin simply never appears here.
+#
+# "Live" means PUBLIC by $3, the moment the linking video itself goes public.
+# Since upload slots (services/youtube_upload_slots.py, 2026-10-18) a video is
+# uploaded private with publishAt, so an uploaded twin can still be hours from
+# public: a Short going up at 12:00 must not link a long video that stays
+# private until 17:00. The twin's slot is the youtube_publish_at stamp on its
+# asset; no stamp means it went public at upload.
 _TWIN_SQL = """
-    SELECT external_id
-      FROM pipeline_distributions
-     WHERE task_id = $1
-       AND target = 'youtube'
-       AND medium = $2
-       AND status = 'published'
-       AND external_id IS NOT NULL
-     ORDER BY published_at DESC NULLS LAST
+    SELECT pd.external_id
+      FROM pipeline_distributions pd
+     WHERE pd.task_id = $1
+       AND pd.target = 'youtube'
+       AND pd.medium = $2
+       AND pd.status = 'published'
+       AND pd.external_id IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM media_assets m
+            WHERE m.platform_video_ids ->> 'youtube' = pd.external_id
+              AND (m.metadata ->> 'youtube_publish_at')::timestamptz > $3
+       )
+     ORDER BY pd.published_at DESC NULLS LAST
      LIMIT 1
+"""
+
+# A video that has gone public at its slot and whose twin has not yet been
+# given the cross-link to it (see _refresh_twins_gone_public). The window keeps
+# a first run from sweeping every slot the channel ever used.
+_GONE_PUBLIC_SQL = """
+    SELECT id::text AS asset_id, task_id, type
+      FROM media_assets
+     WHERE type = ANY($1::text[])
+       AND metadata ? 'youtube_publish_at'
+       AND NOT metadata ? 'youtube_went_public_at'
+       AND (metadata ->> 'youtube_publish_at')::timestamptz <= NOW()
+       AND (metadata ->> 'youtube_publish_at')::timestamptz > NOW() - ($2 * INTERVAL '1 hour')
+     ORDER BY (metadata ->> 'youtube_publish_at')::timestamptz
+     LIMIT $3
+"""
+
+_MARK_GONE_PUBLIC_SQL = """
+    UPDATE media_assets
+       SET metadata = COALESCE(metadata, '{}'::jsonb)
+                      || jsonb_build_object('youtube_went_public_at', to_jsonb(NOW()))
+     WHERE id = $1::uuid
+"""
+
+# This asset's own slot, when it is still ahead (the video is private until then).
+_PUBLISHES_LATER_SQL = """
+    SELECT (metadata ->> 'youtube_publish_at')::timestamptz > NOW()
+      FROM media_assets
+     WHERE id = $1::uuid
 """
 
 _PAIR_MEDIA = {"video": "video_short", "video_short": "video"}
@@ -398,21 +439,80 @@ async def _record_thumbnail_outcome(
         )
 
 
-async def _fetch_twin_video_id(pool: Any, task_id: str | None, medium: str) -> str:
-    """The LIVE YouTube id of ``medium``'s pair (``video`` ↔ ``video_short``), or ""."""
+async def _fetch_twin_video_id(
+    pool: Any, task_id: str | None, medium: str, *, visible_by: Any = None,
+) -> str:
+    """The YouTube id of ``medium``'s pair (``video`` ↔ ``video_short``) when it is
+    public by ``visible_by`` (default now), or ""."""
+    import datetime as _dt
+
     other = _PAIR_MEDIA.get(medium)
     if not task_id or not other:
         return ""
     try:
-        raw = await pool.fetchval(_TWIN_SQL, str(task_id), other)
+        raw = await pool.fetchval(
+            _TWIN_SQL, str(task_id), other, visible_by or _dt.datetime.now(_dt.timezone.utc),
+        )
     except Exception as exc:  # noqa: BLE001 — a cross-link is a refinement, never a blocker
         logger.warning("[MEDIA_DISTRIBUTE] twin lookup failed for %s: %s", task_id, describe_exception(exc))
         return ""
     return raw.strip() if isinstance(raw, str) else ""
 
 
+async def _publishes_later(pool: Any, asset_id: Any) -> bool:
+    """True when ``asset_id`` was uploaded to a slot that is still ahead."""
+    if not asset_id:
+        return False
+    try:
+        return bool(await pool.fetchval(_PUBLISHES_LATER_SQL, str(asset_id)))
+    except Exception as exc:  # noqa: BLE001 — unknown means "not later": refresh as before
+        logger.warning("[MEDIA_DISTRIBUTE] slot check failed for %s: %s", asset_id, describe_exception(exc))
+        return False
+
+
+async def _refresh_twins_gone_public(pool: Any, site_config: Any) -> int:
+    """Give each video that went public at its slot since the last pass its twin's cross-link.
+
+    A scheduled upload is private until its slot, so its twin cannot link to it
+    at upload time (:func:`_refresh_twin_after_upload` defers). This pass runs
+    each cycle, finds the videos whose ``youtube_publish_at`` has passed, runs
+    the same refresh for each, and stamps ``youtube_went_public_at`` so a video
+    is handled once. Returns how many twins were updated.
+    """
+    hours = 72
+    try:
+        hours = max(1, int(site_config.get("youtube_went_public_window_hours", 72)))
+    except (TypeError, ValueError, AttributeError):
+        hours = 72
+    try:
+        rows = await pool.fetch(_GONE_PUBLIC_SQL, list(_TYPE_TO_MEDIUM), hours, 20)
+    except Exception as exc:  # noqa: BLE001 — a skipped pass retries next cycle
+        logger.warning("[MEDIA_DISTRIBUTE] gone-public lookup failed: %s", describe_exception(exc))
+        return 0
+    updated = 0
+    for r in rows:
+        try:
+            if await _refresh_twin_after_upload(
+                pool, site_config, task_id=r["task_id"], medium=_TYPE_TO_MEDIUM[r["type"]],
+            ):
+                updated += 1
+        except Exception as exc:  # noqa: BLE001 — one video must not stop the pass
+            logger.warning(
+                "[MEDIA_DISTRIBUTE] gone-public twin refresh failed for %s: %s",
+                r["asset_id"], describe_exception(exc),
+            )
+        try:
+            await pool.execute(_MARK_GONE_PUBLIC_SQL, r["asset_id"])
+        except Exception as exc:  # noqa: BLE001 — unmarked means it is tried again next cycle
+            logger.warning(
+                "[MEDIA_DISTRIBUTE] gone-public stamp failed for %s: %s",
+                r["asset_id"], describe_exception(exc),
+            )
+    return updated
+
+
 async def _refresh_twin_after_upload(
-    pool: Any, site_config: Any, *, task_id: str | None, medium: str,
+    pool: Any, site_config: Any, *, task_id: str | None, medium: str, asset_id: Any = None,
 ) -> bool:
     """After ``medium`` landed, give its already-live twin the cross-link.
 
@@ -429,6 +529,10 @@ async def _refresh_twin_after_upload(
     from poindexter.services.jobs.youtube_payload import _cross_links_enabled
 
     if not _cross_links_enabled(site_config):
+        return False
+    if await _publishes_later(pool, asset_id):
+        # This upload is private until its slot: a link to it from the twin
+        # would be dead until then. _refresh_twins_gone_public adds it at the slot.
         return False
     twin_id = await _fetch_twin_video_id(pool, task_id, medium)
     if not twin_id:
@@ -559,8 +663,16 @@ async def _dispatch_asset(
     # checked at render time, services/short_package.py). Empty fields fall
     # back to the narration-derived ones, which is what older Shorts have.
     package = await load_short_package(pool, task_id) if shorts else None
+    # Upload slot (services/youtube_upload_slots.py): uploaded now, private
+    # with publishAt, so YouTube makes it public at the next free slot for
+    # this type instead of the moment it was approved. None = public now.
+    # Read first: the cross-link below may name only a twin that is public by
+    # the time this video is.
+    publish_at = await next_upload_slot(pool, site_config, shorts=shorts)
     twin_url = twin_watch_url(
-        await _fetch_twin_video_id(pool, task_id, "video_short" if shorts else "video"),
+        await _fetch_twin_video_id(
+            pool, task_id, "video_short" if shorts else "video", visible_by=publish_at,
+        ),
         twin_is_short=not shorts,
     )
     tags = _parse_seo_keywords(row.get("seo_keywords") or "")
@@ -608,10 +720,6 @@ async def _dispatch_asset(
         if thumbnail_path:
             payload["thumbnail_path"] = thumbnail_path
 
-    # Upload slot (services/youtube_upload_slots.py): uploaded now, private
-    # with publishAt, so YouTube makes it public at the next free slot for
-    # this type instead of the moment it was approved. None = public now.
-    publish_at = await next_upload_slot(pool, site_config, shorts=shorts)
     if publish_at is not None:
         payload["scheduled_at"] = rfc3339(publish_at)
 
@@ -993,12 +1101,20 @@ class MediaDistributeJob:
                     try:
                         await _refresh_twin_after_upload(
                             pool, sc, task_id=row.get("task_id"), medium=medium,
+                            asset_id=row.get("asset_id"),
                         )
                     except Exception as exc:  # noqa: BLE001 — never fail a landed upload
                         logger.warning(
                             "[MEDIA_DISTRIBUTE] twin refresh failed for post %s (%s): %s",
                             subject, medium, describe_exception(exc),
                         )
+
+        # --- Gone-public pass: cross-links for videos whose slot passed ----
+        twins_linked = 0
+        try:
+            twins_linked = await _refresh_twins_gone_public(pool, sc)
+        except Exception as exc:  # noqa: BLE001 — retried next cycle
+            logger.warning("[MEDIA_DISTRIBUTE] gone-public pass failed: %s", describe_exception(exc))
 
         # --- Mirror pass: put the feed's enclosures in the bucket -----------
         # Keyed on state (feed item with no stamped URL), not on this cycle's
@@ -1023,13 +1139,14 @@ class MediaDistributeJob:
 
         detail = (
             f"linked {linked}, standalone seeded {standalone_seeded}, "
-            f"dispatched {dispatched}; "
+            f"dispatched {dispatched}, cross-linked at slot {twins_linked}; "
             f"video R2 mirror: {mirror.summary()}"
         )
         metrics = {
             "linked": linked,
             "standalone_seeded": standalone_seeded,
             "dispatched": dispatched,
+            "twins_linked_at_slot": twins_linked,
             "video_r2_uploaded": mirror.count("uploaded"),
             "video_r2_stamped": mirror.count("stamped"),
             "video_r2_blocked": mirror.count("blocked"),
@@ -1038,7 +1155,7 @@ class MediaDistributeJob:
         return JobResult(
             ok=True,
             detail=detail,
-            changes_made=linked + standalone_seeded + dispatched + mirror.delivered,
+            changes_made=linked + standalone_seeded + dispatched + twins_linked + mirror.delivered,
             # The scheduler writes an audit_log job_run row for every fire that
             # carries metrics. An idle cycle every 10 minutes would add 144
             # rows of zeros a day, so only a cycle that did something records.

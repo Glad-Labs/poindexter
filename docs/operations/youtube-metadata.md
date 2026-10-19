@@ -55,10 +55,23 @@ on `media_assets.metadata.youtube_publish_at`; the YouTube board's "Queued to go
 public" table lists what is waiting. The slot scan is the social scheduler's
 (`social_drafts.next_prime_slot`), so both queues pick slots the same way.
 
-One visible gap: the Short and the long form link to each other once both are
-uploaded, so for the hours between their two slots one of those links opens a
-video that is not public yet. The link is still written at upload time, because
-nothing rewrites descriptions when a video goes public.
+**Cross-links wait for the slot.** A post's Short and long video link to each
+other ("Watch the full breakdown" / "Watch the Short"). A scheduled upload is
+private until its slot, so two rules keep those links from opening a video
+that isn't public yet:
+
+- **At upload,** a video links its twin only if the twin is public by this
+  video's own slot. This applies to `media_distribute`'s twin lookup and to
+  `sync-metadata`.
+- **At the slot,** each `media_distribute` cycle finds videos whose
+  `youtube_publish_at` has passed. It gives each one's twin the cross-link
+  through the same recompose `sync-metadata --apply` uses, then stamps
+  `youtube_went_public_at` so each video is handled once. Look-back:
+  `youtube_went_public_window_hours`, 72. The upload-time refresh skips a
+  video that is still private.
+
+Before 2026-10-18 the link was written at upload. For the hours between the
+pair's two slots, one of the two links opened a private video.
 
 ## Editing videos already on the channel
 

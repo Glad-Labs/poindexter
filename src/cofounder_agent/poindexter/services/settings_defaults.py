@@ -977,6 +977,9 @@ DEFAULTS: dict[str, str] = {
     # fell to almost nothing between uploads.
     'youtube_upload_slots_enabled': 'true',
     'youtube_upload_slots': 'short=12:00,19:00; long=17:00',
+    # How far back the gone-public pass looks for videos whose upload slot has
+    # passed, to give each one's twin the cross-link (media_distribute).
+    'youtube_went_public_window_hours': '72',
     # A slot must be at least this far ahead: YouTube needs publishAt in the
     # future, and the upload itself takes minutes.
     'youtube_upload_slot_min_lead_minutes': '30',
@@ -7126,6 +7129,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'youtube_playlist_shelves_enabled': {'owner': 'youtube_playlists', 'value_type': 'boolean'},
     'youtube_upload_slots_enabled': {'owner': 'youtube_upload_slots', 'value_type': 'boolean'},
     'youtube_upload_slots': {'owner': 'youtube_upload_slots', 'value_type': 'string'},
+    'youtube_went_public_window_hours': {'owner': 'media_distribute', 'value_type': 'integer'},
     'youtube_upload_slot_min_lead_minutes': {'owner': 'youtube_upload_slots', 'value_type': 'integer'},
     'youtube_captions_enabled': {'owner': 'youtube_captions', 'value_type': 'boolean'},
     'youtube_caption_language': {'owner': 'youtube_captions', 'value_type': 'string'},

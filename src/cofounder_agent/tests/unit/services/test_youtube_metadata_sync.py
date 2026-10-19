@@ -336,10 +336,26 @@ async def test_medium_comes_from_the_distribution_row_not_a_subquery():
     correlated subquery into media_assets because pipeline_distributions had no
     medium column — the same missing column that let a Short's row be
     overwritten in the first place (migration 20260901_173133)."""
+    import re
+
     from poindexter.services.youtube_metadata_sync import _TARGETS_SQL
 
-    assert "pd.medium" in _TARGETS_SQL
-    assert "platform_video_ids" not in _TARGETS_SQL
+    assert re.search(r"\bpd\.medium,", _TARGETS_SQL), "the row's medium is selected from pd"
+    # ...and never re-derived from an asset's type. (platform_video_ids does
+    # appear since 2026-10-18, but only to read a twin's upload slot.)
+    assert not re.search(r"\.type\s+AS\s+medium", _TARGETS_SQL, re.IGNORECASE)
+
+
+@pytest.mark.asyncio
+async def test_a_twin_counts_only_once_it_is_public_by_this_videos_own_slot():
+    """Upload slots (2026-10-18): a twin uploaded to a later slot is private
+    until then, so linking it from a video that goes public earlier is a dead
+    link. The twin lateral compares the twin's slot with this video's."""
+    from poindexter.services.youtube_metadata_sync import _TARGETS_SQL
+
+    twin = _TARGETS_SQL[_TARGETS_SQL.index("FROM pipeline_distributions t"):_TARGETS_SQL.index(") twin ON TRUE")]
+    assert "youtube_publish_at" in twin
+    assert "GREATEST(" in twin and "pd.external_id" in twin
 
 
 # --------------------------------------------------------------------------

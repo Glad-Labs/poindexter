@@ -1080,6 +1080,84 @@ async def test_twin_refresh_failure_never_fails_the_landed_upload(monkeypatch):
 
 
 # --------------------------------------------------------------------------
+# Upload slots vs cross-links (2026-10-18): a scheduled upload is private until
+# its slot, so a pair's link may name only a twin public by then, and the twin
+# of a scheduled upload gets its link when the slot passes.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_scheduled_upload_links_only_a_twin_public_by_its_own_slot():
+    import datetime as dt
+
+    slot = dt.datetime(2026, 10, 20, 16, 0, tzinfo=dt.timezone.utc)
+    pool = _pair_pool(script="Nobody clicks anymore. Here is what to do.", twin="LONG1")
+    dispatch = AsyncMock(return_value={"success": True, "post_id": "VID1", "url": "u"})
+    row = {"post_id": "p1", "task_id": "t1", "title": "T", "content": "c", "excerpt": "e",
+           "seo_keywords": "", "slug": "s", "storage_path": "/tmp/v.mp4"}
+    with patch("poindexter.services.integrations.registry.dispatch", dispatch), patch(
+        "poindexter.services.integrations.handlers.load_all", lambda: None
+    ), patch.object(md, "next_upload_slot", AsyncMock(return_value=slot)), patch.object(
+        md, "record_slot", AsyncMock()
+    ):
+        await md._dispatch_asset(pool, _sc(media_pipeline_trigger_enabled="true"), row, shorts=True)
+    twin_calls = [c for c in pool.fetchval.await_args_list if c.args[0] is md._TWIN_SQL]
+    assert twin_calls and twin_calls[0].args[3] == slot, "the twin must be public by THIS video's slot"
+    assert dispatch.await_args.args[2]["scheduled_at"] == "2026-10-20T16:00:00Z"
+
+
+def test_the_twin_query_skips_a_twin_whose_slot_is_later():
+    assert "youtube_publish_at" in md._TWIN_SQL and "> $3" in md._TWIN_SQL
+
+
+@pytest.mark.asyncio
+async def test_twin_refresh_waits_while_this_upload_is_private(monkeypatch):
+    """Linking the twin to a video still private until its slot is a dead link."""
+    import poindexter.services.youtube_metadata_sync as sync_mod
+
+    fake_sync = AsyncMock(return_value=[SimpleNamespace(applied=True)])
+    monkeypatch.setattr(sync_mod, "sync_youtube_metadata", fake_sync)
+    pool = _pair_pool(twin="LONG1")
+    base = pool.fetchval.side_effect
+
+    async def _fetchval(sql, *args):
+        if sql is md._PUBLISHES_LATER_SQL:
+            return True
+        return await base(sql, *args)
+
+    pool.fetchval = AsyncMock(side_effect=_fetchval)
+    assert await md._refresh_twin_after_upload(
+        pool, _sc(), task_id="t1", medium="video_short", asset_id="a1",
+    ) is False
+    fake_sync.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_the_gone_public_pass_refreshes_each_twin_once():
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[
+        {"asset_id": "a1", "task_id": "t1", "type": "video_short"},
+        {"asset_id": "a2", "task_id": "t2", "type": "video"},
+    ])
+    pool.execute = AsyncMock(return_value="UPDATE 1")
+    with patch.object(md, "_refresh_twin_after_upload", AsyncMock(side_effect=[True, RuntimeError("x")])) as ref:
+        updated = await md._refresh_twins_gone_public(pool, _sc())
+    assert updated == 1
+    assert [c.kwargs["medium"] for c in ref.await_args_list] == ["video_short", "video"]
+    # Both are stamped, the failed one too: one attempt per video, as at upload.
+    assert [c.args[1] for c in pool.execute.await_args_list] == ["a1", "a2"]
+    assert all(c.args[0] is md._MARK_GONE_PUBLIC_SQL for c in pool.execute.await_args_list)
+    assert pool.fetch.await_args.args[2] == 72
+
+
+@pytest.mark.asyncio
+async def test_a_failed_gone_public_lookup_updates_nothing():
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(side_effect=RuntimeError("db"))
+    assert await md._refresh_twins_gone_public(pool, _sc()) == 0
+
+
+# --------------------------------------------------------------------------
 # Custom thumbnails (2026-09-25): each render's composed thumbnail rides with
 # its upload (the Short's since 2026-10-13), and what YouTube did with it is
 # stamped + surfaced

@@ -88,6 +88,9 @@ _TARGETS_SQL = """
            chap.chapters,
            -- The pair's other render, only while it is LIVE: the cross-link is
            -- composed from this and recomposed when the twin lands or vanishes.
+           -- Live means public by the time this video is: a twin uploaded to a
+           -- later slot (services/youtube_upload_slots.py) is still private, and
+           -- media_distribute's gone-public pass adds the link at its slot.
            twin.external_id AS twin_video_id,
            twin.medium      AS twin_medium
       FROM pipeline_distributions pd
@@ -105,6 +108,19 @@ _TARGETS_SQL = """
               AND t.external_id IS NOT NULL
               AND t.medium IN ('video', 'video_short')
               AND t.medium <> pd.medium
+              AND NOT EXISTS (
+                  SELECT 1 FROM media_assets tm
+                   WHERE tm.platform_video_ids ->> 'youtube' = t.external_id
+                     AND (tm.metadata ->> 'youtube_publish_at')::timestamptz > GREATEST(
+                         NOW(),
+                         COALESCE((
+                             SELECT (sm.metadata ->> 'youtube_publish_at')::timestamptz
+                               FROM media_assets sm
+                              WHERE sm.platform_video_ids ->> 'youtube' = pd.external_id
+                              LIMIT 1
+                         ), NOW())
+                     )
+              )
             ORDER BY t.published_at DESC NULLS LAST LIMIT 1
       ) twin ON TRUE
       LEFT JOIN LATERAL (
