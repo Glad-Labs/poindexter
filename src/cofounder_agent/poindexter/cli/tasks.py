@@ -214,6 +214,18 @@ def tasks_get(task_id: str, json_output: bool, content: bool) -> None:
     ),
 )
 @click.option(
+    "--research-file",
+    "research_file",
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    default=None,
+    help=(
+        "A text file of source facts for the writer. It becomes the task's "
+        "research_context: the writer grounds the draft in it, and the numeric "
+        "and self-claim QA rails check the finished draft against it. Use it for "
+        "a story about something only you know, such as a bug you fixed."
+    ),
+)
+@click.option(
     "--wait-for-worker",
     "wait_for_worker_s",
     type=click.IntRange(min=0),
@@ -233,6 +245,7 @@ def tasks_create(
     tone: str,
     target_length: int | None,
     niche_slug: str | None,
+    research_file: str | None,
     wait_for_worker_s: int,
 ) -> None:
     """Queue a new content task.
@@ -241,7 +254,7 @@ def tasks_create(
 
         poindexter tasks create "Why VRAM bandwidth matters for LLM inference" --niche starter-blog
     """
-    payload = {
+    payload: dict[str, Any] = {
         "task_name": f"Blog post: {topic}",
         "topic": topic,
         "category": category,
@@ -255,6 +268,16 @@ def tasks_create(
         # Only sent when given, so a task created without --niche posts the
         # same body as before.
         payload["niche_slug"] = niche_slug
+    if research_file:
+        # The API's metadata.research_context is the writer's caller-attached
+        # research (writer_core._collect_research_context, layer 1), the same
+        # seam the topic pool's summaries and benchmark findings use.
+        with open(research_file, encoding="utf-8") as fh:
+            research = fh.read().strip()
+        if not research:
+            click.echo(f"Error: {research_file} is empty", err=True)
+            sys.exit(2)
+        payload["metadata"] = {"research_context": research}
 
     async def _create():
         # The quick start runs this right after `start-stack.sh up -d`, while
