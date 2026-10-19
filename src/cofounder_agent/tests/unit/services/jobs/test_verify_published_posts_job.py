@@ -156,8 +156,45 @@ class TestRun:
             new=MagicMock(),
         ):
             job = VerifyPublishedPostsJob()
-            result = await job.run(pool, {"_site_config": _sc()})
+            result = await job.run(pool, {"_site_config": _sc(), "retry_delay_seconds": 0})
         assert result.metrics["posts_failed"] == 1
+        assert client.get.await_count == 2  # one retry before it counts
+
+    @pytest.mark.asyncio
+    async def test_a_one_off_network_failure_is_retried_not_paged(self):
+        """2026-10-19: one failed request paged critical for a post that loaded in 0.2 s."""
+        pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "flaky"}])
+        outcomes = iter([httpx.ReadTimeout(""), _FakeResp(200)])
+
+        async def _get(url, timeout=10):
+            outcome = next(outcomes)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        client = _patched_client({})
+        client.get = AsyncMock(side_effect=_get)
+        finding = MagicMock()
+        with patch("poindexter.services.jobs.verify_published_posts.httpx.AsyncClient", return_value=client), \
+             patch("poindexter.services.jobs.verify_published_posts.emit_finding", new=finding):
+            result = await VerifyPublishedPostsJob().run(
+                pool, {"_site_config": _sc(), "retry_delay_seconds": 0},
+            )
+        assert result.metrics["posts_failed"] == 0
+        assert not any(c.kwargs.get("kind") == "post_verification_failure" for c in finding.call_args_list)
+
+    @pytest.mark.asyncio
+    async def test_a_timeout_is_named_in_the_failure(self):
+        """str(httpx.ReadTimeout('')) is empty: the page read "error: " and nothing else."""
+        pool, conn = _make_pool([{"id": "p1", "title": "T", "slug": "slow"}])
+        client = _patched_client({"https://gladlabs.io/posts/slow": httpx.ReadTimeout("")})
+        with patch("poindexter.services.jobs.verify_published_posts.httpx.AsyncClient", return_value=client), \
+             patch("poindexter.services.jobs.verify_published_posts.emit_finding", new=MagicMock()):
+            await VerifyPublishedPostsJob().run(
+                pool, {"_site_config": _sc(), "retry_delay_seconds": 0, "transport_retries": 0},
+            )
+        written = " ".join(str(a) for c in conn.execute.await_args_list for a in c.args)
+        assert "ReadTimeout" in written
 
     @pytest.mark.asyncio
     async def test_trailing_slash_on_site_url_is_stripped(self):

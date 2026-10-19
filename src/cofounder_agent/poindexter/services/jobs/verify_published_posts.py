@@ -38,10 +38,18 @@ just stops the monitor from mistaking that for a content outage.
   the more they matter)
 - ``config.file_gitea_issue`` (default true) — file one dedup'd
   issue per cycle if any failed
+- ``config.transport_retries`` (default 1) and ``config.retry_delay_seconds``
+  (default 10) — a request that fails without an HTTP answer (timeout,
+  refused, DNS) is tried again this many times before it counts. One such
+  failure paged ``critical`` twice on 2026-10-19 for a post that loaded in
+  0.2 s, the first at 08:00, seconds after the box woke from its night sleep.
+  The failure text also read ``error:`` with nothing after it, because
+  ``str()`` of an httpx timeout is empty; it now names the exception.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -67,6 +75,8 @@ class VerifyPublishedPostsJob:
         window_hours = int(config.get("window_hours", 24))
         batch_size = int(config.get("batch_size", 20))
         file_issue = bool(config.get("file_gitea_issue", True))
+        transport_retries = max(0, int(config.get("transport_retries", 1)))
+        retry_delay = max(0.0, float(config.get("retry_delay_seconds", 10)))
 
         # DI seam (glad-labs-stack#330)
         sc = config.get("_site_config")
@@ -116,7 +126,18 @@ class VerifyPublishedPostsJob:
             for row in rows:
                 url = f"{site_url}/posts/{row['slug']}"
                 try:
-                    resp = await client.get(url, timeout=10)
+                    for attempt in range(transport_retries + 1):
+                        try:
+                            resp = await client.get(url, timeout=10)
+                            break
+                        except httpx.TransportError as exc:
+                            if attempt == transport_retries:
+                                raise
+                            logger.info(
+                                "VerifyPublishedPostsJob: %s failed (%s); retrying in %.0fs",
+                                url, describe_exception(exc), retry_delay,
+                            )
+                            await asyncio.sleep(retry_delay)
                     if resp.status_code == 200:
                         verified += 1
                     elif is_edge_challenge(resp):
@@ -140,7 +161,7 @@ class VerifyPublishedPostsJob:
                     failures.append({
                         "slug": row["slug"],
                         "title": (row["title"] or "")[:50],
-                        "status": f"error: {e}",
+                        "status": f"error: {describe_exception(e)}",
                     })
 
         # Mirror the detected failures into audit_log (best-effort). The same
