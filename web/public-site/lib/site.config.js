@@ -18,6 +18,11 @@ export const SITE_URL =
 export const SITE_TAGLINE =
   process.env.NEXT_PUBLIC_SITE_TAGLINE ||
   'AI, Hardware & the Edges Where They Meet';
+// The plain-language summary /llms.txt opens with: what the site covers, for a
+// language model deciding whether to read on.
+export const SITE_SUMMARY =
+  process.env.NEXT_PUBLIC_SITE_SUMMARY ||
+  'One developer writing about running AI on your own hardware: local LLMs, GPUs, memory and storage, and the tools that run them. Posts are drafted by an automated content pipeline and approved by a person before they are published.';
 
 export const COMPANY_NAME =
   process.env.NEXT_PUBLIC_COMPANY_NAME || 'Glad Labs, LLC';
