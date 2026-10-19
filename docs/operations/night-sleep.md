@@ -33,7 +33,8 @@ minutes. Outside the window it exits at once. Inside it:
    knows it slept when CLOCK_BOOTTIME pulls ahead of CLOCK_MONOTONIC, which
    does not count suspend. If it never goes to sleep within 3 minutes it
    disarms the alarm and records `host_sleep_failed` (audit `host_sleep`).
-4. **On resume**: writes `host_resume` (`slept_at`, `resumed_at`), checks that
+4. **On resume**: first brings the desktop back (below), then writes
+   `host_resume` (`slept_at`, `resumed_at`, `display`), checks that
    every container with a GPU device request can still run `nvidia-smi` and
    restarts any that cannot (`host_resume_checked`), then restarts the backup
    jobs in `host_sleep_resume_restart_containers`. Those jobs time their next
@@ -41,6 +42,30 @@ minutes. Outside the window it exits at once. Inside it:
    "daily" backup would drift seven hours later every night. Restarted, each
    dumps at once: the daily, volume and off-site backups now run every
    morning after wake.
+
+### The desktop after resume
+
+The COSMIC compositor does not always take the displays back after a resume.
+It logs `Unable to load output config: Failed to reset config` (after a run
+of `Permission denied` on `/dev/dri/card1`), and the monitors stay on the
+kernel console showing the last suspend message, while every service is fine
+underneath. Switching to another virtual console and back makes it reclaim
+the displays with the session and its windows intact.
+
+So the script does that on every resume (`host_sleep_resume_vt_cycle`): it
+finds the local wayland/x11 session's console through `loginctl`, runs
+`chvt 2` then `chvt <session VT>`, and checks the journal for the
+compositor's failure line after the switch, retrying once. The result is the
+`display` field on `host_resume` (`{"vt", "ok", "cycles"}`), and a failed
+recovery makes that row a warning. It does not filter on the session being
+`Active`: right after resume logind can report it inactive, and the first
+version, which did, found no session and skipped the switch.
+
+By hand, from an SSH session or a TTY (Ctrl+Alt+F2):
+
+```bash
+sudo chvt 2; sleep 3; sudo chvt 1
+```
 
 The backup watcher reads the last `host_resume` row and reports a stale tier
 as `resume_grace` (no restart, no page) for `host_sleep_resume_grace_minutes`
@@ -56,6 +81,7 @@ as `resume_grace` (no restart, no page) for `host_sleep_resume_grace_minutes`
 | `host_sleep_defer_limit_minutes`       | `120`                | How long past the start a busy box may defer before staying up. |
 | `host_sleep_resume_grace_minutes`      | `30`                 | Backup-watcher grace after a wake.                              |
 | `host_sleep_resume_restart_containers` | the four backup jobs | Restarted on every wake.                                        |
+| `host_sleep_resume_vt_cycle`           | `true`               | Switch the desktop's console away and back after a wake.        |
 
 ## Operating it
 
@@ -75,7 +101,16 @@ out of it.
 
 2026-10-18, a 2-minute test through the same functions: asleep 121 s, woke on
 the RTC, both GPUs and all eight GPU containers could run `nvidia-smi`, both
-Ollama instances answered, no container unhealthy, no alert fired.
+Ollama instances answered, no container unhealthy, no alert fired. The
+displays did NOT come back (the compositor failure above); nobody was at the
+screen, and the test only checked services.
+
+Retest the same day with the operator watching: the compositor failed again
+and the first recovery found no active session; a manual console switch
+brought the screens back. With the session filter removed, the next test
+woke after 71 s asleep, found the desktop on VT 1, switched once, and the
+compositor logged no failure; all GPU containers and both Ollama instances
+were up.
 
 ## Not covered yet
 

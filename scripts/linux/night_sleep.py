@@ -22,10 +22,19 @@ outside the window. Inside it:
 3. Arms the RTC alarm (``rtcwake -m no``) and suspends through
    ``systemctl suspend``, so the NVIDIA suspend hooks run. Writing
    ``/sys/power/state`` directly (``rtcwake -m mem``) skips them.
-4. On resume: records the sleep, checks that every GPU container can still
+4. On resume: brings the desktop back first (below), records the sleep,
+   checks that every GPU container can still
    see its GPU and restarts any that cannot, and restarts the backup jobs so
    each runs at once. Their timers count only awake time, so without the
    restart a "daily" backup would drift seven hours later every night.
+
+The desktop: on 2026-10-18 a test sleep resumed every service but not the
+screens. The COSMIC compositor logged "Unable to load output config: Failed to
+reset config" and never took the displays back, so the monitors stayed on the
+kernel console. Switching to another virtual console and back made it
+reclaim them with the session and its apps intact. So on resume the script
+cycles the graphical session's VT and checks the compositor's log for that
+error after the switch, retrying once (``host_sleep_resume_vt_cycle``).
 
 Everything is read from app_settings (``host_sleep_*``, ``operator_timezone``)
 through the postgres container; the feature is off unless
@@ -61,6 +70,7 @@ DEFAULTS = {
     "host_sleep_resume_restart_containers": (
         "poindexter-backup-hourly,poindexter-backup-daily,poindexter-backup-volumes,poindexter-backup-offsite"
     ),
+    "host_sleep_resume_vt_cycle": "true",
     "operator_timezone": "UTC",
     "ollama_base_url": "",
     "ollama_vision_base_url": "",
@@ -278,6 +288,68 @@ def suspend_until(wake_at: datetime, start_timeout_s: float = 180.0) -> bool:
     return False
 
 
+# What the COSMIC compositor logs when it fails to take the displays back.
+DISPLAY_FAILURE_PATTERNS = ("Failed to reset config", "Unable to load output config")
+
+
+def graphical_vt(wait_s: float = 60.0, interval_s: float = 5.0) -> int | None:
+    """The virtual console of the local graphical session, if any.
+
+    Not filtered on ``Active``: right after resume, when the compositor has
+    lost the displays, logind can report the session inactive (the
+    2026-10-18 retest found no session 10 s after wake and skipped the
+    switch). An active session is preferred; any local one will do. Polls
+    while logind has nothing to report yet."""
+    deadline = time.monotonic() + wait_s
+    while True:
+        found: list[tuple[bool, int]] = []
+        ids = subprocess.run(["loginctl", "list-sessions", "--no-legend"], capture_output=True, text=True).stdout
+        for sid in [line.split()[0] for line in ids.splitlines() if line.strip()]:
+            props = dict(
+                line.split("=", 1)
+                for line in subprocess.run(
+                    ["loginctl", "show-session", sid, "-p", "Type", "-p", "VTNr", "-p", "Active", "-p", "Remote"],
+                    capture_output=True, text=True,
+                ).stdout.splitlines()
+                if "=" in line
+            )
+            vt = props.get("VTNr", "0")
+            if props.get("Type") in ("wayland", "x11") and props.get("Remote") != "yes" and vt.isdigit() and int(vt) > 0:
+                found.append((props.get("Active") == "yes", int(vt)))
+        if found:
+            return max(found)[1]
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(interval_s)
+
+
+def display_failed_since(since: datetime) -> bool:
+    """Whether the compositor has logged a failure to take the displays since ``since``."""
+    log = subprocess.run(
+        ["journalctl", "--since", since.strftime("%Y-%m-%d %H:%M:%S"), "-o", "cat", "--no-pager"],
+        capture_output=True, text=True,
+    ).stdout
+    return any(p in log for p in DISPLAY_FAILURE_PATTERNS)
+
+
+def recover_display(settle_s: float = 8.0, wait_s: float = 60.0) -> dict:
+    """Switch the graphical session's console away and back so the compositor
+    reclaims the screens; retry once if it logs the failure again."""
+    vt = graphical_vt(wait_s=wait_s)
+    if vt is None:
+        return {"vt": None, "ok": None, "cycles": 0}
+    other = 2 if vt != 2 else 3
+    for cycle in (1, 2):
+        mark = datetime.now()
+        subprocess.run(["chvt", str(other)], capture_output=True)
+        time.sleep(3)
+        subprocess.run(["chvt", str(vt)], capture_output=True)
+        time.sleep(settle_s)
+        if not display_failed_since(mark):
+            return {"vt": vt, "ok": True, "cycles": cycle}
+    return {"vt": vt, "ok": False, "cycles": 2}
+
+
 def gpu_containers() -> list[str]:
     names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True).stdout.split()
     out = []
@@ -291,9 +363,15 @@ def gpu_containers() -> list[str]:
 
 def after_resume(settings: dict[str, str], slept_at: datetime, wake_at: datetime) -> None:
     resumed_at = datetime.now(slept_at.tzinfo)
+    display = {"vt": None, "ok": None, "cycles": 0}
+    if settings.get("host_sleep_resume_vt_cycle", "true").lower() in ("1", "true", "yes", "on"):
+        time.sleep(10)
+        display = recover_display()
+        log(f"display: {display}")
     audit("host_resume", {"slept_at": slept_at.isoformat(), "resumed_at": resumed_at.isoformat(),
-                          "planned_wake": wake_at.isoformat()})
-    time.sleep(45)
+                          "planned_wake": wake_at.isoformat(), "display": display},
+          severity="warning" if display.get("ok") is False else "info")
+    time.sleep(35)
     restarted = []
     for name in gpu_containers():
         ok = subprocess.run(["docker", "exec", name, "nvidia-smi", "-L"], capture_output=True, timeout=60)

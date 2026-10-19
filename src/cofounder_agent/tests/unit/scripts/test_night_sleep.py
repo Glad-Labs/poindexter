@@ -88,3 +88,75 @@ class TestGpusSettle:
     def test_a_loaded_model_keeps_it_waiting_until_the_timeout(self, monkeypatch):
         monkeypatch.setattr(ns.time, "monotonic", iter([0, 1, 2, 3, 4, 99999]).__next__)
         assert self._run(monkeypatch, [(1, 1)] * 10, [True] * 10) is False
+
+
+class _Run:
+    """A subprocess.run stand-in answering by the command's first two words."""
+
+    def __init__(self, answers):
+        self.answers, self.calls = answers, []
+
+    def __call__(self, cmd, **_kw):
+        self.calls.append(cmd)
+        key = " ".join(cmd[:2]) if cmd[0] == "loginctl" else cmd[0]
+        if cmd[0] == "loginctl" and cmd[1] == "show-session":
+            key = f"show {cmd[2]}"
+        out = self.answers.get(key, "")
+        return type("R", (), {"stdout": out() if callable(out) else out, "returncode": 0})()
+
+
+def test_the_graphical_console_is_the_active_local_desktop_session(monkeypatch):
+    run = _Run({
+        "loginctl list-sessions": "  3 1000 mattm - pts/0 active no -\n  4 1000 mattm seat0 tty1 active no -\n",
+        "show 3": "Type=tty\nVTNr=0\nActive=yes\nRemote=no\n",
+        "show 4": "Type=wayland\nVTNr=1\nActive=yes\nRemote=no\n",
+    })
+    monkeypatch.setattr(ns.subprocess, "run", run)
+    assert ns.graphical_vt() == 1
+
+
+def test_no_graphical_session_means_no_console_switch(monkeypatch):
+    run = _Run({"loginctl list-sessions": "  3 1000 mattm - pts/0 active no -\n",
+                "show 3": "Type=tty\nVTNr=0\nActive=yes\nRemote=no\n"})
+    monkeypatch.setattr(ns.subprocess, "run", run)
+    assert ns.recover_display(settle_s=0, wait_s=0) == {"vt": None, "ok": None, "cycles": 0}
+    assert not any(c[0] == "chvt" for c in run.calls)
+
+
+def test_the_compositor_failure_line_is_what_counts(monkeypatch):
+    monkeypatch.setattr(ns.subprocess, "run", _Run({
+        "journalctl": "cosmic-comp: Unable to load output config: Failed to reset config\n"}))
+    assert ns.display_failed_since(datetime(2026, 10, 18, 19, 35))
+    monkeypatch.setattr(ns.subprocess, "run", _Run({"journalctl": "cosmic-comp: output enabled\n"}))
+    assert not ns.display_failed_since(datetime(2026, 10, 18, 19, 35))
+
+
+def test_the_console_cycle_retries_once_then_reports_failure(monkeypatch):
+    monkeypatch.setattr(ns.time, "sleep", lambda _s: None)
+    session = {"loginctl list-sessions": "  4 1000 mattm seat0 tty1 active no -\n",
+               "show 4": "Type=wayland\nVTNr=1\nActive=yes\nRemote=no\n"}
+    run = _Run({**session, "journalctl": "Failed to reset config"})
+    monkeypatch.setattr(ns.subprocess, "run", run)
+    assert ns.recover_display(settle_s=0) == {"vt": 1, "ok": False, "cycles": 2}
+    assert [c for c in run.calls if c[0] == "chvt"] == [["chvt", "2"], ["chvt", "1"]] * 2
+
+    run = _Run({**session, "journalctl": ""})
+    monkeypatch.setattr(ns.subprocess, "run", run)
+    assert ns.recover_display(settle_s=0) == {"vt": 1, "ok": True, "cycles": 1}
+
+
+def test_an_inactive_desktop_session_still_gets_its_console_back(monkeypatch):
+    """Right after resume logind may report the desktop inactive: the moment it needs the switch."""
+    monkeypatch.setattr(ns.subprocess, "run", _Run({
+        "loginctl list-sessions": "  4 1000 mattm seat0 tty1 active no -\n",
+        "show 4": "Type=wayland\nVTNr=1\nActive=no\nRemote=no\n",
+    }))
+    assert ns.graphical_vt(wait_s=0) == 1
+
+
+def test_a_remote_session_is_never_switched_to(monkeypatch):
+    monkeypatch.setattr(ns.subprocess, "run", _Run({
+        "loginctl list-sessions": "  9 1000 mattm - - active no -\n",
+        "show 9": "Type=x11\nVTNr=7\nActive=yes\nRemote=yes\n",
+    }))
+    assert ns.graphical_vt(wait_s=0) is None
