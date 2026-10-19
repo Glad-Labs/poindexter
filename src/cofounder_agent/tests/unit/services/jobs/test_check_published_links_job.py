@@ -401,3 +401,14 @@ class TestHeadToGetFallback:
             result = await job.run(pool, {})
 
         assert result.metrics["urls_broken"] == 1
+
+
+
+def test_a_markdown_link_whose_text_is_the_url_is_one_clean_url():
+    """2026-10-19: ``[https://github.com/x](https://github.com/x)`` was read as
+    ``https://github.com/x](https://github.com/x``, a 404, and paged broken_link."""
+    from poindexter.services.jobs.check_published_links import _URL_PATTERN
+
+    text = "*   **Client:** [https://github.com/prometheus/client_python](https://github.com/prometheus/client_python)"
+    found = _URL_PATTERN.findall(text)
+    assert set(found) == {"https://github.com/prometheus/client_python"}

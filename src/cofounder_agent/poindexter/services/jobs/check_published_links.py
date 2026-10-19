@@ -52,7 +52,12 @@ from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
-_URL_PATTERN = re.compile(r'https?://[^\s\)"<>]+')
+# ``]`` ends a URL too: a Markdown link whose text IS the URL,
+# ``[https://x](https://x)``, otherwise reads as one URL ``https://x](https://x``,
+# which 404s. That paged ``broken_link`` for a live, working GitHub link
+# (2026-10-19, "The Solo Developer's Command Center"); every other URL
+# pattern in the codebase already stops at ``]``.
+_URL_PATTERN = re.compile(r'https?://[^\s\)\]"<>]+')
 
 # 4xx codes meaning "the destination is up but refuses our automated /
 # anonymous request" — a bot-block (403), auth-gate (401), or rate-limit
@@ -132,7 +137,8 @@ class CheckPublishedLinksJob:
             headers={"User-Agent": user_agent},
         ) as client:
             for row in rows:
-                urls = _URL_PATTERN.findall(row["content"] or "")
+                # The same URL as link text and target is one link, checked once.
+                urls = list(dict.fromkeys(_URL_PATTERN.findall(row["content"] or "")))
                 for url in urls[:urls_per_post]:
                     if site_domain in url:
                         continue  # internal links don't count
