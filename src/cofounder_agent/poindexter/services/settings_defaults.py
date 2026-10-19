@@ -2869,7 +2869,12 @@ DEFAULTS: dict[str, str] = {
     'niche_carry_forward_decay_factor': '0.7',
     'niche_embedding_model': 'nomic-embed-text',
     'niche_goal_descriptions': '{"TRAFFIC": "Topic likely to attract organic search traffic; trending keyword, broad appeal, evergreen demand.", "EDUCATION": "Topic that teaches the reader something concrete and useful they didn\'t know before.", "BRAND": "Topic that reinforces the operator\'s positioning and unique perspective.", "AUTHORITY": "Topic that demonstrates the operator\'s depth and expertise on something specific.", "REVENUE": "Topic that drives a commercial outcome: signups, sales, conversions, paid feature awareness.", "COMMUNITY": "Topic that resonates with the operator\'s existing audience; sparks discussion, shares, replies.", "NICHE_DEPTH": "Topic that goes deep on the operator\'s niche specialty rather than broad-audience content."}',
-    'niche_ollama_chat_timeout_seconds': '300.0',
+    # The writer's per-call budget (two_pass draft + revise, narrate_bundle).
+    # 600, the value production runs: at 300 a fresh install on the hardware
+    # the README supports (a smaller GPU spilling the 27B writer to the CPU,
+    # or CPU-only) timed out mid-draft, and so did the quick-start E2E on a
+    # 2-core runner, 3 of its last 10 runs (2026-10-19).
+    'niche_ollama_chat_timeout_seconds': '600.0',
     'niche_top_n_per_pool': '5',
     # Topic scope check (poindexter#1127): candidates per LLM call when a
     # niche with a topic_subject has its scope filter on. Measured on 107 live
