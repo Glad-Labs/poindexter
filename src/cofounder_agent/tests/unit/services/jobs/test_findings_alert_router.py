@@ -1157,3 +1157,69 @@ async def test_critical_still_never_cooled_per_source():
     result = await FindingsAlertRouterJob().run(pool, {})
     assert result.metrics["cooled"] == 0
     assert result.metrics["routed"] == 1
+
+
+# ---- Quiet after the night-sleep wake ---------------------------------------
+
+_WOKE = datetime(2026, 10, 19, 12, 0, 9, tzinfo=timezone.utc)
+
+
+def _woke_pool(rows, *, kinds=None, minutes=None, resumed_at=_WOKE):
+    pool, conn = _pool_with(fetchrow={"value": "899"}, fetch=rows)
+
+    async def _fetchval(sql, *args):
+        if "host_resume" in sql:
+            return resumed_at
+        if args and args[0] == "host_sleep_resume_quiet_kinds":
+            return kinds
+        if args and args[0] == "host_sleep_resume_quiet_minutes":
+            return minutes
+        return None
+
+    conn.fetchval = AsyncMock(side_effect=_fetchval)
+    return pool, conn
+
+
+def _finding_at(idx, kind, ts, severity="warn", source="scheduler.drain_sentry_relay"):
+    return {"id": 900 + idx, "source": source, "severity": severity, "timestamp": ts,
+            "details": json.dumps({"kind": kind, "title": "t", "dedup_key": f"{kind}:{idx}"})}
+
+
+async def test_a_network_blip_right_after_the_wake_is_not_paged():
+    """2026-10-19 08:00: five DNS failures, a timed-out probe and a deliberately
+    unloaded judge all paged seconds after the box woke from its night sleep."""
+    pool, _ = _woke_pool([
+        _finding_at(1, "job_failure", _WOKE + timedelta(seconds=5)),
+        _finding_at(2, "pinned_endpoint_cold", _WOKE + timedelta(minutes=3)),
+    ])
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["quieted_after_wake"] == 2
+    assert result.metrics["routed"] == 0
+
+
+async def test_after_the_window_the_same_kind_routes():
+    pool, _ = _woke_pool([_finding_at(1, "job_failure", _WOKE + timedelta(minutes=11))])
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 1 and result.metrics["quieted_after_wake"] == 0
+
+
+async def test_critical_and_unlisted_kinds_always_route_after_the_wake():
+    pool, _ = _woke_pool([
+        _finding_at(1, "job_failure", _WOKE, severity="critical"),
+        _finding_at(2, "post_verification_failure", _WOKE + timedelta(minutes=1)),
+    ])
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics["routed"] == 2 and result.metrics["quieted_after_wake"] == 0
+
+
+async def test_the_quiet_window_is_configurable_and_can_be_switched_off():
+    rows = [_finding_at(1, "job_failure", _WOKE + timedelta(minutes=1))]
+    pool, _ = _woke_pool(rows, minutes="0")
+    assert (await FindingsAlertRouterJob().run(pool, {})).metrics["routed"] == 1
+    pool, _ = _woke_pool(rows, kinds="pinned_endpoint_cold")
+    assert (await FindingsAlertRouterJob().run(pool, {})).metrics["routed"] == 1
+
+
+async def test_no_wake_on_record_routes_as_before():
+    pool, _ = _woke_pool([_finding_at(1, "job_failure", _WOKE)], resumed_at=None)
+    assert (await FindingsAlertRouterJob().run(pool, {})).metrics["routed"] == 1

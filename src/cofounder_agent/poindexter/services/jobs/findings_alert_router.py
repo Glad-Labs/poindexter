@@ -574,7 +574,7 @@ async def _fetch_unrouted_findings(pool: Any, watermark: int) -> list[dict[str, 
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, source, severity, details
+            SELECT id, source, severity, details, timestamp
             FROM audit_log
             WHERE event_type = 'finding'
               AND severity = ANY($1::text[])
@@ -587,6 +587,63 @@ async def _fetch_unrouted_findings(pool: Any, watermark: int) -> list[dict[str, 
             _BATCH_LIMIT,
         )
     return [dict(r) for r in rows]
+
+
+# After the box wakes from its night sleep the network takes a few seconds to
+# come back, and the jobs that were due while it slept all fire at once. On
+# 2026-10-19 that was five DNS failures from drain_sentry_relay, a timed-out
+# affiliate-redirect probe and a "cold" judge (unloaded on purpose before the
+# sleep), all routed as pages. A non-critical finding of a kind listed in
+# host_sleep_resume_quiet_kinds, emitted within host_sleep_resume_quiet_minutes
+# of the wake, is recorded but not routed. A real fault outlasts the window and
+# routes on its next emission; critical always routes.
+_RESUME_QUIET_MINUTES_KEY = "host_sleep_resume_quiet_minutes"
+_RESUME_QUIET_KINDS_KEY = "host_sleep_resume_quiet_kinds"
+_RESUME_QUIET_DEFAULT_KINDS = (
+    "job_failure,sentry_relay_drain_failed,affiliate_redirect_unhealthy,pinned_endpoint_cold"
+)
+# Jobs fire the instant the box unfreezes; night_sleep records resumed_at a
+# few seconds later, so the window opens slightly before it.
+_RESUME_QUIET_LEAD = timedelta(minutes=2)
+
+
+async def _load_resume_quiet(pool: Any) -> tuple[datetime, datetime, frozenset[str]] | None:
+    """``(start, end, kinds)`` of the quiet window after the latest wake, or None."""
+    try:
+        async with pool.acquire() as conn:
+            minutes_raw = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", _RESUME_QUIET_MINUTES_KEY)
+            kinds_raw = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", _RESUME_QUIET_KINDS_KEY)
+            resumed_at = await conn.fetchval(
+                "SELECT max((details->>'resumed_at')::timestamptz) FROM audit_log "
+                "WHERE event_type = 'host_resume' AND timestamp > now() - interval '1 day'")
+    except Exception as exc:
+        logger.warning("[findings_alert_router] resume-quiet state unreadable: %s",
+                       describe_exception(exc))
+        return None
+    if resumed_at is None:
+        return None
+    try:
+        minutes = int(minutes_raw) if minutes_raw not in (None, "") else 10
+    except (TypeError, ValueError):
+        minutes = 10
+    if minutes <= 0:
+        return None
+    kinds = frozenset(
+        k.strip() for k in (kinds_raw if kinds_raw is not None else _RESUME_QUIET_DEFAULT_KINDS).split(",")
+        if k.strip()
+    )
+    return resumed_at - _RESUME_QUIET_LEAD, resumed_at + timedelta(minutes=minutes), kinds
+
+
+def _in_resume_quiet(row: dict[str, Any], kind: str, severity: str,
+                     quiet: tuple[datetime, datetime, frozenset[str]] | None) -> bool:
+    if quiet is None or _normalize_severity(severity) == "critical":
+        return False
+    start, end, kinds = quiet
+    ts = row.get("timestamp")
+    return kind in kinds and isinstance(ts, datetime) and start <= ts <= end
 
 
 def _finding_kind(finding: dict[str, Any]) -> str:
@@ -693,6 +750,8 @@ class FindingsAlertRouterJob:
             (_cooldown_minutes_for(k, policies) for k in batch_kinds), default=0
         )
         last_routed = await _load_last_routed(pool, max_cooldown)
+        resume_quiet = await _load_resume_quiet(pool)
+        quieted = 0
 
         for r in rows:
             kind = _finding_kind(r)
@@ -701,6 +760,11 @@ class FindingsAlertRouterJob:
             severity = r.get("severity") or "info"
             delivery = _delivery_for(kind, severity, policies)
             fallback = (policies.get(kind) or {}).get("fallback", "route")
+
+            if _in_resume_quiet(r, kind, severity, resume_quiet):
+                quieted += 1
+                max_id = max(max_id, int(r["id"]))
+                continue
 
             # Cooldown gates the PRIMARY paging decision only. auto_fix and
             # github_issue are not pages (and carry their own dedup), and a
@@ -775,7 +839,8 @@ class FindingsAlertRouterJob:
             ok=errors == 0,
             detail=(
                 f"routed {routed}, auto-fixed {autofixed}, filed {filed}, "
-                f"suppressed {suppressed}, cooled {cooled}, {errors} error(s); "
+                f"suppressed {suppressed}, cooled {cooled}, quiet after wake {quieted}, "
+                f"{errors} error(s); "
                 f"watermark {watermark} -> {max_id}"
             ),
             changes_made=routed + autofixed + filed,
@@ -790,6 +855,7 @@ class FindingsAlertRouterJob:
                 "filed": filed,
                 "suppressed": suppressed,
                 "cooled": cooled,
+                "quieted_after_wake": quieted,
                 "errors": errors,
             },
         )

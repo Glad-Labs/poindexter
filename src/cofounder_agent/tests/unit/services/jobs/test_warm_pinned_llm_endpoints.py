@@ -83,15 +83,44 @@ def _patches(client_ctx, overrides: dict[str, str]):
     ]
 
 
-async def _run(client_ctx, overrides, site_config=None):
+async def _run(client_ctx, overrides, site_config=None, pool=None):
     import contextlib
 
     with contextlib.ExitStack() as stack:
         for p in _patches(client_ctx, overrides):
             stack.enter_context(p)
         return await WarmPinnedLlmEndpointsJob().run(
-            pool=MagicMock(), config={"_site_config": site_config or _site_config()},
+            pool=pool or MagicMock(), config={"_site_config": site_config or _site_config()},
         )
+
+
+def _sleep_pool(event_type, age_seconds):
+    pool = MagicMock()
+    pool.fetchrow = AsyncMock(return_value={"event_type": event_type, "age": age_seconds})
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_no_warm_while_the_host_prepares_to_sleep():
+    """2026-10-19: night_sleep unloaded the judge and this job loaded it straight
+    back (seven cold findings, one sleep deferred with 21 GB on the 3090)."""
+    client, ctx = _client({"models": []})
+    result = await _run(ctx, {_MODEL: _PINNED}, pool=_sleep_pool("host_sleep_preparing", 300))
+    assert "preparing to sleep" in result.detail
+    client.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event,age", [
+    ("host_resume", 60),                    # just woke: warm the judge for the day
+    ("host_sleep_skipped", 60),             # stayed up tonight
+    ("host_sleep_preparing", 3 * 3600),     # a preparation that never finished
+])
+async def test_warms_once_the_host_is_not_about_to_sleep(event, age):
+    client, ctx = _client({"models": []})
+    result = await _run(ctx, {_MODEL: _PINNED}, pool=_sleep_pool(event, age))
+    assert result.changes_made == 1
+    client.post.assert_awaited_once()
 
 
 @pytest.mark.asyncio

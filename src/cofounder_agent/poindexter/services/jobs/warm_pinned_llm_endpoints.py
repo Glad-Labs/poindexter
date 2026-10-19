@@ -49,6 +49,15 @@ nothing looked wrong. The job therefore treats each endpoint as holding at most
 tags: once that many are resident or just warmed, the remaining tags are left
 alone and a ``pinned_endpoint_overcommitted`` finding names them, because a
 warm that evicts a pinned sibling is not a warm.
+
+**The night sleep (2026-10-19).** ``scripts/linux/night_sleep.py`` unloads every
+model before it suspends the box, and this job loaded the judge straight back:
+seven ``pinned_endpoint_cold`` findings that night, and one sleep attempt
+deferred because 21 GB had reappeared on the 3090 mid-wait. The script now
+records ``host_sleep_preparing`` before it unloads; while that is the latest
+host-sleep event and younger than ``host_sleep_defer_limit_minutes``, this job
+stands down. A sleep that happens, is skipped or fails writes a later event,
+and the job warms as usual after the wake.
 """
 
 from __future__ import annotations
@@ -100,6 +109,39 @@ def _resident_contexts(payload: Any) -> dict[str, int]:
     return out
 
 
+_HOST_SLEEP_EVENTS = (
+    "host_sleep_preparing", "host_sleep", "host_resume",
+    "host_sleep_skipped", "host_sleep_failed",
+)
+
+
+async def _host_preparing_to_sleep(pool: Any, site_config: Any) -> bool:
+    """True while the night-sleep script has unloaded the GPUs to suspend.
+
+    Read from the script's own audit rows (it runs on the host, outside the
+    worker). Unknown state warms as before: a failed read must not leave the
+    judge cold all day."""
+    try:
+        limit = int(site_config.get("host_sleep_defer_limit_minutes", "120") or 120)
+    except (TypeError, ValueError):
+        limit = 120
+    try:
+        row = await pool.fetchrow(
+            "SELECT event_type, EXTRACT(EPOCH FROM now() - timestamp) AS age "
+            "FROM audit_log WHERE event_type = ANY($1::text[]) "
+            "ORDER BY timestamp DESC LIMIT 1",
+            list(_HOST_SLEEP_EVENTS),
+        )
+    except Exception as exc:
+        logger.warning("[warm_pinned] host-sleep state unreadable (%s); warming as usual",
+                       describe_exception(exc))
+        return False
+    return bool(
+        row and row["event_type"] == "host_sleep_preparing"
+        and row["age"] is not None and float(row["age"]) < limit * 60
+    )
+
+
 def _max_models_per_endpoint(site_config: Any) -> int:
     """How many of its own pinned tags one endpoint may hold at once (>= 1)."""
     raw = str(site_config.get(_MAX_PER_ENDPOINT_KEY, "1") or "1").strip()
@@ -133,6 +175,10 @@ class WarmPinnedLlmEndpointsJob:
             return JobResult(ok=False, detail="no pool available", changes_made=0)
         if not site_config.get_bool(_ENABLED_KEY, True):
             return JobResult(ok=True, detail="disabled", changes_made=0)
+        if await _host_preparing_to_sleep(pool, site_config):
+            return JobResult(
+                ok=True, detail="host is preparing to sleep; not warming", changes_made=0,
+            )
 
         import httpx
 

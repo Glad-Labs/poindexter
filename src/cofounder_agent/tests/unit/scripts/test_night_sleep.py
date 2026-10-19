@@ -197,3 +197,10 @@ def test_busy_is_checked_again_after_the_gpus_settle():
     main_src = src[src.index("def main()"):]
     settle = main_src.index("wait_gpus_settled(settings)")
     assert "busy_reasons()" in main_src[settle:main_src.index("suspend_until(")]
+
+
+def test_preparing_is_recorded_before_the_gpus_are_unloaded():
+    """The worker's warm job stands down on host_sleep_preparing; written after
+    free_vram it would arrive too late to stop the judge reloading."""
+    main_src = _PATH.read_text().split("def main()", 1)[1]
+    assert main_src.index('"host_sleep_preparing"') < main_src.index("free_vram(settings)")

@@ -130,6 +130,22 @@ were up.
   switched once with no compositor failure, then restarted the four backup
   jobs. No GPU container needed a restart.
 
+### Quiet around the sleep (2026-10-19)
+
+- **The pinned judge.** The worker's `warm_pinned_llm_endpoints` job reloaded
+  the 3090 judge within minutes of every unload: seven `pinned_endpoint_cold`
+  findings that night, and one attempt deferred with 21 GB back on the card.
+  The script now records `host_sleep_preparing` before it unloads, and the job
+  stands down while that is the latest host-sleep event (up to
+  `host_sleep_defer_limit_minutes`).
+- **The wake burst.** At 08:00 the network was still coming up when every
+  overdue job fired: five DNS failures from `drain_sentry_relay`, a timed-out
+  affiliate-redirect probe, the cold judge. `findings_alert_router` records a
+  non-critical finding of a kind in `host_sleep_resume_quiet_kinds` without
+  routing it when it lands within `host_sleep_resume_quiet_minutes` (10) of the
+  wake (`host_resume.details.resumed_at`). A real fault outlasts the window and
+  routes on its next emission, and critical always routes.
+
 ## Not covered yet
 
 Other freshness checks (Prometheus rules, brain probes) have no resume grace.

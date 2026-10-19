@@ -2567,6 +2567,11 @@ DEFAULTS: dict[str, str] = {
     'host_sleep_defer_limit_minutes': '120',
     'host_sleep_resume_grace_minutes': '30',
     'host_sleep_resume_restart_containers': 'poindexter-backup-hourly,poindexter-backup-daily,poindexter-backup-volumes,poindexter-backup-offsite',
+    # findings_alert_router: right after a wake the network is still coming up
+    # and every overdue job fires at once. Non-critical findings of these kinds
+    # emitted within the window are recorded, not routed.
+    'host_sleep_resume_quiet_minutes': '10',
+    'host_sleep_resume_quiet_kinds': 'job_failure,sentry_relay_drain_failed,affiliate_redirect_unhealthy,pinned_endpoint_cold',
     # After a wake, switch the desktop session's console away and back so the
     # compositor retakes the displays (COSMIC can fail to on resume).
     'host_sleep_resume_vt_cycle': 'true',
@@ -8538,6 +8543,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'host_sleep_defer_limit_minutes': {'owner': 'night_sleep', 'value_type': 'integer'},
     'host_sleep_resume_grace_minutes': {'owner': 'backup_watcher', 'value_type': 'integer'},
     'host_sleep_resume_restart_containers': {'owner': 'night_sleep'},
+    'host_sleep_resume_quiet_minutes': {'owner': 'findings_alert_router', 'value_type': 'integer'},
+    'host_sleep_resume_quiet_kinds': {'owner': 'findings_alert_router'},
     'host_sleep_resume_vt_cycle': {'owner': 'night_sleep', 'value_type': 'boolean'},
     'host_sleep_settle_tolerance_mib': {'owner': 'night_sleep', 'value_type': 'integer'},
     'taste_review_niches': {'owner': 'taste_review'},

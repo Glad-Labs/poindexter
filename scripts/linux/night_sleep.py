@@ -277,7 +277,7 @@ def wait_gpus_settled(settings: dict[str, str], timeout_s: float = 180.0, interv
     while time.monotonic() < deadline:
         used = _gpu_memory_used()
         still = last is not None and len(used) == len(last) and all(
-            abs(a - b) <= tolerance for a, b in zip(used, last)
+            abs(a - b) <= tolerance for a, b in zip(used, last, strict=True)
         )
         stable = stable + 1 if (still and not _ollama_loaded(settings)) else 0
         if stable >= 2:
@@ -445,6 +445,11 @@ def main() -> int:
         log(f"would unload the GPUs and sleep until {win['wake_at'].isoformat()}")
         return 0
 
+    # Before unloading: the worker's warm_pinned_llm_endpoints job reads this
+    # and stops re-loading the pinned judge, which it did within minutes of
+    # every unload on the first night (2026-10-19), delaying the sleep.
+    audit("host_sleep_preparing", {"window_start": win["start_at"].isoformat(),
+                                   "planned_wake": win["wake_at"].isoformat()})
     free_vram(settings)
     if not wait_gpus_settled(settings):
         log("deferring: the GPUs are still releasing memory")
