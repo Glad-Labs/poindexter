@@ -470,6 +470,9 @@ class WorkerClient:
     async def put(self, path: str, **kwargs: Any) -> httpx.Response:
         return await self._authed_request("PUT", path, **kwargs)
 
+    async def patch(self, path: str, **kwargs: Any) -> httpx.Response:
+        return await self._authed_request("PATCH", path, **kwargs)
+
     async def delete(self, path: str, **kwargs: Any) -> httpx.Response:
         return await self._authed_request("DELETE", path, **kwargs)
 

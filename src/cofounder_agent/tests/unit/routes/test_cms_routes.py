@@ -29,6 +29,18 @@ from poindexter.routes.cms_routes import router
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _stub_live_refresh():
+    """update_post re-exports a published post (publish_service.refresh_live_post);
+    the pool mocks here model only the UPDATE, so the refresh is stubbed and
+    asserted where it matters (TestUpdatePostRefreshesLiveSite)."""
+    with patch(
+        "poindexter.services.publish_service.refresh_live_post",
+        new=AsyncMock(return_value={"refreshed": False, "reason": "not_published"}),
+    ) as stub:
+        yield stub
+
+
 def _build_app():
     app = FastAPI()
     app.include_router(router)
@@ -1336,3 +1348,29 @@ class TestPreviewMedia:
         assert '<source src="https://cdn.example/podcast/v2/p.mp3" type="audio/mpeg">' in html
         assert '<source src="https://cdn.example/video/p.mp4" type="video/mp4">' in html
         assert "Podcast Ready" in html and "Video Ready" in html
+
+
+@pytest.mark.unit
+class TestUpdatePostRefreshesLiveSite:
+    def test_the_edit_is_pushed_to_the_live_site(self, _stub_live_refresh):
+        """2026-10-18: a retitle changed the DB only; the site kept the old title."""
+        _stub_live_refresh.return_value = {"refreshed": True, "slug": "kumo",
+                                           "exported": True, "revalidated": True}
+        conn = MagicMock()
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=conn)
+        cm.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire = MagicMock(return_value=cm)
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)):
+            app = _build_app()
+            from poindexter.utils.route_utils import get_site_config_dependency
+            app.dependency_overrides[get_site_config_dependency] = lambda: "SC"
+            resp = TestClient(app).patch(
+                f"/api/posts/{POST_UUID}", json={"title": "New"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["live"]["refreshed"] is True
+        _stub_live_refresh.assert_awaited_once_with(pool, POST_UUID, site_config="SC")

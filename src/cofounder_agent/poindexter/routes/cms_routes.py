@@ -323,6 +323,7 @@ async def update_post(
     post_id: str,
     updates: dict,
     token: str = Depends(verify_api_token),
+    site_config_dep=Depends(get_site_config_dependency),
 ):
     """
     Update a blog post by ID.
@@ -424,7 +425,12 @@ async def update_post(
             )
             if result == "UPDATE 0":
                 raise HTTPException(status_code=404, detail="Post not found")
-        return {"success": True, "message": "Post updated"}
+        # A published post is served from its static JSON, so the edit
+        # reaches readers only once it is re-exported (publish_service).
+        from poindexter.services.publish_service import refresh_live_post
+
+        live = await refresh_live_post(pool, post_id, site_config=site_config_dep)
+        return {"success": True, "message": "Post updated", "live": live}
     except HTTPException:
         raise
     except Exception as e:

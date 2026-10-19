@@ -2246,6 +2246,39 @@ async def publish_now(
     return fired
 
 
+async def refresh_live_post(
+    pool: Any,
+    post_id: str,
+    *,
+    site_config: SiteConfig,
+) -> dict[str, Any]:
+    """Make an edit to a published post reach the live site.
+
+    The site reads each post from its static JSON in storage, so a DB update
+    alone (the PATCH route, ``poindexter posts retitle``) changed nothing a
+    reader sees; on 2026-10-18 a retitle sat in the DB until the post was
+    re-exported by hand. This re-exports the post and busts its ISR cache, the
+    same two steps a publish runs. A post that is not published is left alone.
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT slug, status FROM posts WHERE id::text = $1", str(post_id),
+        )
+    if row is None or row["status"] != "published" or not row["slug"]:
+        return {"refreshed": False, "reason": "not_published" if row else "post_not_found"}
+    slug = row["slug"]
+    from poindexter.services.static_export_service import export_post
+
+    try:
+        exported = await export_post(pool, slug, site_config=site_config)
+    except Exception as e:  # noqa: BLE001 — reported in the result, never raised past an edit
+        logger.error("[publish_service] refresh_live_post export failed for %s: %s", slug, e)
+        exported = False
+    revalidated = await _revalidate_isr(slug, site_config)
+    return {"refreshed": exported and revalidated, "slug": slug,
+            "exported": exported, "revalidated": revalidated}
+
+
 async def unpublish_post(
     pool: Any,
     post_id: str,

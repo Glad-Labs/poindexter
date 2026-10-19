@@ -483,6 +483,18 @@ class TestGetPostBySlugCompleteness:
 
 @pytest.mark.unit
 class TestPostUpdateValidation:
+    @pytest.fixture(autouse=True)
+    def _stub_live_refresh(self):
+        """update_post re-exports a published post afterwards
+        (publish_service.refresh_live_post, tested in
+        tests/unit/services/test_refresh_live_post.py); these pool mocks
+        model only the UPDATE."""
+        with patch(
+            "poindexter.services.publish_service.refresh_live_post",
+            new=AsyncMock(return_value={"refreshed": False, "reason": "not_published"}),
+        ):
+            yield
+
     def test_publish_sets_published_at(self):
         """Setting status to 'published' without published_at should auto-set it."""
         pool, conn = _make_pool_mock()

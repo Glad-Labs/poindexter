@@ -309,12 +309,11 @@ def posts_get(slug: str, content: bool, json_output: bool) -> None:
 
 
 async def _patch_post(post_id: str, updates: dict) -> dict:
+    # The route is PATCH. This used to try PUT, get 405, then PATCH through the
+    # raw httpx client, which carries no token: every `posts retitle` failed
+    # with 401 "Missing authorization header" (found 2026-10-18).
     async with WorkerClient() as c:
-        resp = await c.put(f"/api/posts/{post_id}", json=updates)
-        # cms_routes uses PATCH but httpx doesn't expose it on our wrapper.
-        # Try PATCH via the raw _client if we got method-not-allowed.
-        if resp.status_code == 405 and c._http is not None:
-            resp = await c._http.patch(f"/api/posts/{post_id}", json=updates)
+        resp = await c.patch(f"/api/posts/{post_id}", json=updates)
         return await c.json_or_raise(resp)
 
 
