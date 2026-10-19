@@ -26,7 +26,7 @@ out an in-flight Prefect run rather than restarting a busy worker) is a
 HEALTHY outcome, not an error. It counts as liveness and never as a failure;
 treating deferral as breakage would page on the mechanism working.
 
-A third condition sits between the two (Glad-Labs/glad-labs-stack#4172):
+A third condition sits between the two (Glad-Labs/poindexter#4172):
 
 * **fallback** — the newest heartbeat came from the LAST-KNOWN-GOOD copy of
   ``deploy-checkout-sync.sh``, not the merged one. The deploy-sync launcher
