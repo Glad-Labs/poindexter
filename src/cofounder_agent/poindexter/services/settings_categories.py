@@ -151,6 +151,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("writing", "content"),
     ("rag_", "content"),
     ("seo", "content"),
+    ("post_summary_", "content"),
     ("topic", "content"),
     ("niche", "content"),
     ("citation", "content"),

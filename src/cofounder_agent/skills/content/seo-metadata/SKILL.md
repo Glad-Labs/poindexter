@@ -11,6 +11,9 @@ metadata:
     - key: seo.generate_title
       output_format: json
       description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
+    - key: seo.post_summary
+      output_format: text
+      description: "The 'In brief' summary of a published post: its title and full text in; two or three plain sentences out that state what it found, answer-first, for readers and AI answer engines. Code checks the length, that it is not about itself, and that every number appears in the post; one retry carries the reason. Used by services.post_summaries.summarize_post."
 ---
 
 # SEO metadata skill
@@ -63,4 +66,18 @@ TOPIC (assignment label — context only): {topic}
 
 ARTICLE:
 {content}
+```
+
+## seo.post_summary
+
+```text
+Write the "In brief" summary for the blog post below: two or three plain sentences a reader could quote on their own.
+
+Lead with the answer or the finding, not with the question or the story. Say what the post found, recommends or measured, with its most important specific: a model, a part, a number, a result. Use only what the post itself says, and copy every number exactly as the post writes it. Write as a statement about the subject, not about the post ("The RTX 5090 runs 70B models at...", never "This article explains..."). Keep it under {max_chars} characters. No headings, lists, markdown or quotation marks.
+{feedback}
+Title: {title}
+
+{content}
+
+Reply with the summary only.
 ```

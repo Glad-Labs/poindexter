@@ -94,3 +94,38 @@ describe('proxy() — removed posts return 410 Gone', () => {
     expect(res.status).not.toBe(410);
   });
 });
+
+describe('the markdown version leads with the In brief summary', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  async function markdownFor(post) {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => post });
+    const res = await proxy(req('/posts/a-post.md'));
+    return res.text();
+  }
+
+  it('quotes the summary when the post has one', async () => {
+    const md = await markdownFor({
+      title: 'X',
+      excerpt: 'An opening hook.',
+      summary: 'The 5090 runs 70B models.',
+      content: 'body',
+    });
+    expect(md).toContain('> **In brief:** The 5090 runs 70B models.');
+    expect(md).not.toContain('An opening hook.');
+  });
+
+  it('falls back to the excerpt without one', async () => {
+    const md = await markdownFor({
+      title: 'X',
+      excerpt: 'An opening hook.',
+      content: 'body',
+    });
+    expect(md).toContain('> An opening hook.');
+  });
+});

@@ -133,3 +133,29 @@ describe('generateBlogPostingSchema image sizes', () => {
     );
   });
 });
+
+describe('the In brief summary is the BlogPosting abstract', () => {
+  const base = {
+    title: 'A post',
+    excerpt: 'An excerpt',
+    content: 'one two',
+    slug: 'a-post',
+    date: '2026-10-18T12:00:00Z',
+  };
+
+  test('present when the post has a summary', () => {
+    expect(
+      generateBlogPostingSchema({ ...base, summary: ' The finding. ' }, SITE)
+        .abstract
+    ).toBe('The finding.');
+  });
+
+  test('absent without one', () => {
+    expect(generateBlogPostingSchema(base, SITE)).not.toHaveProperty(
+      'abstract'
+    );
+    expect(
+      generateBlogPostingSchema({ ...base, summary: '  ' }, SITE)
+    ).not.toHaveProperty('abstract');
+  });
+});

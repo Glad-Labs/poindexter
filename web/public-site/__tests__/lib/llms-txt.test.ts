@@ -83,3 +83,26 @@ describe('buildLlmsTxt', () => {
     );
   });
 });
+
+describe('the article line prefers the In brief summary', () => {
+  const post = {
+    title: 'Best GPUs',
+    slug: 'best-gpus',
+    seo_description: 'Learn which GPU fits your own hardware se',
+    published_at: '2026-10-10T00:00:00Z',
+  };
+
+  test('a post with a summary is described by it, whole', () => {
+    const summary =
+      'The RTX 5090 (32GB) is the best overall card for local LLMs. A used RTX 3090 is the best value.';
+    const text = buildLlmsTxt([{ ...post, summary }], SITE);
+    expect(text).toContain(
+      `- [Best GPUs](https://www.gladlabs.io/posts/best-gpus.md): ${summary}`
+    );
+  });
+
+  test('a post without one falls back to its seo description', () => {
+    const text = buildLlmsTxt([{ ...post, summary: null }], SITE);
+    expect(text).toContain(': Learn which GPU fits your own hardware se');
+  });
+});

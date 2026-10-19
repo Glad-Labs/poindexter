@@ -26,6 +26,8 @@ export interface Post {
   seo_title?: string;
   seo_description?: string;
   seo_keywords?: string;
+  // Answer-first "In brief" summary (posts.metadata.summary), when written.
+  summary?: string | null;
   niche_slug?: string;
   // Set by the static export when the post body contains /go affiliate links.
   // Drives the conditional FTC disclosure banner (AffiliateDisclosure).

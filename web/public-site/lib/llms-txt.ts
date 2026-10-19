@@ -6,6 +6,8 @@
  *
  * Dev diary entries are left out, as they are from the sitemap: they are
  * noindexed status logs, not articles. The description is the post's
+ * answer-first "In brief" summary when it has one (services/post_summaries.py:
+ * whole sentences, every number checked against the post), else its
  * seo_description, which the static export stores cut at a fixed length and
  * often mid-word ("fits your own hardware se"); a cut one is trimmed back to
  * its last whole word and marked with an ellipsis.
@@ -15,6 +17,7 @@ import { cleanPostTitle, sortPostsNewestFirst } from './posts';
 export interface LlmsPost {
   title: string;
   slug: string;
+  summary?: string | null;
   seo_description?: string;
   excerpt?: string;
   niche_slug?: string;
@@ -48,7 +51,7 @@ export function buildLlmsTxt(posts: LlmsPost[], site: LlmsSite): string {
   const articles = sortPostsNewestFirst(
     posts.filter((p) => p.slug && p.niche_slug !== 'dev_diary')
   ).map((p) => {
-    const desc = oneLine(p.seo_description || p.excerpt);
+    const desc = oneLine(p.summary || p.seo_description || p.excerpt);
     const link = `- [${cleanPostTitle(p.title)}](${base}/posts/${p.slug}.md)`;
     return desc ? `${link}: ${desc}` : link;
   });

@@ -107,6 +107,7 @@ async def _fetch_published_posts(pool, include_content: bool = False) -> list[di
                    p.seo_keywords, p.published_at, p.created_at, p.updated_at,
                    p.distributed_at,
                    p.metadata->>'featured_image_alt' AS featured_image_alt,
+                   p.metadata->>'summary' AS summary,
                    COALESCE(MAX(ptask.niche_slug), '') AS niche_slug,
                    COALESCE(
                        ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
@@ -133,6 +134,7 @@ async def _fetch_post_by_slug(pool, slug: str) -> dict | None:
                    p.cover_image_url, p.author_id, p.category_id, p.status,
                    p.seo_title, p.seo_description, p.seo_keywords,
                    p.metadata->>'featured_image_alt' AS featured_image_alt,
+                   p.metadata->>'summary' AS summary,
                    p.published_at, p.created_at, p.updated_at,
                    COALESCE(
                        ARRAY_AGG(t.slug ORDER BY t.slug) FILTER (WHERE t.slug IS NOT NULL),
@@ -181,6 +183,8 @@ def _post_summary(post: dict) -> dict:
         "seo_title": post.get("seo_title"),
         "seo_description": post.get("seo_description"),
         "seo_keywords": post.get("seo_keywords"),
+        # The answer-first "In brief" summary (services.post_summaries), or None.
+        "summary": post.get("summary") or None,
         "niche_slug": post.get("niche_slug") or "",
         "tags": list(post.get("tags") or []),
         "published_at": post["published_at"].isoformat() if post.get("published_at") else None,

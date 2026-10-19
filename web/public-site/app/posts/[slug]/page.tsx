@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Button, Card, Eyebrow } from '@glad-labs/brand';
 import { BreadcrumbSchema } from '../../../components/StructuredData';
+import { InBrief } from '../../../components/InBrief';
 import { generateBlogPostingSchema } from '../../../lib/structured-data';
 import { GiscusWrapper } from '../../../components/GiscusWrapper';
 import AdUnit from '../../../components/AdUnit';
@@ -403,6 +404,8 @@ export default async function PostPage({
                 HN
               </Button>
             </div>
+
+            <InBrief summary={post.summary} />
 
             <article className="gl-prose max-w-none">
               <div

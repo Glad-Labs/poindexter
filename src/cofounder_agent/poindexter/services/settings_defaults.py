@@ -4483,6 +4483,18 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'content_type_classifier_model': '',
     # Master switch for the classifier job.
     'classify_content_types_enabled': 'true',
+    # "In brief" summaries (services/post_summaries.py, GeneratePostSummariesJob):
+    # two or three answer-first sentences per published main-feed post, shown at
+    # the top of the post and given to AI answer engines (JSON-LD abstract, the
+    # Markdown version, /llms.txt). Every number must appear in the post; a
+    # summary failing the checks twice is retried after _retry_days. The model
+    # defaults to the local writer.
+    'post_summary_enabled': 'false',
+    'post_summary_model': '',
+    'post_summary_max_chars': '420',
+    'post_summary_max_tokens': '4000',
+    'post_summary_timeout_seconds': '180',
+    'post_summary_retry_days': '7',
     # (mastodon_instance_url removed 2026-06-29 — the legacy direct Mastodon
     #  adapter is retired; Mastodon-via-Postiz uses postiz_integration_id_mastodon.)
 
@@ -7690,6 +7702,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'citation_repoint_multitenant_hosts': {'owner': 'content_reconcile_citations'},
     'citation_strip_unlinked_enabled': {'owner': 'content_reconcile_citations', 'value_type': 'boolean'},
     'classify_content_types_enabled': {'owner': 'classify_content_types', 'value_type': 'boolean'},
+    'post_summary_enabled': {'owner': 'post_summaries', 'value_type': 'boolean'},
+    'post_summary_model': {'owner': 'post_summaries'},
+    'post_summary_max_chars': {'owner': 'post_summaries', 'value_type': 'integer'},
+    'post_summary_max_tokens': {'owner': 'post_summaries', 'value_type': 'integer'},
+    'post_summary_timeout_seconds': {'owner': 'post_summaries', 'value_type': 'integer'},
+    'post_summary_retry_days': {'owner': 'post_summaries', 'value_type': 'integer'},
     'clock_skew_probe_enabled': {'owner': 'clock_skew_probe', 'value_type': 'boolean'},
     'deploy_sync_error_streak_threshold': {'owner': 'deploy_sync_probe', 'value_type': 'integer'},
     'deploy_sync_max_age_minutes': {'owner': 'deploy_sync_probe', 'value_type': 'integer'},

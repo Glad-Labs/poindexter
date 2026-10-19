@@ -144,7 +144,12 @@ function postToMarkdown(post: Record<string, unknown>, slug: string): string {
   const tags = Array.isArray(post.tags)
     ? (post.tags as string[]).join(', ')
     : String(post.tags ?? '');
-  const excerpt = String(post.excerpt ?? post.summary ?? '');
+  // The answer-first "In brief" summary leads when the post has one; the
+  // excerpt (the post's own opening lines) otherwise.
+  const summary = String(post.summary ?? '').trim();
+  const excerpt = summary
+    ? `**In brief:** ${summary}`
+    : String(post.excerpt ?? '');
   const rawContent = String(
     post.content_markdown ??
       post.body_markdown ??

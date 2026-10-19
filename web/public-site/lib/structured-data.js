@@ -52,6 +52,7 @@ export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
     date,
     coverImage,
     category,
+    summary,
   } = post;
 
   const publishDate = date || publishedAt;
@@ -91,5 +92,10 @@ export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
     articleBody: content,
     keywords: category?.name ? [category.name] : [],
     wordCount: content ? content.split(/\s+/).length : 0,
+    // The answer-first "In brief" summary: the passage an answer engine can
+    // quote whole. Omitted when the post has none yet.
+    ...(summary && String(summary).trim()
+      ? { abstract: String(summary).trim() }
+      : {}),
   };
 }

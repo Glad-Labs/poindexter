@@ -735,6 +735,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "poindexter.services.jobs.check_published_links", "CheckPublishedLinksJob"),
         ("jobs", "poindexter.services.jobs.flag_missing_seo", "FlagMissingSeoJob"),
         ("jobs", "poindexter.services.jobs.fix_missing_seo", "FixMissingSeoJob"),
+        ("jobs", "poindexter.services.jobs.generate_post_summaries", "GeneratePostSummariesJob"),
         ("jobs", "poindexter.services.jobs.detect_duplicate_posts", "DetectDuplicatePostsJob"),
         ("jobs", "poindexter.services.jobs.audit_published_quality", "AuditPublishedQualityJob"),
         ("jobs", "poindexter.services.jobs.fix_broken_internal_links", "FixBrokenInternalLinksJob"),
