@@ -1,4 +1,4 @@
-"""Contract tests for ``scripts/linux/cli-venv-sync.sh`` (Glad-Labs/glad-labs-stack#4156).
+"""Contract tests for ``scripts/linux/cli-venv-sync.sh`` (Glad-Labs/poindexter#4156).
 
 The host ``poindexter`` CLI used to run out of a poetry venv editable-installed
 against the operator's working checkout, which sat 148 commits behind main with
