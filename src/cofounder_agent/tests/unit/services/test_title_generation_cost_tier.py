@@ -585,6 +585,27 @@ def test_extract_h1_returns_none_for_empty_input():
     assert extract_h1_title(None) is None  # type: ignore[arg-type]
 
 
+def test_a_section_heading_below_body_text_is_not_a_title():
+    """2026-10-17: a draft with no title line shipped as "What's in the box",
+    its first section heading. Only the opening line can be the title."""
+    content = (
+        "Microsoft told Gizmodo's reviewer it always wanted to make this.\n\n"
+        "## What's in the box\n\nThe silicon is RTX Spark."
+    )
+    assert extract_h1_title(content) is None
+
+
+def test_the_title_line_may_follow_blank_lines():
+    assert extract_h1_title("\n\n## Fallback H2 Title\n\nBody.") == "Fallback H2 Title"
+
+
+def test_choose_canonical_title_falls_back_to_the_topic_not_a_section():
+    content = "Lead paragraph about the laptop.\n\n## What's in the box\n\nBody."
+    assert choose_canonical_title("Microsoft Surface Laptop Ultra Review", content, None) == (
+        "Microsoft Surface Laptop Ultra Review"
+    )
+
+
 def test_extract_h1_ignores_h3_and_deeper():
     """``### `` and below are body structure, not the post title."""
     content = "### Section Heading\n\nBody."

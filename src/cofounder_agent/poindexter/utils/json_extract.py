@@ -117,7 +117,15 @@ def extract_json_object(
         return None
     fence_match = _FENCE_RE.search(text)
     candidate = fence_match.group(1) if fence_match else text
-    for chunk in (candidate, text):
+    chunks = [candidate, text]
+    # ``\'`` is not a JSON escape, but models write it inside double-quoted
+    # strings ("It\'s"); json.loads rejects the whole object. It is never
+    # valid JSON, so unescaping it cannot change a parse that succeeds.
+    # 2026-10-18: two of a title run's four calls returned
+    # {"title": "...Reviewers Agree It\'s Microsoft\'s..."} and were dropped.
+    if "\\'" in text:
+        chunks += [c.replace("\\'", "'") for c in (candidate, text)]
+    for chunk in chunks:
         chunk = chunk.strip()
         try:
             parsed = json.loads(chunk)

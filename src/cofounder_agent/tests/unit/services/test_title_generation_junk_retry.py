@@ -122,3 +122,34 @@ async def test_clean_title_needs_no_retry():
     out = await _run(provider)
     assert out == _GOOD_TITLE
     assert provider.complete.await_count == 1
+
+
+# A real headline that is merely over the length cap (2026-10-17 shape, 96 chars).
+_LONG_TITLE = (
+    "Surface Laptop Ultra with RTX Spark: Reviewers Call It Microsoft's Best, "
+    "but the RAM Tier Decides"
+)
+
+
+@pytest.mark.asyncio
+async def test_an_over_long_title_is_retried_with_its_length_not_a_meta_correction():
+    """66 of 68 rejections in 30 days were real titles just over the cap, and
+    the retry told them they had described the title; they came back long
+    again. The retry now names the length and the limit."""
+    assert len(_LONG_TITLE) > 90
+    provider = _provider_returning_sequence(
+        [f'{{"title": "{_LONG_TITLE}"}}', f'{{"title": "{_GOOD_TITLE}"}}']
+    )
+    out = await _run(provider)
+    assert out == _GOOD_TITLE
+    retry_prompt = provider._calls[1]["messages"][0]["content"]
+    assert f"{len(_LONG_TITLE)} characters" in retry_prompt
+    assert "at most 90 characters" in retry_prompt
+    assert "DESCRIBED the title" not in retry_prompt
+
+
+@pytest.mark.asyncio
+async def test_a_title_with_an_escaped_apostrophe_is_read():
+    """Models write ``It\\'s`` inside JSON strings; the reply was dropped whole."""
+    provider = _provider_returning_sequence([r'{"title": "Why the RTX 5090 Isn\'t Enough"}'])
+    assert await _run(provider) == "Why the RTX 5090 Isn't Enough"

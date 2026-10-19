@@ -136,3 +136,12 @@ def test_salvage_with_no_opening_brace():
 
 def test_salvage_on_empty_input():
     assert extract_json_object("", salvage_truncated=True) is None
+
+
+def test_an_escaped_apostrophe_inside_a_string_is_read():
+    """``\\'`` is not a JSON escape, but models emit it; the object was lost."""
+    assert extract_json_object(r'{"title": "It\'s the RAM"}') == {"title": "It's the RAM"}
+
+
+def test_valid_json_is_unchanged_by_the_apostrophe_repair():
+    assert extract_json_object('{"a": "it\'s", "b": "C:\\\\x"}') == {"a": "it's", "b": "C:\\x"}

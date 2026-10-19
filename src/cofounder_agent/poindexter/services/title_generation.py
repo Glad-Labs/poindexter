@@ -147,7 +147,15 @@ def build_title_grounding_digest(
 
 
 def extract_h1_title(content: str) -> str | None:
-    """Return the first markdown H1/H2 heading text from ``content``, or None.
+    """Return the draft's title line, when it opens with one, or None.
+
+    Only the OPENING line counts: an H1/H2 the writer put first is its title
+    line; a heading further down is a section heading. Until 2026-10-18 this
+    returned the first H1/H2 anywhere, so a draft with no title line (the
+    usual case, since the title is a separate step) and a failed title call
+    shipped a section heading as its title: "What's in the box", "How to read
+    this list", "What actually shipped", 17 fallbacks in 30 days, one of them
+    published ("The Pitch Is One Forward Pass").
 
     Handles Windows line endings, leading whitespace (up to 3 spaces per
     CommonMark), and the model occasionally emitting ``## `` instead of
@@ -161,9 +169,11 @@ def extract_h1_title(content: str) -> str | None:
     if not content:
         return None
     for line in content.splitlines():
+        if not line.strip():
+            continue
         match = _H1_HEADING_RE.match(line)
         if not match:
-            continue
+            return None  # the draft opens with body text: no title line
         heading = match.group(1).strip().strip('"').strip("'").strip()
         # Strip any wrapping bold markers — writer sometimes emits
         # ``# **Title**`` instead of ``# Title``.
@@ -794,18 +804,40 @@ async def generate_canonical_title(
                 logger.debug("Generated title: %s", title)
                 return title
 
+            too_long = (
+                len(title) > max_title_length
+                and title[-1:] in _CLEAN_END_CHARS
+                and not _is_meta_commentary_title(title)
+            )
             logger.warning(
-                "[TITLE_GEN] Junk/meta-commentary title on attempt %d/%d — "
-                "rejected: %r",
+                "[TITLE_GEN] %s title on attempt %d/%d — rejected: %r",
+                f"Too long ({len(title)} > {max_title_length} chars)" if too_long
+                else "Junk/meta-commentary",
                 attempt + 1,
                 1 + max_junk_retries,
                 title[:120],
             )
+            # Tell the model the reason it was rejected. A title over the
+            # length cap is a real headline, and the meta-commentary
+            # correction below made it write another long one: 66 of the 68
+            # rejections in the 30 days to 2026-10-18 were 91-103 character
+            # titles told they had "DESCRIBED the title instead of stating
+            # it". The limit is named here, and only here, because a title
+            # over it is discarded; the main prompt carries no length.
             attempt_prompt = prompt + (
-                "\n\n⚠️ Your previous response DESCRIBED the title instead of "
-                "stating it. Do not write commentary about tone, format, SEO "
-                "value, or what the title avoids. Respond with ONLY the JSON "
-                'object {"title": "..."} where the value is the headline itself.'
+                (
+                    f"\n\nYour previous title was {len(title)} characters: "
+                    f"{title!r}. Titles here must be at most {max_title_length} "
+                    "characters. Write a shorter one that keeps its most "
+                    'specific detail. Respond with ONLY the JSON object '
+                    '{"title": "..."}.'
+                )
+                if too_long else (
+                    "\n\n⚠️ Your previous response DESCRIBED the title instead of "
+                    "stating it. Do not write commentary about tone, format, SEO "
+                    "value, or what the title avoids. Respond with ONLY the JSON "
+                    'object {"title": "..."} where the value is the headline itself.'
+                )
             )
         return None
 

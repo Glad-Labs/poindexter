@@ -343,6 +343,31 @@ Threshold" and "32GB of Nothing" both pass. Demand is the topic layer's job
 (`topic_source_rank_weights`, the `search_autocomplete` tap); this gate only
 guarantees the topic layer's work survives into the string a searcher sees.
 
+## When the title call fails (2026-10-18)
+
+A draft reached review titled "What's in the box". The title model had
+written eight real headlines, and all eight were thrown out:
+
+- **Over the length cap, told the wrong reason.** `title_max_length` (90)
+  rejects a longer title as junk, and the retry then told the model it had
+  "DESCRIBED the title instead of stating it". So it wrote another long
+  headline. In the 30 days to 2026-10-18, 66 of the 68 rejections were real
+  titles of 91-103 characters. The retry now says the title's length and the
+  limit. The main prompt still carries no length: the limit is named only
+  when a title has been discarded for it.
+- **An escaped apostrophe.** Two replies were `{"title": "...It\'s..."}`.
+  `\'` is not a JSON escape, so the whole object failed to parse.
+  `utils.json_extract` now unescapes it. A reply that parsed before still
+  parses the same way.
+- **A section heading as the fallback.** With no LLM title,
+  `choose_canonical_title` took the first H1/H2 _anywhere_ in the draft. The
+  writer rarely opens with a title line, so this was a section heading
+  partway down: "What's in the box", "How to read this list", "What actually
+  shipped". There were 17 such fallbacks in 30 days, and one was published
+  ("The Pitch Is One Forward Pass"). `extract_h1_title` now accepts only a
+  heading on the draft's opening line. With none, the title falls back to the
+  topic, which the SEO step's topic-echo guard and the review both catch.
+
 ## Where the prompts live
 
 Per `feedback_prompts_must_be_db_configurable`, the standing directives are in
