@@ -54,7 +54,11 @@ except ImportError:
         from redis.asyncio import Redis  # type: ignore
     else:
         Redis = None  # type: ignore
-    logging.warning("Redis SDK not installed. Caching disabled. Install with: pip install redis")
+    # Info, on this module's logger: caching is optional, and a root-logger
+    # warning printed itself on every CLI command of a plain `pip install`.
+    logging.getLogger(__name__).info(
+        "Redis SDK not installed. Caching disabled. Install with: pip install redis"
+    )
 
 logger = get_logger(__name__)
 

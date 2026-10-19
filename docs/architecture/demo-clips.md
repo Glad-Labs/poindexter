@@ -299,3 +299,40 @@ emits green any more, and third-party green that slips through should not land
 on the red-green confusion pair on camera.
 
 Restyle by changing settings, not tapes.
+
+## The install-and-operate recording (how-to footage)
+
+The demo tapes above are read-only by design: they film the live system, and
+nothing on it may change. A how-to has to change things (install, approve,
+publish), so its footage comes from a fresh install instead. The weekly
+`quickstart-e2e` workflow already runs the README quick start on a clean hosted
+runner and carries the post through `tasks list`, `tasks approve` and
+`tasks publish`. With `--record`, `scripts/ci/quickstart_e2e.py` films each of
+those steps (added 2026-10-18).
+
+How the recording works:
+
+- **Each step runs inside util-linux `script`.** That gives a real terminal at
+  110×32, keeps the exit code, colours and timing, and needs nothing
+  installed on the runner.
+- **Each step becomes an asciicast v2 file,** `NN-<step>.cast`, listed in
+  `manifest.json` with its command, exit code and duration.
+- **The workflow keeps the folder** as the `howto-recording` artifact for 30
+  days.
+
+The footage is only what really ran. A failed step is recorded as failed, and
+the video is cut only from a green run, so every command it shows worked on a
+clean machine that week. The weekly re-recording also keeps it current as the
+product changes.
+
+**Credentials are masked before anything is written.** `setup --auto` prints
+the new OAuth client secret and the first characters of each generated
+password. The runner is thrown away afterwards, but a credential must never
+appear on screen in a public video. The converter therefore masks each value
+(`REDACT`) with asterisks of the same length, which keeps the timing log's byte
+offsets true. The raw `script` logs are deleted once converted.
+
+Next: cutting the recording into the how-to video. That means trimming the
+install's long waits, writing narration from the README and the recorded
+commands, and adding chapters at each step. The first cut is assembled by hand
+and reviewed before any of it is automated.

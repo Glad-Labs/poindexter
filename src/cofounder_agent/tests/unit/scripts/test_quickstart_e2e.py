@@ -965,3 +965,81 @@ class TestOptionalModels:
 
     def test_the_real_readme_has_an_optional_table(self):
         assert len(DRIVER.optional_models(README.read_text(encoding="utf-8"))) >= 3
+
+
+class TestRecording:
+    """--record films each step for the setup-and-operation how-to (2026-10-18)."""
+
+    def test_timing_becomes_an_asciicast_with_cumulative_times(self):
+        out = b"Script started on 2026-10-18 [COMMAND=\"x\"]\nhello \xe2\x9c\x93 world\n"
+        # The tick (3 bytes) is split across two writes; it must survive whole.
+        timing = "H 0.0 START_TIME x\nO 0.5 7\nO 0.25 2\nO 1.0 9\nH 0.0 EXIT_CODE 0\n"
+        cast = DRIVER.timing_to_asciicast(timing, out, title="Install")
+        header, *events = [json.loads(ln) for ln in cast.splitlines()]
+        assert header == {"version": 2, "width": DRIVER.RECORD_COLS, "height": DRIVER.RECORD_ROWS, "title": "Install"}
+        assert [e[0] for e in events] == [0.5, 0.75, 1.75]
+        assert "".join(e[2] for e in events) == "hello ✓ world\n"
+        assert all(e[1] == "o" for e in events)
+
+    def test_credentials_are_masked_at_their_own_length(self):
+        printed = (
+            b"  client_id:      pdx-cli\n  client_secret:  s3cr3t-value-123\n"
+            b"  Postgres:   abcdef123456...\n  Grafana:    zyxwvu987654...\n"
+        )
+        masked = DRIVER.redact(printed)
+        assert len(masked) == len(printed), "the timing log's byte offsets must stay true"
+        assert b"s3cr3t" not in masked and b"abcdef" not in masked and b"zyxwvu" not in masked
+        assert b"client_secret:  ****************\n" in masked
+        assert b"client_id:      pdx-cli" in masked
+
+    def test_a_secret_split_across_writes_is_still_masked(self):
+        out = b"Script started on x\n  client_secret:  s3cr3t-value\n"
+        timing = "O 0.1 20\nO 0.1 11\n"  # 31 bytes, split mid-secret
+        cast = DRIVER.timing_to_asciicast(timing, out)
+        text = "".join(json.loads(ln)[2] for ln in cast.splitlines()[1:])
+        assert "s3cr3t" not in text
+        assert text == "  client_secret:  ************\n"
+
+    def test_unrecorded_steps_run_exactly_as_before(self, monkeypatch, tmp_path):
+        seen = []
+        monkeypatch.setattr(DRIVER.subprocess, "run", lambda argv, **kw: seen.append(argv) or DRIVER.subprocess.CompletedProcess(argv, 0, "", ""))
+        rec = DRIVER.Recorder(None)
+        rec.run("install", "t", "echo hi", cwd=tmp_path, capture=False)
+        rec.run("list", "t", ["pdx", "tasks", "list"], cwd=tmp_path, capture=True)
+        assert seen == [["bash", "-c", "echo hi"], ["pdx", "tasks", "list"]]
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="util-linux script")
+    def test_a_recorded_step_writes_a_cast_and_the_manifest(self, tmp_path):
+        if not DRIVER.script_supports_recording():
+            pytest.skip("no util-linux script 2.35+ with a pty here (the hosted runner that records has one)")
+        rec = DRIVER.Recorder(tmp_path / "rec")
+        proc = rec.run(
+            "approve", "Approve the draft",
+            "printf '\\033[32mApproved\\033[0m\\nWarning: x\\n'; echo 'client_secret:  topsecret'; exit 4",
+            cwd=tmp_path, capture=True,
+        )
+        assert proc.returncode == 4
+        assert proc.stdout == proc.stderr
+        assert "Approved\nWarning: x\n" in proc.stdout, "colour codes stripped, CRLF folded"
+        manifest = json.loads((tmp_path / "rec" / "manifest.json").read_text())
+        (step,) = manifest["steps"]
+        assert (step["step"], step["name"], step["exit_code"], step["cast"]) == (1, "approve", 4, "01-approve.cast")
+        cast = (tmp_path / "rec" / "01-approve.cast").read_text()
+        assert "topsecret" not in cast and "Approved" in cast
+        assert sorted(p.name for p in (tmp_path / "rec").iterdir()) == ["01-approve.cast", "manifest.json"], (
+            "the unredacted script logs must not be left behind"
+        )
+
+    def test_the_workflow_records_and_keeps_the_footage(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        assert '--record "$RUNNER_TEMP/howto-recording"' in text
+        assert "name: howto-recording" in text
+
+    def test_recording_refuses_a_script_without_the_options_it_needs(self, monkeypatch, tmp_path):
+        """util-linux 2.34 (Ubuntu 20.04) rejects --logging-format and exits 1 before
+        running anything, which would read as every step failing."""
+        monkeypatch.setattr(DRIVER, "script_supports_recording", lambda: False)
+        with pytest.raises(RuntimeError, match="util-linux `script` 2.35"):
+            DRIVER.Recorder(tmp_path / "rec")
+        DRIVER.Recorder(None)  # unrecorded runs never need it

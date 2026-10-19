@@ -32,6 +32,13 @@ from ._encoding import ensure_utf8_streams
 
 ensure_utf8_streams()
 
+# ── Set the log level before any CLI submodule loads ─────────────────────────
+# A submodule import initialises logger_config (which defaults to INFO) and
+# app.py loads every plugin; both log before app.main runs. See _quiet.py.
+from . import _quiet
+
+_quiet.apply()
+
 # ── Quiet a noisy third-party warning before any CLI submodule loads ─────────
 # langgraph's Postgres checkpointer builds a module-level
 # ``langchain_core.load.Reviver()`` at import time

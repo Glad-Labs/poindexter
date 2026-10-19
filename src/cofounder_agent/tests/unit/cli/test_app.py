@@ -54,3 +54,34 @@ def test_backup_group_registered():
     assert isinstance(backup, click.Group)
     for sub in ("setup", "status", "run", "verify", "snapshots"):
         assert sub in backup.commands, f"missing `backup {sub}`"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("argv", "expected_level"),
+    [(["tasks", "--help"], "ERROR"), (["-v", "tasks", "--help"], "NOTSET")],
+)
+def test_plugin_discovery_notes_are_quiet_unless_verbose(monkeypatch, argv, expected_level):
+    """The first recorded how-to (2026-10-18): on a plain `pip install`, every
+    command opened with plugin-discovery warnings about modules a CLI install
+    does not carry. They stay in the worker's logs and show here with -v."""
+    import logging
+
+    monkeypatch.setenv("LOG_LEVEL", "WARNING")
+    registry = logging.getLogger("poindexter.plugins.registry")
+    monkeypatch.setattr(registry, "level", logging.NOTSET)
+    result = CliRunner().invoke(main, argv)
+    assert result.exit_code == 0, result.output
+    assert registry.level == getattr(logging, expected_level)
+
+
+@pytest.mark.unit
+def test_a_missing_redis_sdk_is_not_a_root_warning():
+    """It printed on every CLI command of a plain install; caching is optional."""
+    from pathlib import Path
+
+    import poindexter.services.redis_cache as rc
+
+    source = Path(rc.__file__).read_text(encoding="utf-8")
+    assert 'logging.warning("Redis SDK not installed' not in source
+    assert "logging.getLogger(__name__).info(" in source

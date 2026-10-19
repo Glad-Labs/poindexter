@@ -91,6 +91,11 @@ def main(ctx: click.Context, verbose: bool) -> None:
         os.environ["LOG_LEVEL"] = "INFO" if verbose else "WARNING"
     if verbose:
         logging.getLogger().setLevel(logging.INFO)
+    else:
+        # Plugin discovery reports what a CLI install does not carry (see
+        # _quiet.py, which sets this before the CLI loads for a real
+        # `poindexter` process); repeated here for in-process callers.
+        logging.getLogger("poindexter.plugins.registry").setLevel(logging.ERROR)
 
     # Load POINDEXTER_SECRET_KEY from bootstrap.toml into the env once, here at
     # the root, so EVERY subcommand can encrypt/decrypt secrets (auth migrate-*,

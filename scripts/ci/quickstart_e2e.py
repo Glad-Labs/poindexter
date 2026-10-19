@@ -50,6 +50,18 @@ pulled — a model the README's pull list is missing. ``--timeout-min`` bounds t
 a sub-1B model takes a while, which is the point of running it weekly rather
 than per commit.
 
+``--record DIR`` also films the run, for the setup-and-operation how-to video
+(2026-10-18). Each step (the quick-start block, then ``tasks list``,
+``tasks approve`` and ``tasks publish``) runs inside util-linux ``script``, a
+real terminal at a fixed size that keeps the exit code, colours and timing, and
+is converted to an asciicast v2 file (``NN-<step>.cast``) listed in
+``manifest.json`` with its command, exit code and duration. Credentials the
+install prints (``setup --auto``'s OAuth client secret and password prefixes)
+are masked with same-length asterisks before anything is written, so the
+footage never shows one, even from a throwaway runner. The footage is only what
+really ran: a failed step is recorded as failed, and the video is cut from a
+green run.
+
 Stdlib only: it runs on the runner's Python before anything is installed.
 
     python scripts/ci/quickstart_e2e.py --tree /tmp/poindexter \\
@@ -61,6 +73,7 @@ Stdlib only: it runs on the runner's Python before anything is installed.
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
 import re
 import shlex
@@ -111,6 +124,162 @@ TERMINAL_FAILURES = frozenset(
 # How long the task row may be absent before the id the CLI printed is judged
 # wrong. The POST inserts the row before it answers, so absence is not a race.
 ROW_GRACE_S = 120.0
+
+
+# --- Recording (--record) ------------------------------------------------------
+
+# The terminal the footage is filmed in: wide enough for `tasks list`, short
+# enough to read when scaled into a 16:9 frame.
+RECORD_COLS = 110
+RECORD_ROWS = 32
+# What the install prints that must never be on screen. Each match keeps its
+# label and loses its value, replaced by asterisks of the same length so the
+# byte offsets in the timing log stay true.
+REDACT = (
+    re.compile(rb"(client_secret:\s+)(\S+)"),
+    re.compile(rb"((?:Postgres|Grafana|pgAdmin|GlitchTip|Langfuse):\s+)(\S+)"),
+)
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def redact(data: bytes) -> bytes:
+    """``data`` with every :data:`REDACT` value masked, length unchanged."""
+    for pattern in REDACT:
+        data = pattern.sub(lambda m: m.group(1) + b"*" * len(m.group(2)), data)
+    return data
+
+
+def timing_to_asciicast(
+    timing: str, out: bytes, *, width: int = RECORD_COLS, height: int = RECORD_ROWS, title: str = "",
+) -> str:
+    """An asciicast v2 document from ``script --logging-format advanced`` logs.
+
+    ``timing`` holds ``O <delay> <bytes>`` rows (``H`` header rows are skipped);
+    ``out`` is the ``--log-out`` file, whose first line is ``script``'s own
+    "Script started" banner and whose output bytes follow in order. The bytes
+    are redacted (:func:`redact`) before they are cut into events, and decoded
+    incrementally so a character split across two writes stays whole.
+    """
+    body = out.split(b"\n", 1)[1] if out.startswith(b"Script started") else out
+    body = redact(body)
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    header = {"version": 2, "width": width, "height": height, "title": title}
+    lines = [json.dumps(header)]
+    clock, pos = 0.0, 0
+    for row in timing.splitlines():
+        parts = row.split(" ", 2)
+        if len(parts) != 3 or parts[0] != "O":
+            continue
+        clock += float(parts[1])
+        size = int(parts[2])
+        text = decoder.decode(body[pos:pos + size])
+        pos += size
+        if text:
+            lines.append(json.dumps([round(clock, 6), "o", text]))
+    return "\n".join(lines) + "\n"
+
+
+def _shown(proc: subprocess.CompletedProcess) -> str:
+    """What a step printed, once: a recorded step carries the same merged text in both streams."""
+    out, err = proc.stdout or "", proc.stderr or ""
+    return out if out == err else out + err
+
+
+# The util-linux `script` options recording needs (util-linux 2.35+). Older
+# builds (Ubuntu 20.04 ships 2.34) reject them, and a container with no pty
+# cannot run `script` at all; both exit 1 before the command runs, which would
+# read as the step failing.
+_SCRIPT_OPTIONS = ("--logging-format", "--log-timing", "--log-out", "--echo", "--return")
+
+
+def script_supports_recording() -> bool:
+    """True when this machine's ``script`` can film a step: it has every option
+    recording uses, AND a trial recording of ``exit 3`` really returns 3."""
+    try:
+        helptext = subprocess.run(
+            ["script", "--help"], capture_output=True, text=True, check=False,
+        ).stdout
+        if not all(opt in helptext for opt in _SCRIPT_OPTIONS):
+            return False
+        with tempfile.TemporaryDirectory() as tmp:
+            trial = subprocess.run(
+                [
+                    "script", "--quiet", "--return", "--echo", "never",
+                    "--logging-format", "advanced",
+                    "--log-timing", f"{tmp}/t", "--log-out", f"{tmp}/o", "--command", "exit 3",
+                ],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False, timeout=30,
+            )
+        return trial.returncode == 3
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+class Recorder:
+    """Runs each step, filmed into ``directory`` when one is given."""
+
+    def __init__(self, directory: Path | None) -> None:
+        self.directory = directory
+        self.steps: list[dict[str, object]] = []
+        if directory is not None:
+            if not script_supports_recording():
+                raise RuntimeError(
+                    "--record needs util-linux `script` 2.35+ (options "
+                    f"{', '.join(_SCRIPT_OPTIONS)}) and a pseudo-terminal; "
+                    "a trial recording failed on this machine"
+                )
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def run(
+        self, name: str, title: str, command: str | list[str], *, cwd: Path, capture: bool,
+    ) -> subprocess.CompletedProcess:
+        """Run ``command`` (a bash script string, or an argv list) and return its outcome.
+
+        Unrecorded, it runs exactly as it did before recording existed: a
+        string through ``bash -c``, a list as its own argv. Recorded, ``stdout``
+        and ``stderr`` both carry the terminal's merged output (with ``\r\n``
+        folded and colour codes stripped, so the checks read plain text).
+        """
+        if self.directory is None:
+            argv = ["bash", "-c", command] if isinstance(command, str) else command
+            return subprocess.run(argv, cwd=cwd, capture_output=capture, text=True, check=False)
+        if not isinstance(command, str):
+            command = shlex.join(command)
+        stem = self.directory / f"{len(self.steps) + 1:02d}-{name}"
+        timing, out = stem.with_suffix(".timing"), stem.with_suffix(".out")
+        started = time.monotonic()
+        proc = subprocess.run(
+            [
+                "script", "--quiet", "--return", "--echo", "never",
+                "--logging-format", "advanced",
+                "--log-timing", str(timing), "--log-out", str(out),
+                "--command", f"stty cols {RECORD_COLS} rows {RECORD_ROWS} 2>/dev/null; {command}",
+            ],
+            cwd=cwd, stdin=subprocess.DEVNULL, capture_output=capture, text=True, check=False,
+        )
+        duration = round(time.monotonic() - started, 1)
+        raw = out.read_bytes() if out.exists() else b""
+        cast = stem.with_suffix(".cast")
+        cast.write_text(
+            timing_to_asciicast(
+                timing.read_text(encoding="utf-8", errors="replace") if timing.exists() else "",
+                raw, title=title,
+            ),
+            encoding="utf-8",
+        )
+        # The unredacted logs stay on the runner only long enough to convert.
+        timing.unlink(missing_ok=True)
+        out.unlink(missing_ok=True)
+        self.steps.append({
+            "step": len(self.steps) + 1, "name": name, "title": title, "command": command,
+            "exit_code": proc.returncode, "duration_s": duration, "cast": cast.name,
+        })
+        (self.directory / "manifest.json").write_text(
+            json.dumps({"cols": RECORD_COLS, "rows": RECORD_ROWS, "steps": self.steps}, indent=2),
+            encoding="utf-8",
+        )
+        merged = _ANSI.sub("", (proc.stdout or "").replace("\r\n", "\n")) if capture else ""
+        return subprocess.CompletedProcess(proc.args, proc.returncode, stdout=merged, stderr=merged)
 
 
 @dataclass
@@ -559,7 +728,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tiny-model", required=True, help="small Ollama model every README tag aliases")
     ap.add_argument("--real-pull", action="append", default=[], help="tag to pull for real (repeatable)")
     ap.add_argument("--timeout-min", type=float, default=150.0)
+    ap.add_argument(
+        "--record", type=Path, default=None,
+        help="film each step into this directory (asciicasts + manifest.json, for the how-to)",
+    )
     args = ap.parse_args(argv)
+    recorder = Recorder(args.record)
 
     tree = args.tree.resolve()
     readme = (tree / "README.md").read_text(encoding="utf-8")
@@ -571,7 +745,7 @@ def main(argv: list[str] | None = None) -> int:
         qs, tree=tree, tiny_model=args.tiny_model, real_pulls=set(args.real_pull), handoff=handoff,
     )
     print("[quickstart-e2e] running the quick start:\n" + script, flush=True)
-    proc = subprocess.run(["bash", "-c", script], cwd=tree, check=False)
+    proc = recorder.run("install", "Install Poindexter and queue a first post", script, cwd=tree, capture=False)
     if proc.returncode != 0:
         print(f"::error::the README quick start failed (exit {proc.returncode})")
         return 1
@@ -595,11 +769,11 @@ def main(argv: list[str] | None = None) -> int:
 
     problems = check_links(readme)
 
-    listed = subprocess.run(
-        [pdx, "tasks", "list", "--status", SUCCESS], cwd=tree,
-        capture_output=True, text=True, check=False,
+    listed = recorder.run(
+        "list", "Find the draft waiting for approval",
+        [pdx, "tasks", "list", "--status", SUCCESS], cwd=tree, capture=True,
     )
-    print(listed.stdout + listed.stderr)
+    print(_shown(listed))
     if status != SUCCESS:
         problems.append(
             f"task {task_id} ended {status!r}, not {SUCCESS!r}" + (f" ({why})" if why else "")
@@ -610,11 +784,11 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         # The README's last instruction: approve it by the prefix `tasks list` shows.
-        approved = subprocess.run(
-            [pdx, "tasks", "approve", task_id[:8]], cwd=tree,
-            capture_output=True, text=True, check=False,
+        approved = recorder.run(
+            "approve", "Approve the draft",
+            [pdx, "tasks", "approve", task_id[:8]], cwd=tree, capture=True,
         )
-        print(approved.stdout + approved.stderr)
+        print(_shown(approved))
         after = _psql(
             "SELECT status FROM pipeline_tasks WHERE task_id = :'task_id'", task_id=task_id,
         )
@@ -626,11 +800,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"[quickstart-e2e] approve left the task {after!r} and staged a post")
             # The README's next command, then the post read back as a reader gets it.
-            published = subprocess.run(
-                [pdx, "tasks", "publish", task_id[:8]], cwd=tree,
-                capture_output=True, text=True, check=False,
+            published = recorder.run(
+                "publish", "Publish the post",
+                [pdx, "tasks", "publish", task_id[:8]], cwd=tree, capture=True,
             )
-            print(published.stdout + published.stderr)
+            print(_shown(published))
             problem, slug = judge_publish(
                 task_id, exit_code=published.returncode, stderr=published.stderr,
             )

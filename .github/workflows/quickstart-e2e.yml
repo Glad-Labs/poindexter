@@ -225,7 +225,21 @@ jobs:
             --tree "${{ steps.tree.outputs.tree }}" \
             --tiny-model "$TINY_MODEL" \
             --real-pull "$EMBED_MODEL" \
-            --timeout-min 150
+            --timeout-min 150 \
+            --record "$RUNNER_TEMP/howto-recording"
+
+      # The run filmed for the setup-and-operation how-to video: one asciicast
+      # per step (install, list, approve, publish) plus manifest.json, with the
+      # credentials the install prints already masked. Kept on failure too, so a
+      # broken step can be watched, but the video is only ever cut from a green run.
+      - name: Keep the how-to recording
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v4.6.2 as of 2026-05-12
+        with:
+          name: howto-recording
+          path: ${{ runner.temp }}/howto-recording
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Resource envelope at the end
         if: always()
