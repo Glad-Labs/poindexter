@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## [0.160.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.159.0...v0.160.0) (2026-10-19)
+
+
+### Features
+
+* **cli:** tasks create --research-file attaches source facts to a task ([#4529](https://github.com/Glad-Labs/glad-labs-stack/issues/4529)) ([afd8913](https://github.com/Glad-Labs/glad-labs-stack/commit/afd8913d6e6be38bf00870f711855d9b41a6e2a7))
+* **content:** every published post gets an answer-first "In brief" summary ([#4528](https://github.com/Glad-Labs/glad-labs-stack/issues/4528)) ([d3f4ff8](https://github.com/Glad-Labs/glad-labs-stack/commit/d3f4ff860b994e5d2ad36e97d33d9e5d544242fb))
+* **ops:** the box sleeps 01:00-08:00 and wakes itself ([#4520](https://github.com/Glad-Labs/glad-labs-stack/issues/4520)) ([ba21f48](https://github.com/Glad-Labs/glad-labs-stack/commit/ba21f486cb74a108f16f20e636dbd33590e1c675))
+* **site:** /llms.txt indexes every article for language models ([#4524](https://github.com/Glad-Labs/glad-labs-stack/issues/4524)) ([9de85a8](https://github.com/Glad-Labs/glad-labs-stack/commit/9de85a8e5995d868097f039973092ac5a3451dc6))
+* **youtube:** news Shorts — a Short from one news story, no blog post ([#4519](https://github.com/Glad-Labs/glad-labs-stack/issues/4519)) ([2116f3b](https://github.com/Glad-Labs/glad-labs-stack/commit/2116f3b61b32a1e5fc3798a32f0a5c573b418515))
+
+
+### Bug Fixes
+
+* **comfyui:** the lost-prompt poll count and the recycler's busy lock owners are settings ([#4518](https://github.com/Glad-Labs/glad-labs-stack/issues/4518)) ([4901eaf](https://github.com/Glad-Labs/glad-labs-stack/commit/4901eaf96a441fa86e35ac777207ee21cfe27ef4))
+* **content:** a failed title call no longer ships a section heading ([#4530](https://github.com/Glad-Labs/glad-labs-stack/issues/4530)) ([80c201f](https://github.com/Glad-Labs/glad-labs-stack/commit/80c201feff9434c812292aa59f8987e974bf8e33))
+* **ops:** night sleep brings the desktop back after a wake ([#4527](https://github.com/Glad-Labs/glad-labs-stack/issues/4527)) ([27d2d1c](https://github.com/Glad-Labs/glad-labs-stack/commit/27d2d1c6f708fdcbedf38f83d23533ec1ce75afa))
+* **ops:** night sleep waits for CI jobs and tolerates desktop GPU wobble ([#4548](https://github.com/Glad-Labs/glad-labs-stack/issues/4548)) ([2dcbd54](https://github.com/Glad-Labs/glad-labs-stack/commit/2dcbd544615b641065c459346aa3598fa8dd5912))
+* **ops:** night sleep waits for the GPUs to settle and suspends through systemd ([#4522](https://github.com/Glad-Labs/glad-labs-stack/issues/4522)) ([d35f5bf](https://github.com/Glad-Labs/glad-labs-stack/commit/d35f5bf52f708e88a0d403d5849a0cccfcbaa8fc))
+* **tts:** read CPU model names as people say them ([#4526](https://github.com/Glad-Labs/glad-labs-stack/issues/4526)) ([753279e](https://github.com/Glad-Labs/glad-labs-stack/commit/753279e4fe1c6ec6211c332bc5a6e692899afd99))
+* **tts:** speak money as words and GPU model numbers in pairs ([#4523](https://github.com/Glad-Labs/glad-labs-stack/issues/4523)) ([57cb4a0](https://github.com/Glad-Labs/glad-labs-stack/commit/57cb4a0ffc6ed93606a2f44263957f4087f643bf))
+* **youtube:** a scheduled upload's cross-links wait for the slot ([#4525](https://github.com/Glad-Labs/glad-labs-stack/issues/4525)) ([5cfb3f0](https://github.com/Glad-Labs/glad-labs-stack/commit/5cfb3f0b3dfec4f9593a890e626237d8e4bec86f))
+
 ## [0.159.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.158.1...v0.159.0) (2026-10-18)
 
 
