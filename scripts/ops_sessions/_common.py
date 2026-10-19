@@ -279,8 +279,16 @@ def wait_for_merge(
     budget_seconds: float,
     poll_seconds: float,
     log: logging.Logger,
+    pr_ref: str | None = None,
+    max_misses: int = 3,
 ) -> str:
     """Poll ``branch``'s PR until it resolves. Returns its terminal-ish state.
+
+    ``pr_ref`` (the PR URL ``commit_and_open_pr`` returned) is looked up in
+    place of the branch when given. ``GONE`` needs ``max_misses`` failed
+    lookups in a row: on 2026-10-18 one failed ``gh pr view <branch>`` at
+    16:41:34 was read as "the PR is gone", the session paged a failure, and
+    the PR merged a minute later.
 
     One of ``MERGED`` / ``CLOSED`` / ``CONFLICTING`` / ``PENDING`` / ``GONE``.
     ``PENDING`` means the budget ran out with the PR still clean — a success
@@ -291,11 +299,19 @@ def wait_for_merge(
     and treating that as either answer would be wrong.
     """
     deadline = time.monotonic() + budget_seconds
+    misses = 0
     while True:
-        status = pr_status(repo, branch, cwd=cwd)
+        status = pr_status(repo, pr_ref or branch, cwd=cwd)
         if not status:
-            log.error("no PR found for head %s while waiting to merge", branch)
-            return "GONE"
+            misses += 1
+            if misses >= max(1, max_misses) or time.monotonic() + poll_seconds >= deadline:
+                log.error("no PR found for head %s while waiting to merge (%d lookups)",
+                          branch, misses)
+                return "GONE"
+            log.warning("PR lookup for %s failed (%d/%d); retrying", branch, misses, max_misses)
+            time.sleep(poll_seconds)
+            continue
+        misses = 0
         state = str(status.get("state") or "")
         if state in ("MERGED", "CLOSED"):
             log.info("PR for %s is %s", branch, state)

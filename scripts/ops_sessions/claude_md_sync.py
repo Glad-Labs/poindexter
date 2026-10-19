@@ -281,6 +281,7 @@ def main() -> int:
             budget_seconds=MERGE_WAIT_SECONDS,
             poll_seconds=MERGE_POLL_SECONDS,
             log=log,
+            pr_ref=pr_url,
         )
         if outcome == "MERGED":
             log.info("CLAUDE.md DB-count sync merged: %s", pr_url)

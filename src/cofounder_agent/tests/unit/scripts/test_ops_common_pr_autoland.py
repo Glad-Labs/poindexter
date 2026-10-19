@@ -163,6 +163,18 @@ class TestWaitForMerge:
     def test_vanished_pr_is_gone(self, monkeypatch):
         assert self._wait(monkeypatch, [""]) == "GONE"
 
+    def test_one_failed_lookup_is_not_gone(self, monkeypatch):
+        """2026-10-18: one failed `gh pr view` was read as GONE, the session
+        paged, and PR #4521 merged a minute later."""
+        assert self._wait(monkeypatch, ["", _pr(state="MERGED")]) == "MERGED"
+
+    def test_the_pr_is_looked_up_by_its_url_when_given(self, monkeypatch):
+        shell = _Shell(views=[_pr(state="MERGED")]).install(monkeypatch)
+        url = "https://github.com/Glad-Labs/glad-labs-stack/pull/4521"
+        c.wait_for_merge(REPO, BRANCH, cwd=WT, budget_seconds=60.0, poll_seconds=0.0,
+                         log=LOG, pr_ref=url)
+        assert url in shell.argv("gh", "pr", "view")
+
     def test_unknown_mergeable_keeps_polling(self, monkeypatch):
         """GitHub reports mergeable=UNKNOWN for a beat after every push while it
         recomputes the merge base. Reading it as CONFLICTING would trigger a
