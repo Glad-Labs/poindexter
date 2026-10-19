@@ -156,6 +156,34 @@ thousand ninety units". Whisper writes both readings back as "5090", so a
 round trip cannot tell them apart. This rule is a reading convention, not a
 measured fix.
 
+## CPU model names (2026-10-18)
+
+A number with letters stuck to it is left as written, because those are
+usually names ("phi4", "14B"). That left CPU model names to the engine.
+Measured on the prod voice with whisper over the render:
+
+| written                | the engine got      | heard                           |
+| ---------------------- | ------------------- | ------------------------------- |
+| `Intel Core i5 4670K`  | the same            | "Intel Core E5467R67R5401"      |
+| `Core i9-14900K`       | "Core i9 to 14900K" | "Core i9 to 4900K"              |
+| either, with this pass | spoken form below   | "i5-4670K", "i9-14900K" (exact) |
+
+After a family in `tts_cpu_families` (CSV, matched longest first; `off`
+disables it), or after a bare Intel tier (i3/i5/i7/i9), the name is spoken the
+way people say it:
+
+- `Core i5 4670K` is "Core i five forty six seventy K".
+- `Ryzen 9 7950X3D` is "Ryzen nine seventy nine fifty X three D".
+- `Core Ultra 9 285K` is "Core Ultra nine two eighty five K".
+
+The rules:
+
+- **The number is read in pairs.** Three digits read as "two eighty five".
+  Five digits read as "fourteen" followed by "nine hundred".
+- **The suffix is read letter by letter.**
+- **The hyphen belongs to the name.** The pass runs before the dash rule,
+  which would otherwise turn it into "to".
+
 ## Measuring a pronunciation fix — pick the right instrument
 
 **This is the part that is easy to get wrong.** There are two questions, and

@@ -4347,6 +4347,11 @@ DEFAULTS: dict[str, str] = {
     # in pairs: "RTX 5090" -> "RTX fifty ninety", not "five thousand ninety".
     # "off" disables it.
     'tts_model_number_prefixes': 'RTX,GTX,RX,GT,MX,Titan,Quadro',
+    # CPU model names read as people say them, after these families (CSV) or a
+    # bare Intel tier: "Core i5 4670K" -> "Core i five forty six seventy K".
+    # Raw, it came out as "E5467R67R5401"; "i9-14900K" was read as a range.
+    # "off" disables it.
+    'tts_cpu_families': 'Core Ultra,Core,Ryzen AI,Ryzen,Threadripper PRO,Threadripper,Xeon,Athlon,Pentium,Celeron,EPYC',
     # Currency symbol -> [singular, plural, minor-unit plural] (JSON). Empty = the
     # built-in $ / € / £ map; entries here add to it or replace a symbol's names.
     'tts_currency_names': '{"$": ["dollar", "dollars", "cents"], "€": ["euro", "euros", "cents"], "£": ["pound", "pounds", "pence"]}',
@@ -8670,6 +8675,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'tts_spell_numbers_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_spell_money_enabled': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_model_number_prefixes': {'owner': 'podcast_service', 'value_type': 'csv'},
+    'tts_cpu_families': {'owner': 'podcast_service', 'value_type': 'csv'},
     'tts_currency_names': {'owner': 'podcast_service', 'value_type': 'json'},
     'tts_drop_redundant_initialism': {'owner': 'podcast_service', 'value_type': 'boolean'},
     'tts_voice_pool': {'owner': 'podcast_service'},

@@ -2353,6 +2353,34 @@ class TestNumbersAsWordsAtTheBoundary:
         arc = SiteConfig(initial_config={"tts_model_number_prefixes": "Arc,RTX"})
         assert _normalize_for_speech("Arc 7700", site_config=arc) == "Arc seventy seven hundred"
 
+    @pytest.mark.parametrize(
+        ("written", "spoken"),
+        [
+            ("an Intel Core i5 4670K", "an Intel Core i five forty six seventy K"),
+            ("a Core i9-14900K", "a Core i nine fourteen nine hundred K"),
+            ("the i7-8700K", "the i seven eighty seven hundred K"),
+            ("Ryzen 9 7950X3D.", "Ryzen nine seventy nine fifty X three D."),
+            ("Ryzen 5 5600X", "Ryzen five fifty six hundred X"),
+            ("Core Ultra 9 285K", "Core Ultra nine two eighty five K"),
+            ("Threadripper 7980X", "Threadripper seventy nine eighty X"),
+            ("an i5 chip", "an i five chip"),
+        ],
+    )
+    def test_cpu_model_names_are_read_as_people_say_them(self, written, spoken):
+        """The Cinebench news Short (2026-10-18): "Core i5 4670K" reached the
+        voice raw and came back as "Core E5467R67R5401"; "i9-14900K" was read as
+        a range ("i9 to 4900K"). Spoken this way, both came back exact."""
+        assert _normalize_for_speech(written, site_config=_pron_sc()) == spoken
+
+    def test_a_cpu_family_without_a_model_is_left_to_the_number_pass(self):
+        assert _normalize_for_speech("Ryzen 9 is fast", site_config=_pron_sc()) == "Ryzen nine is fast"
+
+    def test_cpu_names_can_be_switched_off(self):
+        from poindexter.services.site_config import SiteConfig
+
+        off = SiteConfig(initial_config={"tts_cpu_families": "off"})
+        assert "fourteen nine hundred" not in _normalize_for_speech("a Core i9-14900K", site_config=off)
+
     def test_a_number_ending_a_sentence_is_spelled_too(self):
         """The full stop after a number read as a version separator, so the last
         number of a sentence reached the engine as digits: "PCIe 4.0." stayed

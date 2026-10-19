@@ -803,6 +803,78 @@ def _plural_word(word: str) -> str:
     return word[:-1] + "ies" if word.endswith("y") else word + "s"
 
 
+# CPU model names (2026-10-18, the Cinebench news Short). "Intel Core i5 4670K"
+# reached the engine as written, since a number glued to a letter is left
+# alone, and the voice produced something like "e 5 467 she oh sek seo ak".
+# "i9-14900K" was worse: the dash rule read it as a range ("i9 to 14900K").
+# After a CPU family (``tts_cpu_families``, CSV, longest match first) or a
+# bare Intel tier (i3/i5/i7/i9), the name is spoken the way people say it:
+#
+#   Core i5 4670K       -> Core i five forty six seventy K
+#   Core i9-14900K      -> Core i nine fourteen nine hundred K
+#   Ryzen 9 7950X3D     -> Ryzen nine seventy nine fifty X three D
+#   Core Ultra 9 285K   -> Core Ultra nine two eighty five K
+#
+# The number is read in pairs (three digits as "two eighty five", five as
+# "fourteen" + "nine hundred") and the suffix letter by letter. This pass runs
+# before the dash pass, which would otherwise take the hyphen.
+_DEFAULT_CPU_FAMILIES = (
+    "Core Ultra,Core,Ryzen AI,Ryzen,Threadripper PRO,Threadripper,Xeon,Athlon,Pentium,Celeron,EPYC"
+)
+_CPU_SKU = r"(?P<sku>\d{3,5})(?P<suf>[A-Z]{1,3}\d?[A-Z]{0,2})?(?![\w]|\.\d)"
+_INTEL_TIER_RE = re.compile(r"\bi(?P<tier>[3579])(?:[\s-]+" + _CPU_SKU + r")?(?![\w-])")
+
+
+def _sku_number_words(digits: str) -> str:
+    n = int(digits)
+    if len(digits) == 5:
+        return f"{_int_to_words(int(digits[:2]))} {_sku_number_words(digits[2:])}"
+    if len(digits) == 4:
+        return _model_number_words(n)
+    hi, lo = divmod(n, 100)
+    if lo == 0:
+        return f"{_int_to_words(hi)} hundred"
+    if lo < 10:
+        return f"{_int_to_words(hi)} oh {_ONES[lo]}"
+    return f"{_int_to_words(hi)} {_int_to_words(lo)}"
+
+
+def _suffix_words(suffix: str | None) -> str:
+    return " ".join(_ONES[int(c)] if c.isdigit() else c for c in (suffix or ""))
+
+
+def _cpu_name_words(tier: str | None, sku: str | None, suffix: str | None) -> str:
+    parts: list[str] = []
+    if tier:
+        parts.append(f"i {_ONES[int(tier[1:])]}" if tier.startswith("i") else _ONES[int(tier)])
+    if sku:
+        parts.append(_sku_number_words(sku))
+    if suffix:
+        parts.append(_suffix_words(suffix))
+    return " ".join(parts)
+
+
+def _spell_cpu_names_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Speak CPU model names as people do ("Core i5 4670K" -> "Core i five forty six seventy K")."""
+    _sc = _resolve_site_config(site_config)
+    raw = str(_sc.get("tts_cpu_families", "") or "").strip() or _DEFAULT_CPU_FAMILIES
+    if raw.lower() in ("off", "none", "false"):
+        return text
+    families = sorted((f.strip() for f in raw.split(",") if f.strip()), key=len, reverse=True)
+    if families:
+        fam_re = "|".join(r"\s+".join(re.escape(w) for w in f.split()) for f in families)
+        family_re = re.compile(
+            rf"\b(?P<fam>{fam_re})\s+(?:(?P<tier>i[3579]|[3579])[\s-]+)?" + _CPU_SKU,
+        )
+        text = family_re.sub(
+            lambda m: f"{m.group('fam')} {_cpu_name_words(m.group('tier'), m.group('sku'), m.group('suf'))}",
+            text,
+        )
+    return _INTEL_TIER_RE.sub(
+        lambda m: _cpu_name_words("i" + m.group("tier"), m.group("sku"), m.group("suf")), text,
+    )
+
+
 def _spell_model_numbers_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Read a product model number after a listed prefix in pairs ("RTX 5090" -> "RTX fifty ninety")."""
     _sc = _resolve_site_config(site_config)
@@ -1021,6 +1093,9 @@ def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None)
     # tail is already collapsed, not read as a range) and before the
     # replacement/structural passes (whose " - " → ", " and em-dash → pause
     # rules would otherwise turn a spaced digit range into a comma).
+    # CPU model names before the dash pass, which would read "i9-14900K" as a
+    # range (see _spell_cpu_names_for_speech).
+    text = _spell_cpu_names_for_speech(text, site_config=site_config)
     text = _normalize_dashes(text, site_config=site_config)
     # Thousands commas, digit-anchored units, percent (see the rules above).
     text = _normalize_numbers_for_speech(text, site_config=site_config)
