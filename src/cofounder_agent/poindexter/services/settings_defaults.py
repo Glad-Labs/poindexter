@@ -2570,6 +2570,9 @@ DEFAULTS: dict[str, str] = {
     # After a wake, switch the desktop session's console away and back so the
     # compositor retakes the displays (COSMIC can fail to on resume).
     'host_sleep_resume_vt_cycle': 'true',
+    # GPU memory counts as settled before sleep when each card moves by no
+    # more than this between readings (the desktop wobbles by a few dozen MiB).
+    'host_sleep_settle_tolerance_mib': '64',
     'taste_review_niches': '',
     'taste_review_rubric': '',
     'taste_review_model': '',
@@ -8531,6 +8534,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'host_sleep_resume_grace_minutes': {'owner': 'backup_watcher', 'value_type': 'integer'},
     'host_sleep_resume_restart_containers': {'owner': 'night_sleep'},
     'host_sleep_resume_vt_cycle': {'owner': 'night_sleep', 'value_type': 'boolean'},
+    'host_sleep_settle_tolerance_mib': {'owner': 'night_sleep', 'value_type': 'integer'},
     'taste_review_niches': {'owner': 'taste_review'},
     'taste_review_rubric': {'owner': 'taste_review'},
     'taste_review_model': {'owner': 'taste_review'},

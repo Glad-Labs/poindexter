@@ -85,6 +85,16 @@ class TestGpusSettle:
         mem = [(2629, 2)] * 5
         assert self._run(monkeypatch, mem, [True, False, False, False]) is True
 
+    def test_desktop_memory_wobble_still_counts_as_settled(self, monkeypatch):
+        """2026-10-19: the 5090 read 3474 then 3437 MiB with nothing loaded."""
+        mem = [(3474, 2), (3437, 2), (3460, 2)]
+        assert self._run(monkeypatch, mem, [False, False]) is True
+
+    def test_a_model_still_releasing_is_not_settled(self, monkeypatch):
+        monkeypatch.setattr(ns.time, "monotonic", iter([0, 1, 2, 3, 99999]).__next__)
+        mem = [(3437, 21000), (3437, 14000), (3437, 6000), (3437, 900)]
+        assert self._run(monkeypatch, mem, [False] * 4) is False
+
     def test_a_loaded_model_keeps_it_waiting_until_the_timeout(self, monkeypatch):
         monkeypatch.setattr(ns.time, "monotonic", iter([0, 1, 2, 3, 4, 99999]).__next__)
         assert self._run(monkeypatch, [(1, 1)] * 10, [True] * 10) is False
@@ -160,3 +170,30 @@ def test_a_remote_session_is_never_switched_to(monkeypatch):
         "show 9": "Type=x11\nVTNr=7\nActive=yes\nRemote=yes\n",
     }))
     assert ns.graphical_vt(wait_s=0) is None
+
+
+def test_a_ci_job_on_this_machine_defers_the_sleep(monkeypatch):
+    """2026-10-19: a test-backend job started at 01:40 and the box slept under it at 01:41."""
+    calls = []
+
+    def run(cmd, **_kw):
+        calls.append(cmd)
+        return type("R", (), {"stdout": "2\n", "returncode": 0})()
+
+    monkeypatch.setattr(ns.subprocess, "run", run)
+    assert ns.ci_jobs_running() == 2
+    assert calls == [["pgrep", "-c", "-x", "Runner.Worker"]]
+
+
+def test_no_runner_worker_means_no_ci_job(monkeypatch):
+    monkeypatch.setattr(ns.subprocess, "run",
+                        lambda cmd, **_kw: type("R", (), {"stdout": "0\n", "returncode": 1})())
+    assert ns.ci_jobs_running() == 0
+
+
+def test_busy_is_checked_again_after_the_gpus_settle():
+    """The settle wait can take minutes; the CI job began in that gap."""
+    src = _PATH.read_text()
+    main_src = src[src.index("def main()"):]
+    settle = main_src.index("wait_gpus_settled(settings)")
+    assert "busy_reasons()" in main_src[settle:main_src.index("suspend_until(")]

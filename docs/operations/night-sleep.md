@@ -82,6 +82,7 @@ as `resume_grace` (no restart, no page) for `host_sleep_resume_grace_minutes`
 | `host_sleep_resume_grace_minutes`      | `30`                 | Backup-watcher grace after a wake.                              |
 | `host_sleep_resume_restart_containers` | the four backup jobs | Restarted on every wake.                                        |
 | `host_sleep_resume_vt_cycle`           | `true`               | Switch the desktop's console away and back after a wake.        |
+| `host_sleep_settle_tolerance_mib`      | `64`                 | How far each GPU's memory may move between "settled" readings.  |
 
 ## Operating it
 
@@ -111,6 +112,23 @@ brought the screens back. With the session filter removed, the next test
 woke after 71 s asleep, found the desktop on VT 1, switched once, and the
 compositor logged no failure; all GPU containers and both Ollama instances
 were up.
+
+### The first night (2026-10-19)
+
+- **Sleep was 41 minutes late.** It deferred four times because the GPUs
+  "did not settle". Twice the 5090's desktop memory moved by a few dozen MiB
+  between readings (3474 vs 3437), and the check wanted identical readings.
+  It now allows `host_sleep_settle_tolerance_mib`. Once, the 3090 judge
+  (21 GB) had been reloaded during the wait, which is a real reason to wait.
+- **It slept under a CI job.** A `test-backend` job started on one of this
+  machine's self-hosted runners at 01:40, during the settle wait, and the box
+  suspended at 01:41, which failed a PR's required check. A runner job (a
+  `Runner.Worker` process, matched by process name) now defers the sleep,
+  and every busy check runs again after the GPUs settle, right before
+  suspending.
+- **The wake worked.** It woke at 08:00:09, found the desktop on VT 1 and
+  switched once with no compositor failure, then restarted the four backup
+  jobs. No GPU container needed a restart.
 
 ## Not covered yet
 

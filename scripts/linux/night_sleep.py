@@ -8,7 +8,8 @@ Runs every 10 minutes from ``poindexter-night-sleep.timer`` and does nothing
 outside the window. Inside it:
 
 1. Defers while anything is in flight: a GPU lock holder, a pipeline task in
-   ``in_progress``, a running deploy pass, or the operator's skip file
+   ``in_progress``, a running deploy pass, a CI job on this machine's
+   self-hosted runners, or the operator's skip file
    (``~/.poindexter/no-sleep-tonight``). Past ``host_sleep_defer_limit_minutes``
    after the start it gives up for the night and records why.
 2. Unloads every model from both GPUs first: the NVIDIA driver preserves VRAM
@@ -71,6 +72,7 @@ DEFAULTS = {
         "poindexter-backup-hourly,poindexter-backup-daily,poindexter-backup-volumes,poindexter-backup-offsite"
     ),
     "host_sleep_resume_vt_cycle": "true",
+    "host_sleep_settle_tolerance_mib": "64",
     "operator_timezone": "UTC",
     "ollama_base_url": "",
     "ollama_vision_base_url": "",
@@ -178,6 +180,19 @@ def slept_since(start_at: datetime) -> bool:
     return int(n or 0) > 0
 
 
+def ci_jobs_running() -> int:
+    """GitHub Actions jobs running on this machine's self-hosted runners.
+
+    A runner (host or container; container processes are visible from the
+    host) starts a ``Runner.Worker`` only for the length of a job. 2026-10-19:
+    a test-backend job started at 01:40 and the box slept under it at 01:41,
+    failing the PR's required check."""
+    # By process name (-x), not command line: a shell whose command text
+    # mentions the worker would otherwise count as a job.
+    out = subprocess.run(["pgrep", "-c", "-x", "Runner.Worker"], capture_output=True, text=True).stdout
+    return int(out.strip() or 0)
+
+
 def busy_reasons() -> list[str]:
     reasons: list[str] = []
     holders = psql(
@@ -195,6 +210,9 @@ def busy_reasons() -> list[str]:
                             capture_output=True, text=True).stdout.strip()
     if deploy in ("active", "activating"):
         reasons.append("a deploy pass is running")
+    jobs = ci_jobs_running()
+    if jobs:
+        reasons.append(f"{jobs} CI job(s) running on this machine's runners")
     if SKIP_FILE.exists():
         reasons.append(f"skip file {SKIP_FILE} is present")
     return reasons
@@ -245,14 +263,23 @@ def _gpu_memory_used() -> tuple[int, ...]:
 
 
 def wait_gpus_settled(settings: dict[str, str], timeout_s: float = 180.0, interval_s: float = 5.0) -> bool:
-    """True once no Ollama model is loaded and GPU memory is unchanged across
-    three readings ``interval_s`` apart: the runners have finished exiting."""
+    """True once no Ollama model is loaded and GPU memory holds still across
+    three readings ``interval_s`` apart: the runners have finished exiting.
+
+    "Still" is within ``host_sleep_settle_tolerance_mib`` per GPU. The first
+    night (2026-10-19) demanded identical readings, and the 5090's desktop
+    memory moved by a few dozen MiB between them (3474 vs 3437), so the sleep
+    deferred twice for nothing. A runner releasing a model moves gigabytes."""
+    tolerance = int(settings.get("host_sleep_settle_tolerance_mib", "64") or 64)
     deadline = time.monotonic() + timeout_s
     last: tuple[int, ...] | None = None
     stable = 0
     while time.monotonic() < deadline:
         used = _gpu_memory_used()
-        stable = stable + 1 if (used == last and not _ollama_loaded(settings)) else 0
+        still = last is not None and len(used) == len(last) and all(
+            abs(a - b) <= tolerance for a, b in zip(used, last)
+        )
+        stable = stable + 1 if (still and not _ollama_loaded(settings)) else 0
         if stable >= 2:
             log(f"GPUs settled at {used} MiB")
             return True
@@ -421,6 +448,12 @@ def main() -> int:
     free_vram(settings)
     if not wait_gpus_settled(settings):
         log("deferring: the GPUs are still releasing memory")
+        return 0
+    # The settle wait can take minutes; anything that started meanwhile (the
+    # 2026-10-19 CI job began in that gap) defers to the next tick.
+    reasons = busy_reasons()
+    if reasons:
+        log(f"deferring: {'; '.join(reasons)} (started while the GPUs settled)")
         return 0
     slept_at = datetime.now(tz)
     audit("host_sleep", {"slept_at": slept_at.isoformat(), "planned_wake": win["wake_at"].isoformat()})
