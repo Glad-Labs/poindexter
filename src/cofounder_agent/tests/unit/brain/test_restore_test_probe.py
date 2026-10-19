@@ -38,7 +38,8 @@ def _settings(**over: str) -> dict[str, str]:
 
 
 def _make_pool(*, setting_values: dict[str, str] | None = None,
-               seconds_since_last_run: float | None = None):
+               seconds_since_last_run: float | None = None,
+               install_age_seconds: float | None = None):
     pool = MagicMock()
     settings = _settings(**(setting_values or {}))
 
@@ -47,6 +48,8 @@ def _make_pool(*, setting_values: dict[str, str] | None = None,
             return settings.get(args[0])
         if "audit_log" in query:
             return seconds_since_last_run
+        if "schema_migrations" in query:
+            return install_age_seconds
         return None
 
     pool.fetchval = AsyncMock(side_effect=_fetchval)
@@ -278,6 +281,25 @@ async def test_gate_skips_recent_run():
     out = await rt.run_restore_test_probe(pool, **seams)
     assert out["status"] == "skipped"
     seams["teardown_fn"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_install_is_not_restore_tested():
+    """2026-10-12 quick start: eight minutes after setup the probe paged
+    "latest backup may be corrupt" over a dump taken before any data existed."""
+    pool = _make_pool(install_age_seconds=8 * 60.0)
+    seams = _seams()
+    out = await rt.run_restore_test_probe(pool, **seams)
+    assert out["status"] == "skipped" and "nothing to verify yet" in out["detail"]
+    seams["teardown_fn"].assert_not_called()  # no throwaway container was started
+    seams["notify_fn"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_an_install_past_the_age_floor_is_tested():
+    pool = _make_pool(install_age_seconds=48 * 3600.0)
+    out = await rt.run_restore_test_probe(pool, **_seams())
+    assert out["status"] == "passed"
 
 
 @pytest.mark.asyncio

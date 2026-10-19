@@ -1407,6 +1407,33 @@ in-container Docker `HEALTHCHECK` is impossible. Their liveness is an **external
 Prometheus rule instead (`up{job="..."} == 0` in
 `infrastructure/prometheus/alerts/observability-sidecars.yml`).
 
+## A fresh install starts quiet
+
+The quick-start CI run of 2026-10-12 recorded **21 operator pages** on a clean
+install, before its first post was done. None of them was a fault:
+
+- **19 × "Operator surface unreachable"** from `operator_url_probe`. The brain
+  starts first (the worker waits for it to be healthy), so its first probe
+  saw the API, Grafana and Prefect still booting. It also probed every seeded
+  `*_url` setting, including services the default install doesn't run
+  (ComfyUI, RIFE, Postiz, GlitchTip, Langfuse, Loki/Tempo/Pyroscope, the UPS
+  exporter). Now a surface pages when it **stops** answering. Each surface's
+  last good answer is kept in `brain_knowledge`
+  (`entity='probe.operator_url.<surface>'`, `attribute='last_ok_at'`). One
+  that has never answered is logged and listed in the run's
+  `never_reachable` summary, not paged. To page those too, set
+  `operator_url_probe_page_never_reachable=true`. If the state can't be read,
+  every failure pages, as before.
+- **"Restore test FAILED — latest backup may be corrupt"**: the backup jobs
+  dump the moment they start, before any post or audit row exists, and the
+  migration smoke ran before the worker was up. `restore_test_probe` now
+  skips an install younger than `restore_test_min_install_age_hours` (24,
+  measured from the first `schema_migrations` row).
+- **"Branch-drift canary cannot run"**: the canary compares the operator's
+  bind-mounted checkout with the private repo through `gh_token`, which a
+  fresh install has neither of. `branch_drift_probe_enabled` now defaults to
+  `false`, and the operator overlay turns it back on for the Glad Labs rig.
+
 ## Probe schedules survive a restart
 
 `health_probes.py`, `business_probes.py` and `post_performance_probe.py` run

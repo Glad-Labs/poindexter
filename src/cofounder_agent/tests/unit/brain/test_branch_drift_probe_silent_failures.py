@@ -82,7 +82,9 @@ class _GitHub404:
 
 
 def _pool(*, execute_error: Exception | None = None) -> MagicMock:
-    settings = {bdp.REPO_KEY: "Test-Org/test-repo", "gh_token": "test-token"}
+    # Enabled explicitly: the canary is off by default (a fresh install has
+    # no gh_token or tracking checkout); these tests describe a configured one.
+    settings = {bdp.ENABLED_KEY: "true", bdp.REPO_KEY: "Test-Org/test-repo", "gh_token": "test-token"}
     pool = MagicMock()
 
     async def _fetchval(query, *args):

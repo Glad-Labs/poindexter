@@ -93,7 +93,9 @@ TRANSIENT_FAILURE_PAGE_HOURS_KEY = "branch_drift_transient_failure_page_hours"
 
 TOKEN_SETTING_KEY = "gh_token"
 
-DEFAULT_ENABLED = True
+# Off unless configured: a fresh install has no gh_token and no checkout to
+# compare (see settings_defaults.branch_drift_probe_enabled).
+DEFAULT_ENABLED = False
 DEFAULT_POLL_INTERVAL_MINUTES = 15
 DEFAULT_REPO = "Glad-Labs/glad-labs-stack"
 DEFAULT_DEDUP_HOURS = 6
@@ -177,7 +179,7 @@ def _coerce_int(val: Any, default: int) -> int:
 
 async def _read_config(pool: Any) -> dict[str, Any]:
     enabled = _coerce_bool(
-        await _read_setting(pool, ENABLED_KEY, "true"), DEFAULT_ENABLED
+        await _read_setting(pool, ENABLED_KEY, "false"), DEFAULT_ENABLED
     )
     poll_interval_minutes = _coerce_int(
         await _read_setting(pool, POLL_INTERVAL_MINUTES_KEY, DEFAULT_POLL_INTERVAL_MINUTES),

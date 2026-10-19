@@ -61,8 +61,10 @@ import json
 import logging
 import os
 import subprocess
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -138,6 +140,79 @@ INTERNAL_COMPOSE_URL_KEYS: tuple[str, ...] = (
     "openclaw_gateway_url",
     "image_gen_server_url",
 )
+
+# A surface pages when it STOPS answering, not when it never has. On a fresh
+# install the brain starts first (the worker waits for it to be healthy), so
+# its first run probed a stack still booting, and every optional service
+# with a seeded URL (ComfyUI, RIFE, Postiz, GlitchTip, Loki...) was probed
+# whether or not it was installed: 19 pages on a clean quick-start run
+# (2026-10-12). Each surface's last good answer is kept in brain_knowledge;
+# one that has never answered is logged and listed, not paged, unless
+# ``operator_url_probe_page_never_reachable`` is on. If that state can't be
+# read, every failure pages, as before.
+SEEN_SOURCE = "operator_url_probe"
+SEEN_ATTRIBUTE = "last_ok_at"
+SEEN_ENTITY_PREFIX = "probe.operator_url."
+# A surface that keeps answering re-stamps at most this often.
+SEEN_REFRESH_SECONDS = 3600.0
+
+
+async def _load_seen(pool) -> dict[str, float] | None:
+    """``{surface: last_ok epoch}``, or None when the state can't be read."""
+    try:
+        rows = await pool.fetch(
+            "SELECT entity, value FROM brain_knowledge WHERE source = $1 AND attribute = $2",
+            SEEN_SOURCE, SEEN_ATTRIBUTE,
+        )
+    except Exception as exc:
+        logger.warning("[OPERATOR_URL_PROBE] seen-state read failed; paging every failure: %s", exc)
+        return None
+    seen: dict[str, float] = {}
+    for row in rows:
+        try:
+            entity = str(row["entity"] or "")
+            if entity.startswith(SEEN_ENTITY_PREFIX):
+                seen[entity[len(SEEN_ENTITY_PREFIX):]] = datetime.fromisoformat(str(row["value"])).timestamp()
+        except (KeyError, TypeError, ValueError):
+            continue  # an unreadable row counts as never seen
+    return seen
+
+
+async def _record_seen(pool, surfaces: list[str], seen: dict[str, float] | None) -> None:
+    """Stamp surfaces that answered; skip ones stamped within the refresh window."""
+    now = time.time()
+    due = [s for s in surfaces if seen is None or now - seen.get(s, 0.0) >= SEEN_REFRESH_SECONDS]
+    if not due:
+        return
+    stamp = datetime.now(UTC).isoformat()
+    try:
+        await pool.executemany(
+            """
+            INSERT INTO brain_knowledge (entity, attribute, value, source)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (entity, attribute)
+            DO UPDATE SET value = EXCLUDED.value, source = EXCLUDED.source, updated_at = NOW()
+            """,
+            [(SEEN_ENTITY_PREFIX + s, SEEN_ATTRIBUTE, stamp, SEEN_SOURCE) for s in due],
+        )
+    except Exception as exc:
+        logger.warning("[OPERATOR_URL_PROBE] seen-state write failed (retried next run): %s", exc)
+
+
+async def _page_never_reachable(pool) -> bool:
+    try:
+        raw = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            "operator_url_probe_page_never_reachable",
+        )
+    except Exception as exc:
+        logger.warning(
+            "[OPERATOR_URL_PROBE] operator_url_probe_page_never_reachable unreadable (%s); "
+            "not paging never-reachable surfaces", exc,
+        )
+        return False
+    return str(raw or "").strip().lower() in ("1", "true", "yes", "on")
+
 
 # Suffix that triggers automatic probing for any app_settings key. Matches
 # the convention used throughout the codebase (site_url, storefront_url,
@@ -1029,6 +1104,17 @@ async def run_operator_url_probe(
     # ---- 4) Notify per-surface — cap at 1 per surface per cycle ----------
     notified: set[str] = set()
     failures = [r for r in url_results if not r["ok"]]
+    seen = await _load_seen(pool)
+    await _record_seen(pool, [r["surface"] for r in url_results if r["ok"]], seen)
+    never_reachable: list[dict[str, Any]] = []
+    if seen is not None and not await _page_never_reachable(pool):
+        never_reachable = [f for f in failures if f["surface"] not in seen]
+        failures = [f for f in failures if f["surface"] in seen]
+    for item in never_reachable:
+        logger.info(
+            "[OPERATOR_URL_PROBE] %s has never answered (%s); not paging until it has worked once",
+            item["surface"], item["url"],
+        )
     for failure in failures:
         if failure["surface"] in notified:
             continue
@@ -1079,6 +1165,10 @@ async def run_operator_url_probe(
             {"surface": f["surface"], "url": f["url"], "detail": f["detail"]}
             for f in failures
         ],
+        # Failing, but never seen answering: not installed, or still booting.
+        "never_reachable": [
+            {"surface": f["surface"], "url": f["url"]} for f in never_reachable
+        ],
         "drifted_devices": drift,
     }
     logger.info(
@@ -1104,6 +1194,7 @@ async def run_operator_url_probe(
                 "url_failures": summary["url_failures"],
                 "tailscale_drift_count": summary["tailscale_drift_count"],
                 "notifications_sent": summary["notifications_sent"],
+                "never_reachable": len(never_reachable),
             }),
             "info",
         )

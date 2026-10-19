@@ -379,6 +379,22 @@ async def test_disabled_does_no_work():
 
 
 @pytest.mark.asyncio
+async def test_an_install_that_never_configured_it_runs_nothing():
+    """2026-10-12 quick start: with the canary on by default, a fresh install
+    (no gh_token, no tracking checkout) paged "canary cannot run" on its first
+    cycle. Off unless the operator turns it on."""
+    bdp._reset_state()
+    pool = _make_pool(setting_values={bdp.ENABLED_KEY: None, "gh_token": None})
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory({}),
+    )
+    assert summary["status"] == "disabled"
+    assert _executes_to(pool, "alert_events") == []
+
+
+@pytest.mark.asyncio
 async def test_missing_token_fails_loud():
     bdp._reset_state()
     pool = _make_pool(setting_values={"gh_token": ""})

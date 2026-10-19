@@ -58,6 +58,7 @@ MIN_ROW_COUNT_KEY = "restore_test_min_row_count"
 PG_READY_TIMEOUT_KEY = "restore_test_pg_ready_timeout_seconds"
 RESTORE_TIMEOUT_KEY = "restore_test_restore_timeout_seconds"
 SMOKE_TIMEOUT_KEY = "restore_test_smoke_timeout_seconds"
+MIN_INSTALL_AGE_KEY = "restore_test_min_install_age_hours"
 
 DEFAULT_ENABLED = True
 DEFAULT_INTERVAL_HOURS = 24
@@ -70,6 +71,13 @@ DEFAULT_MIN_ROW_COUNT = 1
 DEFAULT_PG_READY_TIMEOUT = 60
 DEFAULT_RESTORE_TIMEOUT = 300
 DEFAULT_SMOKE_TIMEOUT = 180
+# A restore test proves a backup holds the data; a database younger than this
+# has none worth proving. On a fresh install the backup jobs dump the moment
+# they start, before any post or audit row exists, and the worker the smoke
+# runs in is still booting: the 2026-10-12 quick-start run paged "Restore
+# test FAILED — latest backup may be corrupt" (posts 0, audit_log 0, smoke
+# container not running) eight minutes after setup.
+DEFAULT_MIN_INSTALL_AGE_HOURS = 24
 
 # Constants (not settings — changing them needs coordinated edits elsewhere).
 THROWAWAY_CONTAINER = "poindexter-restore-test"
@@ -170,7 +178,21 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "smoke_timeout": _coerce_int(
             await _read_setting(pool, SMOKE_TIMEOUT_KEY, DEFAULT_SMOKE_TIMEOUT),
             DEFAULT_SMOKE_TIMEOUT),
+        "min_install_age_hours": _coerce_int(
+            await _read_setting(pool, MIN_INSTALL_AGE_KEY, DEFAULT_MIN_INSTALL_AGE_HOURS),
+            DEFAULT_MIN_INSTALL_AGE_HOURS),
     }
+
+
+async def _install_age_seconds(pool: Any) -> float | None:
+    """Seconds since the first migration ran, or None when unknown."""
+    try:
+        age = await pool.fetchval(
+            "SELECT EXTRACT(EPOCH FROM now() - min(applied_at)) FROM schema_migrations")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[RESTORE_TEST] install age unreadable (%s); running anyway", exc)
+        return None
+    return float(age) if age is not None else None
 
 
 # --- dump discovery + daily gate --------------------------------------------
@@ -512,6 +534,12 @@ async def run_restore_test_probe(
     if not cfg["enabled"]:
         return {"ok": True, "status": "disabled",
                 "detail": f"Disabled (app_settings.{ENABLED_KEY}=false)"}
+
+    age = await _install_age_seconds(pool)
+    if age is not None and age < cfg["min_install_age_hours"] * 3600:
+        return {"ok": True, "status": "skipped",
+                "detail": (f"Install is {age/3600:.1f}h old "
+                           f"(< {cfg['min_install_age_hours']}h): nothing to verify yet")}
 
     since = await _seconds_since_last_run(pool)
     if since is not None and since < cfg["interval_hours"] * 3600:

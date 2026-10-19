@@ -29,7 +29,23 @@ def _make_pool(rows=None):
     pool.fetchrow = AsyncMock()
     pool.fetchval = AsyncMock(return_value=None)
     pool.execute = AsyncMock()
+    pool.executemany = AsyncMock()
     return pool
+
+
+class _AllSeen(dict):
+    """Every surface has answered before: the steady state the paging tests describe."""
+
+    def __contains__(self, _surface):
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _surfaces_have_answered_before():
+    """Pages go out only for surfaces that have worked once (see
+    TestNeverReachableIsNotPaged); the older tests here describe that state."""
+    with patch.object(oup, "_load_seen", AsyncMock(return_value=_AllSeen())):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -1415,3 +1431,85 @@ class TestRunProbeUsesTailnetSettings:
         assert captured["tailnet"] == oup.TailnetDNS(
             resolver="100.100.100.100", suffixes=(".ts.net",),
         )
+
+
+class TestNeverReachableIsNotPaged:
+    """2026-10-12 quick-start run: the brain's first probe ran while the stack
+    was still booting, and seeded URLs of services the default install doesn't
+    run were probed anyway, so a clean install sent 19 pages. A surface pages
+    once it has answered at least once."""
+
+    @pytest.fixture(autouse=True)
+    def _surfaces_have_answered_before(self):
+        yield  # the real seen-state, read from the pool each test builds
+
+    async def _run(self, tmp_path, pool, results):
+        notifies: list[dict] = []
+
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
+            return results
+
+        with patch.object(oup, "probe_urls", side_effect=fake_probe), \
+             patch.object(oup, "_run_tailscale_status", return_value=None), \
+             patch.object(oup, "collect_app_setting_urls", AsyncMock(return_value=[])):
+            summary = await oup.run_operator_url_probe(
+                pool, dashboards_dir=tmp_path, notify_fn=lambda **kw: notifies.append(kw),
+            )
+        return summary, notifies
+
+    @staticmethod
+    def _seen_rows(*surfaces):
+        return [{"entity": oup.SEEN_ENTITY_PREFIX + s, "value": "2026-10-19T08:00:00+00:00"} for s in surfaces]
+
+    @pytest.mark.asyncio
+    async def test_a_surface_that_never_answered_is_listed_not_paged(self, tmp_path):
+        pool = _make_pool([])
+        summary, notifies = await self._run(tmp_path, pool, [
+            {"surface": "app_settings.rife_server_url", "url": "http://host.docker.internal:9840",
+             "ok": False, "status": 0, "detail": "ConnectError"},
+        ])
+        assert notifies == []
+        assert summary["never_reachable"] == [
+            {"surface": "app_settings.rife_server_url", "url": "http://host.docker.internal:9840"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_surface_that_worked_before_pages_when_it_stops(self, tmp_path):
+        pool = _make_pool(self._seen_rows("app_settings.grafana_url"))
+        summary, notifies = await self._run(tmp_path, pool, [
+            {"surface": "app_settings.grafana_url", "url": "http://host.docker.internal:3000",
+             "ok": False, "status": 0, "detail": "ConnectError"},
+        ])
+        assert [n["title"] for n in notifies] == ["Operator surface unreachable: app_settings.grafana_url"]
+        assert summary["never_reachable"] == []
+
+    @pytest.mark.asyncio
+    async def test_an_answering_surface_is_stamped_as_seen(self, tmp_path):
+        pool = _make_pool([])
+        await self._run(tmp_path, pool, [
+            {"surface": "app_settings.grafana_url", "url": "http://x", "ok": True, "status": 200, "detail": ""},
+        ])
+        rows = pool.executemany.call_args[0][1]
+        entity, attribute, _stamp, source = rows[0]
+        assert (entity, attribute, source) == (
+            oup.SEEN_ENTITY_PREFIX + "app_settings.grafana_url", "last_ok_at", oup.SEEN_SOURCE,
+        )
+
+    @pytest.mark.asyncio
+    async def test_unreadable_state_pages_every_failure(self, tmp_path):
+        pool = _make_pool([])
+        pool.fetch = AsyncMock(side_effect=Exception("db down"))
+        _, notifies = await self._run(tmp_path, pool, [
+            {"surface": "app_settings.rife_server_url", "url": "http://x", "ok": False, "status": 0, "detail": "e"},
+        ])
+        assert len(notifies) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_operator_can_page_never_reachable_surfaces_too(self, tmp_path):
+        pool = _make_pool([])
+        pool.fetchval = AsyncMock(side_effect=lambda _q, key: "true"
+                                  if key == "operator_url_probe_page_never_reachable" else None)
+        _, notifies = await self._run(tmp_path, pool, [
+            {"surface": "app_settings.rife_server_url", "url": "http://x", "ok": False, "status": 0, "detail": "e"},
+        ])
+        assert len(notifies) == 1

@@ -100,6 +100,9 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # operator-facing timestamp rendering. Applied over the UTC default by
     # apply_operator_overrides only while the row still holds the OSS default.
     "operator_timezone": "America/New_York",
+    # The deploy canary: this rig runs the bind-mounted checkout it compares
+    # with origin/main (OSS default is off; a fresh install has no gh_token).
+    "branch_drift_probe_enabled": "true",
     # The Glad Labs issue trackers (poindexter#991). The OSS default ships
     # `repos: ""` — which repos to scrape is per-install, and a default naming
     # anyone's repos would make a fresh install ingest a stranger's tracker.

@@ -378,6 +378,13 @@ DEFAULTS: dict[str, str] = {
     # branch_drift_* keys seed via baseline.seeds.sql; this go-forward key seeds
     # here (the code default in poindexter/brain/branch_drift_probe.py is the backstop).
     'branch_drift_min_commits_behind': '3',
+    # The canary compares this install's bind-mounted checkout with
+    # branch_drift_repo's main through the GitHub API, using gh_token. That is
+    # the operator's deploy model; a fresh install has neither a token nor a
+    # tracking checkout, so with it on, the first cycle paged "Branch-drift
+    # canary cannot run" (2026-10-12 quick start). Off by default; the operator
+    # overlay turns it back on. Matches 0000_baseline.seeds.sql.
+    'branch_drift_probe_enabled': 'false',
 
     # brain branch_drift_probe — when the canary ITSELF cannot run. A
     # credential failure (gh_token rejected, forbidden, or blind to the private
