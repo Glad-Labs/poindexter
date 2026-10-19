@@ -181,19 +181,30 @@ instead of `GitHub Actions`.
 
 ## Control surface
 
-| Variable / action                             | Effect                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------- |
-| `CI_RUNNER` = `["self-hosted","linux","x64"]` | `unit-tests` runs self-hosted                                                   |
-| `CI_RUNNER` unset                             | `unit-tests` runs on `ubuntu-latest`                                            |
-| `CI_RUNNER_MODE` = `auto` (default/unset)     | healthcheck sets/unsets `CI_RUNNER` by live runner status (self-heal both ways) |
-| `CI_RUNNER_MODE` = `on`                       | force self-hosted; healthcheck never reverts                                    |
-| **`CI_RUNNER_MODE` = `off`**                  | **kill-switch** — force hosted; healthcheck never re-enables                    |
+| Variable / action                                          | Effect                                                                                                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CI_RUNNER` = `["self-hosted","linux","x64"]`              | `unit-tests` runs self-hosted                                                                                                                       |
+| `CI_RUNNER` unset                                          | `unit-tests` runs on `ubuntu-latest`                                                                                                                |
+| `CI_RUNNER_MODE` = `auto` (default/unset)                  | healthcheck sets/unsets `CI_RUNNER` by live runner status (self-heal both ways)                                                                     |
+| `CI_RUNNER_MODE` = `on`                                    | force self-hosted; healthcheck never reverts                                                                                                        |
+| **`CI_RUNNER_MODE` = `off`**                               | **kill-switch** — force hosted; healthcheck never re-enables                                                                                        |
+| `CI_RUNNER_PLANNED_SLEEP` = `America/New_York 01:00-08:15` | in `auto`, an offline runner inside this window is expected: `CI_RUNNER` is left as is, so overnight jobs wait for the wake instead of failing over |
 
 ```bash
 # Kill-switch — pin everything back to GitHub-hosted, durably:
 gh variable set CI_RUNNER_MODE --repo Glad-Labs/glad-labs-stack --body off
 # Resume self-healing:
 gh variable set CI_RUNNER_MODE --repo Glad-Labs/glad-labs-stack --body auto
+```
+
+**Planned sleep:** the PC suspends nightly (`scripts/linux/night_sleep.py`,
+`host_sleep_*` settings). Keep `CI_RUNNER_PLANNED_SLEEP` covering that window
+plus a few minutes for the wake. Without it, the healthcheck run at 07:59 EDT
+on 2026-10-19 (one minute before the wake) failed CI over to `ubuntu-latest`
+until its next run at 14:38, and `test-backend` hit its 25-minute limit there.
+
+```bash
+gh variable set CI_RUNNER_PLANNED_SLEEP --repo Glad-Labs/glad-labs-stack --body "America/New_York 01:00-08:15"
 ```
 
 **PC-down behaviour:** in `auto` mode, if **all** runners go offline the

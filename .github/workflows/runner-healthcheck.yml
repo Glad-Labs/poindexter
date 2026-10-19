@@ -28,6 +28,14 @@
 #                                     self-hosted (their vars were fixed at creation,
 #                                     so the unset alone never reaches them)
 #
+# Planned downtime via the `CI_RUNNER_PLANNED_SLEEP` repo variable, e.g.
+# "America/New_York 01:00-08:15": the runner PC suspends nightly
+# (scripts/linux/night_sleep.py). Inside that window an offline runner is
+# expected, so `auto` keeps CI_RUNNER as it is: jobs queued overnight wait for
+# the wake. Without it, the 2026-10-19 07:59 EDT run (one minute before the
+# wake) failed CI over to ubuntu-latest until its next run at 14:38, and
+# test-backend timed out there (25 min) and cancelled two PRs' checks.
+#
 # Operator override via the `CI_RUNNER_MODE` repo variable:
 #   auto (default / unset) = liveness-driven, as above (self-heal both directions)
 #   on                     = force self-hosted (never auto-revert, even if probe can't see it)
@@ -163,10 +171,27 @@ jobs:
           fi
           echo "mode=$mode  online_runners=$online  probe_ok=$probe_ok  CI_RUNNER='${current}'"
 
+          # Inside the planned sleep window an offline runner is expected.
+          # Format: "<IANA zone> HH:MM-HH:MM"; a window may cross midnight.
+          planned="$(read_var CI_RUNNER_PLANNED_SLEEP)"
+          in_planned_sleep=0
+          if [ -n "$planned" ]; then
+            tz="${planned%% *}"; span="${planned#* }"; start="${span%-*}"; end="${span#*-}"
+            now="$(TZ="$tz" date +%H:%M)"
+            if [[ "$start" < "$end" ]]; then
+              if [[ ! "$now" < "$start" && "$now" < "$end" ]]; then in_planned_sleep=1; fi
+            else
+              if [[ ! "$now" < "$start" || "$now" < "$end" ]]; then in_planned_sleep=1; fi
+            fi
+            echo "planned sleep: $planned (now $now $tz) -> in window: $in_planned_sleep"
+          fi
+
           case "$mode" in
             on)  desired="set"   ;;
             off) desired="unset" ;;
-            *)   if [ "$online" -ge 1 ]; then desired="set"; else desired="unset"; fi ;;
+            *)   if [ "$online" -ge 1 ]; then desired="set"
+                 elif [ "$in_planned_sleep" = 1 ]; then desired="keep"
+                 else desired="unset"; fi ;;
           esac
 
           change="none"
@@ -197,7 +222,7 @@ jobs:
             echo "### runner-healthcheck"
             echo "- mode: \`$mode\`"
             echo "- online self-hosted runners: **$online**$([ "$probe_ok" = 1 ] || echo ' (probe failed)')"
-            echo "- action: **$change**"
+            echo "- action: **$change**$([ "$desired" = keep ] && echo ' (runner offline inside the planned sleep window)')"
             echo "- stranded-run recovery: **$recover**"
           } >> "$GITHUB_STEP_SUMMARY"
 
