@@ -55,7 +55,7 @@ asyncpg = "^0.31"
 # google-genai removed — only in legacy llm_client.py (dead code)
 
 # Async/Concurrency
-aiohttp = "^3.9"
+aiohttp = "^3.14"
 httpx = "^0.28"
 # tenacity owns the retry/backoff loop in services/ollama_client.py
 # (see issue Glad-Labs/poindexter#200). Was already pulled in
