@@ -12,6 +12,14 @@ recovers them; the dispatcher persists them as `cost_logs.decode_duration_ms`
 and `prefill_duration_ms` (migration `20260826_040508`, live since 04:05 UTC on
 2026-08-26).
 
+The same wrapper also repairs a second thing LiteLLM drops. The `ollama/`
+transform (`/api/generate`) sets `finish_reason = "stop"` on every response and
+never reads Ollama's `done_reason`, so a completion cut off at the output cap
+(`done_reason: "length"`) reported "stop". The wrapper rewrites that "stop" to
+"length". Without it, `finish_reason`-based truncation checks (the
+poindexter#984 cap-bump retry in `AIContentGenerator`) never fire on a local
+model. `ollama_chat/` already maps `done_reason`, so there it does nothing.
+
 ## Two different numbers, and the gap between them is the interesting one
 
 | Column                               | What it measures                                            |

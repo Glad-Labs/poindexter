@@ -1,4 +1,7 @@
-"""Recover Ollama's decode/prefill timing split through LiteLLM.
+"""Recover what LiteLLM's Ollama transforms drop: timing split + done_reason.
+
+Two things LiteLLM loses: the decode/prefill timing split (both routes), and
+``done_reason='length'`` on the ``ollama/`` route (see below).
 
 Ollama's response JSON reports ``eval_duration`` (ns spent decoding) and
 ``prompt_eval_duration`` (ns spent on prompt/prefill), but LiteLLM's Ollama
@@ -21,11 +24,24 @@ live on litellm 1.89.2, both dispatch spellings), so the dispatcher's
 cost-write can persist the split with **no callback correlation and no
 race** — the timing arrives on the same object as the tokens it describes.
 
+**Truncation signal (same seam, second repair).** The ``ollama/`` transform
+(``OllamaConfig``, POSTs ``/api/generate``) sets
+``choices[0].finish_reason = "stop"`` unconditionally and never reads
+Ollama's ``done_reason`` — so a completion cut off at ``num_predict`` /
+``max_tokens`` (``done_reason == "length"``) reported "stop", and every
+``finish_reason``-based truncation check was blind on a local ``ollama/``
+route (``AIContentGenerator._completion_truncated`` and its poindexter#984
+cap-bump retry never fired for a local writer). The ``ollama_chat/``
+transform maps ``done_reason`` correctly already. The wrapper now rewrites
+``"stop"`` → ``"length"`` when the raw body says ``done_reason == "length"``;
+any other value (``tool_calls``, a correct chat-route ``length``) is left
+alone, so on ``ollama_chat/`` it is a no-op.
+
 Failure posture: this is passive observability capture, so every layer is
 fail-open — if LiteLLM's internals move (import fails, signature changes,
 raw body isn't the expected JSON), the wrapper logs once and LLM calls
 proceed untouched; the ``cost_logs`` columns just stay NULL ("not
-reported"), never 0. ``tests/unit/services/llm_providers/
+reported"), never 0, and ``finish_reason`` stays whatever LiteLLM set. ``tests/unit/services/llm_providers/
 test_ollama_timings.py`` pins the wrapped signature against the installed
 litellm so an upgrade that breaks the seam fails CI loudly instead of
 silently going dark.
@@ -65,6 +81,24 @@ def _stash_timings(model_response: Any, raw_response: Any) -> None:
         logger.debug("[ollama_timings] raw-response parse failed", exc_info=True)
 
 
+def _correct_finish_reason(model_response: Any, raw_response: Any) -> None:
+    """Best-effort: surface Ollama's ``done_reason='length'`` on the response.
+
+    Only a LiteLLM-reported ``"stop"`` is rewritten — the ``ollama/``
+    transform hardcodes it. A ``tool_calls`` (or any other) value is
+    LiteLLM's own reading and stays.
+    """
+    try:
+        body = raw_response.json()
+        if not isinstance(body, dict) or body.get("done_reason") != "length":
+            return
+        choice = model_response.choices[0]
+        if getattr(choice, "finish_reason", None) == "stop":
+            choice.finish_reason = "length"
+    except Exception:  # silent-ok: repairing an optional signal inside the LLM call path — a parse failure must never break the completion; the miss leaves LiteLLM's own "stop", and the litellm signature-pin test guards the systematic case
+        logger.debug("[ollama_timings] done_reason correction failed", exc_info=True)
+
+
 def _wrap(cls: type[Any]) -> None:
     orig = cls.transform_response
 
@@ -72,6 +106,7 @@ def _wrap(cls: type[Any]) -> None:
     def patched(self, model, raw_response, model_response, *args, **kwargs):
         out = orig(self, model, raw_response, model_response, *args, **kwargs)
         _stash_timings(out, raw_response)
+        _correct_finish_reason(out, raw_response)
         return out
 
     setattr(patched, _WRAPPED_MARKER, True)

@@ -1,5 +1,6 @@
 """Tests for ``services.llm_providers.ollama_timings`` — the seam that
-recovers Ollama's decode/prefill durations through LiteLLM.
+recovers Ollama's decode/prefill durations through LiteLLM, and the
+``done_reason='length'`` the ``ollama/`` transform hardcodes to "stop".
 
 Two layers: pure-unit coverage of the stash/extract helpers on fakes, and a
 **pin against the installed litellm** — the wrapper monkeypatches
@@ -11,6 +12,9 @@ going dark (fail-open would leave the cost_logs columns NULL forever).
 from __future__ import annotations
 
 import inspect
+from unittest.mock import MagicMock
+
+import httpx
 
 # Module-scope on purpose (sibling idiom — test_litellm_aiohttp_transport.py):
 # litellm lazily fetches its remote model-cost map on first import, and at
@@ -18,9 +22,11 @@ import inspect
 # guard window.
 from litellm.llms.ollama.chat.transformation import OllamaChatConfig
 from litellm.llms.ollama.completion.transformation import OllamaConfig
+from litellm.types.utils import ModelResponse
 
 from poindexter.services.llm_providers.ollama_timings import (
     HIDDEN_PARAMS_KEY,
+    _correct_finish_reason,
     _stash_timings,
     _wrap,
     extract_timings,
@@ -39,9 +45,15 @@ class _FakeRawResponse:
         return self._body
 
 
+class _FakeChoice:
+    def __init__(self, finish_reason="stop"):
+        self.finish_reason = finish_reason
+
+
 class _FakeModelResponse:
-    def __init__(self):
+    def __init__(self, finish_reason="stop"):
         self._hidden_params = {}
+        self.choices = [_FakeChoice(finish_reason)]
 
 
 def test_stash_records_split_in_ms():
@@ -103,3 +115,87 @@ def test_install_pins_installed_litellm_and_is_idempotent():
     first = OllamaChatConfig.transform_response
     assert install_ollama_timing_capture() is True
     assert OllamaChatConfig.transform_response is first
+
+
+# --- done_reason → finish_reason -------------------------------------------
+
+
+def test_correct_finish_reason_maps_length():
+    mr = _FakeModelResponse("stop")
+    _correct_finish_reason(mr, _FakeRawResponse({"done": True, "done_reason": "length"}))
+    assert mr.choices[0].finish_reason == "length"
+
+
+def test_correct_finish_reason_leaves_stop_alone():
+    mr = _FakeModelResponse("stop")
+    _correct_finish_reason(mr, _FakeRawResponse({"done": True, "done_reason": "stop"}))
+    assert mr.choices[0].finish_reason == "stop"
+
+
+def test_correct_finish_reason_keeps_tool_calls():
+    """Only LiteLLM's hardcoded "stop" is rewritten; its own tool_calls
+    reading stands even if the body also hit the cap."""
+    mr = _FakeModelResponse("tool_calls")
+    _correct_finish_reason(mr, _FakeRawResponse({"done_reason": "length"}))
+    assert mr.choices[0].finish_reason == "tool_calls"
+
+
+def test_correct_finish_reason_malformed_body_is_untouched():
+    for raw in (
+        _FakeRawResponse(raises=True),           # not JSON
+        _FakeRawResponse({"response": "hi"}),    # no done_reason
+    ):
+        mr = _FakeModelResponse("stop")
+        _correct_finish_reason(mr, raw)  # must not raise
+        assert mr.choices[0].finish_reason == "stop"
+    # a JSON list body, and a response with no choices, must not raise either
+    class _ListBody:
+        def json(self):
+            return ["done_reason", "length"]
+
+    mr = _FakeModelResponse("stop")
+    _correct_finish_reason(mr, _ListBody())
+    assert mr.choices[0].finish_reason == "stop"
+    _correct_finish_reason(object(), _FakeRawResponse({"done_reason": "length"}))
+
+
+def _generate_route(done_reason: str) -> str:
+    """Run the INSTALLED litellm ``ollama/`` (``/api/generate``) transform,
+    wrapped by the seam, over a real httpx body and return finish_reason."""
+    assert install_ollama_timing_capture() is True
+    body = {
+        "model": "gemma3:27b",
+        "response": "The draft stops mid-wor",
+        "done": True,
+        "done_reason": done_reason,
+        "prompt_eval_count": 12,
+        "eval_count": 64,
+        "eval_duration": 2_000_000,
+        "prompt_eval_duration": 1_000_000,
+    }
+    raw = httpx.Response(
+        200, json=body, request=httpx.Request("POST", "http://ollama/api/generate")
+    )
+    out = OllamaConfig().transform_response(
+        model="gemma3:27b",
+        raw_response=raw,
+        model_response=ModelResponse(),
+        logging_obj=MagicMock(),
+        request_data={"prompt": "write"},
+        messages=[{"role": "user", "content": "write"}],
+        optional_params={},
+        litellm_params={},
+        encoding=None,
+    )
+    return out.choices[0].finish_reason
+
+
+def test_generate_route_surfaces_length_against_installed_litellm():
+    """The bug this seam repairs: unwrapped, litellm reports "stop" here.
+    Exercised end to end through the real transform so a litellm upgrade
+    that changes the shape fails here, not silently in production."""
+    assert _generate_route("length") == "length"
+
+
+def test_generate_route_keeps_stop_against_installed_litellm():
+    assert _generate_route("stop") == "stop"

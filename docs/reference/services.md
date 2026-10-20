@@ -522,7 +522,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 | `dispatcher.py` | LLMProvider dispatcher — resolve a provider instance at call time. |
 | `litellm_provider.py` | LiteLLMProvider — LiteLLM-backed LLMProvider plugin. |
 | `ollama_native.py` | OllamaNativeProvider — thin LLMProvider wrapper around OllamaClient. |
-| `ollama_timings.py` | Recover Ollama's decode/prefill timing split through LiteLLM. |
+| `ollama_timings.py` | Recover what LiteLLM's Ollama transforms drop: timing split + done_reason. |
 | `ollama_unload.py` | Ollama explicit-unload helper for VRAM-pressure pipeline transitions. |
 | `openai_compat.py` | OpenAICompatProvider — one HTTP client, every OpenAI-compat backend. |
 | `thinking_models.py` | Thinking-model detection. |
