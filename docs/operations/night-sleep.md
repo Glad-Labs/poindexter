@@ -161,6 +161,23 @@ thing after the wake, sets back any that changed. It records them as
 follows a change to the cap service or a manual `nvidia-smi -pl` without
 knowing about either.
 
+The cap service also re-runs on every wake, independent of this script, through
+a host drop-in (the unit lives only in `/etc`, not in this repo):
+
+```ini
+# /etc/systemd/system/gpu-power-cap.service.d/after-resume.conf
+[Unit]
+After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
+
+[Service]
+RemainAfterExit=no
+```
+
+plus `sudo systemctl add-wants <target> gpu-power-cap.service` for each of those
+four targets. `RemainAfterExit=no` matters: a oneshot left "active" is not
+started again when a target pulls it in, so without it the wake would do
+nothing.
+
 ## Not covered yet
 
 Other freshness checks (Prometheus rules, brain probes) have no resume grace.
