@@ -1043,3 +1043,40 @@ class TestRecording:
         with pytest.raises(RuntimeError, match="util-linux `script` 2.35"):
             DRIVER.Recorder(tmp_path / "rec")
         DRIVER.Recorder(None)  # unrecorded runs never need it
+
+
+class TestFilmedSession:
+    """A filmed run reads like a person at a terminal: the README's own lines as
+    prompts, its comments dimmed, and the driver's machinery off screen."""
+
+    def _script(self, show):
+        qs = DRIVER.extract_quick_start(README.read_text(encoding="utf-8"))
+        return qs, DRIVER.build_script(
+            qs, tree=Path("/tmp/tree"), tiny_model="t:1", real_pulls=set(),
+            handoff=Path("/tmp/h/handoff.env"), show_commands=show,
+        )
+
+    def test_each_readme_line_is_shown_as_written(self):
+        import subprocess
+
+        qs, script = self._script(True)
+        shown = "\n".join(ln for ln in script.splitlines() if ln.startswith("printf"))
+        screen = re.sub(r"\x1b\[[0-9;]*m", "", subprocess.run(
+            ["bash", "-c", shown], capture_output=True, text=True, check=True,
+        ).stdout)
+        for line in nonempty([ln.strip() for ln in qs.lines if ln.strip()], "quick start lines"):
+            expected = line if line.startswith("#") else f"$ {line}"
+            assert expected in screen, f"not shown: {expected}"
+
+    def test_the_drivers_machinery_goes_to_the_notes_file(self):
+        _, script = self._script(True)
+        machinery = [ln for ln in script.splitlines() if "[quickstart-e2e]" in ln or "settings set" in ln]
+        assert machinery and all(ln.endswith(">> /tmp/h/handoff.notes 2>&1") for ln in machinery)
+
+    def test_an_unfilmed_run_is_unchanged(self):
+        _, script = self._script(False)
+        assert "printf" not in script and "handoff.notes" not in script
+
+    def test_main_films_with_commands_shown(self):
+        source = Path(DRIVER.__file__).read_text(encoding="utf-8")
+        assert "show_commands=args.record is not None" in source

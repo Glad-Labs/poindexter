@@ -338,42 +338,72 @@ def extract_quick_start(readme: str) -> QuickStart:
 
 def build_script(
     qs: QuickStart, *, tree: Path, tiny_model: str, real_pulls: set[str], handoff: Path,
-    settings: dict[str, str] | None = None,
+    settings: dict[str, str] | None = None, show_commands: bool = False,
 ) -> str:
     """The bash session to run: the block, with the three substitutions applied.
 
     Ends by writing the resolved ``poindexter`` path (and the created task id,
     captured from the block's own output) to ``handoff`` so the checks after
     the block run the same CLI the block installed.
+
+    ``show_commands`` (set when the run is filmed) makes the session read like
+    a person at a terminal: each README line is printed as a ``$`` prompt
+    before it runs, exactly as the README spells it, and its comments are
+    printed dimmed. The driver's own notes and the stand-in settings writes go
+    to ``handoff.notes`` instead of the screen, since they are this test's
+    machinery and not part of the quick start; ``main`` prints them to the CI
+    log afterwards.
     """
     settings = STAND_IN_SETTINGS if settings is None else settings
+    notes = handoff.with_suffix(".notes")
+    note_to = f" >> {shlex.quote(str(notes))} 2>&1" if show_commands else ""
     out = [
         "set -euo pipefail",
         f"exec > >(tee -a {shlex.quote(str(handoff.with_suffix('.log')))}) 2>&1",
     ]
+
+    after_comment = False
+
+    def shown(text: str, *, comment: bool = False) -> None:
+        # A blank line opens each step: before its comment, or before a
+        # command that has none. A command right under its comment stays with it.
+        nonlocal after_comment
+        if show_commands:
+            gap = "" if (after_comment and not comment) else "\\n"
+            if comment:
+                out.append(f"printf '{gap}\\033[2m%s\\033[0m\\n' {shlex.quote(text)}")
+            else:
+                out.append(f"printf '{gap}\\033[1;32m$ \\033[0m%s\\n' {shlex.quote(text)}")
+        after_comment = comment
+
     for raw in qs.lines:
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
+            if stripped:
+                shown(stripped, comment=True)
             out.append(raw)
             continue
+        shown(stripped)
         if stripped == qs.clone_line:
-            out.append(f"echo '[quickstart-e2e] clone -> cd {tree}'")
+            out.append(f"echo '[quickstart-e2e] clone -> cd {tree}'{note_to}")
             out.append(f"cd {shlex.quote(str(tree))}")
             continue
         models = _PULL.findall(stripped.split("#", 1)[0])
         if models:
-            out.append(f"echo '[quickstart-e2e] models -> {' '.join(models)}'")
+            out.append(f"echo '[quickstart-e2e] models -> {' '.join(models)}'{note_to}")
             for tag in models:
                 if tag in real_pulls:
                     out.append(f"ollama pull {shlex.quote(tag)}")
                 else:
-                    out.append(f"ollama cp {shlex.quote(tiny_model)} {shlex.quote(tag)}")
+                    out.append(f"ollama cp {shlex.quote(tiny_model)} {shlex.quote(tag)}{note_to}")
             continue
         if stripped == qs.create_line and settings:
             applied = " ".join(f"{k}={v}" for k, v in settings.items())
-            out.append(f"echo '[quickstart-e2e] stand-in model -> app_settings {applied}'")
+            out.append(f"echo '[quickstart-e2e] stand-in model -> app_settings {applied}'{note_to}")
             for key, value in settings.items():
-                out.append(f"poindexter settings set {shlex.quote(key)} {shlex.quote(value)}")
+                out.append(
+                    f"poindexter settings set {shlex.quote(key)} {shlex.quote(value)}{note_to}"
+                )
         out.append(raw)
     out.append(f"echo \"PDX_BIN=$(command -v poindexter)\" >> {shlex.quote(str(handoff))}")
     return "\n".join(out) + "\n"
@@ -743,9 +773,14 @@ def main(argv: list[str] | None = None) -> int:
     handoff = Path(tempfile.mkdtemp(prefix="quickstart-e2e-")) / "handoff.env"
     script = build_script(
         qs, tree=tree, tiny_model=args.tiny_model, real_pulls=set(args.real_pull), handoff=handoff,
+        show_commands=args.record is not None,
     )
     print("[quickstart-e2e] running the quick start:\n" + script, flush=True)
     proc = recorder.run("install", "Install Poindexter and queue a first post", script, cwd=tree, capture=False)
+    notes = handoff.with_suffix(".notes")
+    if notes.exists():
+        # The driver's own notes, kept off the filmed screen (see build_script).
+        print(notes.read_text(encoding="utf-8", errors="replace"), flush=True)
     if proc.returncode != 0:
         print(f"::error::the README quick start failed (exit {proc.returncode})")
         return 1

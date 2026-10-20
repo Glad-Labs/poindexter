@@ -319,6 +319,12 @@ How the recording works:
   `manifest.json` with its command, exit code and duration.
 - **The workflow keeps the folder** as the `howto-recording` artifact for 30
   days.
+- **The screen reads like a person at a terminal.** Each README line is printed
+  as a `$` prompt, exactly as the README spells it, before it runs, and its
+  comments are printed dimmed. The driver's own machinery goes to a notes file
+  that is printed to the CI log afterwards, not to the screen: its clone
+  substitution, the model aliasing, and the stand-in settings. The first
+  recording had shown only output, with the driver's notes mixed in.
 
 The footage is only what really ran. A failed step is recorded as failed, and
 the video is cut only from a green run, so every command it shows worked on a
