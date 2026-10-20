@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.161.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.160.0...v0.161.0) (2026-10-20)
+
+
+### Features
+
+* **ci:** film the quick start for the setup-and-operation how-to ([#4531](https://github.com/Glad-Labs/glad-labs-stack/issues/4531)) ([2f4ce7c](https://github.com/Glad-Labs/glad-labs-stack/commit/2f4ce7cfc9fcb80d95c4f37bc3b96c1d3f5b6d13))
+
+
+### Bug Fixes
+
+* **brain:** a fresh install starts quiet ([#4552](https://github.com/Glad-Labs/glad-labs-stack/issues/4552)) ([bbfccb0](https://github.com/Glad-Labs/glad-labs-stack/commit/bbfccb009a0f35d964b7daa8863a7a2724f08836))
+* **ci:** runner healthcheck doesn't fail over during the planned night sleep ([#4562](https://github.com/Glad-Labs/glad-labs-stack/issues/4562)) ([f3a1cf4](https://github.com/Glad-Labs/glad-labs-stack/commit/f3a1cf46aab2f8abfbc34505b683d6e398c6336d))
+* **jobs:** link checker reads a URL-as-text Markdown link as one URL ([#4560](https://github.com/Glad-Labs/glad-labs-stack/issues/4560)) ([1f0a232](https://github.com/Glad-Labs/glad-labs-stack/commit/1f0a232e350f4967666d278dc9fa2839e79b9b20))
+* **jobs:** post verifier retries a dropped request and names the error ([#4556](https://github.com/Glad-Labs/glad-labs-stack/issues/4556)) ([f800457](https://github.com/Glad-Labs/glad-labs-stack/commit/f800457e3a545eb7a83f001b46c4ca4684397d36))
+* **ops-sessions:** one failed PR lookup no longer reads as "PR gone" ([#4561](https://github.com/Glad-Labs/glad-labs-stack/issues/4561)) ([119437a](https://github.com/Glad-Labs/glad-labs-stack/commit/119437a8c7c1c2f663a6b86e49b42ecaedb0f00e))
+* **ops:** night sleep puts back the GPU power limits a resume resets ([#4566](https://github.com/Glad-Labs/glad-labs-stack/issues/4566)) ([7ea0ff0](https://github.com/Glad-Labs/glad-labs-stack/commit/7ea0ff044dead4c89b0afe9228ddc32d9ae8a362))
+* **ops:** quiet around the night sleep — no judge reload, no wake-burst pages ([#4559](https://github.com/Glad-Labs/glad-labs-stack/issues/4559)) ([9e56828](https://github.com/Glad-Labs/glad-labs-stack/commit/9e568280de914bacc4d5b0b9d5fbf502b0e46c5e))
+* **posts:** an edit to a live post reaches the site; posts retitle works ([#4532](https://github.com/Glad-Labs/glad-labs-stack/issues/4532)) ([81a195c](https://github.com/Glad-Labs/glad-labs-stack/commit/81a195c87d148639622b88cfeb55ec96352b05e8))
+* **settings:** a fresh install gives the writer 600 s per call, as prod does ([#4551](https://github.com/Glad-Labs/glad-labs-stack/issues/4551)) ([688a50c](https://github.com/Glad-Labs/glad-labs-stack/commit/688a50c65573c4d14dbe9ef85a0d4a017c9ee609))
+
 ## [0.160.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.159.0...v0.160.0) (2026-10-19)
 
 
