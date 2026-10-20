@@ -199,6 +199,68 @@ async def _record_seen(pool, surfaces: list[str], seen: dict[str, float] | None)
         logger.warning("[OPERATOR_URL_PROBE] seen-state write failed (retried next run): %s", exc)
 
 
+# A surface that worked pages after this many failed runs in a row, not on the
+# first: a deploy restarts the worker for about a minute, and a 15-minute probe
+# that landed in that minute paged api_base_url / api_url / preview_base_url 23
+# times in the 14 days to 2026-10-19. Two runs is a surface down for more than
+# one probe interval. The count lives beside last_ok_at so a brain restart
+# (deploys restart the brain too) doesn't reset it.
+STREAK_ATTRIBUTE = "consecutive_failures"
+ALERT_AFTER_KEY = "operator_url_probe_alert_after_failures"
+DEFAULT_ALERT_AFTER = 2
+
+
+async def _load_streaks(pool) -> dict[str, int] | None:
+    """``{surface: consecutive failed runs}``, or None when unreadable."""
+    try:
+        rows = await pool.fetch(
+            "SELECT entity, value FROM brain_knowledge WHERE source = $1 AND attribute = $2",
+            SEEN_SOURCE, STREAK_ATTRIBUTE,
+        )
+    except Exception as exc:
+        logger.warning("[OPERATOR_URL_PROBE] failure counts unreadable; paging on first failure: %s", exc)
+        return None
+    streaks: dict[str, int] = {}
+    for row in rows:
+        try:
+            entity = str(row["entity"] or "")
+            if entity.startswith(SEEN_ENTITY_PREFIX):
+                streaks[entity[len(SEEN_ENTITY_PREFIX):]] = int(row["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return streaks
+
+
+async def _save_streaks(pool, changed: dict[str, int]) -> None:
+    if not changed:
+        return
+    try:
+        await pool.executemany(
+            """
+            INSERT INTO brain_knowledge (entity, attribute, value, source)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (entity, attribute)
+            DO UPDATE SET value = EXCLUDED.value, source = EXCLUDED.source, updated_at = NOW()
+            """,
+            [(SEEN_ENTITY_PREFIX + s, STREAK_ATTRIBUTE, str(n), SEEN_SOURCE) for s, n in changed.items()],
+        )
+    except Exception as exc:
+        logger.warning("[OPERATOR_URL_PROBE] failure-count write failed (retried next run): %s", exc)
+
+
+async def _alert_after(pool) -> int:
+    try:
+        raw = await pool.fetchval("SELECT value FROM app_settings WHERE key = $1", ALERT_AFTER_KEY)
+    except Exception as exc:
+        logger.warning("[OPERATOR_URL_PROBE] %s unreadable (%s); using %d",
+                       ALERT_AFTER_KEY, exc, DEFAULT_ALERT_AFTER)
+        return DEFAULT_ALERT_AFTER
+    try:
+        return max(1, int(raw)) if raw not in (None, "") else DEFAULT_ALERT_AFTER
+    except (TypeError, ValueError):
+        return DEFAULT_ALERT_AFTER
+
+
 async def _page_never_reachable(pool) -> bool:
     try:
         raw = await pool.fetchval(
@@ -1115,6 +1177,26 @@ async def run_operator_url_probe(
             "[OPERATOR_URL_PROBE] %s has never answered (%s); not paging until it has worked once",
             item["surface"], item["url"],
         )
+    # Failed-run streaks for surfaces that have worked; a first failure waits.
+    streaks = await _load_streaks(pool)
+    first_failures: list[dict[str, Any]] = []
+    if streaks is not None:
+        alert_after = await _alert_after(pool)
+        failing = {f["surface"] for f in failures}
+        changed: dict[str, int] = {}
+        for surface in failing:
+            changed[surface] = streaks.get(surface, 0) + 1
+        for r in url_results:
+            if r["ok"] and streaks.get(r["surface"], 0):
+                changed[r["surface"]] = 0
+        await _save_streaks(pool, changed)
+        first_failures = [f for f in failures if changed[f["surface"]] < alert_after]
+        failures = [f for f in failures if changed[f["surface"]] >= alert_after]
+        for item in first_failures:
+            logger.info(
+                "[OPERATOR_URL_PROBE] %s failed (%d of %d runs before paging): %s",
+                item["surface"], changed[item["surface"]], alert_after, item["url"],
+            )
     for failure in failures:
         if failure["surface"] in notified:
             continue
@@ -1164,6 +1246,10 @@ async def run_operator_url_probe(
         "failing_surfaces": [
             {"surface": f["surface"], "url": f["url"], "detail": f["detail"]}
             for f in failures
+        ],
+        # Failed this run but not yet enough runs in a row to page.
+        "first_failures": [
+            {"surface": f["surface"], "url": f["url"]} for f in first_failures
         ],
         # Failing, but never seen answering: not installed, or still booting.
         "never_reachable": [

@@ -6349,6 +6349,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # at the address the operator's device reaches. Empty resolver = off, and
     # every host resolves publicly as before.
     'operator_url_probe_tailnet_resolver': '100.100.100.100',
+    # A surface that has worked pages after this many failed runs in a row (a
+    # deploy's worker restart lasts about a minute); one that never answered
+    # pages only with page_never_reachable on. See docs/operations/self-healing.md.
+    'operator_url_probe_alert_after_failures': '2',
+    'operator_url_probe_page_never_reachable': 'false',
     'operator_url_probe_tailnet_suffixes': '.ts.net',
 
     # ----- Deploy health gate (scripts/linux/deploy_health_gate.py, 2026-09-13) -----
@@ -7741,6 +7746,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # empty by the baseline: unset derives http://{operator_service_host}:8002.
     'preview_base_url': {'owner': 'preview_links', 'value_type': 'url'},
     'operator_url_probe_tailnet_resolver': {'owner': 'operator_url_probe', 'value_type': 'string'},
+    'operator_url_probe_alert_after_failures': {'owner': 'operator_url_probe', 'value_type': 'integer'},
+    'operator_url_probe_page_never_reachable': {'owner': 'operator_url_probe', 'value_type': 'boolean'},
     'operator_url_probe_tailnet_suffixes': {'owner': 'operator_url_probe', 'value_type': 'csv'},
     'clock_skew_reference_url': {'owner': 'clock_skew_probe', 'value_type': 'url'},
     'clock_skew_renotify_minutes': {'owner': 'clock_skew_probe', 'value_type': 'integer'},

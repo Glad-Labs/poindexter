@@ -44,8 +44,9 @@ class _AllSeen(dict):
 def _surfaces_have_answered_before():
     """Pages go out only for surfaces that have worked once (see
     TestNeverReachableIsNotPaged); the older tests here describe that state."""
-    with patch.object(oup, "_load_seen", AsyncMock(return_value=_AllSeen())):
-        yield
+    with patch.object(oup, "_load_seen", AsyncMock(return_value=_AllSeen())), \
+         patch.object(oup, "_load_streaks", AsyncMock(return_value=None)):
+        yield  # streaks unknown: a failure pages on the run it happens
 
 
 @pytest.fixture(autouse=True)
@@ -1461,6 +1462,24 @@ class TestNeverReachableIsNotPaged:
     def _seen_rows(*surfaces):
         return [{"entity": oup.SEEN_ENTITY_PREFIX + s, "value": "2026-10-19T08:00:00+00:00"} for s in surfaces]
 
+    @staticmethod
+    def _state_pool(seen=(), streaks=None):
+        """A pool whose brain_knowledge holds last_ok_at rows and failure counts."""
+        pool = _make_pool([])
+        seen_rows = [{"entity": oup.SEEN_ENTITY_PREFIX + s, "value": "2026-10-19T08:00:00+00:00"} for s in seen]
+        streak_rows = [{"entity": oup.SEEN_ENTITY_PREFIX + s, "value": str(n)}
+                       for s, n in (streaks or {}).items()]
+
+        async def _fetch(sql, *args):
+            if args[1:2] == (oup.SEEN_ATTRIBUTE,):
+                return seen_rows
+            if args[1:2] == (oup.STREAK_ATTRIBUTE,):
+                return streak_rows
+            return []
+
+        pool.fetch = AsyncMock(side_effect=_fetch)
+        return pool
+
     @pytest.mark.asyncio
     async def test_a_surface_that_never_answered_is_listed_not_paged(self, tmp_path):
         pool = _make_pool([])
@@ -1475,7 +1494,8 @@ class TestNeverReachableIsNotPaged:
 
     @pytest.mark.asyncio
     async def test_a_surface_that_worked_before_pages_when_it_stops(self, tmp_path):
-        pool = _make_pool(self._seen_rows("app_settings.grafana_url"))
+        pool = self._state_pool(seen=["app_settings.grafana_url"],
+                                streaks={"app_settings.grafana_url": 1})
         summary, notifies = await self._run(tmp_path, pool, [
             {"surface": "app_settings.grafana_url", "url": "http://host.docker.internal:3000",
              "ok": False, "status": 0, "detail": "ConnectError"},
@@ -1506,10 +1526,61 @@ class TestNeverReachableIsNotPaged:
 
     @pytest.mark.asyncio
     async def test_the_operator_can_page_never_reachable_surfaces_too(self, tmp_path):
-        pool = _make_pool([])
+        pool = self._state_pool(streaks={"app_settings.rife_server_url": 1})
         pool.fetchval = AsyncMock(side_effect=lambda _q, key: "true"
                                   if key == "operator_url_probe_page_never_reachable" else None)
         _, notifies = await self._run(tmp_path, pool, [
             {"surface": "app_settings.rife_server_url", "url": "http://x", "ok": False, "status": 0, "detail": "e"},
         ])
         assert len(notifies) == 1
+
+
+class TestPagesAfterTwoFailedRuns:
+    """A deploy restarts the worker for about a minute; a 15-minute probe landing
+    in it paged the API surfaces 23 times in 14 days (to 2026-10-19)."""
+
+    @pytest.fixture(autouse=True)
+    def _surfaces_have_answered_before(self):
+        yield
+
+    async def _run(self, tmp_path, pool, ok):
+        notifies: list[dict] = []
+
+        async def fake_probe(targets, *, concurrency=10, overrides=None, tailnet=None):
+            return [{"surface": "app_settings.api_base_url", "url": "http://host.docker.internal:8002",
+                     "ok": ok, "status": 200 if ok else 0, "detail": "" if ok else "ConnectError"}]
+
+        with patch.object(oup, "probe_urls", side_effect=fake_probe), \
+             patch.object(oup, "_run_tailscale_status", return_value=None), \
+             patch.object(oup, "collect_app_setting_urls", AsyncMock(return_value=[])):
+            summary = await oup.run_operator_url_probe(
+                pool, dashboards_dir=tmp_path, notify_fn=lambda **kw: notifies.append(kw),
+            )
+        return summary, notifies
+
+    @staticmethod
+    def _saved(pool):
+        return {row[0]: row[2] for call in pool.executemany.await_args_list for row in call.args[1]
+                if row[1] == oup.STREAK_ATTRIBUTE}
+
+    @pytest.mark.asyncio
+    async def test_the_first_failed_run_waits(self, tmp_path):
+        pool = TestNeverReachableIsNotPaged._state_pool(seen=["app_settings.api_base_url"])
+        summary, notifies = await self._run(tmp_path, pool, ok=False)
+        assert notifies == []
+        assert summary["first_failures"][0]["surface"] == "app_settings.api_base_url"
+        assert self._saved(pool) == {oup.SEEN_ENTITY_PREFIX + "app_settings.api_base_url": "1"}
+
+    @pytest.mark.asyncio
+    async def test_the_second_failed_run_pages(self, tmp_path):
+        pool = TestNeverReachableIsNotPaged._state_pool(
+            seen=["app_settings.api_base_url"], streaks={"app_settings.api_base_url": 1})
+        _, notifies = await self._run(tmp_path, pool, ok=False)
+        assert len(notifies) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_good_run_resets_the_count(self, tmp_path):
+        pool = TestNeverReachableIsNotPaged._state_pool(
+            seen=["app_settings.api_base_url"], streaks={"app_settings.api_base_url": 1})
+        await self._run(tmp_path, pool, ok=True)
+        assert self._saved(pool) == {oup.SEEN_ENTITY_PREFIX + "app_settings.api_base_url": "0"}

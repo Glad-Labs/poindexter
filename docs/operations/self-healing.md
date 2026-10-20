@@ -1423,7 +1423,11 @@ install, before its first post was done. None of them was a fault:
   that has never answered is logged and listed in the run's
   `never_reachable` summary, not paged. To page those too, set
   `operator_url_probe_page_never_reachable=true`. If the state can't be read,
-  every failure pages, as before.
+  every failure pages, as before. A surface that has worked pages after
+  `operator_url_probe_alert_after_failures` (2) failed runs in a row, not on
+  the first: a deploy restarts the worker for about a minute, and a probe that
+  landed in it paged the API surfaces 23 times in 14 days. The count is kept
+  beside `last_ok_at` (`attribute='consecutive_failures'`).
 - **"Restore test FAILED — latest backup may be corrupt"**: the backup jobs
   dump the moment they start, before any post or audit row exists, and the
   migration smoke ran before the worker was up. `restore_test_probe` now
