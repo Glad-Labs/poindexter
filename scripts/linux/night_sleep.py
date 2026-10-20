@@ -388,15 +388,58 @@ def gpu_containers() -> list[str]:
     return out
 
 
-def after_resume(settings: dict[str, str], slept_at: datetime, wake_at: datetime) -> None:
+def gpu_power_limits() -> dict[str, float]:
+    """``{gpu index: power limit W}`` from nvidia-smi; empty if it can't say."""
+    out = subprocess.run(
+        ["nvidia-smi", "--query-gpu=index,power.limit", "--format=csv,noheader,nounits"],
+        capture_output=True, text=True,
+    )
+    limits: dict[str, float] = {}
+    for line in out.stdout.splitlines():
+        idx, _, value = line.partition(",")
+        try:
+            limits[idx.strip()] = float(value)
+        except ValueError:
+            continue
+    return limits
+
+
+def restore_power_limits(before: dict[str, float]) -> dict[str, dict[str, float]]:
+    """Put back any GPU power limit the suspend changed.
+
+    Resume resets the 5090 to its 600 W default. The operator's cap
+    (gpu-power-cap.service, 400 W until a 20 A circuit is in) runs only at
+    boot, so from the first test sleep on 2026-10-18 the card ran uncapped:
+    wall draw over 1,100 W and the 1,000 W UPS past 110% load every day.
+    Whatever limit was set before the sleep is set again, so this follows the
+    operator's cap, whatever it is, without knowing about the service.
+    """
+    after = gpu_power_limits()
+    restored: dict[str, dict[str, float]] = {}
+    for idx, want in before.items():
+        have = after.get(idx)
+        if have is None or abs(have - want) < 1:
+            continue
+        subprocess.run(["nvidia-smi", "-i", idx, "-pl", f"{want:g}"], capture_output=True)
+        restored[idx] = {"was": have, "now": gpu_power_limits().get(idx, have)}
+    return restored
+
+
+def after_resume(settings: dict[str, str], slept_at: datetime, wake_at: datetime,
+                 power_limits: dict[str, float] | None = None) -> None:
     resumed_at = datetime.now(slept_at.tzinfo)
+    # First, before any render can start on the uncapped card.
+    restored_limits = restore_power_limits(power_limits or {})
+    if restored_limits:
+        log(f"GPU power limits restored: {restored_limits}")
     display = {"vt": None, "ok": None, "cycles": 0}
     if settings.get("host_sleep_resume_vt_cycle", "true").lower() in ("1", "true", "yes", "on"):
         time.sleep(10)
         display = recover_display()
         log(f"display: {display}")
     audit("host_resume", {"slept_at": slept_at.isoformat(), "resumed_at": resumed_at.isoformat(),
-                          "planned_wake": wake_at.isoformat(), "display": display},
+                          "planned_wake": wake_at.isoformat(), "display": display,
+                          "power_limits_restored": restored_limits},
           severity="warning" if display.get("ok") is False else "info")
     time.sleep(35)
     restarted = []
@@ -460,6 +503,7 @@ def main() -> int:
     if reasons:
         log(f"deferring: {'; '.join(reasons)} (started while the GPUs settled)")
         return 0
+    power_limits = gpu_power_limits()
     slept_at = datetime.now(tz)
     audit("host_sleep", {"slept_at": slept_at.isoformat(), "planned_wake": win["wake_at"].isoformat()})
     log(f"suspending until {win['wake_at'].isoformat()}")
@@ -467,7 +511,7 @@ def main() -> int:
         audit("host_sleep_failed", {"slept_at": slept_at.isoformat()}, severity="warning")
         log("the machine did not go to sleep; see journalctl -k for the PM: lines")
         return 1
-    after_resume(settings, slept_at, win["wake_at"])
+    after_resume(settings, slept_at, win["wake_at"], power_limits)
     return 0
 
 

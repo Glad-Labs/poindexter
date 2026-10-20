@@ -146,6 +146,21 @@ were up.
   wake (`host_resume.details.resumed_at`). A real fault outlasts the window and
   routes on its next emission, and critical always routes.
 
+### GPU power limits (2026-10-20)
+
+Resume resets the 5090's power limit to its 600 W default. The operator's cap
+(`gpu-power-cap.service`: 5090 400 W, 3090 250 W until a 20 A circuit is in)
+runs only at boot, so from the first test sleep (2026-10-18 19:34) the card
+ran uncapped. It peaked at 560-600 W instead of a flat ~415 W, the wall
+meter read 1,070-1,170 W, and the 1,000 W UPS ran past 110% load every day.
+The 3090 kept its limit.
+
+The script now reads each GPU's power limit before it suspends and, first
+thing after the wake, sets back any that changed. It records them as
+`power_limits_restored` on `host_resume`. It restores whatever was set, so it
+follows a change to the cap service or a manual `nvidia-smi -pl` without
+knowing about either.
+
 ## Not covered yet
 
 Other freshness checks (Prometheus rules, brain probes) have no resume grace.

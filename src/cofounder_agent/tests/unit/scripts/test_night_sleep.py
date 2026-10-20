@@ -204,3 +204,46 @@ def test_preparing_is_recorded_before_the_gpus_are_unloaded():
     free_vram it would arrive too late to stop the judge reloading."""
     main_src = _PATH.read_text().split("def main()", 1)[1]
     assert main_src.index('"host_sleep_preparing"') < main_src.index("free_vram(settings)")
+
+
+
+class TestPowerLimitsSurviveTheSleep:
+    """2026-10-18: resume reset the 5090 from the operator's 400 W cap to 600 W,
+    and the boot-time cap service never ran again: 1,100 W at the wall, the
+    1,000 W UPS past 110% every day."""
+
+    def test_limits_are_read_per_gpu(self, monkeypatch):
+        monkeypatch.setattr(ns.subprocess, "run", lambda cmd, **_k: type(
+            "R", (), {"stdout": "0, 400.00\n1, 250.00\n", "returncode": 0})())
+        assert ns.gpu_power_limits() == {"0": 400.0, "1": 250.0}
+
+    def test_a_limit_the_suspend_reset_is_put_back(self, monkeypatch):
+        state = {"0": 600.0, "1": 250.0}
+        calls = []
+
+        def run(cmd, **_k):
+            calls.append(cmd)
+            if cmd[:2] == ["nvidia-smi", "-i"]:
+                state[cmd[2]] = float(cmd[4])
+            out = "".join(f"{i}, {w:.2f}\n" for i, w in state.items())
+            return type("R", (), {"stdout": out, "returncode": 0})()
+
+        monkeypatch.setattr(ns.subprocess, "run", run)
+        restored = ns.restore_power_limits({"0": 400.0, "1": 250.0})
+        assert restored == {"0": {"was": 600.0, "now": 400.0}}
+        assert ["nvidia-smi", "-i", "0", "-pl", "400"] in calls
+        assert not any(c[:3] == ["nvidia-smi", "-i", "1"] for c in calls)
+
+    def test_nothing_is_touched_when_the_limits_held(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(ns.subprocess, "run", lambda cmd, **_k: calls.append(cmd) or type(
+            "R", (), {"stdout": "0, 400.00\n", "returncode": 0})())
+        assert ns.restore_power_limits({"0": 400.0}) == {}
+        assert all("-pl" not in c for c in calls)
+
+    def test_limits_are_read_before_the_suspend_and_restored_first_on_wake(self):
+        src = _PATH.read_text()
+        main_src = src[src.index("def main()"):]
+        assert main_src.index("gpu_power_limits()") < main_src.index("suspend_until(")
+        resume_src = src[src.index("def after_resume("):src.index("def main()")]
+        assert resume_src.index("restore_power_limits(") < resume_src.index("recover_display()")
