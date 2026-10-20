@@ -11,7 +11,7 @@
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)](#project-status)
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
-[Quick start](#quick-start) · [What it does](#what-it-does) · [The QA gauntlet](#built-to-reject-its-own-work) · [Architecture](#architecture) · [Docs](https://gladlabs.mintlify.app/docs/welcome) · [Pro](#poindexter-pro)
+[Quick start](#quick-start) · [What it does](#what-it-does) · [The QA gauntlet](#built-to-reject-its-own-work) · [Architecture](#architecture) · [Code tour](CODE_TOUR.md) · [Docs](https://gladlabs.mintlify.app/docs/welcome) · [Pro](#poindexter-pro)
 
 </div>
 
@@ -187,7 +187,7 @@ flowchart LR
     kernel --> store --> fe
 ```
 
-The content pipeline itself is a declarative LangGraph DAG stored in the database — 49 nodes covering research, writing, image generation, the 17 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview).
+The content pipeline itself is a declarative LangGraph DAG stored in the database — 49 nodes covering research, writing, image generation, the 17 QA rails, SEO, and publish. Swap any piece as long as it writes the same tables. Full diagrams and design rationale in [`docs/architecture/`](https://gladlabs.mintlify.app/docs/architecture/overview). To read the code itself, start with the [code tour](CODE_TOUR.md): six short files that show how it's built.
 
 ## Key features
 
