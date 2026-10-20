@@ -1,6 +1,6 @@
 """Migration 20260826_032540: add benchmark_results table for CI endpoint latency ingest
 
-ISSUE: Glad-Labs/glad-labs-stack#3337 (follow-up)
+ISSUE: Glad-Labs/poindexter#3337 (follow-up)
 
 The nightly ``benchmarks`` GitHub Actions workflow uploads pytest-benchmark
 results (endpoint latency, in-process TestClient) as a run artifact that

@@ -28,7 +28,7 @@ exactly how ``embed()`` shipped without attaching api_base at all: it called
 litellm fell back to its built-in ollama default (``localhost:11434``) —
 unreachable from inside the worker container. Every ``dispatch_embed`` call
 failed, which silently killed the ``self_consistency`` QA rail for 9+ days
-(the rail's fail-open scored the un-run check 100 — Glad-Labs/glad-labs-stack#2655).
+(the rail's fail-open scored the un-run check 100 — Glad-Labs/poindexter#2655).
 A new egress method gets a section here.
 """
 
