@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-10-18.**  
+> **Auto-generated from live `app_settings` table on 2026-10-19.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 670 active rows across 55 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -688,7 +688,7 @@ The worker re-reads on every poll; no restart needed.
 | `branch_drift_dedup_hours` | `6` |  | Re-page interval (hours) for an unchanged branch-drift state. Dedup is keyed on (repo, local HEAD, origin/main SHA); ... |
 | `branch_drift_git_dir` | `/host-git` |  | git --git-dir path inside the brain container for reading the running checkout's HEAD. Matches the read-only ./.git:/... |
 | `branch_drift_poll_interval_minutes` | `15` |  | Internal cadence gate (minutes) for the branch-drift canary's GitHub round-trip. The probe is dispatched every brain ... |
-| `branch_drift_probe_enabled` | `true` |  | Master switch for the brain branch-drift deploy canary (#942). When true, the brain pages the operator if the bind-mo... |
+| `branch_drift_probe_enabled` | `false` |  | Master switch for the brain branch-drift deploy canary (#942). When true, the brain pages the operator if the bind-mo... |
 | `branch_drift_repo` | `Glad-Labs/glad-labs-stack` |  | owner/name of the source-of-truth repo the branch-drift canary compares against. Paired with the gh_token secret for ... |
 | `compose_drift_skip_services` | `` |  | Comma-separated list of compose service names the brain drift probe (#213) should skip. Useful for services with inte... |
 | `compose_spec_path` | `/app/docker-compose.local.yml` |  | Path to the docker-compose.yml the brain compose-drift probe (#213) reads. The brain container bind-mounts the host's... |
@@ -750,7 +750,7 @@ The worker re-reads on every poll; no restart needed.
 | `niche_goal_descriptions` | `{"TRAFFIC": "Topic likely to attract ...` |  | JSON blob mapping each goal_type (TRAFFIC, EDUCATION, BRAND, AUTHORITY, REVENUE, COMMUNITY, NICHE_DEPTH) to the prose... |
 | `niche_internal_rag_per_kind_limit` | `4` |  | Per-source-kind limit passed to InternalRagSource.generate by TopicBatchService._discover_internal. Default 4 matches... |
 | `niche_internal_rag_snippet_max_chars` | `600` |  | Per-snippet character cap when joining raw snippets into the topic/angle distillation prompt in InternalRagSource._di... |
-| `niche_ollama_chat_timeout_seconds` | `300.0` |  | HTTP timeout (seconds) for direct Ollama /api/chat calls made by topic_ranking._ollama_chat_json — used by the LLM sc... |
+| `niche_ollama_chat_timeout_seconds` | `600.0` |  | HTTP timeout (seconds) for direct Ollama /api/chat calls made by topic_ranking._ollama_chat_json — used by the LLM sc... |
 | `niche_top_n_per_pool` | `5` |  | Top N candidates per pool (external + internal) carried forward from the embedding pre-rank into the LLM final-score ... |
 
 ## notifications
