@@ -1368,6 +1368,7 @@ class MultiModelQA:
                                     "approved": bool(r.approved),
                                     "score": round(float(r.score), 2),
                                     "advisory": bool(getattr(r, "advisory", False)),
+                                    "not_applicable": bool(getattr(r, "not_applicable", False)),
                                     # First 200 chars of feedback for debugging;
                                     # full feedback stays in process logs.
                                     "feedback_preview": (r.feedback or "")[:200],

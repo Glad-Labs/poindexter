@@ -1467,3 +1467,50 @@ class TestCreateTaskTargetLength:
             seen.add(self._captured_length(mock_db))
 
         assert len(seen) > 1, f"picker produced a single length: {seen}"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/tasks/{id}/qa
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetTaskQa:
+    _ID = "e79f20eb-0000-4000-8000-000000000001"
+
+    def test_returns_the_latest_pass(self, monkeypatch):
+        import poindexter.services.task_qa_results as qa_mod
+
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value={"task_id": self._ID})
+        seen = {}
+
+        async def _fake(pool, task_id):
+            seen["task_id"] = task_id
+            return {"task_id": task_id, "approved": True, "reviews": []}
+
+        monkeypatch.setattr(qa_mod, "latest_qa_pass", _fake)
+        resp = TestClient(_build_app(mock_db)).get(f"/api/tasks/{self._ID}/qa")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["approved"] is True
+        assert seen["task_id"] == self._ID
+
+    def test_404_when_the_task_is_unknown(self):
+        mock_db = make_mock_db()
+        _set_pool(mock_db, [])
+        resp = TestClient(_build_app(mock_db)).get(f"/api/tasks/{self._ID}/qa")
+        assert resp.status_code == 404
+
+    def test_404_when_the_task_has_no_qa_pass(self, monkeypatch):
+        import poindexter.services.task_qa_results as qa_mod
+
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value={"task_id": self._ID})
+
+        async def _none(pool, task_id):
+            return None
+
+        monkeypatch.setattr(qa_mod, "latest_qa_pass", _none)
+        resp = TestClient(_build_app(mock_db)).get(f"/api/tasks/{self._ID}/qa")
+        assert resp.status_code == 404
+        assert "no QA results" in resp.json()["detail"]

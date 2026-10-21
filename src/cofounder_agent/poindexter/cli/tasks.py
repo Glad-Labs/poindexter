@@ -19,7 +19,7 @@ import httpx
 from poindexter.cli._bootstrap import close_cli_pool, open_cli_pool
 
 from ._api_client import WorkerClient, wait_for_worker
-from ._status_style import TASK_STATUS, color_for
+from ._status_style import ACTIVE, FAILURE, INACTIVE, SUCCESS, TASK_STATUS, color_for
 
 
 def _run(coro):
@@ -298,6 +298,84 @@ def tasks_create(
         f"Created: {t.get('id', '?')}  status={t.get('status', '?')}",
         fg="green",
     )
+
+
+# ---------------------------------------------------------------------------
+# qa
+# ---------------------------------------------------------------------------
+
+
+def format_qa_results(qa: dict) -> list[tuple[str, str | None]]:
+    """``(line, colour)`` rows for :func:`tasks_qa`: a verdict line, then one
+    row per check, the ones that can block a post first. Pure, for tests."""
+    verdict = "PASSED" if qa.get("approved") else "REJECTED"
+    score, needs = qa.get("final_score"), qa.get("approval_threshold")
+    head = f"QA {verdict}  score {score:.1f}" if isinstance(score, (int, float)) else f"QA {verdict}"
+    if isinstance(needs, (int, float)):
+        head += f" (needs {needs:.0f})"
+    reviews = qa.get("reviews") or []
+    gating = [r for r in reviews if not r.get("advisory")]
+    advisory = [r for r in reviews if r.get("advisory")]
+    head += f"   {len(gating)} blocking check(s), {len(advisory)} advisory"
+    rows: list[tuple[str, str | None]] = [(head, SUCCESS if qa.get("approved") else FAILURE), ("", None)]
+    for label, group in (("Can block the post", gating), ("Advisory", advisory)):
+        if not group:
+            continue
+        rows.append((f"  {label}", None))
+        for r in group:
+            note = " ".join(str(r.get("feedback_preview") or "").split())
+            # An advisory check is recorded approved even when it failed (it
+            # cannot block); its own note says which, so show that as "warn".
+            warned = note.startswith("[advisory] (failed")
+            for prefix in ("[advisory] (passed, not required_to_pass) ", "[advisory] (failed, not required_to_pass) "):
+                note = note.removeprefix(prefix)
+            ok = bool(r.get("approved"))
+            score = float(r.get("score") or 0)
+            # A check with nothing to judge scores 0 by construction. Rows
+            # written before the flag was stored carry no key: an approved 0
+            # is that same case, since no rail passes on a real score of 0.
+            na = r.get("not_applicable")
+            if na is None:
+                na = ok and score == 0
+            # An advisory check cannot block, so its failure is a warning,
+            # whether it was recorded unapproved or approved with a note.
+            warned = warned or (bool(r.get("advisory")) and not ok)
+            if na and ok:
+                mark, shown = "n/a ", "    -"
+            else:
+                mark, shown = ("warn" if warned else ("pass" if ok else "FAIL")), f"{score:>5.0f}"
+            line = f"    {mark}  {str(r.get('reviewer') or '?'):<26} {shown}  {note[:60]}"
+            if warned:
+                colour = ACTIVE
+            elif not ok:
+                colour = FAILURE
+            else:
+                colour = INACTIVE if (r.get("advisory") or (na and ok)) else SUCCESS
+            rows.append((line.rstrip(), colour))
+    return rows
+
+
+@tasks_group.command("qa")
+@click.argument("task_id")
+@click.option("--json", "json_output", is_flag=True)
+def tasks_qa(task_id: str, json_output: bool) -> None:
+    """Show what each QA check said about a task's latest draft (full id or prefix)."""
+
+    async def _get():
+        async with WorkerClient() as c:
+            resp = await c.get(f"/api/tasks/{task_id}/qa")
+            return await c.json_or_raise(resp)
+
+    try:
+        qa = _run(_get())
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if json_output:
+        click.echo(json.dumps(qa, indent=2, default=str))
+        return
+    for line, colour in format_qa_results(qa):
+        click.secho(line, fg=colour)
 
 
 # ---------------------------------------------------------------------------

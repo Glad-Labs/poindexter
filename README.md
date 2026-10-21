@@ -70,7 +70,7 @@ Then watch it work:
 - **Grafana** — [localhost:3000](http://localhost:3000), the Pipeline dashboard fills in as stages complete
 - **Terminal** — `poindexter tasks list` for the queue, `docker logs -f poindexter-prefect-worker` for the run itself
 
-The draft lands in your approval queue with its QA scores attached: `poindexter tasks list --status awaiting_approval`. Approve it with `poindexter tasks approve <id>`, publish it with `poindexter tasks publish <id>`, and read it at [localhost:8002/site/](http://localhost:8002/site/): a fresh install publishes to a local folder the worker serves there, so no bucket, account or frontend is needed. That's the loop.
+The draft lands in your approval queue with its QA scores attached: `poindexter tasks list --status awaiting_approval`, and `poindexter tasks qa <id>` shows what each check said. Approve it with `poindexter tasks approve <id>`, publish it with `poindexter tasks publish <id>`, and read it at [localhost:8002/site/](http://localhost:8002/site/): a fresh install publishes to a local folder the worker serves there, so no bucket, account or frontend is needed. That's the loop.
 
 **If the task ends `rejected` instead:** a finished draft that scores under `min_curation_score` (seeded at 75) is turned away before it reaches the queue, and a writer smaller than the default can land there. `poindexter tasks list --status rejected` shows its `Q:` score, and the [troubleshooting guide](https://gladlabs.mintlify.app/docs/operations/troubleshooting) shows how to read the verdict and lower the bar (`poindexter settings set min_curation_score 50`; `0` turns the auto-curator off).
 

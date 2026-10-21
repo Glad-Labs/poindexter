@@ -774,6 +774,32 @@ async def get_task(
         raise HTTPException(status_code=500, detail="Failed to fetch task") from e
 
 
+@router.get("/{task_id}/qa", response_model=dict[str, Any], summary="Get a task's QA results")
+async def get_task_qa(
+    task_id: str,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """What each QA check said about the task's latest draft (full id or 8-char prefix).
+
+    404 when the task has not been through QA yet. See
+    ``services/task_qa_results.py``.
+    """
+    from poindexter.services.task_qa_results import latest_qa_pass
+
+    resolved = await resolve_task_id_prefix(db_service.pool, task_id)
+    task = await db_service.get_task(resolved)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if isinstance(task, dict):
+        _check_task_ownership(task, token)
+    full_id = str(task.get("task_id") or task.get("id") or resolved) if isinstance(task, dict) else resolved
+    result = await latest_qa_pass(db_service.pool, full_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} has no QA results yet")
+    return result
+
+
 @router.delete(
     "/{task_id}",
     summary="Delete task",

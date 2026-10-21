@@ -725,7 +725,7 @@ class TestMainOrchestration:
     def _run(
         self, monkeypatch, tmp_path, capsys, *,
         approve_stderr="", staged="why-docker-01234567 (approved)", publish_rc=0,
-        site=None, logs="",
+        site=None, logs="", qa_rc=0,
     ):
         import subprocess as sp
 
@@ -744,6 +744,8 @@ class TestMainOrchestration:
                 return sp.CompletedProcess(argv, 0, "", "")
             if argv[1:3] == ["tasks", "list"]:
                 return sp.CompletedProcess(argv, 0, f"{self.TASK[:8]} awaiting_approval\n", "")
+            if argv[1:3] == ["tasks", "qa"]:
+                return sp.CompletedProcess(argv, qa_rc, "QA PASSED  score 91.0 (needs 80)\n", "")
             if argv[1:3] == ["tasks", "approve"]:
                 return sp.CompletedProcess(argv, 0, "Approved\n", approve_stderr)
             if argv[1:3] == ["tasks", "publish"]:
@@ -782,9 +784,15 @@ class TestMainOrchestration:
     def test_the_happy_path_approves_publishes_then_reads_the_post_back(self, monkeypatch, tmp_path, capsys):
         rc, out, verbs, fetched = self._run(monkeypatch, tmp_path, capsys)
         assert rc == 0, out
-        assert verbs == ["list", "approve", "publish"]
+        assert verbs == ["list", "qa", "approve", "publish"]
         assert f"{DRIVER.SITE_URL}/static/posts/{self.SLUG}.json" in fetched
         assert f"read '{self.SLUG}' back from" in out
+
+    def test_a_failed_qa_command_fails_the_run(self, monkeypatch, tmp_path, capsys):
+        rc, out, verbs, _ = self._run(monkeypatch, tmp_path, capsys, qa_rc=1)
+        assert rc == 1
+        assert "`poindexter tasks qa 01234567` failed (exit 1)" in out
+        assert verbs == ["list", "qa", "approve", "publish"], "the rest of the loop still runs"
 
     def test_a_site_that_cannot_serve_the_post_fails_the_run(self, monkeypatch, tmp_path, capsys):
         broken = _site(self.SLUG, **{"_viewer/viewer.js": (404, {}, "")})
@@ -812,7 +820,7 @@ class TestMainOrchestration:
             approve_stderr="Warning: Approved, but no post was staged - niche_slug is not set",
         )
         assert rc == 1
-        assert verbs == ["list", "approve"] and fetched == []
+        assert verbs == ["list", "qa", "approve"] and fetched == []
         assert "staged no post (Warning: Approved, but no post was staged" in out
 
 
@@ -1176,3 +1184,40 @@ class TestFilmedSession:
     def test_main_films_with_commands_shown(self):
         source = Path(DRIVER.__file__).read_text(encoding="utf-8")
         assert "show_commands=args.record is not None" in source
+
+
+class TestQaAndPostFootage:
+    """The how-to shows what each QA check said and the post a reader gets."""
+
+    def test_a_still_is_kept_and_listed(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(DRIVER, "script_supports_recording", lambda: True)
+        rec = DRIVER.Recorder(tmp_path / "rec")
+        path = rec.add_image("post", "The published post", b"\x89PNGdata")
+        assert path is not None and path.name == "01-post.png" and path.read_bytes() == b"\x89PNGdata"
+        manifest = json.loads((tmp_path / "rec" / "manifest.json").read_text())
+        assert manifest["steps"] == [{"step": 1, "name": "post", "title": "The published post", "image": "01-post.png"}]
+        assert DRIVER.Recorder(None).add_image("post", "t", b"x") is None
+
+    def test_the_post_is_screenshot_in_the_workers_chromium(self):
+        seen = []
+
+        def fake_run(argv, **kw):
+            seen.append(argv)
+            return DRIVER.subprocess.CompletedProcess(argv, 0, b"\x89PNG...", b"")
+
+        assert DRIVER.screenshot_post("my-post", run=fake_run) == b"\x89PNG..."
+        argv = seen[0]
+        assert argv[:4] == ["docker", "exec", "poindexter-worker", "python"]
+        assert argv[-1] == f"{DRIVER.SITE_URL}/posts/my-post"
+        assert "capture_preview_screenshot" in argv[-2]
+
+    @pytest.mark.parametrize("code,out", [(3, b""), (0, b"<html>not a png"), (1, b"\x89PNG")])
+    def test_no_screenshot_reads_as_none(self, code, out):
+        fake = lambda argv, **kw: DRIVER.subprocess.CompletedProcess(argv, code, out, b"")  # noqa: E731
+        assert DRIVER.screenshot_post("s", run=fake) is None
+
+    def test_main_records_the_qa_step_and_the_post(self):
+        source = Path(DRIVER.__file__).read_text(encoding="utf-8")
+        assert '[pdx, "tasks", "qa", task_id[:8]]' in source
+        assert 'recorder.add_image("post"' in source
+        assert source.index('"tasks", "qa"') < source.index('"tasks", "approve"')

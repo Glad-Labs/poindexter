@@ -306,9 +306,9 @@ The demo tapes above are read-only by design: they film the live system, and
 nothing on it may change. A how-to has to change things (install, approve,
 publish), so its footage comes from a fresh install instead. The weekly
 `quickstart-e2e` workflow already runs the README quick start on a clean hosted
-runner and carries the post through `tasks list`, `tasks approve` and
-`tasks publish`. With `--record`, `scripts/ci/quickstart_e2e.py` films each of
-those steps (added 2026-10-18).
+runner and carries the post through `tasks list`, `tasks qa`, `tasks approve`
+and `tasks publish`. With `--record`, `scripts/ci/quickstart_e2e.py` films each
+of those steps (added 2026-10-18; `tasks qa` and the post still 2026-10-21).
 
 How the recording works:
 
@@ -317,6 +317,13 @@ How the recording works:
   installed on the runner.
 - **Each step becomes an asciicast v2 file,** `NN-<step>.cast`, listed in
   `manifest.json` with its command, exit code and duration.
+- **The published post is kept as a still.** Once the post reads back from
+  the site, the driver renders `/site/posts/<slug>` full page in the worker's
+  own chromium (the one the rendered-preview QA leg uses) and keeps it as
+  `NN-post.png`, listed in the manifest with an `image` key instead of a
+  `cast`. A video that ends on `Published` shows a command, not the product;
+  this shows the post a reader gets. Failing to take it is a warning only,
+  since the read-back has already passed.
 - **The workflow keeps the folder** as the `howto-recording` artifact for 30
   days.
 - **The screen reads like a person at a terminal.** Each README line is printed

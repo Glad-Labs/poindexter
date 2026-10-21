@@ -303,12 +303,47 @@ class Recorder:
             "step": len(self.steps) + 1, "name": name, "title": title, "command": command,
             "exit_code": proc.returncode, "duration_s": duration, "cast": cast.name,
         })
+        self._write_manifest()
+        merged = _ANSI.sub("", (proc.stdout or "").replace("\r\n", "\n")) if capture else ""
+        return subprocess.CompletedProcess(proc.args, proc.returncode, stdout=merged, stderr=merged)
+
+
+    def add_image(self, name: str, title: str, png: bytes) -> Path | None:
+        """Keep a still (the published post) beside the casts, listed in the manifest."""
+        if self.directory is None:
+            return None
+        path = self.directory / f"{len(self.steps) + 1:02d}-{name}.png"
+        path.write_bytes(png)
+        self.steps.append({"step": len(self.steps) + 1, "name": name, "title": title, "image": path.name})
+        self._write_manifest()
+        return path
+
+    def _write_manifest(self) -> None:
+        assert self.directory is not None
         (self.directory / "manifest.json").write_text(
             json.dumps({"cols": RECORD_COLS, "rows": RECORD_ROWS, "steps": self.steps}, indent=2),
             encoding="utf-8",
         )
-        merged = _ANSI.sub("", (proc.stdout or "").replace("\r\n", "\n")) if capture else ""
-        return subprocess.CompletedProcess(proc.args, proc.returncode, stdout=merged, stderr=merged)
+
+
+# Renders the published post in the worker's own chromium (the one the
+# rendered-preview QA leg uses) and writes the PNG to stdout.
+_SCREENSHOT_PY = (
+    "import asyncio, sys\n"
+    "from poindexter.services.preview_screenshot import capture_preview_screenshot\n"
+    "png = asyncio.run(capture_preview_screenshot(sys.argv[1], viewport_width=1280, full_page=True))\n"
+    "sys.exit(3) if not png else sys.stdout.buffer.write(png)\n"
+)
+
+
+def screenshot_post(slug: str, *, base: str = SITE_URL, run=subprocess.run) -> bytes | None:
+    """The published post as a reader sees it, full page, or None when it could not be taken."""
+    proc = run(
+        ["docker", "exec", "poindexter-worker", "python", "-c", _SCREENSHOT_PY, f"{base}/posts/{slug}"],
+        capture_output=True, timeout=180, check=False,
+    )
+    png = proc.stdout or b""
+    return png if proc.returncode == 0 and png.startswith(b"\x89PNG") else None
 
 
 @dataclass
@@ -855,6 +890,14 @@ def main(argv: list[str] | None = None) -> int:
             f"`poindexter tasks list --status {SUCCESS}` does not list task {task_id[:8]}"
         )
     else:
+        # What each QA check said, the README's pointer before deciding.
+        qa = recorder.run(
+            "qa", "Read what each QA check said",
+            [pdx, "tasks", "qa", task_id[:8]], cwd=tree, capture=True,
+        )
+        print(_shown(qa))
+        if qa.returncode != 0 or "QA " not in qa.stdout:
+            problems.append(f"`poindexter tasks qa {task_id[:8]}` failed (exit {qa.returncode})")
         # The README's last instruction: approve it by the prefix `tasks list` shows.
         approved = recorder.run(
             "approve", "Approve the draft",
@@ -887,6 +930,13 @@ def main(argv: list[str] | None = None) -> int:
                 problems.extend(site_problems)
                 if not site_problems:
                     print(f"[quickstart-e2e] read {slug!r} back from {SITE_URL}/")
+                    if recorder.directory is not None:
+                        png = screenshot_post(slug)
+                        if png is None:
+                            # Film only: the read-back above already passed.
+                            print(f"::warning::could not screenshot {SITE_URL}/posts/{slug}")
+                        else:
+                            recorder.add_image("post", "The published post", png)
 
     pipeline_logs = "\n".join(_container_logs(c) for c in PIPELINE_CONTAINERS)
     for line in storage_failures(pipeline_logs)[:5]:

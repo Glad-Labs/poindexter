@@ -596,6 +596,8 @@ def _emit_qa_pass_event(
                     "approved": bool(r.get("approved")),
                     "score": round(float(r.get("score") or 0.0), 2),
                     "advisory": bool(r.get("advisory")),
+                    # Ran with nothing to judge: its 0 is not a score.
+                    "not_applicable": bool(r.get("not_applicable")),
                     # First 200 chars for debugging; full text in logs.
                     "feedback_preview": (str(r.get("feedback") or ""))[:200],
                 }

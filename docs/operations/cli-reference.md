@@ -169,6 +169,24 @@ poindexter tasks get 842 --content      # include full post body
 poindexter tasks get 842 --json
 ```
 
+### `tasks qa <task_id>`
+
+What each QA check said about the task's latest draft: the verdict, the score
+against the bar, then one row per check. The checks that can block a post come
+first, then the advisory ones, objections first in each. An advisory check
+that failed shows as `warn`, since it cannot block. A check that ran with
+nothing to judge (no claims to fact-check, no citations) shows as `n/a` with
+no score: its stored 0 is not a verdict.
+
+```bash
+poindexter tasks qa 7038e408            # prefix match on UUID
+poindexter tasks qa 7038e408 --json     # the same, from GET /api/tasks/{id}/qa
+```
+
+It reads the task's newest `qa_pass_completed` row in `audit_log`, the same
+rows the QA Rails board aggregates, and exits 1 when the task has not been
+through QA yet.
+
 ### `tasks create <topic>`
 
 Queue a new content task.

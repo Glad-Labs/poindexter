@@ -35,6 +35,9 @@ class QaReviewEntry(BaseModel):
     score: float = 0.0
     advisory: bool = False
     feedback_preview: str = ""
+    # The rail ran and had nothing to judge (``not_applicable_review``); its
+    # score is 0 by construction, not a verdict. Absent before 2026-10-21.
+    not_applicable: bool | None = None
 
 
 class QaPassCompletedDetails(BaseModel):

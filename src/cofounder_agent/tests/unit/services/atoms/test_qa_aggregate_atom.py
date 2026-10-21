@@ -388,6 +388,25 @@ class TestQaAggregateEmitsPassAudit:
         assert reviewers == {"ollama_critic", "ragas_eval"}
         assert all({"provider", "approved", "score", "advisory"} <= set(r) for r in d["reviews"])
 
+    async def test_a_rail_with_nothing_to_judge_is_recorded_so(self):
+        """``tasks qa`` reads the flag to show "n/a" instead of a score of 0."""
+        fake = FakePlatform()
+        state = {
+            "platform": fake,
+            "task_id": "task-na",
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False, "feedback": "solid"},
+                {"reviewer": "web_factcheck", "approved": True, "score": 0.0,
+                 "provider": "web_factcheck", "advisory": False, "feedback": "nothing to check",
+                 "not_applicable": True},
+            ],
+        }
+        await qa_aggregate.run(state)
+        by_reviewer = {r["reviewer"]: r for r in self._passes(fake)[0]["details"]["reviews"]}
+        assert by_reviewer["web_factcheck"]["not_applicable"] is True
+        assert by_reviewer["ollama_critic"]["not_applicable"] is False
+
     async def test_reject_emits_warning_severity_pass(self):
         fake = FakePlatform()
         state = {
