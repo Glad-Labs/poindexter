@@ -53,7 +53,7 @@ _FLOW_TRACER = get_tracer("poindexter.pipeline")
 def _parent_context_from_claimed(claimed: dict[str, Any] | None) -> Any | None:
     """Re-hydrate the enqueuer's OTel parent context from a claimed task row.
 
-    Tier 1b (Glad-Labs/glad-labs-stack#1997): ``tasks_db.add_task`` stamped the
+    Tier 1b (Glad-Labs/poindexter#1997): ``tasks_db.add_task`` stamped the
     creator's W3C carrier into ``pipeline_tasks.trace_context``; this turns it
     back into a parent context so the flow's root span links to that trace.
     Returns None when the row carried nothing (or opentelemetry isn't installed).
