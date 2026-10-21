@@ -34,6 +34,10 @@ _BACKEND = _REPO_ROOT / "src" / "cofounder_agent" / "poindexter"
 BASELINE_SCHEMA = _BACKEND / "services" / "migrations" / "0000_baseline.schema.sql"
 BASELINE_SEEDS = _BACKEND / "services" / "migrations" / "0000_baseline.seeds.sql"
 POST_PIPELINE_ACTIONS = _BACKEND / "services" / "post_pipeline_actions.py"
+TOPIC_LENGTH = _BACKEND / "services" / "topic_length.py"
+BLOG_TASK_CREATION = _BACKEND / "services" / "blog_task_creation.py"
+AI_CONTENT_GENERATOR = _BACKEND / "modules" / "content" / "ai_content_generator.py"
+TWO_PASS_WRITER = _BACKEND / "modules" / "content" / "atoms" / "two_pass_writer.py"
 
 
 def _load_driver():
@@ -248,21 +252,95 @@ class TestStandInSettings:
         Adding one takes a reason in the driver's docstring and an edit here, so
         a new accommodation is a decision, not a drive-by.
         """
-        assert DRIVER.STAND_IN_SETTINGS == {"min_curation_score": "0"}
+        assert DRIVER.STAND_IN_SETTINGS == {
+            "min_curation_score": "0",
+            "content_gen_token_mult_standard": "2.5",
+            "topic_discovery_length_distribution": "[[1000,1500,1.0]]",
+        }
 
     def test_every_entry_is_a_seeded_row(self):
         """``settings set`` refuses a key that is not already a row, so a rename
-        would otherwise surface as a failed run half an hour in."""
+        would otherwise surface as a failed run half an hour in. ``setup --auto``
+        runs the baseline seeds AND ``seed_all_defaults``, so either makes the row."""
+        from poindexter.services.settings_defaults import DEFAULTS
+
         seeds = BASELINE_SEEDS.read_text(encoding="utf-8")
         for key in nonempty(DRIVER.STAND_IN_SETTINGS, "STAND_IN_SETTINGS"):
-            assert re.search(
+            assert key in DEFAULTS or re.search(
                 rf"INSERT INTO app_settings \([^)]*\) VALUES \('{re.escape(key)}',", seeds,
-            ), f"{key} is not a baseline-seeded app_settings row"
+            ), f"{key} is neither a baseline-seeded row nor in settings_defaults.DEFAULTS"
 
-    def test_the_setting_is_the_one_the_curator_reads(self):
-        source = POST_PIPELINE_ACTIONS.read_text(encoding="utf-8")
+    # Where each stand-in setting is read, as (file, needle). A new entry needs a
+    # reader here, so the setting it excuses is shown to still do something.
+    _READERS = {
+        "min_curation_score": (POST_PIPELINE_ACTIONS, 'key="min_curation_score"'),
+        "content_gen_token_mult_standard": (AI_CONTENT_GENERATOR, '"content_gen_token_mult_standard"'),
+        "topic_discovery_length_distribution": (TOPIC_LENGTH, '"topic_discovery_length_distribution"'),
+    }
+
+    def test_each_setting_still_has_its_reader(self):
         for key in nonempty(DRIVER.STAND_IN_SETTINGS, "STAND_IN_SETTINGS"):
-            assert f'key="{key}"' in source, f"post_pipeline_actions no longer reads {key}"
+            assert key in self._READERS, f"no reader recorded for stand-in setting {key}"
+            path, needle = self._READERS[key]
+            assert needle in path.read_text(encoding="utf-8"), f"{path.name} no longer reads {key}"
+
+    def test_the_two_pass_writer_takes_its_budget_from_that_reader(self):
+        """The multiplier excuses the writer canonical_blog runs; it only does so
+        while the two-pass writer's calls are capped through writer_max_tokens."""
+        source = TWO_PASS_WRITER.read_text(encoding="utf-8")
+        assert source.count("writer_max_tokens(") >= 2, "revise/expand are no longer capped"
+        assert "max_tokens=writer_max_tokens(" in AI_CONTENT_GENERATOR.read_text(encoding="utf-8")
+
+    def test_the_readme_task_takes_its_length_from_the_picker(self):
+        """The length stand-in only bounds the draft while `tasks create` sends no
+        --length (an explicit one wins over the picker) and the API picks it."""
+        quick_start = DRIVER.extract_quick_start(README.read_text(encoding="utf-8"))
+        assert "--length" not in quick_start.create_line
+        assert "pick_target_length(site_config)" in BLOG_TASK_CREATION.read_text(encoding="utf-8")
+
+    def test_the_stand_in_draft_budget_fits_its_timeout(self):
+        """2.5 x the LONGEST target the stand-in length distribution can pick must
+        fit the request timeout at the stand-in's measured CPU speed, and still
+        clear a finished stand-in draft.
+
+        Measured on the hosted runner (2026-10-19, qwen2.5:0.5b): ~13 tokens/s
+        decode, ~87 tokens/s prefill, a finished draft ~2,000 tokens in ~2.5 min.
+        Without the length stand-in the picker reached 3,500 words, and a capped
+        draft still ran 7,462 tokens into the 600 s timeout (2026-10-20).
+        The README's writer pin must take the STANDARD multiple, i.e. not be a
+        thinking model under the seeded substrings, or the 12x one applies.
+        """
+        from poindexter.modules.content.ai_content_generator import writer_max_tokens
+        from poindexter.services.site_config import SiteConfig
+        from poindexter.services.topic_length import resolve_length_weights
+
+        seeds = BASELINE_SEEDS.read_text(encoding="utf-8")
+
+        def seeded(key: str) -> str:
+            match = re.search(rf"VALUES \('{re.escape(key)}', '([^']*)'", seeds)
+            assert match, f"{key} is no longer seeded by the baseline"
+            return match.group(1)
+
+        config = {
+            key: seeded(key)
+            for key in ("pipeline_writer_model", "thinking_model_substrings",
+                        "niche_ollama_chat_timeout_seconds")
+        }
+        config.update(DRIVER.STAND_IN_SETTINGS)
+        sc = SiteConfig(initial_config=config)
+        buckets = resolve_length_weights(sc)
+        assert buckets != resolve_length_weights(None), "the length stand-in did not parse"
+        longest_target_words = max(hi for _lo, hi, _w in buckets)
+        cap = writer_max_tokens(
+            sc, target_length=longest_target_words, model=config["pipeline_writer_model"],
+        )
+        assert cap == int(longest_target_words * float(DRIVER.STAND_IN_SETTINGS[
+            "content_gen_token_mult_standard"
+        ])), "the README writer pin is classed as a thinking model; the 12x multiple applies"
+        decode_tps, prefill_tps, prompt_tokens, finished_draft_tokens = 13.0, 87.0, 3000, 2000
+        worst_case_s = prompt_tokens / prefill_tps + cap / decode_tps
+        assert worst_case_s < 0.75 * float(config["niche_ollama_chat_timeout_seconds"])
+        assert cap >= 1.5 * finished_draft_tokens
 
     def test_the_docs_state_the_bar_setup_seeds(self):
         """A stranger whose task ends `rejected` is told the bar; it must be the one
@@ -276,17 +354,35 @@ class TestStandInSettings:
                 f"{path.name} does not state the seeded curation bar ({match.group(1)})"
             )
 
-    def test_applied_once_right_before_the_task_is_queued(self, quick_start, tmp_path):
+    def test_applied_once_before_the_stack_starts(self, quick_start, tmp_path):
+        """Right after `setup --auto` (the database exists) and before the stack
+        boots, so every container loads them at startup. Written later, a value
+        the worker reads from its cached settings (the length picker, at `tasks
+        create`) races the cache's once-a-minute reload."""
         script = DRIVER.build_script(
             quick_start, tree=tmp_path, tiny_model="t:1", real_pulls=set(), handoff=tmp_path / "h.env",
         ).splitlines()
         setters = [i for i, ln in enumerate(script) if ln.startswith("poindexter settings set ")]
         assert len(setters) == len(DRIVER.STAND_IN_SETTINGS)
-        create = next(i for i, ln in enumerate(script) if ln.strip() == quick_start.create_line)
-        assert max(setters) == create - 1
-        # It needs the database `setup --auto` provisions; the stack need not be up.
-        setup = next(i for i, ln in enumerate(script) if ln.strip() == "poindexter setup --auto")
-        assert setup < min(setters)
+        setup = next(i for i, ln in enumerate(script) if ln.strip() == quick_start.setup_line)
+        assert quick_start.setup_line == "poindexter setup --auto"
+        # The echo, then the setters, directly under the setup line.
+        assert min(setters) == setup + 2 and max(setters) == setup + 1 + len(setters)
+        start_stack = next(i for i, ln in enumerate(script) if "start-stack.sh" in ln and "up" in ln)
+        assert max(setters) < start_stack
+
+    def test_json_values_survive_the_shell(self, quick_start, tmp_path):
+        import shlex
+
+        script = DRIVER.build_script(
+            quick_start, tree=tmp_path, tiny_model="t:1", real_pulls=set(), handoff=tmp_path / "h.env",
+        ).splitlines()
+        written = {}
+        for ln in script:
+            if ln.startswith("poindexter settings set "):
+                _p, _s, _set, key, value = shlex.split(ln)
+                written[key] = value
+        assert written == DRIVER.STAND_IN_SETTINGS
 
     def test_no_settings_means_a_verbatim_block(self, quick_start, tmp_path):
         script = DRIVER.build_script(

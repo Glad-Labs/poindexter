@@ -206,6 +206,25 @@ The Glad Labs default and the most expensive mode.
    its own draft, runs a bounded external research step for each, and
    revises. The state machine is capped at **3 revision loops** so it
    can't run away.
+3. **Expansion (optional):** a draft under `target_length ×
+writer_min_length_ratio` words gets ONE expansion pass, and the longer
+   of the two is kept.
+
+**Output budget.** Every one of those calls (draft, revise, expand) is capped
+at `target_length × content_gen_token_mult_standard` tokens (8 by default;
+`content_gen_token_mult_thinking`, 12, for a thinking model), the same budget
+`ai_content_generator` uses. Until 2026-10-20 they sent no `max_tokens`, and
+Ollama's default is unlimited, so a model that fell into a repetition loop and
+never emitted EOS generated until the 600 s `niche_ollama_chat_timeout_seconds`
+and the task failed with a `litellm.Timeout` (8 of 28 quickstart-e2e runs). A
+call that hits the cap is logged and raised as a `writer_output_capped`
+finding. If the text is looping (a sentence or line repeated
+`writer_repetition_loop_min_repeats` times), the loop is cut at its first
+repeat and the text before it is kept. Otherwise the capped text is kept as
+written, and the `truncated_content` rail rejects it if it ends mid-sentence
+([anti-hallucination.md](anti-hallucination.md)). The cap is detected from the
+token count as well as `finish_reason`, because LiteLLM's `ollama/` route
+reports `finish_reason="stop"` even when Ollama stopped at `num_predict`.
 
 `TWO_PASS` is implemented as a LangGraph state machine, which gives the
 flow operator-interrupt checkpointing for free — a batch sitting with

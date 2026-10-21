@@ -24,8 +24,12 @@
 #   bash session. Three documented substitutions only: the clone line becomes
 #   `cd <tree>`; each `ollama pull <tag>` becomes an alias of one small CPU
 #   model (TINY_MODEL) under that exact tag — no GPU, ~14 GB of disk; and the
-#   `min_curation_score` setting is zeroed with `poindexter settings set` just
-#   before `tasks create` (see below). A model the pipeline calls that the
+#   stand-in settings are written with `poindexter settings set` right after
+#   `setup --auto`, before the stack starts: `min_curation_score` zeroed (see
+#   below), and the writer's token multiple cut to 2.5 with post length held to
+#   1,000-1,500 words, so a looping draft stops at its cap inside the 600 s
+#   request timeout (the driver's docstring has the arithmetic; before it, 8 of
+#   28 runs died at that timeout). A model the pipeline calls that the
 #   README does not list is simply absent, so the run fails the way a
 #   stranger's would.
 #

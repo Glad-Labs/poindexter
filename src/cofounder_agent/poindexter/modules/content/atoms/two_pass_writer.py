@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any, TypedDict
 from uuid import UUID
 
@@ -792,7 +792,8 @@ async def _draft_node(state: _State) -> _State:
     draft_metrics: dict[str, int] = {}
 
     async def _call_draft() -> str:
-        return await generate_with_context(
+        completion_info: dict[str, Any] = {}
+        drafted = await generate_with_context(
             topic=state["topic"], angle=state["angle"],
             snippets=state["snippets"], extra_instructions=instruction,
             site_config=site_config, pool=pool,
@@ -805,6 +806,13 @@ async def _draft_node(state: _State) -> _State:
             prompt_metrics=draft_metrics,
             topic_kind=state.get("topic_kind") or None,
             niche_slug=state.get("niche_slug") or None,
+            # Capped at target_length x content_gen_token_mult_* inside
+            # generate_with_context; this reports whether the cap was hit.
+            completion_info=completion_info,
+        )
+        return _settle_capped_output(
+            drafted, completion_info, phase="draft_generation",
+            task_id=state.get("task_id"), site_config=site_config,
         )
 
     min_substance_words = _resolve_min_substance_words(site_config)
@@ -1057,6 +1065,7 @@ async def _revise_node(state: _State) -> _State:
     # with '}'". ``ollama_chat_text`` also runs ``maybe_unwrap_json``
     # internally as belt-and-suspenders if a model still emits a JSON
     # envelope unprompted.
+    from poindexter.modules.content.ai_content_generator import writer_max_tokens
     from poindexter.services.llm_text import ollama_chat_text, resolve_writer_model
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
@@ -1103,9 +1112,11 @@ async def _revise_node(state: _State) -> _State:
     revise_prompt_chars = len(revise_prompt)
 
     writer_think = _resolve_writer_think(site_config)
+    target_length = int(state.get("target_length") or 1200)
 
     async def _call(call_model: str) -> str:
-        return await ollama_chat_text(
+        completion_info: dict[str, Any] = {}
+        revised = await ollama_chat_text(
             revise_prompt,
             model=call_model,
             site_config=site_config,
@@ -1116,6 +1127,15 @@ async def _revise_node(state: _State) -> _State:
             # Same reasoning-channel disable as the draft call — revise
             # rewrites prose, not chain-of-thought.
             think=writer_think,
+            # The revision is a full article, so it gets the draft's budget.
+            max_tokens=writer_max_tokens(
+                site_config, target_length=target_length, model=call_model,
+            ),
+            completion_info=completion_info,
+        )
+        return _settle_capped_output(
+            revised, completion_info, phase="two_pass_revise",
+            task_id=task_id, site_config=site_config,
         )
 
     # poindexter#574 — variant-override fallback. When a variant assigned
@@ -1966,6 +1986,181 @@ def _emit_dangling_tail_finding(*, trimmed: int, task_id: str | None) -> None:
         pass
 
 
+# Sentence units within one line for the repetition-loop check: a run of text
+# up to sentence-ending punctuation, or to the end of the line.
+_LOOP_UNIT_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
+# Leading list / quote / heading markers, so "1. X" and "2. X" are one unit.
+_LOOP_UNIT_MARKER_RE = re.compile(r"^\s*(?:[-*+>#]+|\d+[.)])\s*")
+_LOOP_UNIT_NONALPHA_RE = re.compile(r"[^a-z]+")
+
+
+def _loop_units(text: str) -> Iterator[tuple[int, str]]:
+    """Yield ``(start_offset, normalized_unit)`` for each sentence of each line.
+
+    The list/heading marker is stripped from the line BEFORE it is split into
+    sentences (the period in "2. X" is not a sentence end), and a line's first
+    unit starts at the line itself, so a cut there takes the marker with it.
+    """
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        marker = _LOOP_UNIT_MARKER_RE.match(line)
+        body_start = marker.end() if marker else 0
+        for i, m in enumerate(_LOOP_UNIT_RE.finditer(line.rstrip("\r\n"), body_start)):
+            key = " ".join(_LOOP_UNIT_NONALPHA_RE.sub(" ", m.group(0).lower()).split())
+            yield (offset if i == 0 else offset + m.start()), key
+        offset += len(line)
+
+
+def _resolve_repetition_loop_settings(site_config: Any = None) -> tuple[int, int]:
+    """``(min_repeats, min_unit_chars)`` for :func:`_trim_repetition_loop`."""
+    min_repeats, min_chars = 3, 24
+    if site_config is not None:
+        try:
+            min_repeats = int(site_config.get_int("writer_repetition_loop_min_repeats", 3))
+            min_chars = int(site_config.get_int("writer_repetition_loop_min_unit_chars", 24))
+        except Exception:  # noqa: BLE001 — a malformed row keeps the documented defaults
+            logger.warning(
+                "[two_pass_writer] writer_repetition_loop_* settings unreadable — "
+                "using defaults (min_repeats=3, min_unit_chars=24)",
+            )
+            min_repeats, min_chars = 3, 24
+    return max(2, min_repeats), max(1, min_chars)
+
+
+def _trim_repetition_loop(
+    text: str, *, min_repeats: int, min_unit_chars: int,
+) -> tuple[str, int]:
+    """Cut a degenerate repetition loop off the end of a capped completion.
+
+    A small model that falls into a loop repeats one sentence, list item or
+    paragraph until something stops it. Ollama's repeat penalty only looks
+    back 64 tokens, so the loops that survive it are long-period ones that
+    repeat whole units exactly. Each unit (a sentence, or a line with no
+    sentence punctuation) is normalized — lowercased, list/heading markers and
+    every non-letter dropped, so "3. Pull the image" and "4. Pull the image"
+    are one unit — and any unit of at least ``min_unit_chars`` normalized
+    characters seen ``min_repeats`` times marks a loop. The text is cut at the
+    earliest SECOND occurrence of such a unit: what comes before is what the
+    model wrote before it degenerated.
+
+    Then, since the cut can land after a list item or a heading, trailing
+    lines are dropped until the text ends the way the #984 truncation rail
+    accepts (never down to nothing). Returns ``(text, chars_removed)`` —
+    ``(text, 0)`` when there is no loop, so an untrimmable capped completion
+    reaches QA unchanged and is rejected as truncated, by name.
+    """
+    if not text or not text.strip():
+        return text, 0
+    seen: dict[str, list[int]] = {}
+    for start, key in _loop_units(text):
+        if len(key) >= min_unit_chars:
+            seen.setdefault(key, []).append(start)
+    cuts = [starts[1] for starts in seen.values() if len(starts) >= min_repeats]
+    if not cuts:
+        return text, 0
+    kept = text[: min(cuts)].rstrip()
+    if not kept.strip():
+        return text, 0
+
+    from poindexter.modules.content.content_validator import detect_truncated_content
+
+    lines = kept.splitlines()
+    while len(lines) > 1 and detect_truncated_content("\n".join(lines)):
+        lines.pop()
+        while len(lines) > 1 and not lines[-1].strip():
+            lines.pop()
+    candidate = "\n".join(lines).rstrip()
+    if candidate.strip() and not detect_truncated_content(candidate):
+        kept = candidate
+    kept, _ = _trim_dangling_heading(kept)
+    return kept, len(text) - len(kept)
+
+
+def _settle_capped_output(
+    text: str,
+    info: dict[str, Any],
+    *,
+    phase: str,
+    task_id: str | None,
+    site_config: Any,
+) -> str:
+    """Handle a writer completion that stopped at its ``max_tokens`` cap.
+
+    Uncapped, a model that never emits EOS generated until the request
+    timeout (600 s) and the whole task failed with a ``litellm.Timeout`` —
+    8 of 28 quickstart-e2e runs to 2026-10-19, qwen2.5:0.5b looping on a CPU
+    runner. Capped, the call returns at the budget, and this decides what the
+    budget-full text is worth: a repetition loop is cut off
+    (:func:`_trim_repetition_loop`); anything else is kept as written so the
+    #984 truncation rail rejects it by name rather than shipping it. Either
+    way the cap hit is logged and raised as a ``writer_output_capped``
+    finding, never silent. ``info`` is the ``completion_info`` dict
+    ``ollama_chat_text`` filled; a call that did not hit the cap returns
+    ``text`` untouched.
+    """
+    if not info.get("capped"):
+        return text
+    min_repeats, min_unit_chars = _resolve_repetition_loop_settings(site_config)
+    settled, removed = _trim_repetition_loop(
+        text or "", min_repeats=min_repeats, min_unit_chars=min_unit_chars,
+    )
+    loop_trimmed = removed > 0
+    logger.warning(
+        # Worded without the word for an LLM output unit before a %s: semgrep's
+        # logger-credential rule reads that word as a credential.
+        "[two_pass_writer] %s output stopped at its output cap (%s of %s, "
+        "finish_reason=%r) — %s",
+        phase, info.get("completion_tokens"), info.get("max_tokens"),
+        info.get("finish_reason"),
+        (
+            f"cut a repetition loop ({removed} chars, "
+            f"{len(text or '')} -> {len(settled)})" if loop_trimmed
+            else "no repetition loop found; kept the capped text for the "
+            "truncation rail to judge"
+        ),
+    )
+    try:
+        from poindexter.utils.findings import emit_finding
+
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_output_capped",
+            title=(
+                f"Writer {phase} hit its token cap — "
+                + ("repetition loop trimmed" if loop_trimmed else "kept as written")
+            ),
+            body=(
+                f"The {phase} call stopped at its max_tokens cap "
+                f"({info.get('max_tokens')} = target_length x "
+                f"content_gen_token_mult_*) instead of finishing. "
+                + (
+                    f"The output was looping, so the loop ({removed} chars) "
+                    f"was cut and the text before it kept."
+                    if loop_trimmed else
+                    "No repetition loop was found, so the text was kept as "
+                    "written; the truncation rail will reject it if it ends "
+                    "mid-sentence."
+                )
+                + " A model that loops or overruns 8x the word target is "
+                "misbehaving; check the writer model if this recurs."
+            ),
+            severity="warn",
+            dedup_key=f"writer_output_capped:{phase}",
+            extra={
+                "task_id": task_id,
+                "phase": phase,
+                "max_tokens": info.get("max_tokens"),
+                "completion_tokens": info.get("completion_tokens"),
+                "finish_reason": info.get("finish_reason"),
+                "loop_trimmed": loop_trimmed,
+                "chars_removed": removed,
+            },
+        )
+    except Exception:  # noqa: BLE001 — silent-ok: the WARNING above is the durable signal; finding emission must never raise inside the writer
+        pass
+    return settled
+
+
 async def _maybe_expand_to_target(
     draft: str,
     *,
@@ -2020,11 +2215,13 @@ async def _maybe_expand_to_target(
     if words_before >= threshold:
         return draft, meta
 
+    from poindexter.modules.content.ai_content_generator import writer_max_tokens
     from poindexter.services.llm_text import ollama_chat_text, resolve_writer_model
     model = resolve_writer_model(model=None, site_config=site_config)
     prompt = _resolve_expand_prompt(
         draft=draft, target_length=target_length, word_count=words_before,
     )
+    completion_info: dict[str, Any] = {}
     try:
         expanded = await ollama_chat_text(
             prompt,
@@ -2037,6 +2234,14 @@ async def _maybe_expand_to_target(
             # Same reasoning-channel disable as draft/revise — the expansion
             # runs on the same writer model and must not truncate itself.
             think=_resolve_writer_think(site_config),
+            max_tokens=writer_max_tokens(
+                site_config, target_length=target_length, model=model,
+            ),
+            completion_info=completion_info,
+        )
+        expanded = _settle_capped_output(
+            expanded, completion_info, phase="two_pass_expand",
+            task_id=task_id, site_config=site_config,
         )
     except Exception as exc:  # noqa: BLE001 — expansion is best-effort
         logger.warning(

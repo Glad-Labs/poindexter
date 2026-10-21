@@ -239,6 +239,7 @@ async def ollama_chat_text(
     think: bool | None = None,
     response_format: dict[str, Any] | None = None,
     max_tokens: int | None = None,
+    completion_info: dict[str, Any] | None = None,
 ) -> str:
     """Plain-text LLM chat call.
 
@@ -293,6 +294,14 @@ async def ollama_chat_text(
             structured tasks — constrained decoding makes that impossible
             (poindexter#970: the architect went 0-for-4 live without it,
             3-for-3 clean with it).
+        max_tokens: output-token cap (dispatcher path only). A model that
+            never emits EOS stops here instead of at the request timeout.
+        completion_info: when passed a dict, filled with what the provider
+            reported about the completion — ``finish_reason``,
+            ``completion_tokens``, ``max_tokens`` and ``capped`` (see
+            :func:`completion_hit_cap`). Side-effect only, like the writer's
+            ``prompt_metrics``: the return value stays a plain string for
+            every caller.
 
     Returns:
         The raw assistant content (post-unwrap, see
@@ -358,6 +367,7 @@ async def ollama_chat_text(
             "input": int(getattr(completion, "prompt_tokens", 0) or 0),
             "output": int(getattr(completion, "completion_tokens", 0) or 0),
         }
+        finish_reason = str(getattr(completion, "finish_reason", "") or "")
     else:
         # Test / bootstrap fallback — direct httpx → local Ollama. Same
         # behavior as before the dispatcher cutover. Used when there's
@@ -392,6 +402,19 @@ async def ollama_chat_text(
             "input": data.get("prompt_eval_count") or 0,
             "output": data.get("eval_count") or 0,
         }
+        finish_reason = str(data.get("done_reason") or "")
+
+    if completion_info is not None:
+        completion_info.update({
+            "finish_reason": finish_reason,
+            "completion_tokens": int(usage_details["output"] or 0),
+            "max_tokens": int(max_tokens) if max_tokens is not None else None,
+            "capped": completion_hit_cap(
+                finish_reason=finish_reason,
+                completion_tokens=int(usage_details["output"] or 0),
+                max_tokens=max_tokens,
+            ),
+        })
 
     # Strip leaked reasoning / chat-template control tokens BEFORE the JSON
     # unwrap (a model may wrap a JSON envelope in a "<|channel>thought…" header;
@@ -408,6 +431,22 @@ async def ollama_chat_text(
     # "input"/"output" are the canonical Langfuse generic keys.
     langfuse_context.update_current_observation(output=output, usage_details=usage_details)
     return output
+
+
+def completion_hit_cap(
+    *, finish_reason: str, completion_tokens: int, max_tokens: int | None,
+) -> bool:
+    """True when a completion stopped at its output-token cap, not at EOS.
+
+    ``finish_reason`` alone is not enough: LiteLLM's ``ollama/`` route (which
+    POSTs ``/api/generate``) hard-codes ``finish_reason="stop"`` and drops
+    Ollama's ``done_reason="length"``, so a capped local completion reads as
+    finished. The token count is what every provider does report, so a
+    completion that used the whole budget counts as capped too.
+    """
+    if str(finish_reason or "").strip().lower() in {"length", "max_tokens"}:
+        return True
+    return bool(max_tokens) and int(completion_tokens or 0) >= int(max_tokens or 0)
 
 
 _ENVELOPE_PROSE_KEYS: tuple[str, ...] = (

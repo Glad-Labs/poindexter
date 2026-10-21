@@ -3010,6 +3010,11 @@ DEFAULTS: dict[str, str] = {
     'content_gen_token_mult_standard': '8.0',
     'content_gen_token_mult_thinking': '12.0',
     'content_gen_truncation_retry_mult': '2.0',
+    # The two-pass writer caps draft/revise/expand at the same multiples. A
+    # capped completion that repeats one sentence/line this many times is a
+    # loop and is cut at its first repeat (two_pass_writer._trim_repetition_loop).
+    'writer_repetition_loop_min_repeats': '3',
+    'writer_repetition_loop_min_unit_chars': '24',
     # The qa.rewrite rescue pass is a writer-class full-revision LLM call, so it
     # gets the same budget as the writer (niche_ollama_chat_timeout_seconds=600).
     # The inherited 240s default (orphaned from the deleted cross_model_qa) was
@@ -5115,6 +5120,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # two months behind a threshold raised 7 -> 180 days, which is the
     # outcome a declared policy exists to prevent: findings.default is
     # log_only, so an undeclared kind reaches nobody at all.
+    # writer_output_capped: a two-pass writer call (draft / revise / expand)
+    # stopped at its max_tokens cap (target_length x content_gen_token_mult_*).
+    # Either the model looped (the loop was trimmed, and extra.loop_trimmed
+    # says so) or it ran past 8x the word target; both mean the writer model
+    # misbehaved, but the task carries on, so it informs rather than pages.
+    'findings.writer_output_capped.delivery': 'discord',
+    'findings.writer_output_capped.fallback': 'discord',
+    'findings.writer_output_capped.cooldown_minutes': '360',
+    'findings.writer_output_capped.min_severity': 'warning',
     'findings.resend_delivery_poll_failed.delivery': 'discord',
     'findings.resend_delivery_poll_failed.fallback': 'discord',
     'findings.resend_delivery_poll_failed.cooldown_minutes': '180',
@@ -7785,8 +7799,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_self_review_max_length_ratio': {'owner': 'self_review', 'value_type': 'float'},
     'content_router_qa_rewrite_max_tokens': {'owner': 'qa_rewrite', 'value_type': 'integer'},
     'content_router_qa_rewrite_timeout_seconds': {'owner': 'qa_rewrite', 'value_type': 'integer'},
-    'content_gen_token_mult_standard': {'owner': 'ai_content_generator', 'value_type': 'float'},
-    'content_gen_token_mult_thinking': {'owner': 'ai_content_generator', 'value_type': 'float'},
+    'content_gen_token_mult_standard': {'owner': 'ai_content_generator', 'value_type': 'float', 'description': 'Writer max_tokens = target_length x this (non-thinking model). Caps ai_content_generator AND the two-pass writer draft/revise/expand calls (since 2026-10-20), so a model that never emits EOS stops at the budget instead of the request timeout.'},
+    'content_gen_token_mult_thinking': {'owner': 'ai_content_generator', 'value_type': 'float', 'description': 'Writer max_tokens = target_length x this for a thinking model (reasoning spends from the same budget). Same callers as content_gen_token_mult_standard.'},
     'content_gen_truncation_retry_mult': {'owner': 'ai_content_generator', 'value_type': 'float'},
     'content_router_seo_title_max_tokens': {'owner': 'title_generation', 'value_type': 'integer'},
     'content_type_classifier_model': {'owner': 'classify_content_types'},
@@ -8769,6 +8783,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_min_draft_chars': {'owner': 'writer_core', 'value_type': 'integer'},
     'writer_min_length_ratio': {'owner': 'two_pass_writer', 'value_type': 'float'},
     'writer_min_substance_words': {'owner': 'two_pass_writer', 'value_type': 'integer'},
+    'writer_repetition_loop_min_repeats': {'owner': 'two_pass_writer', 'value_type': 'integer', 'description': 'When a two-pass writer call hits its max_tokens cap, a sentence/line seen this many times (normalized) marks a repetition loop, and the text is cut at its first repeat. A capped completion with no loop is kept for the #984 truncation rail to judge.'},
+    'writer_repetition_loop_min_unit_chars': {'owner': 'two_pass_writer', 'value_type': 'integer', 'description': 'Shortest normalized sentence/line (letters only) that counts toward writer_repetition_loop_min_repeats, so short structural lines never read as a loop.'},
     'writer_rag_context_snippet_max_chars': {'owner': 'ai_content_generator', 'value_type': 'integer'},
     'writer_rag_research_topic_max_sources': {'owner': 'research_service', 'value_type': 'integer'},
     'writer_rag_two_pass_research_max_sources': {'owner': 'two_pass_writer', 'value_type': 'integer'},

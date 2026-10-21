@@ -23,15 +23,39 @@ line to the next. Exactly three substitutions, all printed as they happen:
   ``--real-pull`` (embedding models, whose vector width the schema depends
   on) are pulled for real. A model the pipeline calls that the README does
   NOT list is therefore missing, and the run fails the way a stranger's would;
-* the rows in ``STAND_IN_SETTINGS`` (today: ``min_curation_score=0``), written
-  with the product's own ``poindexter settings set`` right before the
-  ``poindexter tasks create`` line. The stand-in model also judges its own
-  draft, so the quality score is noise: 94 in one run of this quick start and
-  54 in another, and the post-pipeline curation step auto-rejects anything
-  under its 75 bar within a second of the pipeline queueing it for approval.
-  That verdict is about the model, and this job answers whether the machine
-  runs (dispatch, graph, QA, approval queue), so the bar is taken out of the
-  measurement instead of the assertion being loosened.
+* the rows in ``STAND_IN_SETTINGS``, written with the product's own
+  ``poindexter settings set`` right after ``poindexter setup --auto``, i.e.
+  before the stack starts, so every container reads them at boot. (They were
+  once written right before ``tasks create``; a value the worker reads from
+  its cached settings, like the length picker's, could then lose the race
+  with the cache's once-a-minute reload.) Each is a fact about the stand-in
+  model, not about the machine this job measures (dispatch, graph, QA,
+  approval queue):
+
+  - ``min_curation_score=0``. The stand-in model also judges its own draft,
+    so the quality score is noise: 94 in one run of this quick start and 54
+    in another, and the post-pipeline curation step auto-rejects anything
+    under its 75 bar within a second of the pipeline queueing it for
+    approval. That verdict is about the model, so the bar is taken out of the
+    measurement instead of the assertion being loosened.
+  - ``content_gen_token_mult_standard=2.5`` and
+    ``topic_discovery_length_distribution=[[1000,1500,1.0]]``. The writer
+    caps each full-article call at ``target_length`` x the multiple (8 by
+    default, sized for writers that overshoot with markdown), and the README's
+    ``tasks create`` passes no ``--length``, so the target comes from the
+    weighted picker: 400 to 3,500 words, a 3,500-word deep dive one task in
+    five. The sub-1B stand-in sometimes loops and never emits EOS, and on a
+    2-4 core runner it decodes ~13 tokens/s. 8 x 3,500 is 28,000 tokens, and
+    even 2.5 x 3,000 is 7,500 tokens, ~10 minutes: the draft died at its 600 s
+    request timeout (8 of 28 runs to 2026-10-19, every one
+    ``content.generate_draft raised Timeout``; then again with only the
+    multiple lowered, at 7,462 tokens). Holding the target to 1,000-1,500
+    words caps a draft at 3,750 tokens, ~5 minutes, nearly twice the ~2,000 a
+    finished stand-in draft uses. A looping draft then stops at the cap and
+    the writer cuts the loop off (``writer_output_capped`` in the log), which
+    is the product behaviour under test; only the budget is the stand-in's.
+    The README's writer pin is not a thinking model, so the ``_thinking``
+    multiple never applies here (pinned by the test).
 
 Then it waits for the queued task and requires ``awaiting_approval`` — the
 state the README promises — checks every ``http://localhost:<port>`` link the
@@ -91,6 +115,7 @@ _FENCE_OPEN = re.compile(r"^```(?:bash|sh|shell)\s*$")
 _CLONE = re.compile(r"^git clone\s+(\S+)(?:\s+(\S+))?\s*&&\s*cd\s+(\S+)\s*$")
 _PULL = re.compile(r"\bollama\s+pull\s+([A-Za-z0-9._:/-]+)")
 _CREATE = re.compile(r"^poindexter\s+tasks\s+create\b")
+_SETUP = re.compile(r"^poindexter\s+setup\b")
 _CREATED = re.compile(r"Created:\s+([0-9a-fA-F-]{8,})")
 _LOCAL_LINK = re.compile(r"\((http://localhost:(\d+)[^)\s]*)\)")
 # Ollama's answer for a model it does not have. The pipeline does not pull on
@@ -107,7 +132,11 @@ SUCCESS = "awaiting_approval"
 # own promise, so adding one takes a reason in the module docstring and an edit
 # to the test that pins the list. `settings set` refuses a key that is not
 # already a row, so a renamed setting fails the run loudly.
-STAND_IN_SETTINGS = {"min_curation_score": "0"}
+STAND_IN_SETTINGS = {
+    "min_curation_score": "0",
+    "content_gen_token_mult_standard": "2.5",
+    "topic_discovery_length_distribution": "[[1000,1500,1.0]]",
+}
 # Where `poindexter tasks approve` may leave a task: approved, or already
 # picked up by the publisher.
 APPROVED_STATES = frozenset({"approved", "published"})
@@ -289,6 +318,7 @@ class QuickStart:
     lines: list[str]
     pulled_models: list[str] = field(default_factory=list)
     clone_line: str | None = None
+    setup_line: str | None = None
     create_line: str | None = None
 
 
@@ -297,7 +327,8 @@ def extract_quick_start(readme: str) -> QuickStart:
 
     Raises ValueError when the section or its fence is missing, or when the
     fence lacks an anchor this driver acts on (a clone line, at least one
-    ``ollama pull``, the ``poindexter tasks create`` line) — a restructured
+    ``ollama pull``, the ``poindexter setup`` line the stand-in settings follow,
+    the ``poindexter tasks create`` line) — a restructured
     README must fail here, loudly, rather than run something that is no longer
     the quick start.
     """
@@ -326,6 +357,8 @@ def extract_quick_start(readme: str) -> QuickStart:
             qs.clone_line = stripped
         if _CREATE.match(stripped):
             qs.create_line = stripped
+        if _SETUP.match(stripped) and qs.setup_line is None:
+            qs.setup_line = stripped
         qs.pulled_models.extend(_PULL.findall(stripped.split("#", 1)[0]))
     if qs.clone_line is None:
         raise ValueError("quick start has no `git clone <url> && cd <dir>` line")
@@ -333,6 +366,8 @@ def extract_quick_start(readme: str) -> QuickStart:
         raise ValueError("quick start pulls no models (`ollama pull <tag>`)")
     if qs.create_line is None:
         raise ValueError("quick start has no `poindexter tasks create ...` line")
+    if qs.setup_line is None:
+        raise ValueError("quick start has no `poindexter setup ...` line")
     return qs
 
 
@@ -397,14 +432,16 @@ def build_script(
                 else:
                     out.append(f"ollama cp {shlex.quote(tiny_model)} {shlex.quote(tag)}{note_to}")
             continue
-        if stripped == qs.create_line and settings:
+        out.append(raw)
+        if stripped == qs.setup_line and settings:
             applied = " ".join(f"{k}={v}" for k, v in settings.items())
-            out.append(f"echo '[quickstart-e2e] stand-in model -> app_settings {applied}'{note_to}")
+            out.append(
+                f"echo {shlex.quote(f'[quickstart-e2e] stand-in model -> app_settings {applied}')}{note_to}"
+            )
             for key, value in settings.items():
                 out.append(
                     f"poindexter settings set {shlex.quote(key)} {shlex.quote(value)}{note_to}"
                 )
-        out.append(raw)
     out.append(f"echo \"PDX_BIN=$(command -v poindexter)\" >> {shlex.quote(str(handoff))}")
     return "\n".join(out) + "\n"
 

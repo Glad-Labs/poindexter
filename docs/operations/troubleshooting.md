@@ -1150,7 +1150,7 @@ WHERE key = 'pipeline_writer_model';
 
 Write an `audit_log` row so the flip is traceable next time.
 
-**Thinking-model note.** `glm-4.7-5090` (the reviser for the `qa.rewrite` rescue cycle) is a thinking model — Ollama returns `message.content` AND `message.thinking`, where thinking can eat the full `num_predict` budget on short prompts. The generator already knows about this (see `_is_thinking = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))` and the `content_gen_token_mult_thinking` multiplier, default 7.0). If you're testing glm manually with a small `num_predict`, add `"think": false` to the payload or expect empty `content`.
+**Thinking-model note.** `glm-4.7-5090` (the reviser for the `qa.rewrite` rescue cycle) is a thinking model — Ollama returns `message.content` AND `message.thinking`, where thinking can eat the full `num_predict` budget on short prompts. The writer already knows about this: `ai_content_generator.writer_max_tokens` classifies the model with `thinking_model_substrings` and gives a thinking model `content_gen_token_mult_thinking` (default 12.0) × `target_length` tokens instead of the standard 8.0. If you're testing glm manually with a small `num_predict`, add `"think": false` to the payload or expect empty `content`.
 
 **Related.** Originally surfaced 2026-04-21 (writer flip happened 2026-04-11, writer was glm at that time). Writer switched to `gemma-4-31B-it-qat` on 2026-06-18 (bakeoff #1692); glm demoted to reviser. Fixed via `app_settings` UPDATE + audit_log entry.
 

@@ -1306,6 +1306,23 @@ data-derived headroom (`content_gen_token_mult_standard/thinking`
 4.5/7.0 → 8.0/12.0; `content_router_qa_rewrite_max_tokens` re-wired to
 the atom and raised 8000 → 16384).
 
+That retry only covered `ai_content_generator`. The two-pass writer that
+`canonical_blog` actually runs sent **no** `max_tokens` on its draft, revise
+or expand calls until 2026-10-20: cloud routes fell to LiteLLM's
+`cloud_max_tokens` (8192) and local Ollama to unlimited, so a looping model
+ran to the 600 s request timeout instead of reaching this rail. All three now
+cap at the same `target_length × content_gen_token_mult_*` budget. A capped
+completion that is a repetition loop has the loop cut off
+(`two_pass_writer._trim_repetition_loop`, then trimmed back to a line this
+detector accepts); one that is not stays as written, so this rail rejects it
+by name. Either way a `writer_output_capped` finding is raised. Two notes for
+anyone extending it: the cap is detected from `completion_tokens >=
+max_tokens` as well as `finish_reason`, because LiteLLM's `ollama/` (generate)
+transform hard-codes `finish_reason="stop"` and drops Ollama's
+`done_reason="length"` (which also means the `ai_content_generator` retry
+above never fires on a local `ollama/` route); and on a cloud writer the new
+cap is larger than the old 8192 default for any target over 1,024 words.
+
 **Third guard — degenerate-draft floor (2026-07-14 follow-up,
 Glad-Labs/poindexter#806):** the echo and planning-dump guards above
 recover a draft that regurgitates its OWN prompt scaffolding — they

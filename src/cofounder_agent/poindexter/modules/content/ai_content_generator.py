@@ -822,17 +822,9 @@ class AIContentGenerator:
 
         # Calculate max tokens for refinement pass — extra headroom for thinking models.
         # Token multipliers are tunable via app_settings (#198).
-        from poindexter.services.llm_providers.thinking_models import (
-            is_thinking_model,
-            resolve_thinking_substrings,
+        max_tokens_refinement = writer_max_tokens(
+            self._site_config, target_length=target_length, model=model_name,
         )
-        _sc = self._site_config
-        _is_thinking_refine = is_thinking_model(
-            model_name, substrings=resolve_thinking_substrings(_sc)
-        )
-        _thinking_mult = _sc.get_float("content_gen_token_mult_thinking", 12.0)
-        _standard_mult = _sc.get_float("content_gen_token_mult_standard", 8.0)
-        max_tokens_refinement = int(target_length * (_thinking_mult if _is_thinking_refine else _standard_mult))
         if self._platform is not None:
             completion = await self._dispatch_with_truncation_retry(
                 pool=pool,
@@ -1075,13 +1067,6 @@ class AIContentGenerator:
             )
             return None
 
-        from poindexter.services.llm_providers.thinking_models import (
-            is_thinking_model as _is_thinking_model,
-        )
-        from poindexter.services.llm_providers.thinking_models import (
-            resolve_thinking_substrings as _resolve_thinking_substrings,
-        )
-
         if self._platform is None:
             raise RuntimeError(
                 "platform handle required for dispatch — check pipeline context threading"
@@ -1126,22 +1111,12 @@ class AIContentGenerator:
                 # exactly at the observed need: sonnet-5 drafts stopped AT
                 # the cap mid-word and the critic vetoed every one
                 # (Glad-Labs/poindexter#984).
-                _is_thinking = _is_thinking_model(
-                    model_name,
-                    substrings=_resolve_thinking_substrings(self._site_config),
+                max_tokens = writer_max_tokens(
+                    self._site_config, target_length=target_length, model=model_name,
                 )
-                if _is_thinking:
-                    _multiplier = self._site_config.get_float(
-                        "content_gen_token_mult_thinking", 12.0
-                    )
-                else:
-                    _multiplier = self._site_config.get_float(
-                        "content_gen_token_mult_standard", 8.0
-                    )
-                max_tokens = int(target_length * _multiplier)
                 logger.debug(
-                    "      Max tokens: %d (target_length: %d, thinking=%s)",
-                    max_tokens, target_length, _is_thinking,
+                    "      Max tokens: %d (target_length: %d)",
+                    max_tokens, target_length,
                 )
 
                 logger.info("      Generating content via dispatcher...")
@@ -1527,6 +1502,32 @@ async def test_generation():
 # can monkeypatch this module to avoid a real Ollama call.
 
 
+def writer_max_tokens(site_config: Any, *, target_length: int, model: str) -> int:
+    """Output-token budget for one full-article writer call.
+
+    ``target_length`` (words) × ``content_gen_token_mult_thinking`` for a
+    thinking model (reasoning spends from the same budget) or
+    ``content_gen_token_mult_standard`` otherwise. The multiple is generous on
+    purpose: the writer overshoots its word target with markdown structure,
+    and a 4× cap severed real sonnet-5 drafts mid-word (poindexter#984). The
+    cap buys no tokens; it bounds a model that never emits EOS, which on the
+    two-pass writer used to run until the request timeout instead.
+    """
+    from poindexter.services.llm_providers.thinking_models import (
+        is_thinking_model,
+        resolve_thinking_substrings,
+    )
+
+    thinking = is_thinking_model(
+        model, substrings=resolve_thinking_substrings(site_config),
+    )
+    multiplier = site_config.get_float(
+        "content_gen_token_mult_thinking" if thinking else "content_gen_token_mult_standard",
+        12.0 if thinking else 8.0,
+    )
+    return max(1, int(int(target_length) * multiplier))
+
+
 async def _resolve_rag_writer_model(
     *, site_config: Any,
 ) -> str:
@@ -1618,6 +1619,7 @@ async def generate_with_context(
     prompt_metrics: dict[str, int] | None = None,
     topic_kind: str | None = None,
     niche_slug: str | None = None,
+    completion_info: dict[str, Any] | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1650,6 +1652,12 @@ async def generate_with_context(
     it from the snippet block. Optional and side-effect-only: every existing
     caller (including test fakes that stub this function out entirely) is
     unaffected. ``None`` (the default) is a no-op.
+
+    The call is capped at :func:`writer_max_tokens` for ``target_length``, so
+    a model that loops without emitting EOS stops at the budget rather than at
+    the request timeout. ``completion_info`` (same side-effect contract as
+    ``prompt_metrics``) receives the provider's report, including whether the
+    cap was hit — see ``llm_text.ollama_chat_text``.
     """
     from poindexter.services.llm_text import ollama_chat_text
 
@@ -1721,6 +1729,8 @@ async def generate_with_context(
         task_id=task_id,
         phase="draft_generation",
         think=think,
+        max_tokens=writer_max_tokens(_sc, target_length=target_length, model=model),
+        completion_info=completion_info,
     )
 
 
