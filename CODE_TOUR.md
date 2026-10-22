@@ -78,7 +78,7 @@ What to notice:
 Page views come from Cloudflare's analytics store, which makes a row
 queryable a few seconds after it's written. A poll that moved its cursor to
 "now" stepped permanently over rows that weren't visible yet. Nothing errored;
-40 real page views (7.3%) simply vanished in one month.
+about 7% of real page views simply never arrived.
 
 What to notice:
 
