@@ -725,7 +725,7 @@ class TestMainOrchestration:
     def _run(
         self, monkeypatch, tmp_path, capsys, *,
         approve_stderr="", staged="why-docker-01234567 (approved)", publish_rc=0,
-        site=None, logs="", qa_rc=0,
+        site=None, logs="", qa_rc=0, cap_findings="0",
     ):
         import subprocess as sp
 
@@ -760,6 +760,8 @@ class TestMainOrchestration:
                 return f"{self.SLUG}|published|2026-09-29 12:00:00+00" if staged else ""
             if "FROM posts" in sql:
                 return staged
+            if "FROM audit_log" in sql and kw.get("kind") == DRIVER.WRITER_CAP_FINDING:
+                return cap_findings
             return "null"
 
         healthy = site or _site(self.SLUG)
@@ -774,7 +776,11 @@ class TestMainOrchestration:
         monkeypatch.setattr(DRIVER, "_fetch", fetch)
         monkeypatch.setattr(DRIVER, "wait_for_task", lambda *a, **kw: DRIVER.SUCCESS)
         monkeypatch.setattr(DRIVER, "check_links", lambda readme: [])
-        monkeypatch.setattr(DRIVER, "_container_logs", lambda name: logs)
+        # The flow (and so every writer and storage line) runs in the Prefect worker.
+        monkeypatch.setattr(
+            DRIVER, "_container_logs",
+            lambda name: logs if name == "poindexter-prefect-worker" else "",
+        )
 
         rc = DRIVER.main(["--tree", str(tmp_path), "--tiny-model", "t:1"])
         out = capsys.readouterr().out
@@ -808,6 +814,26 @@ class TestMainOrchestration:
         assert rc == 1
         assert "a pipeline container logged a storage failure" in out
 
+    def test_a_writer_cap_hit_is_reported_and_does_not_fail_the_run(self, monkeypatch, tmp_path, capsys):
+        rc, out, _, _ = self._run(
+            monkeypatch, tmp_path, capsys, logs=_CAP_LOOP_LINE, cap_findings="1",
+        )
+        assert rc == 0, out
+        assert "::notice::writer output cap hit 1 time(s): draft_generation (3750/3750" in out
+        assert "::warning::" not in out
+
+    def test_recorders_that_disagree_warn_but_do_not_fail(self, monkeypatch, tmp_path, capsys):
+        rc, out, _, _ = self._run(
+            monkeypatch, tmp_path, capsys, logs=_CAP_LOOP_LINE, cap_findings="0",
+        )
+        assert rc == 0, out
+        assert "::warning::the writer logged 1 cap hit(s) but audit_log holds 0" in out
+
+    def test_a_run_without_a_cap_hit_says_so(self, monkeypatch, tmp_path, capsys):
+        rc, out, _, _ = self._run(monkeypatch, tmp_path, capsys)
+        assert rc == 0, out
+        assert "[quickstart-e2e] writer output cap: not hit" in out
+
     def test_a_failed_publish_fails_the_run_and_reads_nothing(self, monkeypatch, tmp_path, capsys):
         rc, out, verbs, fetched = self._run(monkeypatch, tmp_path, capsys, publish_rc=1)
         assert rc == 1
@@ -822,6 +848,78 @@ class TestMainOrchestration:
         assert rc == 1
         assert verbs == ["list", "qa", "approve"] and fetched == []
         assert "staged no post (Warning: Approved, but no post was staged" in out
+
+
+_CAP_LOOP_LINE = (
+    "2026-10-22 13:04:11 [warning  ] [two_pass_writer] draft_generation output stopped at "
+    "its output cap (3750 of 3750, finish_reason='stop') \u2014 cut a repetition loop "
+    "(2134 chars, 14102 -> 11968)"
+)
+
+
+class TestWriterCapHits:
+    """A passing run dumps no container logs, so this count is the only place a
+    run that went well says whether the stand-in model looped into the cap."""
+
+    def test_reads_a_trimmed_loop_and_a_kept_overrun(self):
+        log = "\n".join([
+            _CAP_LOOP_LINE,
+            "[INFO] qa.critic scored 72",
+            "\x1b[33m[two_pass_writer] two_pass_expand output stopped at its output cap "
+            "(3750 of 3750, finish_reason='stop') \u2014 no repetition loop found; kept the "
+            "capped text for the truncation rail to judge\x1b[0m",
+        ])
+        hits = DRIVER.writer_cap_hits(log)
+        assert [(h.phase, h.completion_tokens, h.max_tokens, h.loop_chars_cut) for h in hits] == [
+            ("draft_generation", "3750", "3750", 2134),
+            ("two_pass_expand", "3750", "3750", None),
+        ]
+
+    def test_nothing_to_find(self):
+        assert DRIVER.writer_cap_hits("[INFO] qa.critic scored 72") == []
+
+    def test_reads_the_line_the_writer_actually_logs(self, monkeypatch):
+        """The seam: render the writer's real WARNING (format and args together)
+        and parse it. A reworded log line fails here, not as a count stuck at 0."""
+        from poindexter.modules.content.atoms import two_pass_writer as two_pass
+        from poindexter.services.site_config import SiteConfig
+
+        logged: list[str] = []
+
+        class _Capture:
+            def warning(self, fmt, *args):
+                logged.append(fmt % args)
+
+        monkeypatch.setattr(two_pass, "logger", _Capture())
+        monkeypatch.setattr("poindexter.utils.findings.emit_finding", lambda **kw: None)
+        sc = SiteConfig(initial_config={})
+        looping = "Intro line that is fine.\n\n" + "This sentence keeps coming back again. " * 30
+        two_pass._settle_capped_output(
+            looping, {"capped": True, "max_tokens": 3750, "completion_tokens": 3750,
+                      "finish_reason": "stop"},
+            phase="draft_generation", task_id=None, site_config=sc,
+        )
+        two_pass._settle_capped_output(
+            "ran past its budget mid-sente", {"capped": True, "max_tokens": 9600,
+                                              "completion_tokens": 9600, "finish_reason": "length"},
+            phase="two_pass_expand", task_id=None, site_config=sc,
+        )
+        hits = DRIVER.writer_cap_hits("\n".join(logged))
+        assert [(h.phase, h.max_tokens, h.loop_chars_cut is None) for h in hits] == [
+            ("draft_generation", "3750", False), ("two_pass_expand", "9600", True),
+        ]
+
+    def test_the_finding_kind_is_the_one_the_writer_emits(self):
+        source = TWO_PASS_WRITER.read_text(encoding="utf-8")
+        assert f'kind="{DRIVER.WRITER_CAP_FINDING}"' in source
+
+    def test_report_agrees_disagrees_and_unknown(self):
+        hit = DRIVER.WriterCapHit("draft_generation", "3750", "3750", 10)
+        assert DRIVER.report_writer_cap([], 0) == ["[quickstart-e2e] writer output cap: not hit"]
+        agree = DRIVER.report_writer_cap([hit], 1)
+        assert len(agree) == 1 and agree[0].startswith("::notice::")
+        assert any(ln.startswith("::warning::") for ln in DRIVER.report_writer_cap([hit], 2))
+        assert any("could not count" in ln for ln in DRIVER.report_writer_cap([hit], None))
 
 
 class TestWorkflow:

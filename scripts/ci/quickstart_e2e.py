@@ -70,7 +70,13 @@ run too, and the post is then read back the way a reader would get it, over HTTP
 from the worker's ``/site/`` (the post's JSON, the index that lists it, the
 viewer page and its assets, the viewer's security headers); a storage failure
 in a pipeline container's log fails the run even when the reads pass. It also fails when a pipeline container logged Ollama refusing a model as not
-pulled — a model the README's pull list is missing. ``--timeout-min`` bounds the wait; the pipeline on a 2-4 core CPU with
+pulled — a model the README's pull list is missing. On every run, pass or
+fail, it also counts how often the writer stopped at its max_tokens cap: the
+writer's own WARNING lines in the pipeline logs, checked against the
+``writer_output_capped`` findings in ``audit_log`` (a ``::notice::`` with each
+hit, a ``::warning::`` if the two recorders disagree, never a failure). A passing
+run dumps no container logs, so this line is the only place a run that went well
+says whether the stand-in model looped into the cap. ``--timeout-min`` bounds the wait; the pipeline on a 2-4 core CPU with
 a sub-1B model takes a while, which is the point of running it weekly rather
 than per commit.
 
@@ -145,6 +151,18 @@ APPROVED_STATES = frozenset({"approved", "published"})
 SITE_URL = "http://localhost:8002/site"
 # What the storage layer logs when it cannot keep or find a published object.
 STORAGE_FAILURES = ("[STORAGE] No object-store credentials", "[STORAGE] Local write failed")
+# The two-pass writer's WARNING when a call stopped at its max_tokens cap
+# (atoms/two_pass_writer._settle_capped_output), and the finding it raises with
+# it. Counted on every run, pass or fail, because a passing run dumps no
+# container logs: without the count, whether the stand-in model looped into the
+# cap is invisible exactly when the run went well.
+_WRITER_CAP = re.compile(
+    r"\[two_pass_writer\] (\S+) output stopped at its output cap "
+    r"\((\w+) of (\w+), finish_reason=[^)]*\) \S+ "
+    r"(?:cut a repetition loop \((\d+) chars|(no repetition loop found))"
+)
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+WRITER_CAP_FINDING = "writer_output_capped"
 # `rejected_retry` is deliberately absent: it is a regeneration in flight (the
 # task is re-claimed and re-run), and a genuinely stuck one is the stall rule's.
 TERMINAL_FAILURES = frozenset(
@@ -771,6 +789,58 @@ def storage_failures(log_text: str) -> list[str]:
     return [ln.strip() for ln in log_text.splitlines() if any(f in ln for f in STORAGE_FAILURES)]
 
 
+@dataclass
+class WriterCapHit:
+    """One writer call that stopped at its max_tokens cap, as the writer logged it."""
+
+    phase: str
+    completion_tokens: str
+    max_tokens: str
+    loop_chars_cut: int | None  # None: no loop found, the text was kept as written
+
+    def describe(self) -> str:
+        what = (
+            f"loop cut, {self.loop_chars_cut} chars" if self.loop_chars_cut is not None
+            else "no loop, kept for the truncation rail"
+        )
+        return f"{self.phase} ({self.completion_tokens}/{self.max_tokens} tokens, {what})"
+
+
+def writer_cap_hits(log_text: str) -> list[WriterCapHit]:
+    """Every writer cap hit the pipeline containers logged, in order."""
+    hits = []
+    for m in _WRITER_CAP.finditer(_ANSI.sub("", log_text)):
+        phase, used, cap, chars, _no_loop = m.groups()
+        hits.append(WriterCapHit(phase, used, cap, int(chars) if chars else None))
+    return hits
+
+
+def report_writer_cap(hits: list[WriterCapHit], findings: int | None) -> list[str]:
+    """Lines for the run log: how often the writer hit its cap, and whether the
+    log and ``audit_log`` agree on it.
+
+    Two independent recorders of the same event: the WARNING always lands in the
+    container log, the finding only if the flow's audit logger was up. A gap
+    between them is a dropped finding, which is worth a warning; a cap hit is
+    not a failure (the writer handles it), so neither line fails the run.
+    """
+    if not hits:
+        lines = ["[quickstart-e2e] writer output cap: not hit"]
+    else:
+        lines = [
+            f"::notice::writer output cap hit {len(hits)} time(s): "
+            + "; ".join(h.describe() for h in hits)
+        ]
+    if findings is None:
+        lines.append(f"[quickstart-e2e] could not count {WRITER_CAP_FINDING} findings in audit_log")
+    elif findings != len(hits):
+        lines.append(
+            f"::warning::the writer logged {len(hits)} cap hit(s) but audit_log holds "
+            f"{findings} {WRITER_CAP_FINDING} finding(s); one recorder missed an event"
+        )
+    return lines
+
+
 def optional_models(readme: str) -> list[str]:
     """Tags in the README's "Optional" model table (the ones NOT in the pull line).
 
@@ -955,6 +1025,16 @@ def main(argv: list[str] | None = None) -> int:
             f"{[t for t in refused if t in optional]} on a fallback path — documented as "
             "optional, so not a failure"
         )
+
+    try:
+        capped_findings: int | None = int(_psql(
+            "SELECT count(*) FROM audit_log WHERE event_type = 'finding' "
+            "AND details->>'kind' = :'kind'", kind=WRITER_CAP_FINDING,
+        ) or 0)
+    except (RuntimeError, ValueError):
+        capped_findings = None
+    for line in report_writer_cap(writer_cap_hits(pipeline_logs), capped_findings):
+        print(line)
 
     try:
         usage = _psql(
