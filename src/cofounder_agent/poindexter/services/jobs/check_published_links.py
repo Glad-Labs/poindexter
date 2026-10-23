@@ -127,6 +127,11 @@ class CheckPublishedLinksJob:
             _parse_status_codes(skip_csv) or _DEFAULT_ACCESS_RESTRICTED_CODES
         )
 
+        from poindexter.services.net_transient import (
+            is_transient_network_error,
+            transient_retry_transport,
+        )
+
         broken: list[dict[str, Any]] = []
         edge_challenged = 0
         access_restricted = 0
@@ -135,7 +140,27 @@ class CheckPublishedLinksJob:
             timeout=httpx.Timeout(10.0, connect=3.0),
             follow_redirects=True,
             headers={"User-Agent": user_agent},
+            transport=transient_retry_transport(int(config.get("transient_retries", 3))),
         ) as client:
+            # Is OUR network up? Every morning 2026-10-20..23 this job ran in
+            # the first minute after the night-sleep wake, before DNS was back,
+            # and filed a live Wikipedia page as "unreachable". If the site
+            # itself can't be reached, skip the run; the next one checks.
+            site_url = (sc.get("site_url", "") if sc is not None else "").strip()
+            if site_url.startswith(("http://", "https://")):
+                try:
+                    await client.head(site_url, timeout=8)
+                except Exception as exc:
+                    if is_transient_network_error(exc):
+                        logger.warning(
+                            "CheckPublishedLinksJob: network not ready (%s); skipping this run",
+                            describe_exception(exc),
+                        )
+                        return JobResult(
+                            ok=True,
+                            detail=f"skipped: network not ready ({describe_exception(exc)})",
+                            changes_made=0,
+                        )
             for row in rows:
                 # The same URL as link text and target is one link, checked once.
                 urls = list(dict.fromkeys(_URL_PATTERN.findall(row["content"] or "")))
@@ -167,14 +192,16 @@ class CheckPublishedLinksJob:
                                 "url": url,
                                 "status": resp.status_code,
                             })
-                    except Exception:
-                        # HEAD/GET can fail for many benign reasons (server
-                        # hostile to the method, TLS hiccup). Still record it so
-                        # the finding is actionable.
+                    except Exception as exc:
+                        # The network was confirmed up before the loop, so a
+                        # link that can't be reached is broken (a dead domain
+                        # fails to resolve too). HEAD/GET can fail for many benign reasons (server
+                        # hostile to the method, TLS hiccup). Still record it,
+                        # naming the error, so the finding is actionable.
                         broken.append({
                             "post": (row["title"] or "")[:40],
                             "url": url,
-                            "status": "unreachable",
+                            "status": f"unreachable ({describe_exception(exc)})",
                         })
 
         if broken and file_issue:

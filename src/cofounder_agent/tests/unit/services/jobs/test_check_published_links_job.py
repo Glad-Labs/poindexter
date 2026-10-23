@@ -412,3 +412,45 @@ def test_a_markdown_link_whose_text_is_the_url_is_one_clean_url():
     text = "*   **Client:** [https://github.com/prometheus/client_python](https://github.com/prometheus/client_python)"
     found = _URL_PATTERN.findall(text)
     assert set(found) == {"https://github.com/prometheus/client_python"}
+
+
+class TestNetworkNotReady:
+    """2026-10-20..23: the run right after the night-sleep wake filed a live
+    Wikipedia page as "unreachable" because DNS wasn't back yet."""
+
+    @pytest.mark.asyncio
+    async def test_no_link_is_judged_when_our_own_site_is_unreachable(self):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "see https://en.wikipedia.org/wiki/X"},
+        ])
+        client = _patched_httpx_client({
+            "https://www.gladlabs.io": httpx.ConnectError("Temporary failure in name resolution"),
+            "https://en.wikipedia.org/wiki/X": httpx.ConnectError("Temporary failure in name resolution"),
+        })
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": {"site_url": "https://www.gladlabs.io",
+                                              "site_domain": "gladlabs.io"}.get(k, d)
+        with patch("poindexter.services.jobs.check_published_links.httpx.AsyncClient", return_value=client), \
+             patch("poindexter.services.jobs.check_published_links.emit_finding") as finds:
+            result = await CheckPublishedLinksJob().run(pool, {"_site_config": sc})
+        assert result.ok is True and result.detail.startswith("skipped: network not ready")
+        finds.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_dead_domain_is_still_broken_when_the_network_is_up(self):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "see https://gone.example/x"},
+        ])
+        client = _patched_httpx_client({
+            "https://www.gladlabs.io": 200,
+            "https://gone.example/x": httpx.ConnectError("Name or service not known"),
+        })
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": {"site_url": "https://www.gladlabs.io",
+                                              "site_domain": "gladlabs.io"}.get(k, d)
+        with patch("poindexter.services.jobs.check_published_links.httpx.AsyncClient", return_value=client), \
+             patch("poindexter.services.jobs.check_published_links.emit_finding") as finds:
+            result = await CheckPublishedLinksJob().run(pool, {"_site_config": sc})
+        assert result.changes_made == 1
+        body = finds.call_args.kwargs["body"]
+        assert "gone.example" in body and "ConnectError" in body

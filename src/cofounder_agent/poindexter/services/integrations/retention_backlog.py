@@ -50,6 +50,7 @@ recreate the exact blind spot this module exists to close.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -149,7 +150,28 @@ def build_backlog_query(
     builder = _BACKLOG_REGISTRY.get(handler_name)
     if builder is None:
         return None
-    return builder(row)
+    return builder(_with_decoded_config(row))
+
+
+def _with_decoded_config(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    """``row`` with its JSONB ``config`` as a dict.
+
+    The probe reads policy rows straight from asyncpg, where JSONB arrives as
+    text. Builders read ``row.get("config")`` as a dict and treated the text
+    as empty: every ``embeddings_orphan_prune`` measurement failed with
+    "source_table must be one of [...]" for a valid source_table, and any
+    builder's config-driven predicate silently fell back to its defaults
+    (2026-10-23). The run path decodes before calling a handler; this is the
+    backlog path's equivalent.
+    """
+    config = row.get("config")
+    if not isinstance(config, str):
+        return row
+    try:
+        decoded = json.loads(config)
+    except ValueError:
+        decoded = {}
+    return {**row, "config": decoded if isinstance(decoded, dict) else {}}
 
 
 async def measure_backlog(pool: Any, row: Mapping[str, Any]) -> BacklogResult:

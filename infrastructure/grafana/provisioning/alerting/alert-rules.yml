@@ -639,7 +639,10 @@ groups:
                     type: last
 
       # 11. BRAIN HEARTBEAT STALE — brain daemon hasn't logged a decision
-      #     in 15 min
+      #     in 15 min. Counted from the later of the last decision and the
+      #     last wake from the night sleep (host_resume.resumed_at): the box
+      #     is suspended 01:00-08:00, and until 2026-10-23 this paged critical
+      #     at ~08:05 ("no decisions in 429 minutes" = the sleep itself).
       - uid: brain-heartbeat-stale
         title: Brain Daemon Stale
         condition: C
@@ -659,7 +662,7 @@ groups:
               from: 3600
               to: 0
             model:
-              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - MAX(created_at))/60 as minutes_since FROM brain_decisions"
+              rawSql: "SELECT EXTRACT(EPOCH FROM NOW() - GREATEST((SELECT MAX(created_at) FROM brain_decisions), COALESCE((SELECT MAX((details->>'resumed_at')::timestamptz) FROM audit_log WHERE event_type = 'host_resume' AND timestamp > NOW() - INTERVAL '1 day'), '-infinity'::timestamptz)))/60 as minutes_since"
               format: table
               editorMode: code
           - refId: B

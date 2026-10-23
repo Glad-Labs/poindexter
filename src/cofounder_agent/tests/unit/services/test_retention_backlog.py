@@ -516,3 +516,15 @@ def test_ttl_prune_backlog_without_a_run_falls_back_to_now():
     assert q is not None
     assert "finished_at < now() - make_interval(days => $1)" in q.sql
     assert q.params == (2,)
+
+
+def test_jsonb_config_read_as_text_is_decoded_for_the_builder():
+    """asyncpg hands the probe JSONB as text. Read as {}, every
+    embeddings_orphan_prune measurement failed with "source_table must be one
+    of [...]" for a valid source_table (2026-10-23)."""
+    import poindexter.services.integrations.handlers.retention_embeddings_orphan_prune  # noqa: F401
+
+    row = {"name": "embeddings.orphan_prune.posts", "handler_name": "embeddings_orphan_prune",
+           "config": '{"batch_size": 1000, "source_table": "posts"}'}
+    query = build_backlog_query("embeddings_orphan_prune", row)
+    assert query is not None and "source_table = 'posts'" in query.sql

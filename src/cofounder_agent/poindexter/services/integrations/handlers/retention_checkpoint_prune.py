@@ -149,17 +149,25 @@ async def checkpoint_prune(
             )
             return {"deleted": 0, "skipped": "checkpoints table not present"}
 
-        # Find terminal-status task_ids whose updated_at is older than ttl_days.
+        # Terminal-status tasks older than ttl_days that STILL HAVE checkpoints.
+        # Selecting tasks without that join took the first ``batch_size`` of
+        # 2,125 eligible tasks on every run, most of them already pruned, so
+        # 214 threads were never reached (retention_backlog, 2026-10-20..23).
+        # Same concatenation join as the backlog query below.
         task_rows = await conn.fetch(
             """
-            SELECT task_id FROM pipeline_tasks
-             WHERE status = ANY($1::text[])
-               AND updated_at < now() - make_interval(days => $2)
+            SELECT DISTINCT pt.task_id
+              FROM checkpoints c
+              CROSS JOIN LATERAL unnest($4::text[]) AS p(prefix)
+              JOIN pipeline_tasks pt ON c.thread_id = p.prefix || pt.task_id
+             WHERE pt.status = ANY($1::text[])
+               AND pt.updated_at < now() - make_interval(days => $2)
              LIMIT $3
             """,
             terminal_statuses,
             ttl_days,
             batch_size,
+            thread_prefixes,
         )
 
         if not task_rows:

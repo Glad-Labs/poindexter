@@ -2067,7 +2067,11 @@ DEFAULTS: dict[str, str] = {
     'gpu_sidecar_connect_retries': '5',
 
     'pipeline_idle_probe_enabled': 'true',
-    'pipeline_idle_max_hours': '12',
+    # Longer than the content cadence: topic_auto_resolve picks once a day
+    # (09:00), so a new task arrives about every 24 h by design. At 12 the
+    # probe paged hourly every evening until the next pick (28 pages in the
+    # week to 2026-10-23). 30 = one day plus a 6 h margin.
+    'pipeline_idle_max_hours': '30',
 
     # ----- Model-eval loop (champion–challenger; Plan 1 reranker slice) -----
     # Relative improvement a challenger must beat the champion by to be a
@@ -5618,11 +5622,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # Prompt-catalog drift. SyncPromptCatalogToLangfuseJob emits
     # prompt_catalog_drift (dot-free kind — same 3-segment parser note as
     # above) at severity='warn' for orphaned Langfuse names (key gone from the
-    # SKILL.md catalog) and for hand-edited mirror versions it replaced. The
-    # 1440-minute cooldown re-pages at most once per drift-day.
+    # SKILL.md catalog) and for hand-edited mirror versions it replaced.
+    # Weekly: an orphan stays until someone deletes it in Langfuse, so a
+    # daily cooldown repeated the same 25 names every morning.
     'findings.prompt_catalog_drift.delivery': 'discord',
     'findings.prompt_catalog_drift.fallback': 'log_only',
-    'findings.prompt_catalog_drift.cooldown_minutes': '1440',
+    'findings.prompt_catalog_drift.cooldown_minutes': '10080',
     'findings.prompt_catalog_drift.min_severity': 'warn',
     # Stale-sweep + GPU-lock visibility (poindexter#807). NOTE: kinds without
     # a policy already route loud — findings_alert_router deliberately ignores

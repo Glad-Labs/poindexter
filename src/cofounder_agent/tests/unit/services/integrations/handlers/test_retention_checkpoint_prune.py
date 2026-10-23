@@ -257,3 +257,26 @@ class TestConfigOverrides:
         # Mock returns all rows regardless of LIMIT, so just confirm the
         # handler runs without error with a non-default batch_size.
         assert "tasks_processed" in result
+
+
+class TestSelectsOnlyTasksWithCheckpoints:
+    """2026-10-23: the task query took the first batch_size of 2,125 finished
+    tasks with no regard to whether any checkpoint was left, so every run
+    re-picked already-pruned tasks and 214 threads were never reached."""
+
+    async def test_the_task_query_joins_checkpoints_and_passes_the_prefixes(self):
+        seen: list[tuple[str, tuple[Any, ...]]] = []
+
+        class _Conn(_FakeConn):
+            async def fetch(self, query: str, *args: Any) -> list[Any]:
+                seen.append((query, args))
+                return []
+
+        pool = _FakePool(_Conn())
+        await checkpoint_prune(
+            None, site_config=None, row=_row(config={"thread_prefixes": ["", "media-"]}), pool=pool,
+        )
+        query, args = seen[0]
+        assert "FROM checkpoints" in query
+        assert "p.prefix || pt.task_id" in query
+        assert args[3] == ["", "media-"]
