@@ -650,7 +650,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/poindexter/s
 
 | File | Summary |
 | --- | --- |
-| `__init__.py` | Shot-list-driven video composition (Glad-Labs/glad-labs-stack#649). |
+| `__init__.py` | Shot-list-driven video composition (Glad-Labs/poindexter#649). |
 | `brand_endcard.py` | On-theme CTA end-card renderer (2026-08-26). |
 | `clip_cache.py` | Per-render shot clip cache: redo one shot without re-rendering the rest. |
 | `shot_list_renderer.py` | ShotListRenderer — assemble a video from a VideoShotList. |
