@@ -235,3 +235,16 @@ def test_reset_overlap_streak_clears_the_anchor():
     assert "render_job" not in sched._overlap_streak_started_at
     # Idempotent for a job that never overlapped.
     sched._reset_overlap_streak("never_overlapped")
+
+
+@pytest.mark.unit
+def test_a_first_skip_page_does_not_claim_the_threshold_was_crossed():
+    """2026-10-20 and 10-23: an ordinary job paged "true for 0 minutes
+    (>= scheduler_overlap_alert_after_minutes=60)" — a threshold it never used."""
+    sched = _scheduler(overlap_after_minutes=60)
+    with patch("poindexter.utils.findings.emit_finding") as emit:
+        sched._on_job_max_instances(SimpleNamespace(job_id="sync_pro_subscriptions"))
+    kwargs = emit.call_args.kwargs
+    assert kwargs["severity"] == "warn"
+    assert ">=" not in kwargs["body"]
+    assert "even one skip" in kwargs["body"]

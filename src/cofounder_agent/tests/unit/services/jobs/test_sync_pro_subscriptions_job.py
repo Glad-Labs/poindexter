@@ -84,3 +84,77 @@ async def test_partial_errors_flip_ok_false(monkeypatch, findings):
 
     assert result.ok is False
     assert result.metrics["errors"] == 1
+
+
+# ---- A failed poll is deferred, not paged (2026-10-23) ----------------------
+
+import httpx  # noqa: E402
+
+
+class _Pool:
+    """Answers the last-good-sync query with ``minutes`` (None = no record)."""
+
+    def __init__(self, minutes):
+        self.minutes = minutes
+
+    async def fetchval(self, sql, *args):
+        assert "job_run" in sql
+        return self.minutes
+
+
+def _status_error(code):
+    req = httpx.Request("GET", "https://api.lemonsqueezy.com/v1/subscriptions")
+    return httpx.HTTPStatusError(f"{code}", request=req, response=httpx.Response(code, request=req))
+
+
+def _enabled():
+    return {"_site_config": SiteConfig(initial_config={"pro_delivery_enabled": "true"})}
+
+
+@pytest.mark.parametrize("exc", [
+    _status_error(503),
+    httpx.ConnectTimeout("timed out"),
+    httpx.ConnectError("All connection attempts failed"),
+    httpx.ReadTimeout(""),
+])
+async def test_a_lemon_squeezy_blip_is_deferred_without_a_page(monkeypatch, findings, exc):
+    """Oct 4, 18 and 22: one failed poll paged twice; the next poll succeeded."""
+    async def _blip(pool, site_config, **kw):
+        raise exc
+
+    monkeypatch.setattr(pro_delivery, "run_sync", _blip)
+    result = await SyncProSubscriptionsJob().run(_Pool(5.0), _enabled())
+    assert result.ok is True  # no scheduler job_failure
+    assert result.detail.startswith("deferred")
+    assert findings == []
+
+
+async def test_an_outage_past_the_window_pages_once(monkeypatch, findings):
+    async def _down(pool, site_config, **kw):
+        raise _status_error(503)
+
+    monkeypatch.setattr(pro_delivery, "run_sync", _down)
+    result = await SyncProSubscriptionsJob().run(_Pool(75.0), _enabled())
+    assert result.ok is True
+    assert [f["dedup_key"] for f in findings] == ["pro_delivery_sync_stalled"]
+    assert "75 minutes" in findings[0]["body"]
+
+
+async def test_no_good_sync_on_record_pages(monkeypatch, findings):
+    async def _down(pool, site_config, **kw):
+        raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(pro_delivery, "run_sync", _down)
+    await SyncProSubscriptionsJob().run(_Pool(None), _enabled())
+    assert len(findings) == 1
+
+
+async def test_a_rejected_key_still_pages_at_once(monkeypatch, findings):
+    """A 401 is not something the next poll fixes."""
+    async def _denied(pool, site_config, **kw):
+        raise _status_error(401)
+
+    monkeypatch.setattr(pro_delivery, "run_sync", _denied)
+    result = await SyncProSubscriptionsJob().run(_Pool(5.0), _enabled())
+    assert result.ok is False
+    assert [f["dedup_key"] for f in findings] == ["pro_delivery_sync_failed"]

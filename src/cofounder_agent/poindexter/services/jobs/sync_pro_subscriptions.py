@@ -14,6 +14,18 @@ No-op until ``pro_delivery_enabled=true``. When enabled but unconfigured
 (missing repo / PAT / LS key) it fails LOUD every tick — an operator who
 flipped the switch believes delivery is running, so silence would be the
 worst outcome (feedback_no_silent_defaults).
+
+**A failed poll is deferred, not paged (2026-10-23).** Each Lemon Squeezy
+blip (a connect timeout, a connection refused, a 503) paged twice, once as
+``pro_delivery_error`` and once as the scheduler's ``job_failure``, and the
+next poll five minutes later succeeded: three such pairs in three weeks, with
+no subscriber affected, because a poll reconciles whatever it missed. A
+network or provider-side failure now defers to the next tick. It pages once,
+as ``pro_delivery_error``, only when no sync has succeeded for
+``pro_delivery_outage_alert_minutes`` (60): a buyer waiting that long for
+their invite is the real fault. The last good sync is the scheduler's own
+``job_run`` record for this job. A configuration or authorization error still
+pages on the first failure.
 """
 
 from __future__ import annotations
@@ -27,6 +39,37 @@ from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+_OUTAGE_ALERT_MINUTES_KEY = "pro_delivery_outage_alert_minutes"
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """A failure the next poll can recover from: the network, or the provider
+    being down. A 4xx (bad key, revoked token) is not."""
+    from poindexter.services.net_transient import is_transient_network_error
+
+    if is_transient_network_error(exc):
+        return True
+    if type(exc).__name__ in ("ReadTimeout", "WriteTimeout", "PoolTimeout", "RemoteProtocolError"):
+        return True
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return isinstance(status, int) and status >= 500
+
+
+async def _minutes_since_last_good_sync(pool: Any) -> float | None:
+    """From the scheduler's job_run records; None if there is no good sync on
+    record (or the read fails), which is treated as an outage."""
+    try:
+        value = await pool.fetchval(
+            "SELECT EXTRACT(EPOCH FROM now() - max(timestamp)) / 60 FROM audit_log "
+            "WHERE event_type = 'job_run' AND source = 'sync_pro_subscriptions' "
+            "AND details->>'ok' = 'true'"
+        )
+    except Exception as exc:
+        logger.warning("[SyncProSubscriptionsJob] last good sync unreadable: %s", describe_exception(exc))
+        return None
+    return float(value) if value is not None else None
 
 
 class SyncProSubscriptionsJob:
@@ -66,6 +109,8 @@ class SyncProSubscriptionsJob:
             )
             return JobResult(ok=False, detail=describe_exception(exc))
         except Exception as exc:
+            if _is_transient(exc):
+                return await self._defer(pool, site_config, exc)
             logger.error(
                 "[SyncProSubscriptionsJob] sync pass failed: %s", describe_exception(exc), exc_info=True
             )
@@ -94,3 +139,33 @@ class SyncProSubscriptionsJob:
             changes_made=changes,
             metrics=outcome.as_metrics(),
         )
+
+    async def _defer(self, pool: Any, site_config: Any, exc: BaseException) -> JobResult:
+        """A network or provider-side failure: try again next tick, and page
+        only when syncing has been down for longer than the outage window."""
+        try:
+            limit = max(1, int(site_config.get(_OUTAGE_ALERT_MINUTES_KEY, "60") or 60))
+        except (TypeError, ValueError):
+            limit = 60
+        since = await _minutes_since_last_good_sync(pool)
+        reason = describe_exception(exc)
+        if since is not None and since < limit:
+            logger.warning(
+                "[SyncProSubscriptionsJob] Lemon Squeezy unavailable (%s); last good sync "
+                "%.0f min ago, retrying next tick", reason, since,
+            )
+            return JobResult(ok=True, detail=f"deferred: {reason}", changes_made=0)
+        when = "no successful sync on record" if since is None else f"last good sync {since:.0f} minutes ago"
+        emit_finding(
+            source="pro_delivery",
+            kind="pro_delivery_error",
+            title="Pro delivery can't reach Lemon Squeezy",
+            body=(
+                f"Every poll is failing ({when}; alert after {limit} min). New Pro "
+                f"buyers won't get their GitHub invite until it recovers. Latest "
+                f"error: {reason}"
+            ),
+            severity="warn",
+            dedup_key="pro_delivery_sync_stalled",
+        )
+        return JobResult(ok=True, detail=f"deferred, outage alerted: {reason}", changes_made=0)

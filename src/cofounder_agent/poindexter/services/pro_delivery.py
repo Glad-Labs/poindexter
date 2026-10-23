@@ -326,7 +326,14 @@ class ProDeliveryService:
     # -- HTTP helpers ------------------------------------------------------
 
     def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(transport=self._transport, timeout=30.0)
+        # Connect-level retries ride out a resolver or network blip (only the
+        # connection is retried; a request body is never sent twice). Tests
+        # inject their own transport.
+        if self._transport is not None:
+            return httpx.AsyncClient(transport=self._transport, timeout=30.0)
+        from poindexter.services.net_transient import transient_retry_transport
+
+        return httpx.AsyncClient(transport=transient_retry_transport(3), timeout=30.0)
 
     @staticmethod
     def _ls_headers(cfg: _Config) -> dict[str, str]:

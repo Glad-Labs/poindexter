@@ -750,7 +750,7 @@ class PluginScheduler:
             # tap wedge SLOWER to surface, not faster.
             expected = job_name in self._overlap_expected_jobs
             wedged = (not expected) or blocked_minutes >= threshold
-            if wedged:
+            if wedged and expected:
                 body = (
                     f"A scheduled fire of {job_name!r} was skipped because the "
                     f"previous run had not finished (max_instances=1), and that "
@@ -759,6 +759,19 @@ class PluginScheduler:
                     f"job that cannot start for that long is wedged on a hung "
                     f"downstream call rather than merely slow — check the "
                     f"in-flight run before the backlog grows."
+                )
+            elif wedged:
+                # A job that doesn't declare overlap_expected pages on its first
+                # skip; the threshold never applied. The old text claimed
+                # "0 minutes (>= ...=60)" for it (seen 2026-10-20 and 10-23,
+                # both a run left in flight across the night sleep).
+                body = (
+                    f"A scheduled fire of {job_name!r} was skipped because the "
+                    f"previous run had not finished (max_instances=1). This job "
+                    f"runs faster than its interval, so even one skip means a "
+                    f"run is taking far longer than usual (blocked "
+                    f"{blocked_minutes:.0f} min so far) — check the in-flight "
+                    f"run for a hung downstream call."
                 )
             else:
                 body = (

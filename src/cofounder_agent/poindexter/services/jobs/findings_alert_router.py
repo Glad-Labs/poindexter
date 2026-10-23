@@ -600,7 +600,10 @@ async def _fetch_unrouted_findings(pool: Any, watermark: int) -> list[dict[str, 
 _RESUME_QUIET_MINUTES_KEY = "host_sleep_resume_quiet_minutes"
 _RESUME_QUIET_KINDS_KEY = "host_sleep_resume_quiet_kinds"
 _RESUME_QUIET_DEFAULT_KINDS = (
-    "job_failure,sentry_relay_drain_failed,affiliate_redirect_unhealthy,pinned_endpoint_cold"
+    "job_failure,sentry_relay_drain_failed,affiliate_redirect_unhealthy,pinned_endpoint_cold,"
+    # A run left in flight across the sleep is still finishing at the wake,
+    # so the overdue fire is skipped once (2026-10-20 and 10-23).
+    "job_overlap_skipped"
 )
 # Jobs fire the instant the box unfreezes; night_sleep records resumed_at a
 # few seconds later, so the window opens slightly before it.

@@ -2578,7 +2578,7 @@ DEFAULTS: dict[str, str] = {
     # and every overdue job fires at once. Non-critical findings of these kinds
     # emitted within the window are recorded, not routed.
     'host_sleep_resume_quiet_minutes': '10',
-    'host_sleep_resume_quiet_kinds': 'job_failure,sentry_relay_drain_failed,affiliate_redirect_unhealthy,pinned_endpoint_cold',
+    'host_sleep_resume_quiet_kinds': 'job_failure,sentry_relay_drain_failed,affiliate_redirect_unhealthy,pinned_endpoint_cold,job_overlap_skipped',
     # After a wake, switch the desktop session's console away and back so the
     # compositor retakes the displays (COSMIC can fail to on resume).
     'host_sleep_resume_vt_cycle': 'true',
@@ -6761,6 +6761,9 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # "owner/name" of the private deliverable repo buyers are invited to.
     'pro_delivery_github_repo': '',
     'pro_delivery_github_permission': 'pull',
+    # A Lemon Squeezy blip defers to the next 5-minute poll; page only when no
+    # sync has succeeded for this long (jobs/sync_pro_subscriptions.py).
+    'pro_delivery_outage_alert_minutes': '60',
     # Optional Lemon Squeezy filters; empty = every subscription the API
     # key can see counts as Pro.
     'pro_delivery_ls_store_id': '',
@@ -8489,6 +8492,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'preferred_ollama_model': {'value_type': 'model'},
     'pro_delivery_enabled': {'owner': 'sync_pro_subscriptions', 'value_type': 'boolean'},
     'pro_delivery_github_permission': {'owner': 'sync_pro_subscriptions'},
+    'pro_delivery_outage_alert_minutes': {'owner': 'sync_pro_subscriptions', 'value_type': 'integer'},
     'pro_delivery_github_repo': {'owner': 'sync_pro_subscriptions'},
     'pro_delivery_ls_product_id': {'owner': 'sync_pro_subscriptions'},
     'pro_delivery_ls_store_id': {'owner': 'sync_pro_subscriptions'},
