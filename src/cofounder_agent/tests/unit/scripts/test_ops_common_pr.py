@@ -47,7 +47,7 @@ def calls(monkeypatch):
         if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
             return _done(0, stdout=f"{BRANCH}\n")
         if cmd[0] == "gh":
-            return _done(0, stdout="https://github.com/Glad-Labs/glad-labs-stack/pull/9999\n")
+            return _done(0, stdout="https://github.com/Glad-Labs/poindexter/pull/9999\n")
         return _done(0)
 
     monkeypatch.setattr(c, "run", fake_run)
@@ -64,7 +64,7 @@ def notify(monkeypatch):
 def _open_pr(**overrides):
     kwargs = dict(
         cwd=WT,
-        repo="Glad-Labs/glad-labs-stack",
+        repo="Glad-Labs/poindexter",
         paths=["CLAUDE.md"],
         message="docs(CLAUDE.md): sync DB-derived counts (ops)",
         title="docs(CLAUDE.md): sync DB-derived counts (ops)",
@@ -95,7 +95,7 @@ class TestRunsAgainstTheWorktree:
         assert [cwd for cmd, cwd in calls if cmd[0] == "git"] == [WT] * 4  # rev-parse, add, commit, push
 
     def test_returns_the_pr_url(self, calls, notify):
-        assert _open_pr() == "https://github.com/Glad-Labs/glad-labs-stack/pull/9999"
+        assert _open_pr() == "https://github.com/Glad-Labs/poindexter/pull/9999"
 
 
 class TestRefusesToActOffASessionBranch:
