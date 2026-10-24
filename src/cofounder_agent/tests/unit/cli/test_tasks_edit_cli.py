@@ -312,3 +312,21 @@ def test_retitle_posts_payload(runner):
         )
     assert result.exit_code == 0, result.output
     post.assert_called_once_with("/api/tasks/abc12345/retitle", {"title": "A Parent Built a MUD"})
+
+
+def test_set_excerpt_posts_payload(runner):
+    from poindexter.cli import tasks as tasks_mod
+
+    with patch.object(
+        tasks_mod, "_post_edit",
+        return_value={"detail": "excerpt set", "warnings": ["staged"]},
+    ) as post:
+        result = runner.invoke(
+            tasks_mod.tasks_group, ["set-excerpt", "abc12345", "Our box pulled 365 W."],
+        )
+    assert result.exit_code == 0, result.output
+    post.assert_called_once_with(
+        "/api/tasks/abc12345/set-excerpt", {"excerpt": "Our box pulled 365 W."},
+    )
+    assert "excerpt set" in result.output
+    assert "⚠ staged" in result.output

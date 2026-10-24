@@ -20,6 +20,7 @@ the REST API are parity wrappers over the same routes.
 > | `edit-body`, `add-image`, `--which inline:N`  | `pipeline_versions.content`                                                                                                                                                                | Reports success, changes **nothing the post shows** — unapprove first (`poindexter tasks unapprove`) to edit an approved post |
 > | `--which featured` (replace / regen / remove) | `pipeline_versions.featured_image_url`, then the task's `posts` row whenever one exists (`featured_image_url` **and** `cover_image_url`), then a static-export rebuild if that row is live | **Works** — see [Featured-image edits after approval](#featured-image-edits-after-approval)                                   |
 > | `retitle`                                     | `pipeline_versions.title` + live social-draft URLs                                                                                                                                         | **Refused** — `awaiting_approval` only                                                                                        |
+> | `set-excerpt`                                 | `pipeline_versions.excerpt` (through the task update path)                                                                                                                                 | Reports success with a `⚠` naming the `posts` row — the post keeps the excerpt it was staged with                             |
 > | `rebuild-images`                              | enqueues an `image_rebuild` task                                                                                                                                                           | **Refused** — hard-fails unless the task is `awaiting_approval`                                                               |
 >
 > Editing an already-published post's **body** is still out of scope — that needs
@@ -122,6 +123,7 @@ poindexter tasks list                         # find the draft
 poindexter tasks get <task_id>                # review it
 poindexter tasks edit-body <task_id> ...      # fix the text
 poindexter tasks retitle <task_id> --title …  # fix the title (re-slugs + rewrites promo URLs)
+poindexter tasks set-excerpt <task_id> "…"    # fix the excerpt by hand
 poindexter tasks replace-image <task_id> ...  # swap an image
 poindexter tasks approve <task_id>            # approve it (stages the post; publishing is a separate step)
 ```
@@ -145,6 +147,44 @@ poindexter tasks edit-body <task_id>
 - After every body edit the anti-hallucination **validator re-runs, warn-only** —
   warnings print (`⚠ …`) but the edit still applies. You are the human approval
   gate; the validator advises, it does not block.
+- **The excerpt follows the edit when the pipeline wrote it.** Finalize lifts
+  the excerpt from the opening prose (`services/excerpt_generator.py`, run by
+  `content.compile_meta`), and publish prefers it over the SEO description for
+  listings, RSS and social cards. If the stored excerpt is still exactly what
+  that generator produces from the **pre-edit** body, it is re-derived from the
+  new body with the same generator, and the result line ends
+  `excerpt re-derived from the new opening`. If it isn't (you set it with
+  `set-excerpt`, or by any other hand), it is left alone, with a `⚠` when the
+  edit changed the opening it was written against. A hand-set excerpt is never
+  overwritten.
+- **Live social drafts are named, not rewritten.** `social.generate_drafts`
+  wrote the promo copy from the body at finalize, so after an edit it can quote
+  text you removed. Each body edit lists the task's pending / scheduled / failed
+  drafts by id in a `⚠` line; check them with
+  `poindexter social list --task-id <task_id>` and fix with `social edit` or
+  `social reject`. Regenerating promo copy stays your call.
+
+Both were earned on 2026-10-23. Two drafts had their openings rewritten
+(a $2.40 → $2.50 correction, a new hook) and both still carried the old opening
+as the excerpt, and a promo claimed a model's weights couldn't be downloaded
+after the post was corrected to say they shipped.
+
+### `tasks set-excerpt`
+
+```bash
+poindexter tasks set-excerpt <task_id> "Our workstation pulled 365 W for 18 days. Here is what that cost."
+```
+
+Sets the excerpt by hand (`pipeline_versions.excerpt`, written through the same
+task update path as `PATCH /api/tasks/{id}/content`). Whitespace is collapsed and
+a blank value is refused. It warns, without refusing, when:
+
+- the excerpt repeats the title — publish drops a title-echo excerpt, so the post
+  would ship with none;
+- the task already has a `posts` row — the post keeps the excerpt it was staged
+  with. For an approved task: `tasks unapprove`, set it, re-approve.
+
+A hand-set excerpt survives later `edit-body` runs (see above).
 
 ### `tasks retitle`
 
@@ -323,12 +363,14 @@ The same edits from the bot / Claude surface:
 `task_id`-keyed REST routes (OAuth2 client-creds, like the rest of `/api/tasks`):
 
 - `POST /api/tasks/{task_id}/edit-body` — body `{new_content}` **or** `{find, replace}`
+- `POST /api/tasks/{task_id}/retitle` — body `{title}`
+- `POST /api/tasks/{task_id}/set-excerpt` — body `{excerpt}`
 - `POST /api/tasks/{task_id}/replace-image` — body `{which, url}`
 - `POST /api/tasks/{task_id}/regen-image` — body `{which, prompt}`
 - `POST /api/tasks/{task_id}/remove-image` — body `{which}`
 - `POST /api/tasks/{task_id}/add-image` — body `{after?, section?, prompt?}`
 
-These five each return `{ok, field, detail, warnings, new_url}`.
+These seven each return `{ok, field, detail, warnings, new_url}`.
 
 - `POST /api/tasks/{task_id}/rebuild-images` — body `{allow_stock}` — enqueues
   the `image_rebuild` pipeline task and returns immediately with
@@ -376,6 +418,8 @@ Every edit writes an `audit_log` row so the change is traceable:
 | Action                                          | `event_type`          |
 | ----------------------------------------------- | --------------------- |
 | body edit                                       | `post_edit_body`      |
+| retitle                                         | `post_edit_title`     |
+| excerpt set by hand                             | `post_edit_excerpt`   |
 | image URL swap                                  | `post_image_replace`  |
 | image chosen at approval (`featured_image_url`) | `post_image_replace`  |
 | image regenerate                                | `post_image_regen`    |
@@ -384,4 +428,6 @@ Every edit writes an `audit_log` row so the change is traceable:
 | bulk image rebuild                              | `post_images_rebuild` |
 
 Each row records the `task_id`, the field touched, and (for body edits) the
-before/after length plus any validator warnings.
+before/after length, whether the excerpt was re-derived (`excerpt_refreshed`),
+and every warning, social-draft ids included. An excerpt set by hand records the
+old and new text.

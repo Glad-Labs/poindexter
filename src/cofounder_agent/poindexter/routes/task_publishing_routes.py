@@ -4,7 +4,7 @@ Task Publishing Routes - Approve, publish, and draft/post editing.
 Sub-router for task_routes.py. Handles:
 - POST /{task_id}/approve — Approve task for publishing
 - POST /{task_id}/publish — Publish approved task
-- POST /{task_id}/edit-body, retitle, replace-image, regen-image, brand-hero,
+- POST /{task_id}/edit-body, retitle, set-excerpt, replace-image, regen-image, brand-hero,
   remove-image, add-image, rebuild-images — PostEditService edits
 - POST /{task_id}/generate-image — retired: answers 410 Gone, pointing at
   regen-image / replace-image
@@ -1224,6 +1224,10 @@ class RetitleRequest(BaseModel):
     title: str
 
 
+class SetExcerptRequest(BaseModel):
+    excerpt: str
+
+
 class ReplaceImageRequest(BaseModel):
     which: str  # "featured" | "inline:N"
     url: str
@@ -1347,6 +1351,30 @@ async def retitle_task(
     )
     try:
         res = await svc.retitle(full_id, title=body.title)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/set-excerpt", summary="Set a draft's excerpt by hand")
+async def set_task_excerpt(
+    task_id: str,
+    body: SetExcerptRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Set the excerpt publish uses for listings, RSS and social cards
+    (``pipeline_versions.excerpt``). A hand-set excerpt survives later body
+    edits, which only re-derive an excerpt the generator produced."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.set_excerpt(full_id, excerpt=body.excerpt)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return _edit_result_json(res)

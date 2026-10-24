@@ -856,3 +856,233 @@ async def test_the_posts_row_sheds_alt_and_provenance_only_when_the_image_change
     assert "featured_image_url IS DISTINCT FROM $1::varchar" in sql
     assert "- 'featured_image_alt'" in sql
     assert "featured_image_data = CASE" in sql
+
+
+# ---------------------------------------------------------------------------
+# A body edit keeps the excerpt and social drafts honest (2026-10-23: two
+# drafts shipped their pre-edit opening as the excerpt, and a promo quoted a
+# claim the corrected body had removed)
+# ---------------------------------------------------------------------------
+
+_OLD_BODY = (
+    "## Intro\n\n"
+    "Our workstation pulled 365 W on average for eighteen straight days. "
+    "That works out to about $2.40 a day at our local electricity rate, "
+    "which is more than we expected going in.\n\n"
+    "## Method\n\nWe metered the wall socket with a smart plug the whole time.\n"
+)
+_NEW_BODY = _OLD_BODY.replace("$2.40", "$2.50")
+_SEO_TITLE = "What 18 Days of a 365 W Workstation Cost Us"
+
+
+def _derived(body: str, title: str = _SEO_TITLE) -> str:
+    from poindexter.services.excerpt_generator import generate_excerpt
+
+    return generate_excerpt(title=title, content=body)
+
+
+class _ExcerptPool:
+    """Fake pool for the excerpt/social-draft follow-ups: the latest version
+    row, its excerpt columns, the task's topic, live social drafts and posts
+    rows. Records every ``execute`` and ``fetch``."""
+
+    def __init__(self, *, content=_OLD_BODY, excerpt=None, seo_title=_SEO_TITLE,
+                 title="Workstation power", topic="workstation power cost",
+                 drafts=(), post_statuses=()):
+        self._content, self._excerpt = content, excerpt
+        self._seo_title, self._title, self._topic = seo_title, title, topic
+        self._drafts, self._post_statuses = list(drafts), list(post_statuses)
+        self.executed: list[tuple] = []
+        self.fetched: list[tuple] = []
+
+    async def fetchrow(self, sql, *args):
+        if sql.startswith("SELECT excerpt"):
+            return {"excerpt": self._excerpt, "seo_title": self._seo_title, "title": self._title}
+        if "FROM pipeline_tasks" in sql:
+            return {"status": "awaiting_approval", "topic": self._topic}
+        if "pipeline_versions" in sql:
+            return {"content": self._content, "version": 1}
+        return None
+
+    async def fetch(self, sql, *args):
+        self.fetched.append((sql, args))
+        if "social_post_drafts" in sql:
+            return [{"id": d} for d in self._drafts]
+        if "FROM posts" in sql:
+            return [{"status": s} for s in self._post_statuses]
+        return []
+
+    async def execute(self, sql, *args):
+        self.executed.append((sql, args))
+
+
+class _TaskWriter:
+    """Stand-in for ``db_service`` — records ``update_task`` calls; ``ok=False``
+    mimics ``tasks_db.update_task`` swallowing a failure and returning None."""
+
+    def __init__(self, ok: bool = True):
+        self.ok = ok
+        self.updates: list[tuple[str, dict]] = []
+
+    async def update_task(self, task_id, fields):
+        self.updates.append((task_id, fields))
+        return {"task_id": task_id} if self.ok else None
+
+
+async def test_edit_body_re_derives_an_excerpt_the_generator_wrote():
+    stored = _derived(_OLD_BODY)
+    assert "$2.40" in stored  # the fixture's opening reaches the excerpt
+    writer = _TaskWriter()
+    svc = PostEditService(pool=_ExcerptPool(excerpt=stored), db_service=writer)
+
+    result = await svc.edit_body("t1", find="$2.40", replace="$2.50")
+
+    assert writer.updates == [("t1", {"excerpt": _derived(_NEW_BODY)})]
+    assert "$2.50" in writer.updates[0][1]["excerpt"]
+    assert "excerpt re-derived" in result.detail
+    assert not [w for w in result.warnings if "excerpt" in w]
+
+
+async def test_edit_body_re_derives_when_the_generator_was_seeded_with_the_topic():
+    """compile_meta seeds the generator with ``seo_title or topic``; a draft with
+    no SEO title was derived from the topic and must still count as derived."""
+    topic = "workstation power cost"
+    writer = _TaskWriter()
+    svc = PostEditService(
+        pool=_ExcerptPool(excerpt=_derived(_OLD_BODY, topic), seo_title="", topic=topic),
+        db_service=writer,
+    )
+
+    await svc.edit_body("t1", find="$2.40", replace="$2.50")
+
+    assert writer.updates == [("t1", {"excerpt": _derived(_NEW_BODY, topic)})]
+
+
+async def test_edit_body_leaves_a_hand_set_excerpt_alone_and_says_so():
+    writer = _TaskWriter()
+    svc = PostEditService(
+        pool=_ExcerptPool(excerpt="Eighteen days of metering, one surprising bill."),
+        db_service=writer,
+    )
+
+    result = await svc.edit_body("t1", find="$2.40", replace="$2.50")
+
+    assert writer.updates == []
+    assert any("set by hand" in w for w in result.warnings), result.warnings
+    assert "excerpt re-derived" not in result.detail
+
+
+async def test_a_hand_set_excerpt_is_not_flagged_when_the_opening_did_not_move():
+    svc = PostEditService(
+        pool=_ExcerptPool(excerpt="Eighteen days of metering, one surprising bill."),
+        db_service=_TaskWriter(),
+    )
+
+    result = await svc.edit_body("t1", find="smart plug", replace="Shelly plug")
+
+    assert not [w for w in result.warnings if "excerpt" in w]
+
+
+async def test_edit_body_below_the_opening_does_not_rewrite_the_excerpt():
+    writer = _TaskWriter()
+    svc = PostEditService(pool=_ExcerptPool(excerpt=_derived(_OLD_BODY)), db_service=writer)
+
+    await svc.edit_body("t1", find="smart plug", replace="Shelly plug")
+
+    assert writer.updates == []
+
+
+async def test_edit_body_reports_an_excerpt_write_that_returned_no_row():
+    svc = PostEditService(
+        pool=_ExcerptPool(excerpt=_derived(_OLD_BODY)), db_service=_TaskWriter(ok=False),
+    )
+
+    result = await svc.edit_body("t1", find="$2.40", replace="$2.50")
+
+    assert any("excerpt refresh failed" in w for w in result.warnings), result.warnings
+    assert "excerpt re-derived" not in result.detail
+
+
+async def test_edit_body_names_live_social_drafts():
+    from poindexter.services.social_drafts import _LIVE_STATUSES
+
+    pool = _ExcerptPool(drafts=("d-111", "d-222"))
+    svc = PostEditService(pool=pool)
+
+    result = await svc.edit_body("t1", find="$2.40", replace="$2.50")
+
+    (warning,) = [w for w in result.warnings if "social draft" in w]
+    assert "2 live social draft(s)" in warning
+    assert "d-111" in warning and "d-222" in warning
+    (lookup,) = [f for f in pool.fetched if "social_post_drafts" in f[0]]
+    assert lookup[1] == ("t1", list(_LIVE_STATUSES))
+    # A warning only: the promo copy is the operator's to rewrite.
+    assert not [e for e in pool.executed if "social_post_drafts" in e[0]]
+
+
+async def test_edit_body_without_live_social_drafts_adds_no_warning():
+    svc = PostEditService(pool=_ExcerptPool())
+
+    result = await svc.edit_body("t1", find="$2.40", replace="$2.50")
+
+    assert not [w for w in result.warnings if "social draft" in w]
+
+
+# ---------------------------------------------------------------------------
+# set_excerpt
+# ---------------------------------------------------------------------------
+
+
+async def test_set_excerpt_writes_through_the_task_update_path_and_audits():
+    writer = _TaskWriter()
+    platform = _FakePlatform()
+    svc = PostEditService(pool=_ExcerptPool(excerpt="old"), db_service=writer, platform=platform)
+
+    result = await svc.set_excerpt("t1", excerpt="  A  hand-written\nteaser. ")
+
+    assert result.ok and result.field == "excerpt"
+    assert writer.updates == [("t1", {"excerpt": "A hand-written teaser."})]
+    assert result.warnings == []
+    args, kwargs = platform.audit.write.call_args
+    assert args[0] == "post_edit_excerpt"
+    assert kwargs["details"]["new_excerpt"] == "A hand-written teaser."
+
+
+async def test_set_excerpt_rejects_a_blank_excerpt():
+    svc = PostEditService(pool=_ExcerptPool(), db_service=_TaskWriter())
+    with pytest.raises(ValueError, match="blank"):
+        await svc.set_excerpt("t1", excerpt="   ")
+
+
+async def test_set_excerpt_unchanged_is_a_noop():
+    writer = _TaskWriter()
+    svc = PostEditService(pool=_ExcerptPool(excerpt="Same text."), db_service=writer)
+
+    result = await svc.set_excerpt("t1", excerpt="Same text.")
+
+    assert writer.updates == []
+    assert "unchanged" in result.detail
+
+
+async def test_set_excerpt_warns_when_the_post_is_already_staged():
+    svc = PostEditService(
+        pool=_ExcerptPool(excerpt="old", post_statuses=("approved",)), db_service=_TaskWriter(),
+    )
+
+    result = await svc.set_excerpt("t1", excerpt="New teaser for the post.")
+
+    assert any("posts row (approved)" in w for w in result.warnings), result.warnings
+
+
+async def test_set_excerpt_warns_on_a_title_echo():
+    svc = PostEditService(pool=_ExcerptPool(excerpt="old"), db_service=_TaskWriter())
+
+    result = await svc.set_excerpt("t1", excerpt=_SEO_TITLE.lower())
+
+    assert any("repeats the title" in w for w in result.warnings), result.warnings
+
+
+async def test_set_excerpt_raises_when_the_write_returns_no_row():
+    svc = PostEditService(pool=_ExcerptPool(excerpt="old"), db_service=_TaskWriter(ok=False))
+    with pytest.raises(RuntimeError, match="returned no row"):
+        await svc.set_excerpt("t1", excerpt="New teaser for the post.")

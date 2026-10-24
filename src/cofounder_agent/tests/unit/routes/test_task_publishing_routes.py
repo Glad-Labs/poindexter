@@ -225,6 +225,12 @@ class TestDraftEditingRoutes:
                     raise ValueError("title must not be blank")
                 return EditResult(task_id, "title", True, "retitled (v1)", warnings=["w2"])
 
+            async def set_excerpt(self, task_id, **kw):
+                calls["set_excerpt"] = (task_id, kw)
+                if not kw["excerpt"].strip():
+                    raise ValueError("excerpt must not be blank")
+                return EditResult(task_id, "excerpt", True, "excerpt set (v1)", warnings=["w3"])
+
         async def fake_enqueue(pool, task_id, *, allow_stock=False):
             calls["enqueue_image_rebuild"] = (task_id, {"allow_stock": allow_stock})
             return "rebuild-task-123"
@@ -266,6 +272,24 @@ class TestDraftEditingRoutes:
         calls: dict = {}
         client = self._client_with_fake_service(monkeypatch, calls)
         r = client.post(f"/{VALID_TASK_ID}/retitle", json={"title": "   "})
+        assert r.status_code == 400
+        assert "blank" in r.json()["detail"]
+
+    def test_set_excerpt_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/set-excerpt", json={"excerpt": "A fixed opening."})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["field"] == "excerpt"
+        assert body["warnings"] == ["w3"]
+        assert calls["set_excerpt"] == (VALID_TASK_ID, {"excerpt": "A fixed opening."})
+
+    def test_set_excerpt_value_error_maps_to_400(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/set-excerpt", json={"excerpt": "  "})
         assert r.status_code == 400
         assert "blank" in r.json()["detail"]
 

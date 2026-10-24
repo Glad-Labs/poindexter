@@ -14,6 +14,11 @@ task's ``posts`` row whenever one exists (staged, scheduled or published), and
 rebuilds the static export when that row is live (see ``_sync_post_featured``).
 That makes it the one edit that reaches a post after approval. Editing
 published ``posts.content`` remains out of scope (poindexter#523).
+
+A body edit also keeps the two things finalize derived from the body honest:
+the excerpt is re-derived when it is still the generator's own output (a
+hand-set one, see ``set_excerpt``, is left alone), and live social drafts are
+named in the warnings, since their copy quotes the pre-edit body.
 """
 from __future__ import annotations
 
@@ -56,6 +61,23 @@ _LIVE_DRAFTS_SQL = (
 )
 _UPDATE_DRAFT_CONTENT_SQL = (
     "UPDATE social_post_drafts SET content = $1 WHERE id = $2"
+)
+_LIVE_DRAFT_IDS_SQL = (
+    "SELECT id FROM social_post_drafts "
+    "WHERE pipeline_task_id = $1 AND status = ANY($2::text[]) "
+    "ORDER BY created_at"
+)
+#: The excerpt lives in the ``pipeline_versions.excerpt`` column (projected as
+#: ``content_tasks.excerpt``; ``ModelConverter`` folds it into the
+#: ``task_metadata`` that ``publish_service.choose_excerpt`` reads). ``seo_title``
+#: and ``title`` ride along because the generator was seeded with
+#: ``seo_title or topic`` and publish drops an excerpt equal to the title.
+_EXCERPT_ROW_SQL = (
+    "SELECT excerpt, seo_title, title FROM pipeline_versions "
+    "WHERE task_id = $1 AND version = $2"
+)
+_POST_STATUS_SQL = (
+    "SELECT status FROM posts WHERE metadata->>'pipeline_task_id' = $1"
 )
 #: The only status a retitle may touch. ``approved`` already has a posts row
 #: carrying the old title + slug, so a title change there would fork the two
@@ -130,7 +152,7 @@ class EditResult:
     """Outcome of one draft edit, returned identically across all adapters."""
 
     task_id: str
-    field: str            # "body" | "featured" | "inline:N"
+    field: str            # "body" | "title" | "excerpt" | "featured" | "inline:N"
     ok: bool
     detail: str
     warnings: list[str] = dc_field(default_factory=list)
@@ -196,14 +218,181 @@ class PostEditService:
 
         warnings = self._validate_warn_only(body)
         await self._pool.execute(_UPDATE_CONTENT_SQL, body, task_id, version)
+        excerpt_refreshed, excerpt_warnings = await self._refresh_derived_excerpt(
+            task_id, version, before=content, after=body,
+        )
+        warnings.extend(excerpt_warnings)
+        warnings.extend(await self._live_social_draft_warnings(task_id))
         await self._audit(
             "post_edit_body", task_id,
             {"version": version, "before_len": len(content),
-             "after_len": len(body), "warnings": warnings},
+             "after_len": len(body), "excerpt_refreshed": excerpt_refreshed,
+             "warnings": warnings},
+        )
+        detail = f"edited body (v{version}, {len(body)} chars)"
+        if excerpt_refreshed:
+            detail += "; excerpt re-derived from the new opening"
+        return EditResult(task_id, "body", True, detail, warnings=warnings)
+
+    async def _refresh_derived_excerpt(
+        self, task_id: str, version: int, *, before: str, after: str,
+    ) -> tuple[bool, list[str]]:
+        """Re-derive the excerpt after a body edit, unless an operator set it.
+
+        The pipeline lifts the excerpt from the opening prose at finalize
+        (``content.compile_meta`` → ``services/excerpt_generator``) and publish
+        prefers it over the SEO description, so a rewritten opening used to
+        ship with the OLD opening as its excerpt (listings, RSS, social cards).
+
+        The stored excerpt counts as derived when the same deterministic
+        generator, run on the PRE-edit body, reproduces it exactly. Only then is
+        it replaced, so a hand-set excerpt is never clobbered: it is left alone,
+        with a warning when the edit moved the opening it was written against.
+        Returns ``(refreshed, warnings)``; never raises — the body edit has
+        already landed.
+        """
+        try:
+            row = await self._pool.fetchrow(_EXCERPT_ROW_SQL, task_id, version)
+            stored = ((row.get("excerpt") if row else None) or "").strip()
+            if not stored:
+                # Never derived (or publish already falls back to the SEO
+                # description): nothing of the pipeline's to keep in step.
+                return False, []
+            task = await self._pool.fetchrow(_TASK_STATUS_TOPIC_SQL, task_id)
+            topic = ((task.get("topic") if task else None) or "").strip()
+            seo_title = ((row.get("seo_title") if row else None) or "").strip()
+
+            from poindexter.services.excerpt_generator import generate_excerpt
+
+            # compile_meta seeds the generator with ``seo_title or topic``; the
+            # title only rejects title-echo paragraphs, so try both seeds.
+            seeds = list(dict.fromkeys([seo_title or topic, topic]))
+            seed = next(
+                (t for t in seeds if generate_excerpt(title=t, content=before) == stored),
+                None,
+            )
+            if seed is None:
+                if generate_excerpt(title=seeds[0], content=before) != generate_excerpt(
+                    title=seeds[0], content=after,
+                ):
+                    return False, [
+                        "excerpt was set by hand, so it was left as is — check it "
+                        "still matches the edited opening "
+                        "(poindexter tasks set-excerpt <task_id> \"<text>\")"
+                    ]
+                return False, []
+
+            fresh = generate_excerpt(title=seed, content=after)
+            if fresh == stored:
+                return False, []
+            if self._db_service is None:
+                return False, [
+                    "excerpt not refreshed: no task writer wired — it still "
+                    "quotes the pre-edit opening"
+                ]
+            # The content PATCH route's write path: the content_tasks view
+            # trigger carries ``excerpt`` onto pipeline_versions.
+            updated = await self._db_service.update_task(task_id, {"excerpt": fresh})
+            if not updated:
+                return False, [
+                    "excerpt refresh failed to write — it still quotes the "
+                    "pre-edit opening (poindexter tasks set-excerpt to fix)"
+                ]
+            logger.info("[post_edit] excerpt re-derived for %s after a body edit", task_id)
+            if not fresh:
+                return True, [
+                    "the edited body has no prose opening to lift an excerpt "
+                    "from — publish falls back to the SEO description"
+                ]
+            return True, []
+        except Exception as e:  # noqa: BLE001 — the body edit already persisted; report, don't fail
+            logger.warning("[post_edit] excerpt refresh skipped for %s: %s", task_id, e)
+            return False, [f"excerpt refresh skipped ({e!s}) — check the excerpt by hand"]
+
+    async def _live_social_draft_warnings(self, task_id: str) -> list[str]:
+        """Name the task's live social drafts after a body edit.
+
+        ``social.generate_drafts`` wrote the promo copy from the body at
+        finalize, so after the body changes it can quote text that is no longer
+        there (2026-10-23: a promo claimed the weights couldn't be downloaded
+        after the post was corrected to say they shipped). Regenerating copy is
+        the operator's call, so this only points at the drafts.
+        """
+        try:
+            from poindexter.services.social_drafts import _LIVE_STATUSES
+
+            rows = await self._pool.fetch(_LIVE_DRAFT_IDS_SQL, task_id, list(_LIVE_STATUSES))
+        except Exception as e:  # noqa: BLE001 — advisory lookup; the edit already landed
+            logger.warning("[post_edit] live social-draft lookup failed for %s: %s", task_id, e)
+            return [f"could not check social drafts ({e!s}) — re-check them by hand"]
+        ids = [str(r["id"]) for r in rows or []]
+        if not ids:
+            return []
+        return [
+            f"{len(ids)} live social draft(s) were written from the pre-edit body "
+            f"and may quote text you changed — re-check before they post: "
+            f"{', '.join(ids)} (poindexter social list --task-id {task_id}; "
+            "fix with `social edit` or `social reject`)"
+        ]
+
+    # -- excerpt ------------------------------------------------------------
+
+    async def set_excerpt(self, task_id: str, *, excerpt: str) -> EditResult:
+        """Set a draft's excerpt by hand (``pipeline_versions.excerpt``).
+
+        Written through the task update path (``db_service.update_task``, the
+        same write the content PATCH route makes). A hand-set excerpt is what
+        :meth:`edit_body` leaves alone: a later body edit only re-derives an
+        excerpt the generator would have produced.
+
+        Like ``edit_body`` this writes the draft store, so once the task has a
+        ``posts`` row (approved or published) the post keeps the excerpt it
+        was staged with — warned, not refused.
+        """
+        text = " ".join((excerpt or "").split())
+        if not text:
+            raise ValueError("excerpt must not be blank")
+        if self._db_service is None:
+            raise ValueError("set_excerpt needs the task writer (db_service) wired")
+        _, version = await self._latest(task_id)
+        row = await self._pool.fetchrow(_EXCERPT_ROW_SQL, task_id, version)
+        old = ((row.get("excerpt") if row else None) or "").strip()
+        if text == old:
+            return EditResult(task_id, "excerpt", True, f"excerpt unchanged (v{version})")
+
+        warnings: list[str] = []
+        titles = {
+            ((row.get(k) if row else None) or "").strip().casefold()
+            for k in ("title", "seo_title")
+        } - {""}
+        if text.casefold() in titles:
+            warnings.append(
+                "excerpt repeats the title — publish drops an excerpt equal to "
+                "the title, so the post would ship with none"
+            )
+        updated = await self._db_service.update_task(task_id, {"excerpt": text})
+        if not updated:
+            raise RuntimeError(f"excerpt write for task {task_id} returned no row")
+        try:
+            posts = await self._pool.fetch(_POST_STATUS_SQL, task_id)
+        except Exception as e:  # noqa: BLE001 — advisory lookup; the excerpt already landed
+            logger.warning("[post_edit] posts lookup failed for %s: %s", task_id, e)
+            posts = []
+        statuses = sorted({str(r["status"]) for r in posts or []})
+        if statuses:
+            warnings.append(
+                f"task already has a posts row ({', '.join(statuses)}) — the post "
+                "keeps the excerpt it was staged with (an approved task: "
+                "`tasks unapprove`, set it, re-approve)"
+            )
+        await self._audit(
+            "post_edit_excerpt", task_id,
+            {"version": version, "old_excerpt": old, "new_excerpt": text,
+             "warnings": warnings},
         )
         return EditResult(
-            task_id, "body", True,
-            f"edited body (v{version}, {len(body)} chars)", warnings=warnings,
+            task_id, "excerpt", True,
+            f"excerpt set (v{version}, {len(text)} chars)", warnings=warnings,
         )
 
     # -- title --------------------------------------------------------------

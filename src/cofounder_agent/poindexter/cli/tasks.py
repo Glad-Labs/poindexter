@@ -949,6 +949,11 @@ def tasks_edit_body(task_id: str, find: str | None, replace: str | None) -> None
     current body opens in $EDITOR and the saved result is written back. Either
     way the validator re-runs (warn-only) — warnings print but never block.
 
+    The excerpt follows the edit when it is still the one the pipeline derived
+    from the opening (re-derived by the same generator); a hand-set excerpt
+    (`tasks set-excerpt`) is left alone. Live social drafts are listed as
+    warnings — their copy was written from the old body, so re-check them.
+
     Draft-only is unguarded, not enforced: this writes pipeline_versions.content
     and the live site serves posts.content, so running it against a published
     post reports success and changes nothing publicly visible.
@@ -978,6 +983,20 @@ def tasks_retitle(task_id: str, title: str) -> None:
     The searchable-entity rule runs warn-only.
     """
     _emit_edit_result(_post_edit(f"/api/tasks/{task_id}/retitle", {"title": title}))
+
+
+@tasks_group.command("set-excerpt")
+@click.argument("task_id")
+@click.argument("text")
+def tasks_set_excerpt(task_id: str, text: str) -> None:
+    """Set a draft's excerpt by hand (listings, RSS, social cards).
+
+    Writes pipeline_versions.excerpt through the task update path. A hand-set
+    excerpt is kept when the body is edited later; only the pipeline-derived
+    one is re-derived. Like edit-body this writes the draft store: an approved
+    or published post keeps the excerpt it was staged with (warned).
+    """
+    _emit_edit_result(_post_edit(f"/api/tasks/{task_id}/set-excerpt", {"excerpt": text}))
 
 
 @tasks_group.command("replace-image")
