@@ -72,7 +72,7 @@ aiolimiter = "^1.3"
 # pandas, numpy removed — never imported in production code.
 
 # Logging & Monitoring
-setuptools = ">=84"  # 84 dropped pkg_resources entirely; every remaining importer in our tree (litellm, pytz, sentry_sdk, pytest) guards it behind importlib.resources
+setuptools = ">=84.1.0"  # 84 dropped pkg_resources entirely; every remaining importer in our tree (litellm, pytz, sentry_sdk, pytest) guards it behind importlib.resources
 # sentry-sdk re-added 2026-04-21 — GlitchTip DSN now configured in
 # app_settings.sentry_dsn, error tracking is active for the cofounder-agent
 # project. [fastapi] extra wires the ASGI + Starlette middleware.
@@ -129,7 +129,7 @@ transformers = { version = ">=5.16.1", optional = true }
 
 # Additional Required Packages
 structlog = "^26"
-pyjwt = ">=2.15.0,<3.0.0"  # CVE GHSA-752w-5fwx-jx9f fix — pin to safe 2.x series
+pyjwt = ">=2.15.1,<3.0.0"  # CVE GHSA-752w-5fwx-jx9f fix — pin to safe 2.x series
 # redis removed — redis_enabled=false, in-memory TTL cache is sufficient
 diffusers = { version = ">=0.39.0,<0.40", optional = true }
 # `peft` removed — zero imports in tracked code. Was optional ml extra.
@@ -153,7 +153,7 @@ boto3 = "^1.42.84"
 cloudinary = "^1.45"
 playwright = { version = "^1.61", optional = true }
 mcp = ">=2.3.0,<3"
-pillow = ">=12.2.0"
+pillow = ">=13.0.0"
 apscheduler = "^3.11.3"
 # Apprise — unified push-notification library backing the generic
 # services/integrations/handlers/outbound_apprise.py handler. Already
