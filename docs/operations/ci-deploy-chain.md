@@ -818,6 +818,21 @@ auto-deploy too. `deploy-worker.ps1` remains the tool for an _immediate_ deploy
 elsewhere (which need `docker compose build`) and for `poindexter-prefect-worker`
 bootstrap-level changes.
 
+**Grafana alert rules are reloaded when they change (step 7b, 2026-10-24).**
+Grafana reads file-provisioned alert rules only at start or on
+`POST /api/admin/provisioning/alerting/reload`; it does not poll them the way
+it polls dashboards. That reload needs `provisioning:reload`, which Grafana OSS
+grants only to the server admin, never to a service account, so the worker's
+`render_grafana_alerts` job (token auth) gets 403 and cannot apply a change.
+When a deployed tree changes a file under
+`infrastructure/grafana/provisioning/alerting/`, the sync runs the reload
+inside `poindexter-grafana` with that container's own admin login, which never
+leaves the container. A reload that doesn't return 200 is a note in the status
+detail, not a failed pass. A threshold changed in `app_settings`
+(`grafana.threshold.*`) still waits for the next Grafana restart; the render
+job's 403 detail prints the one-line reload command. Before this, the
+Brain Daemon Stale fix (#4583) reached the clone and sat unapplied.
+
 **A stranded name is renamed back (step 6a-ter, 2026-10-14).** compose
 recreates a container by renaming the old one to `<id>_<name>` while the
 replacement comes up. An apply that loses the dependency race mid-recreate can

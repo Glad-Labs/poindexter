@@ -216,6 +216,10 @@ class TestReloadGrafana:
         ok, detail = await _reload_grafana("http://grafana:3000", "token")
         assert ok is False
         assert "403" in detail
+        # A service account can never hold provisioning:reload on Grafana
+        # OSS, so the detail says why and how to apply the rules by hand.
+        assert "provisioning:reload" in detail
+        assert "alerting/reload" in detail
 
     async def test_http_error_returns_false(self, monkeypatch):
         import httpx
@@ -238,3 +242,85 @@ class TestReloadGrafana:
         ok, detail = await _reload_grafana("http://grafana:3000", "token")
         assert ok is False
         assert "reload failed" in detail
+
+    async def test_header_error_does_not_echo_the_token(self, monkeypatch):
+        """An httpx header error quotes the header value, i.e. the token."""
+        import httpx
+
+        import poindexter.services.jobs.render_grafana_alerts as job_module
+
+        class _HeaderErrorClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def post(self, url, **kwargs):
+                raise httpx.LocalProtocolError(
+                    f"Illegal header value {kwargs['headers']['Authorization']!r}"
+                )
+
+        monkeypatch.setattr(
+            job_module.httpx, "AsyncClient", lambda **kw: _HeaderErrorClient()
+        )
+        ok, detail = await _reload_grafana("http://grafana:3000", "s3cret-token")
+        assert ok is False
+        assert "s3cret-token" not in detail
+        assert "LocalProtocolError" in detail
+
+
+# ---------------------------------------------------------------------------
+# _get_grafana_token
+# ---------------------------------------------------------------------------
+
+
+class _FakeConn:
+    pass
+
+
+class _FakePool:
+    def acquire(self):
+        pool = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                return pool.conn
+
+            async def __aexit__(self, *args):
+                pass
+
+        return _Ctx()
+
+    conn = _FakeConn()
+
+
+@pytest.mark.asyncio
+class TestGetGrafanaToken:
+    async def test_reads_the_decrypted_secret(self, monkeypatch):
+        """The row holds ``enc:v1:...``; the header must carry the plaintext.
+        Reading the column directly sent the ciphertext, and every reload
+        failed with "Illegal header value" (2026-10-23/24)."""
+        import poindexter.plugins.secrets as secrets
+        from poindexter.services.jobs.render_grafana_alerts import _get_grafana_token
+
+        seen = []
+
+        async def fake_get_secret(conn, key):
+            seen.append((conn, key))
+            return "glsa_plain_token\n"
+
+        monkeypatch.setattr(secrets, "get_secret", fake_get_secret)
+        pool = _FakePool()
+        assert await _get_grafana_token(pool) == "glsa_plain_token"
+        assert seen == [(pool.conn, "grafana_api_token")]
+
+    async def test_unset_secret_reads_as_empty(self, monkeypatch):
+        import poindexter.plugins.secrets as secrets
+        from poindexter.services.jobs.render_grafana_alerts import _get_grafana_token
+
+        async def fake_get_secret(conn, key):
+            return None
+
+        monkeypatch.setattr(secrets, "get_secret", fake_get_secret)
+        assert await _get_grafana_token(_FakePool()) == ""

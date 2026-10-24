@@ -150,6 +150,10 @@
 #      restart the worker again. Before stack#3661 (2026-09-11) it did: a broken
 #      sidecar build withheld the marker for 12 h and every 10-minute retry
 #      bounced the worker, ~70 restarts, each killing in-flight scheduler jobs.
+#   7b. Grafana alert reload: when this tree changed a file under
+#      infrastructure/grafana/provisioning/alerting, POST Grafana's provisioning
+#      reload from inside its container (its own admin login; a service
+#      account cannot hold provisioning:reload on OSS). Fail-soft.
 #   8. claude.ai-connector sync: poindexter-mcp-http.service is host systemd,
 #      not compose — it runs mcp-server/http_server.py out of THIS clone
 #      (unit template: infrastructure/systemd/poindexter-mcp-http.service).
@@ -232,6 +236,10 @@ MAX_WAIT_SEC="${SYNC_FLOW_WAIT_MAX_SEC:-90}"
 # 1 = legacy behavior: force the reset+restarts anyway. Also --force-flow-reset.
 FORCE_FLOW_RESET="${SYNC_FLOW_FORCE:-0}"
 RESTART_CONTAINERS=(${SYNC_RESTART_CONTAINERS:-poindexter-worker poindexter-pipeline-bot})
+# Step 7b: the provisioning dir whose change needs a Grafana reload, and the
+# container that serves it.
+GRAFANA_ALERTING_DIR="infrastructure/grafana/provisioning/alerting"
+GRAFANA_CONTAINER="${SYNC_GRAFANA_CONTAINER:-poindexter-grafana}"
 SKEW_MARGIN_SEC=5
 # Pause between the two compose-apply attempts (step 6). Long enough for a
 # just-recreated dependency to pass its healthcheck — the shortest interval in
@@ -1117,6 +1125,32 @@ done
 # fails and withholds MARKER_FILE, the next pass must not bounce them again.
 [ "$restart_failed" = "0" ] && printf '%s' "$head_sha" > "$BOUNCE_MARKER_FILE"
 
+# ---- Grafana alert-rule reload (step 7b) -----------------------------------
+# Grafana reads file-provisioned alert rules only at start or on
+# POST /api/admin/provisioning/alerting/reload, which needs provisioning:reload.
+# On Grafana OSS only the server admin has it, never a service account, so the
+# worker's render_grafana_alerts job (token auth) cannot apply a rule change:
+# until 2026-10-24 a change under provisioning/alerting reached this clone and
+# sat unapplied until Grafana next restarted. Reload from inside the container
+# with its own admin credentials, which never leave it. Fail-soft: a missed
+# reload is a log line and a status note, never a withheld marker; a pass that
+# retries another step reloads again, which is harmless.
+grafana_reload_note=""
+if ! git -C "$DEPLOY_DIR" diff --quiet "$last_deployed" "$head_sha" -- "$GRAFANA_ALERTING_DIR" 2>/dev/null; then
+  if docker container inspect "$GRAFANA_CONTAINER" >/dev/null 2>&1; then
+    # shellcheck disable=SC2016  # expanded inside the container, not here
+    reload_code="$(docker exec "$GRAFANA_CONTAINER" sh -c 'curl -s -o /dev/null -w "%{http_code}" -X POST -u "${GF_SECURITY_ADMIN_USER:-admin}:${GF_SECURITY_ADMIN_PASSWORD}" http://localhost:3000/api/admin/provisioning/alerting/reload' 2>>"$LOG_FILE")"
+    if [ "$reload_code" = "200" ]; then
+      log "Grafana alert rules changed; reloaded them in '$GRAFANA_CONTAINER'."
+    else
+      grafana_reload_note="grafana alert reload returned '${reload_code:-nothing}'"
+      log "Grafana alert rules changed but the reload returned '${reload_code:-nothing}'; they apply at the next Grafana restart." WARN
+    fi
+  else
+    log "Grafana alert rules changed; '$GRAFANA_CONTAINER' is not present, nothing to reload."
+  fi
+fi
+
 # ---- stranded-container sweep (safety net) --------------------------------
 # A container in `created` state has NEVER been started — that state is only
 # ever an interrupted recreate, never an operator's intent. A deliberately
@@ -1336,6 +1370,7 @@ if [ "$build_failed" = "0" ] && [ "$apply_failed" = "0" ] && [ "$recreate_failed
   # had to act means the apply raced, and a silent self-heal is how a recurring
   # fault stays invisible.
   [ -n "$stranded_started" ] && detail="${detail:+$detail; }recovered stranded: $stranded_started"
+  [ -n "$grafana_reload_note" ] && detail="${detail:+$detail; }$grafana_reload_note"
     [ -n "$gate_result" ] && detail="${detail:+$detail; }health gate: $gate_result"
     [ -n "$gate_skipped" ] && detail="${detail:+$detail; }not rebuilt (rolled back at this sha): $gate_skipped"
   log "Pipeline now running $short_head. ${detail}"

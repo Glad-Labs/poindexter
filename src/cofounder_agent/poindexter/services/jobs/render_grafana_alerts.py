@@ -9,6 +9,14 @@ Every 5 minutes (default), this job:
    ``/api/admin/provisioning/alerting/reload`` to Grafana using the
    ``grafana_api_token`` service account token
 
+Grafana reads alert-rule files only at start or on that reload; it does not
+poll them. The reload needs ``provisioning:reload``, which Grafana OSS grants
+only to the server admin, so a service-account token gets 403. A rule change
+that arrives by deploy is reloaded by the deploy pass instead (step 7b of
+``scripts/linux/deploy-checkout-sync.sh``, inside the Grafana container); a
+threshold change made in app_settings applies at the next Grafana restart, and
+the 403 detail says so.
+
 The template (``alert-rules.yml.tmpl``) and output (``alert-rules.yml``)
 live in the same bind-mounted directory, accessible to both the worker
 (writer) and Grafana (reader) via ``docker-compose.local.yml``.
@@ -96,7 +104,10 @@ class RenderGrafanaAlertsJob:
             if api_token:
                 reload_ok, reload_detail = await _reload_grafana(grafana_url, api_token)
             else:
-                reload_detail = "written; reload skipped (grafana_api_token not configured — Grafana will pick up the file within 30s)"
+                reload_detail = (
+                    "written; reload skipped (grafana_api_token not configured) "
+                    "— the rules apply at the next Grafana restart"
+                )
 
         return JobResult(
             ok=reload_ok,
@@ -107,15 +118,26 @@ class RenderGrafanaAlertsJob:
 
 
 async def _get_grafana_token(pool: Any) -> str:
-    """Return ``grafana_api_token`` from app_settings, or empty string."""
+    """Return the decrypted ``grafana_api_token``, or empty string.
+
+    The token is a secret row stored as ``enc:v1:...``. Reading the column
+    directly sent that ciphertext as the Bearer header, so every reload
+    failed with "Illegal header value" (2026-10-23/24) and only Grafana's
+    own file polling picked the rules up. ``plugins.secrets.get_secret``
+    decrypts it, and reads a legacy plaintext row unchanged.
+    """
+    from poindexter.plugins.secrets import get_secret
+
     try:
-        row = await pool.fetchrow(
-            "SELECT value FROM app_settings WHERE key = 'grafana_api_token'"
-        )
-        if row and row["value"]:
-            return str(row["value"]).strip()
+        async with pool.acquire() as conn:
+            value = await get_secret(conn, "grafana_api_token")
+        if value:
+            return str(value).strip()
     except Exception as e:
-        logger.debug("render_grafana_alerts: could not read grafana_api_token: %s", describe_exception(e))
+        logger.warning(
+            "render_grafana_alerts: could not read grafana_api_token: %s",
+            describe_exception(e),
+        )
     return ""
 
 
@@ -129,7 +151,17 @@ async def _reload_grafana(base_url: str, api_token: str) -> tuple[bool, str]:
             )
         if resp.status_code == 200:
             return True, "grafana alerting reloaded"
+        if resp.status_code == 403:
+            return False, (
+                "reload returned 403: the token lacks provisioning:reload, which "
+                "Grafana OSS grants only to the server admin. The rules apply at "
+                "the next Grafana restart, or now with: docker exec poindexter-grafana "
+                "sh -c 'curl -s -X POST -u \"$GF_SECURITY_ADMIN_USER:$GF_SECURITY_ADMIN_PASSWORD\" "
+                "http://localhost:3000/api/admin/provisioning/alerting/reload'"
+            )
         return False, f"reload returned {resp.status_code}"
     except httpx.HTTPError as e:
-        logger.warning("render_grafana_alerts: reload failed: %s", describe_exception(e))
-        return False, f"reload failed: {e}"
+        # Name the error class only: an httpx header error quotes the header
+        # value, which here is the API token.
+        logger.warning("render_grafana_alerts: reload failed: %s", type(e).__name__)
+        return False, f"reload failed: {type(e).__name__}"
