@@ -639,8 +639,9 @@ groups:
                     type: last
 
       # 11. BRAIN HEARTBEAT STALE — brain daemon hasn't logged a decision
-      #     in 15 min. Counted from the later of the last decision and the
-      #     last wake from the night sleep (host_resume.resumed_at): the box
+      #     in 15 min. Counted from the later of the last
+      #     decision and the last wake from the night sleep
+      #     (host_resume.resumed_at): the box
       #     is suspended 01:00-08:00, and until 2026-10-23 this paged critical
       #     at ~08:05 ("no decisions in 429 minutes" = the sleep itself).
       - uid: brain-heartbeat-stale

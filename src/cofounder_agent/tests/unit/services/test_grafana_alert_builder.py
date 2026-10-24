@@ -175,3 +175,29 @@ def test_traffic_volume_floor_default_is_numeric():
     """The floor lands in SQL arithmetic — a non-numeric override would break
     the query at eval time, so at least the shipped default must parse."""
     assert float(ab.DEFAULT_GRAFANA_THRESHOLDS["traffic_min_daily_views"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# The committed alert-rules.yml is the template rendered at the defaults
+# ---------------------------------------------------------------------------
+
+
+def test_committed_rules_file_is_the_rendered_template():
+    """RenderGrafanaAlertsJob rewrites alert-rules.yml from the .tmpl every
+    5 minutes, so an edit made only to the .yml is reverted on prod within
+    minutes. That happened 2026-10-23: the Brain Daemon Stale fix (#4583)
+    went into the .yml, CI was green, and the job restored the old query the
+    next morning. Edit the .tmpl and regenerate the .yml from it."""
+    repo_root = next(
+        p for p in Path(__file__).resolve().parents
+        if (p / "pyproject.toml").exists() and (p / "src").exists()
+    )
+    alerting = repo_root / "infrastructure" / "grafana" / "provisioning" / "alerting"
+    template = (alerting / "alert-rules.yml.tmpl").read_text(encoding="utf-8")
+    committed = (alerting / "alert-rules.yml").read_text(encoding="utf-8")
+    rendered = ab._substitute_thresholds(template, dict(ab.DEFAULT_GRAFANA_THRESHOLDS))
+    assert committed == rendered, (
+        "alert-rules.yml differs from alert-rules.yml.tmpl rendered at "
+        "DEFAULT_GRAFANA_THRESHOLDS: make the change in the .tmpl, then "
+        "regenerate the .yml from it"
+    )
