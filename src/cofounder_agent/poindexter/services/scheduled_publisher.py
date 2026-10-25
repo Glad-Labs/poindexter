@@ -17,6 +17,7 @@ import asyncio
 
 from poindexter.services.logger_config import get_logger
 from poindexter.services.site_config import SiteConfig
+from poindexter.utils.exception_format import describe_exception
 
 logger = get_logger(__name__)
 
@@ -179,6 +180,14 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
                             row["title"],
                             row["id"],
                         )
+                        # Export to R2 BEFORE busting the ISR cache: the
+                        # site renders its index from the R2 export, so a
+                        # revalidation that runs first re-caches the old
+                        # list. Until 2026-10-25 this path never exported,
+                        # so every slot publish left R2 a post behind until
+                        # static_export_reconciliation rebuilt it ~11 min
+                        # later and paged r2_static_drift.
+                        await _export_for_row(pool, row, site_config=_sc)
                         # Glad-Labs/poindexter#327: every promotion must
                         # bust the Vercel ISR cache, otherwise the post
                         # won't appear on www.gladlabs.io until the next
@@ -361,6 +370,36 @@ async def _maybe_park_due_posts_at_gate(pool, *, site_config: SiteConfig) -> Non
                 post_id,
                 exc,
             )
+
+
+async def _export_for_row(pool, row, *, site_config: SiteConfig) -> None:
+    """Push a freshly-promoted scheduled post to the R2 static export.
+
+    The other go-live paths (``publish_service``'s main and promote paths)
+    call ``export_post``; this one did not. Never raises, like
+    ``_revalidate_for_row``: a failed export leaves R2 stale until the
+    reconciliation job rebuilds it, which is no reason to stop the loop.
+    """
+    try:
+        slug = row["slug"]
+    except (KeyError, TypeError):
+        slug = None
+    if not slug:
+        return
+    try:
+        from poindexter.services.static_export_service import export_post
+
+        if not await export_post(pool, slug, site_config=site_config):
+            logger.warning(
+                "[scheduled_publisher] static export returned failure for %s; "
+                "R2 stays stale until the next reconciliation",
+                slug,
+            )
+    except Exception as exc:  # noqa: BLE001 — must not poison the publish loop
+        logger.warning(
+            "[scheduled_publisher] static export raised for %s (non-fatal): %s",
+            slug, describe_exception(exc),
+        )
 
 
 async def _revalidate_for_row(row, *, site_config: SiteConfig) -> None:

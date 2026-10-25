@@ -16,6 +16,17 @@ from poindexter.services.site_config import SiteConfig
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_real_static_export(monkeypatch):
+    """Promotions now export to R2; keep the real exporter (storage I/O) out
+    of every test here. Tests that check the export patch it themselves."""
+    monkeypatch.setattr(
+        "poindexter.services.static_export_service.export_post",
+        AsyncMock(return_value=True),
+    )
+
+
+
 def _make_pool(rows=None):
     """Build a mock asyncpg pool that returns *rows* from conn.fetch()."""
     rows = rows if rows is not None else []
@@ -789,3 +800,60 @@ class TestDemoteVetoedAutoPosts:
         assert "DELETE FROM published_post_edit_metrics" in del_sql
         assert "approver = 'auto_publish'" in del_sql
         assert conn.execute.await_args.args[1] == "t-1"
+
+
+# ---------------------------------------------------------------------------
+# Static export on promotion (2026-10-25)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestStaticExportOnPromotion:
+    """The site renders its index from the R2 export. This path never
+    exported, so every slot publish left R2 a post behind and
+    static_export_reconciliation paged r2_static_drift ~11 min later, after
+    the ISR revalidation had already re-cached the stale list."""
+
+    async def test_exports_before_revalidating(self, monkeypatch):
+        order: list[str] = []
+
+        async def fake_export(pool, slug, *, site_config):
+            order.append(f"export:{slug}")
+            return True
+
+        async def fake_reval(row, *, site_config):
+            order.append(f"revalidate:{row['slug']}")
+
+        monkeypatch.setattr(
+            "poindexter.services.static_export_service.export_post", fake_export
+        )
+        monkeypatch.setattr(
+            "poindexter.services.scheduled_publisher._revalidate_for_row", fake_reval
+        )
+        rows = [{"id": "p-1", "slug": "due-post", "title": "T", "excerpt": "",
+                 "pipeline_task_id": "t-1"}]
+        pool, _conn = _make_pool(rows)
+        await _run_one_iteration(AsyncMock(return_value=pool))
+        assert order == ["export:due-post", "revalidate:due-post"]
+
+    async def test_export_failure_does_not_stop_the_revalidation(self, monkeypatch):
+        revalidated: list[str] = []
+
+        async def boom(pool, slug, *, site_config):
+            raise RuntimeError("R2 down")
+
+        async def fake_reval(row, *, site_config):
+            revalidated.append(row["slug"])
+
+        monkeypatch.setattr(
+            "poindexter.services.static_export_service.export_post", boom
+        )
+        monkeypatch.setattr(
+            "poindexter.services.scheduled_publisher._revalidate_for_row", fake_reval
+        )
+        rows = [{"id": "p-1", "slug": "due-post", "title": "T", "excerpt": "",
+                 "pipeline_task_id": "t-1"}]
+        pool, _conn = _make_pool(rows)
+        await _run_one_iteration(AsyncMock(return_value=pool))
+        assert revalidated == ["due-post"]
