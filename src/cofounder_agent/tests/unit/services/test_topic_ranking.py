@@ -1,5 +1,6 @@
 """Tests for topic_ranking — goal vectors + weighted cosine scoring."""
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -636,3 +637,82 @@ def test_coerce_breakdown_with_no_weights_uses_a_plain_mean():
     assert _coerce_llm_score({"TRAFFIC": 80, "REVENUE": 20}, goal_weights={"BRAND": 100}) == pytest.approx(50.0)
     assert _coerce_llm_score({"TRAFFIC": "high"}) is None
     assert _coerce_llm_score({"score": 71, "TRAFFIC": 5}) == 71.0  # explicit score still wins
+
+
+# ---------------------------------------------------------------------------
+# Short labels instead of UUIDs (2026-10-25)
+# ---------------------------------------------------------------------------
+
+_U1 = "9e1fc8d2-5a58-4e4d-85b4-08a16ed38db0"
+_U2 = "fb59a0e4-7ccb-486b-9fe8-10d778bc9246"
+
+
+def _uuid_candidates():
+    from poindexter.services.topic_ranking import ScoredCandidate
+
+    return [
+        ScoredCandidate(id=_U1, title="Local LLM For Coding", summary="s", embedding_score=0.3),
+        ScoredCandidate(id=_U2, title="Texas data centers", summary="t", embedding_score=0.2),
+    ]
+
+
+async def test_prompt_shows_short_labels_not_uuids(monkeypatch):
+    """qwen3-vl miscopied 36-char UUID keys (a dropped "85b4-" group) and
+    wrapped them in title lines; the prompt now names candidates t1, t2..."""
+    from poindexter.services.topic_ranking import llm_final_score
+
+    seen = {}
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        seen["prompt"] = prompt
+        return '{"t1": 80, "t2": 40}'
+
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    scored = await llm_final_score(
+        _uuid_candidates(), [NicheGoal("TRAFFIC", 100)], model="m", site_config=_SC
+    )
+    assert "[t1] Local LLM For Coding" in seen["prompt"]
+    assert _U1 not in seen["prompt"]
+    assert scored[_U1].llm_score == 80.0
+    assert scored[_U2].llm_score == 40.0
+
+
+async def test_label_wrapped_in_its_title_line_still_resolves(monkeypatch):
+    from poindexter.services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return '{"[t1] Local LLM For Coding — s": 78, "[t2] Texas data centers": 65}'
+
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    findings = []
+    monkeypatch.setattr(
+        "poindexter.services.topic_ranking._emit_rank_degrade_finding",
+        lambda **kw: findings.append(kw),
+    )
+    scored = await llm_final_score(
+        _uuid_candidates(), [NicheGoal("TRAFFIC", 100)], model="m", site_config=_SC
+    )
+    assert scored[_U1].llm_score == 78.0
+    assert scored[_U2].llm_score == 65.0
+    assert findings == [], "a fully resolved batch is not degraded"
+
+
+async def test_a_full_uuid_key_is_still_accepted(monkeypatch):
+    from poindexter.services.topic_ranking import llm_final_score
+
+    async def fake(prompt, *, model, pool=None, site_config=None):
+        return json.dumps({_U1: 55, "t2": 45})
+
+    monkeypatch.setattr("poindexter.services.topic_ranking._ollama_chat_json", fake)
+    scored = await llm_final_score(
+        _uuid_candidates(), [NicheGoal("TRAFFIC", 100)], model="m", site_config=_SC
+    )
+    assert scored[_U1].llm_score == 55.0
+    assert scored[_U2].llm_score == 45.0
+
+
+def test_unknown_label_names_no_candidate():
+    from poindexter.services.topic_ranking import _scores_by_candidate_id
+
+    labels = {"t1": _uuid_candidates()[0]}
+    assert _scores_by_candidate_id({"t9": 1, "[t1] x": 70, "t1": 99}, labels) == {_U1: 70}

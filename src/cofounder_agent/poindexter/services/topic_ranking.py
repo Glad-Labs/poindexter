@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -390,7 +391,14 @@ async def llm_final_score(
         model = resolve_structured_model(site_config=_sc)
     descriptions = _resolve_goal_descriptions(site_config=_sc)
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
-    cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
+    # Short labels, not the candidates' UUIDs: the model echoes each label as
+    # a JSON key, and a 36-char UUID came back miscopied (a dropped "85b4-"
+    # group) or wrapped in its title line on 24 sweeps in 14 days to
+    # 2026-10-25, each degrading to the embedding pre-rank.
+    labels = {f"t{i}": c for i, c in enumerate(candidates, start=1)}
+    cand_block = "\n".join(
+        f"[{label}] {c.title} — {c.summary or ''}" for label, c in labels.items()
+    )
     # Lazy import (see module header): defers the PyYAML-bearing prompt_manager
     # import to the only code path that actually needs it, so the MCP server's
     # operator topic tools can import this module without PyYAML installed.
@@ -447,8 +455,9 @@ async def llm_final_score(
     omitted: list[str] = []
     unusable: list[str] = []  # id present in the response, value not a usable score
     goal_weights = {g.goal_type.upper(): float(g.weight_pct) for g in weights}
+    by_id = _scores_by_candidate_id(parsed, labels)
     for c in candidates:
-        blob = parsed.get(c.id)
+        blob = by_id.get(c.id)
         score = _coerce_llm_score(blob, goal_weights=goal_weights)
         if score is None:
             omitted.append(c.id)
@@ -489,6 +498,36 @@ async def llm_final_score(
             raw_preview=raw[:400],
         )
     return result
+
+
+_LABEL_KEY_RE = re.compile(r"^\s*\[?\s*([A-Za-z]\d+)\s*\]?")
+
+
+def _scores_by_candidate_id(
+    parsed: Mapping[str, Any], labels: Mapping[str, ScoredCandidate]
+) -> dict[str, Any]:
+    """Map each reply key to the candidate it names, keyed by candidate id.
+
+    A key resolves, in order, as: a candidate's own id; a prompt label
+    (``t3``); or a key that starts with a label (``[t3] Some Title``, the
+    shape qwen3-vl returned on 2026-10-24). Anything else names no
+    candidate. The first value for a candidate wins.
+    """
+    ids = {c.id for c in labels.values()}
+    out: dict[str, Any] = {}
+    for key, value in parsed.items():
+        key = str(key)
+        if key in ids:
+            cid = key
+        elif key in labels:
+            cid = labels[key].id
+        else:
+            m = _LABEL_KEY_RE.match(key)
+            if not (m and m.group(1) in labels):
+                continue
+            cid = labels[m.group(1)].id
+        out.setdefault(cid, value)
+    return out
 
 
 def _coerce_llm_score(
