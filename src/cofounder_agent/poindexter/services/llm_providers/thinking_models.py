@@ -355,7 +355,15 @@ def resolve_judge_num_predict(model: str, site_config: Any) -> int:
     empty + ``length``          this budget (starvation)
     empty + ``stop`` @ ~30 tok  the JSON constraint (judge_json_mode_supported)
     PARTIAL + unterminated      the wrong model is answering, not the budget
+                                -- OR the right one looping on a long list
     ==========================  ==========================================
+
+    The last row has a second cause (2026-10-25): the pinned instruct judge
+    loops when one reply must hold a long list. Asked for 102 faithfulness
+    verdicts it wrote 985+ before a 12k-token cap; temperature 0 and JSON mode
+    looped the same way. A bigger budget only moves the cut. Count the items
+    against the prompt to tell the two apart; the fix is to ask for fewer per
+    call (``deepeval_rails._batched_faithfulness_cls``).
 
     Reads the same two dials as the critic path so one setting governs every
     judge in the system.

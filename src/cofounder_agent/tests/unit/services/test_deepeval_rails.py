@@ -589,3 +589,107 @@ class TestResolveJudgeModel:
             await _de_mod._resolve_judge_model(sc)
             == "ollama/glm-4.7-flash:latest"
         )
+
+
+# ---------------------------------------------------------------------------
+# Faithfulness never asks the judge for one long list (2026-10-25)
+# ---------------------------------------------------------------------------
+
+
+class _FakeFaithfulness:
+    """Stands in for deepeval's FaithfulnessMetric: records each judge call."""
+
+    def __init__(self):
+        self.claims: list[str] = []
+        self.claim_calls: list[str] = []
+        self.verdict_calls: list[list[str]] = []
+        self.short_by = 0
+
+    async def _a_generate_claims(self, actual_output, multimodal):
+        self.claim_calls.append(actual_output)
+        return [line for line in actual_output.split("\n") if line.startswith("C")]
+
+    async def _a_generate_verdicts(self, multimodal):
+        self.verdict_calls.append(list(self.claims))
+        return [f"v:{c}" for c in self.claims][: max(0, len(self.claims) - self.short_by)]
+
+
+@pytest.mark.asyncio
+class TestBatchedFaithfulness:
+    def _metric(self, *, chunk=50, batch=3):
+        from poindexter.services.deepeval_rails import _batched_faithfulness_cls
+
+        return _batched_faithfulness_cls(
+            _FakeFaithfulness, claims_chunk_chars=chunk, verdict_batch=batch
+        )()
+
+    async def test_long_draft_is_split_at_paragraphs_and_deduplicated(self):
+        m = self._metric(chunk=20)
+        draft = "C1 a\nC2 b\n\nC3 c\nC1 a\n\nC4 d"
+        claims = await m._a_generate_claims(draft, False)
+        assert len(m.claim_calls) == 2
+        assert all(len(c) <= 20 for c in m.claim_calls)
+        assert claims == ["C1 a", "C2 b", "C3 c", "C4 d"]
+
+    async def test_short_draft_is_one_call(self):
+        m = self._metric(chunk=1000)
+        await m._a_generate_claims("C1\n\nC2", False)
+        assert m.claim_calls == ["C1\n\nC2"]
+
+    async def test_verdicts_are_asked_in_batches_and_joined_in_order(self):
+        m = self._metric(batch=3)
+        m.claims = [f"C{i}" for i in range(7)]
+        verdicts = await m._a_generate_verdicts(False)
+        assert [len(b) for b in m.verdict_calls] == [3, 3, 1]
+        assert verdicts == [f"v:C{i}" for i in range(7)]
+        assert m.claims == [f"C{i}" for i in range(7)], "the full list is restored"
+
+    async def test_a_short_batch_is_retried_then_raises(self):
+        m = self._metric(batch=3)
+        m.claims = [f"C{i}" for i in range(5)]
+        m.short_by = 1
+        with pytest.raises(ValueError, match="2 verdicts for a batch of 3"):
+            await m._a_generate_verdicts(False)
+        assert len(m.verdict_calls) == 2, "the miscounted batch is asked twice"
+        assert m.claims == [f"C{i}" for i in range(5)]
+
+    async def test_a_miscount_that_corrects_on_retry_is_kept(self):
+        m = self._metric(batch=3)
+        m.claims = [f"C{i}" for i in range(3)] + ["C3"]
+        calls = {"n": 0}
+        orig = _FakeFaithfulness._a_generate_verdicts
+
+        async def flaky(self, mm):
+            calls["n"] += 1
+            self.short_by = 1 if calls["n"] == 1 else 0
+            return await orig(self, mm)
+
+        _FakeFaithfulness._a_generate_verdicts = flaky
+        try:
+            verdicts = await m._a_generate_verdicts(False)
+        finally:
+            _FakeFaithfulness._a_generate_verdicts = orig
+        assert verdicts == ["v:C0", "v:C1", "v:C2", "v:C3"]
+
+    async def test_zero_turns_both_splits_off(self):
+        m = self._metric(chunk=0, batch=0)
+        m.claims = [f"C{i}" for i in range(7)]
+        await m._a_generate_verdicts(False)
+        await m._a_generate_claims("C1\n\n" * 50, False)
+        assert len(m.verdict_calls) == 1 and len(m.claim_calls) == 1
+
+
+def test_split_keeps_an_oversized_paragraph_whole():
+    from poindexter.services.deepeval_rails import _split_paragraphs
+
+    assert _split_paragraphs("x" * 30 + "\n\nshort", 10) == ["x" * 30, "short"]
+
+
+def test_subclass_keeps_the_base_class_name():
+    """deepeval resolves prompt templates by class name; a renamed subclass
+    raised MetricTemplateNotFoundError on the first live run."""
+    from poindexter.services.deepeval_rails import _batched_faithfulness_cls
+
+    cls = _batched_faithfulness_cls(_FakeFaithfulness, claims_chunk_chars=1, verdict_batch=1)
+    assert cls.__name__ == "_FakeFaithfulness"
+    assert issubclass(cls, _FakeFaithfulness)

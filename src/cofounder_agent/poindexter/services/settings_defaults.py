@@ -3054,6 +3054,14 @@ DEFAULTS: dict[str, str] = {
     # poindexter#1035: one extra attempt when the thinking judge returns EMPTY
     # content (its reasoning trace consumed the whole budget). 0 disables.
     'deepeval_judge_empty_retries': '1',
+    # Faithfulness on a long draft: the pinned instruct judge loops on a long
+    # list (2026-10-25: 102 claims in, 985+ verdicts out; 179 claims out, 110
+    # unique) and the cut-off JSON lost the rail on 7 of 15 posts in a week.
+    # Claims are extracted per chunk of the draft and judged in batches of
+    # 10 (a batch of 20 still came back one verdict short). 0 disables either
+    # split.
+    'deepeval_faithfulness_claims_chunk_chars': '6000',
+    'deepeval_faithfulness_verdict_batch': '10',
     'non_thinking_model_substrings': '["-instruct"]',
     'enable_writer_self_review': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
@@ -7539,6 +7547,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_gate_timeout_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'qa_gate_retry_backoff_seconds': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'deepeval_faithfulness_claims_chunk_chars': {'owner': 'deepeval_rails', 'value_type': 'integer'},
+    'deepeval_faithfulness_verdict_batch': {'owner': 'deepeval_rails', 'value_type': 'integer'},
     'deepeval_judge_empty_retries': {'owner': 'deepeval_rails', 'value_type': 'integer'},
     'non_thinking_model_substrings': {'category': 'llm', 'description': 'JSON array of model-name needles that VETO a thinking_model_substrings match: an instruction-tuned sibling of a thinking family (qwen3-vl:30b-a3b-instruct) must not get the reasoning budget or lose JSON mode. Set [] to disable the veto.', 'value_type': 'json', 'owner': 'thinking_models'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},

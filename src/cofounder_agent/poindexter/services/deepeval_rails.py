@@ -784,7 +784,16 @@ async def evaluate_faithfulness(
     if resolved_model is None:
         resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
     try:
-        metric = FaithfulnessMetric(
+        metric_cls = _batched_faithfulness_cls(
+            FaithfulnessMetric,
+            claims_chunk_chars=_int_setting(
+                site_config, "deepeval_faithfulness_claims_chunk_chars", 6000
+            ),
+            verdict_batch=_int_setting(
+                site_config, "deepeval_faithfulness_verdict_batch", 10
+            ),
+        )
+        metric = metric_cls(
             threshold=threshold,
             model=resolved_model,
             include_reason=True,
@@ -804,6 +813,100 @@ async def evaluate_faithfulness(
             f"deepeval-error: {type(e).__name__}", str(e), rail="faithfulness",
         )
         return True, None, f"deepeval-error: {type(e).__name__}"
+
+
+def _int_setting(site_config: Any, key: str, default: int) -> int:
+    """An integer dial, ``default`` when unset or unparseable."""
+    if site_config is None:
+        return default
+    try:
+        return int(site_config.get(key, default))
+    except (TypeError, ValueError):
+        logger.warning("[deepeval] %s is not an integer; using %d", key, default)
+        return default
+
+
+def _split_paragraphs(text: str, max_chars: int) -> list[str]:
+    """Pieces of ``text`` of at most ``max_chars``, split at blank lines.
+
+    A single paragraph longer than ``max_chars`` stays whole: cutting a
+    sentence in half would split a claim.
+    """
+    pieces: list[str] = []
+    current = ""
+    for para in text.split("\n\n"):
+        candidate = f"{current}\n\n{para}" if current else para
+        if current and len(candidate) > max_chars:
+            pieces.append(current)
+            current = para
+        else:
+            current = candidate
+    if current.strip():
+        pieces.append(current)
+    return pieces
+
+
+def _batched_faithfulness_cls(base: type, *, claims_chunk_chars: int, verdict_batch: int) -> type:
+    """``FaithfulnessMetric`` that never asks the judge for one long list.
+
+    The metric asks the judge for every claim in the draft in one reply, then
+    for one verdict per claim in another. On a long draft the pinned instruct
+    judge loses count and repeats until the output cap: on 2026-10-25 it
+    returned 179 claims (110 unique) for a 17.6k-char draft, and 985+ verdicts
+    for 102 claims at a 12k-token budget. Temperature 0 and JSON mode loop the
+    same way. The cut-off JSON lost the rail on 7 of 15 posts that week, and
+    Ragas skips long drafts on the grounds that this rail covers them.
+
+    So claims are extracted per chunk of the draft (de-duplicated, in order)
+    and verdicts are asked for ``verdict_batch`` claims at a time. A batch
+    that comes back with the wrong number of verdicts is asked once more,
+    then raises, which records the rail as degraded rather than scoring a
+    misaligned list (20 claims still came back as 19 verdicts live, hence
+    the default of 10). ``0`` turns either split off.
+
+    A ``base`` that is not a class (a test's factory function) is returned
+    as it is.
+    """
+    if not isinstance(base, type):
+        return base
+
+    class _BatchedFaithfulnessMetric(base):  # type: ignore[misc, valid-type]
+        async def _a_generate_claims(self, actual_output: str, multimodal: bool):
+            if claims_chunk_chars <= 0 or len(actual_output) <= claims_chunk_chars:
+                return await super()._a_generate_claims(actual_output, multimodal)
+            claims: list[str] = []
+            for piece in _split_paragraphs(actual_output, claims_chunk_chars):
+                claims.extend(await super()._a_generate_claims(piece, multimodal))
+            return list(dict.fromkeys(claims))
+
+        async def _a_generate_verdicts(self, multimodal: bool):
+            claims = list(getattr(self, "claims", None) or [])
+            if verdict_batch <= 0 or len(claims) <= verdict_batch:
+                return await super()._a_generate_verdicts(multimodal)
+            verdicts: list[Any] = []
+            try:
+                for start in range(0, len(claims), verdict_batch):
+                    batch = claims[start:start + verdict_batch]
+                    self.claims = batch
+                    got = list(await super()._a_generate_verdicts(multimodal))
+                    if len(got) != len(batch):
+                        # One retry: a miscount is not repeatable call to call.
+                        got = list(await super()._a_generate_verdicts(multimodal))
+                    if len(got) != len(batch):
+                        raise ValueError(
+                            f"judge returned {len(got)} verdicts for a batch of "
+                            f"{len(batch)} claims"
+                        )
+                    verdicts.extend(got)
+            finally:
+                self.claims = claims
+            return verdicts
+
+    # deepeval (4.2.8) looks its prompt templates up by class name, so the
+    # subclass must answer to the base's name or every prompt is "not found".
+    _BatchedFaithfulnessMetric.__name__ = base.__name__
+    _BatchedFaithfulnessMetric.__qualname__ = base.__qualname__
+    return _BatchedFaithfulnessMetric
 
 
 def is_enabled(site_config: Any) -> bool:
