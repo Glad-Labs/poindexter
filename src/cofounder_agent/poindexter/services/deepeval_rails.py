@@ -846,7 +846,7 @@ def _split_paragraphs(text: str, max_chars: int) -> list[str]:
     return pieces
 
 
-def _batched_faithfulness_cls(base: type, *, claims_chunk_chars: int, verdict_batch: int) -> type:
+def _batched_faithfulness_cls(base: Any, *, claims_chunk_chars: int, verdict_batch: int) -> Any:
     """``FaithfulnessMetric`` that never asks the judge for one long list.
 
     The metric asks the judge for every claim in the draft in one reply, then
@@ -859,10 +859,11 @@ def _batched_faithfulness_cls(base: type, *, claims_chunk_chars: int, verdict_ba
 
     So claims are extracted per chunk of the draft (de-duplicated, in order)
     and verdicts are asked for ``verdict_batch`` claims at a time. A batch
-    that comes back with the wrong number of verdicts is asked once more,
-    then raises, which records the rail as degraded rather than scoring a
-    misaligned list (20 claims still came back as 19 verdicts live, hence
-    the default of 10). ``0`` turns either split off.
+    that comes back with the wrong number of verdicts is split in half and
+    each half judged again, down to single claims; only a single claim that
+    still miscounts raises, which records the rail as degraded rather than
+    scoring a misaligned list (20 claims came back as 19 verdicts live,
+    hence the default of 10). ``0`` turns either split off.
 
     A ``base`` that is not a class (a test's factory function) is returned
     as it is.
@@ -881,26 +882,41 @@ def _batched_faithfulness_cls(base: type, *, claims_chunk_chars: int, verdict_ba
 
         async def _a_generate_verdicts(self, multimodal: bool):
             claims = list(getattr(self, "claims", None) or [])
-            if verdict_batch <= 0 or len(claims) <= verdict_batch:
+            if verdict_batch <= 0 or not claims:
                 return await super()._a_generate_verdicts(multimodal)
             verdicts: list[Any] = []
             try:
                 for start in range(0, len(claims), verdict_batch):
-                    batch = claims[start:start + verdict_batch]
-                    self.claims = batch
-                    got = list(await super()._a_generate_verdicts(multimodal))
-                    if len(got) != len(batch):
-                        # One retry: a miscount is not repeatable call to call.
-                        got = list(await super()._a_generate_verdicts(multimodal))
-                    if len(got) != len(batch):
-                        raise ValueError(
-                            f"judge returned {len(got)} verdicts for a batch of "
-                            f"{len(batch)} claims"
-                        )
-                    verdicts.extend(got)
+                    verdicts.extend(
+                        await self._judge(claims[start:start + verdict_batch], multimodal)
+                    )
             finally:
                 self.claims = claims
             return verdicts
+
+        async def _judge(self, batch: list[str], multimodal: bool) -> list[Any]:
+            """Verdicts for ``batch``, one per claim, in order.
+
+            A miscounted reply is not repeatable call to call, and a shorter
+            list is counted more reliably, so a batch that comes back with
+            the wrong count is split in half and each half judged again
+            (2026-10-26: a batch of 10 returned 9 verdicts twice, and the
+            old retry-then-raise dropped the whole rail). A single claim
+            gets one retry, then raises.
+            """
+            self.claims = batch
+            got = list(await base._a_generate_verdicts(self, multimodal))
+            if len(got) == len(batch):
+                return got
+            if len(batch) == 1:
+                got = list(await base._a_generate_verdicts(self, multimodal))
+                if len(got) == 1:
+                    return got
+                raise ValueError(f"judge returned {len(got)} verdicts for 1 claim")
+            mid = len(batch) // 2
+            return await self._judge(batch[:mid], multimodal) + await self._judge(
+                batch[mid:], multimodal
+            )
 
     # deepeval (4.2.8) looks its prompt templates up by class name, so the
     # subclass must answer to the base's name or every prompt is "not found".

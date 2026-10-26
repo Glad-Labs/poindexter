@@ -644,32 +644,39 @@ class TestBatchedFaithfulness:
         assert verdicts == [f"v:C{i}" for i in range(7)]
         assert m.claims == [f"C{i}" for i in range(7)], "the full list is restored"
 
-    async def test_a_short_batch_is_retried_then_raises(self):
+    async def test_a_batch_that_always_miscounts_splits_down_then_raises(self):
         m = self._metric(batch=3)
         m.claims = [f"C{i}" for i in range(5)]
         m.short_by = 1
-        with pytest.raises(ValueError, match="2 verdicts for a batch of 3"):
+        with pytest.raises(ValueError, match="0 verdicts for 1 claim"):
             await m._a_generate_verdicts(False)
-        assert len(m.verdict_calls) == 2, "the miscounted batch is asked twice"
+        assert [len(b) for b in m.verdict_calls][:3] == [3, 1, 1], (
+            "3 miscounts, split to 1 + 2; the single claim is retried once"
+        )
         assert m.claims == [f"C{i}" for i in range(5)]
 
-    async def test_a_miscount_that_corrects_on_retry_is_kept(self):
-        m = self._metric(batch=3)
-        m.claims = [f"C{i}" for i in range(3)] + ["C3"]
-        calls = {"n": 0}
+    async def test_a_miscounted_batch_is_split_and_the_halves_kept(self):
+        """The 2026-10-26 shape: 10 claims came back as 9 verdicts, twice."""
+        m = self._metric(batch=4)
+        m.claims = [f"C{i}" for i in range(6)]
         orig = _FakeFaithfulness._a_generate_verdicts
 
-        async def flaky(self, mm):
-            calls["n"] += 1
-            self.short_by = 1 if calls["n"] == 1 else 0
+        async def miscount_full_batches(self, mm):
+            self.short_by = 1 if len(self.claims) == 4 else 0
             return await orig(self, mm)
 
-        _FakeFaithfulness._a_generate_verdicts = flaky
+        _FakeFaithfulness._a_generate_verdicts = miscount_full_batches
         try:
             verdicts = await m._a_generate_verdicts(False)
         finally:
             _FakeFaithfulness._a_generate_verdicts = orig
-        assert verdicts == ["v:C0", "v:C1", "v:C2", "v:C3"]
+        assert verdicts == [f"v:C{i}" for i in range(6)]
+        assert [len(b) for b in m.verdict_calls] == [4, 2, 2, 2]
+
+    async def test_a_short_draft_is_count_checked_too(self):
+        m = self._metric(batch=10)
+        m.claims = ["C0", "C1"]
+        assert await m._a_generate_verdicts(False) == ["v:C0", "v:C1"]
 
     async def test_zero_turns_both_splits_off(self):
         m = self._metric(chunk=0, batch=0)
