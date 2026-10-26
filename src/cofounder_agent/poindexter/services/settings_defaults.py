@@ -5958,6 +5958,9 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # still covered via Prometheus (node_hwmon_power_watt{chip=~".*1b1c.*"} +
     # the Shelly psu_total_power_watts) rather than by this probe. Keep the
     # entry out: a feed whose producer is retired can only ever report stale.
+    # atom_runs rows come only from pipeline runs, about one a day at ~09:00,
+    # so 720 min paged every evening (~22:00 on 10-24 and 10-25). 1800 still
+    # catches a pipeline that has stopped running.
     'data_freshness_probe_enabled': 'true',
     'data_freshness_feeds': (
         '[{"name": "cost_logs", "table": "cost_logs", "column": "created_at",'
@@ -5965,7 +5968,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' {"name": "gpu_metrics", "table": "gpu_metrics", "column": "timestamp",'
         ' "threshold_minutes": 30},'
         ' {"name": "atom_runs", "table": "atom_runs", "column": "created_at",'
-        ' "threshold_minutes": 720},'
+        ' "threshold_minutes": 1800},'
         ' {"name": "page_views", "table": "page_views", "column": "created_at",'
         ' "threshold_minutes": 2880}]'
     ),

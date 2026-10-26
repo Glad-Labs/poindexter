@@ -126,8 +126,9 @@ _FEEDS_REF = f"app_settings.{FEEDS_SETTING_KEY}"
 # still watches the core feeds. Thresholds are deliberately generous
 # (page on DEAD, not on slow): cost_logs is written every 5-min brain
 # cycle (electricity cost) so 3h = many missed cycles; gpu_metrics comes
-# from the always-on host gpu-scraper daemon; atom_runs goes quiet only
-# when the content pipeline is dark for half a day; page_views can be
+# from the always-on host gpu-scraper daemon; atom_runs is written only by
+# pipeline runs, about one a day, so 30h (was 12h, which paged every
+# evening) means a day's run was missed; page_views can be
 # legitimately quiet, so only a 2-day silence is worth a look; the
 # corsair_csv iCUE feed is re-ingested every 5 min by IngestCorsairCsvJob
 # (a local CSV that iCUE rewrites every 30s), so it stays ~5-10m fresh and
@@ -140,7 +141,7 @@ DEFAULT_FEEDS: list[dict[str, Any]] = [
     {"name": "gpu_metrics", "table": "gpu_metrics", "column": "timestamp",
      "threshold_minutes": 30},
     {"name": "atom_runs", "table": "atom_runs", "column": "created_at",
-     "threshold_minutes": 720},
+     "threshold_minutes": 1800},
     {"name": "page_views", "table": "page_views", "column": "created_at",
      "threshold_minutes": 2880},
     # No corsair_csv feed (retired 2026-07-28). The iCUE CSV sampler is gone —
