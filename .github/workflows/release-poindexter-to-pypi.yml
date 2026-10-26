@@ -199,7 +199,7 @@ jobs:
           path: dist/
 
       - name: Publish to TestPyPI (OIDC)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.0 / release/v1 as of 2026-05-12
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.0 / release/v1 as of 2026-05-12
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
@@ -241,7 +241,7 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI (OIDC Trusted Publisher)
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.0 / release/v1 as of 2026-05-12
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.0 / release/v1 as of 2026-05-12
         with:
           packages-dir: dist/
           # skip-existing guards against re-runs trying to upload an
