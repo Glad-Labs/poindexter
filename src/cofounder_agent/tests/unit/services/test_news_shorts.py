@@ -150,8 +150,9 @@ async def test_the_best_in_scope_story_is_picked():
          patch("poindexter.services.topic_scope.check_scope",
                AsyncMock(return_value=ScopeResult(in_scope={"n1", "n2"}, out_of_scope={"n0"}))):
         svc.return_value.get_by_slug = AsyncMock(return_value=niche)
-        result = await ns.pick_story(pool, _SC())
+        result = await ns.pick_story(pool, _SC(news_shorts_hook_pick_enabled="false"))
     assert result.story is not None and result.story.pool_id == "p1"
+    assert result.story.picked_by == "score"
     assert (result.considered, result.in_scope) == (3, 2)
 
 
@@ -359,3 +360,79 @@ async def test_mark_standalone_titles_the_short_and_stores_its_script():
     assert title == "RTX 5090 shipment goes missing"
     assert description == "Source: https://example.com/story"
     assert conn.execute.call_args.args[1:] == ("t1", "the script")
+
+
+# ---------------------------------------------------------------------------
+# The hook pick (2026-10-27): among in-scope stories, the one with the most
+# concrete hook, falling back to the best feed score on any failure.
+# ---------------------------------------------------------------------------
+
+
+async def _pick_with_reply(reply, *, rows=None, in_scope=("n0", "n1", "n2"), sc=None):
+    pool = _pool_with(rows or [_row(0), _row(1), _row(2)])
+    niche = SimpleNamespace(slug="starter-blog", has_topic_scope=True, topic_subject="AI hardware")
+    chat = AsyncMock(side_effect=reply) if isinstance(reply, Exception) else AsyncMock(return_value=reply)
+    pm = MagicMock()
+    pm.get_prompt = MagicMock(return_value="prompt")
+    with patch("poindexter.services.niche_service.NicheService") as svc, \
+         patch("poindexter.services.topic_scope.check_scope",
+               AsyncMock(return_value=ScopeResult(in_scope=set(in_scope)))), \
+         patch("poindexter.services.topic_ranking._ollama_chat_json", chat), \
+         patch("poindexter.services.prompt_manager.get_prompt_manager", return_value=pm):
+        svc.return_value.get_by_slug = AsyncMock(return_value=niche)
+        result = await ns.pick_story(pool, sc or _SC(news_shorts_hook_pick_model="m"))
+    return result, chat, pm
+
+
+@pytest.mark.asyncio
+async def test_the_hook_pick_chooses_among_in_scope_stories():
+    result, chat, pm = await _pick_with_reply(
+        '{"pick": "s3", "reason": "names Story 2 and a number"}'
+    )
+    assert result.story.pool_id == "p2"
+    assert result.story.picked_by == "hook"
+    assert result.story.pick_reason == "names Story 2 and a number"
+    stories = pm.get_prompt.call_args.kwargs["stories"]
+    assert "[s1] Story 0" in stories and "[s3] Story 2" in stories
+    assert pm.get_prompt.call_args.kwargs["subject"] == "AI hardware"
+
+
+@pytest.mark.asyncio
+async def test_a_bracketed_label_is_accepted():
+    result, _chat, _pm = await _pick_with_reply('{"pick": "[s2]", "reason": "r"}')
+    assert result.story.pool_id == "p1" and result.story.picked_by == "hook"
+
+
+@pytest.mark.asyncio
+async def test_a_pick_naming_no_offered_story_falls_back_to_the_feed_score():
+    result, _chat, _pm = await _pick_with_reply('{"pick": "s9", "reason": "?"}')
+    assert result.story.pool_id == "p0"
+    assert result.story.picked_by == "score"
+    assert any("named no offered story" in e for e in result.errors)
+
+
+@pytest.mark.asyncio
+async def test_a_model_error_falls_back_to_the_feed_score():
+    result, _chat, _pm = await _pick_with_reply(RuntimeError("judge down"))
+    assert result.story.pool_id == "p0" and result.story.picked_by == "score"
+    assert any("hook pick failed" in e for e in result.errors)
+
+
+@pytest.mark.asyncio
+async def test_one_in_scope_story_needs_no_pick():
+    result, chat, _pm = await _pick_with_reply('{"pick": "s1"}', in_scope=("n1",))
+    assert result.story.pool_id == "p1" and result.story.picked_by == "score"
+    chat.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_only_in_scope_stories_are_offered():
+    result, _chat, pm = await _pick_with_reply('{"pick": "s1", "reason": "r"}', in_scope=("n0", "n2"))
+    stories = pm.get_prompt.call_args.kwargs["stories"]
+    assert "Story 1" not in stories
+    assert result.story.pool_id == "p0"
+
+
+def test_the_picker_survives_the_task_metadata_round_trip():
+    story = _story(picked_by="hook", pick_reason="a named product and a number")
+    assert ns.NewsStory.from_metadata(json.dumps(story.as_metadata())) == story

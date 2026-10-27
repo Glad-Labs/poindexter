@@ -15,6 +15,9 @@ metadata:
     - key: news_short.script_fix
       output_format: text
       description: 'The one corrective retry for news_short.script: carries the reason code rejected the first reply ({reason}) and the word range ({min_words}, {max_words}). Used by services.news_shorts.write_script.'
+    - key: news_short.hook_pick
+      output_format: json
+      description: 'Picks which of several in-scope news stories ({stories}, one "[label] headline — summary" per line) makes the strongest Short for a channel about {subject}: the one with a concrete hook, a named company, product or person plus a specific number, record, incident or reversal. Returns JSON {pick, reason}; code checks the pick is one of the labels and falls back to the best feed score. Used by services.news_shorts.pick_story.'
 ---
 
 # News Short skill
@@ -69,3 +72,26 @@ only facts and numbers the story states.
 
 Output ONLY the narration.
 ```
+
+## news_short.hook_pick
+
+```text
+You choose which news story becomes a 40-second YouTube Short for a channel about {subject}.
+
+Choose the story with the most concrete hook, the one a viewer understands from a single line. A strong hook names a specific company, product or person and gives a specific number, record, incident or reversal: a price, a benchmark result, a count, a theft, a shutdown, a broken record.
+
+Prefer a story where something happened over a story about an opinion, a trend or advice.
+
+Stories:
+{stories}
+
+Return JSON only:
+{{"pick": "<label of the story you choose>", "reason": "<one sentence naming its hook>"}}
+```
+
+> **Why a hook pick (2026-10-27).** The first 21 Shorts on the channel showed a
+> clear pattern: the best by views named a company or product with a concrete
+> number or event (ASML EUV bottleneck 108 views, "probed OpenAI with 16,000
+> requests" 82, "67% hallucinations" 76, a broken overclocking record 64), and
+> the worst were abstract (6, 3, 1). The pool's feed score measures popularity
+> where the story was posted, not whether it makes a Short.

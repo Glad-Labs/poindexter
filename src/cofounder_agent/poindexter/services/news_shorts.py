@@ -167,6 +167,11 @@ class NewsStory:
     url: str
     summary: str = ""
     score: float = 0.0
+    # How the story was chosen: "hook" (the hook pick) or "score" (best feed
+    # score, the fallback). Kept on the task so views can be compared by
+    # picker. Empty on tasks queued before 2026-10-27.
+    picked_by: str = ""
+    pick_reason: str = ""
 
     def as_metadata(self) -> dict[str, Any]:
         return asdict(self)
@@ -191,6 +196,8 @@ class NewsStory:
         return cls(
             pool_id=str(raw.get("pool_id") or ""), source=str(raw.get("source") or ""),
             title=title, url=url, summary=str(raw.get("summary") or ""), score=score,
+            picked_by=str(raw.get("picked_by") or ""),
+            pick_reason=str(raw.get("pick_reason") or ""),
         )
 
 
@@ -282,15 +289,74 @@ async def pick_story(pool: Any, site_config: Any) -> PickResult:
     scope = await check_scope(items, niche, site_config=site_config)
     result.in_scope = len(scope.in_scope)
     result.errors = list(scope.errors)
-    for i, story in enumerate(stories):
-        if f"n{i}" in scope.in_scope:
-            result.story = story
-            return result
+    in_scope = [story for i, story in enumerate(stories) if f"n{i}" in scope.in_scope]
+    if in_scope:
+        result.story = await _pick_by_hook(in_scope, niche, site_config, result)
+        return result
     result.note = (
         f"none of {len(stories)} stories judged in scope"
         + (f" ({len(scope.unjudged)} unjudged)" if scope.unjudged else "")
     )
     return result
+
+
+async def _pick_by_hook(
+    stories: list[NewsStory], niche: Any, site_config: Any, result: PickResult,
+) -> NewsStory:
+    """The in-scope story with the most concrete hook; never raises.
+
+    ``stories`` arrive in feed-score order, and the first is the fallback for
+    every failure: the pick turned off, a single story, no model, a model
+    error, or a reply that names no offered story. The chosen story carries
+    ``picked_by`` ("hook" or "score") and the model's one-line reason.
+    """
+    from dataclasses import replace
+
+    fallback = replace(stories[0], picked_by="score", pick_reason="")
+    if len(stories) < 2 or not _sc_bool(site_config, "news_shorts_hook_pick_enabled", True):
+        return fallback
+    offered = stories[: max(2, _sc_int(site_config, "news_shorts_hook_pick_max_stories", 8))]
+    labels = {f"s{i}": story for i, story in enumerate(offered, start=1)}
+    lines = "\n".join(
+        f"[{label}] {' '.join(story.title.split())}"
+        + (f" — {' '.join(story.summary.split())[:300]}" if story.summary.strip() else "")
+        for label, story in labels.items()
+    )
+    model = str(site_config.get("news_shorts_hook_pick_model", "") or "").strip()
+    try:
+        from poindexter.services.prompt_manager import get_prompt_manager
+        from poindexter.services.topic_ranking import _ollama_chat_json
+        from poindexter.utils.json_extract import extract_json_object
+
+        if not model:
+            from poindexter.services.llm_text import resolve_structured_model
+
+            model = resolve_structured_model(site_config=site_config)
+        prompt = get_prompt_manager().get_prompt(
+            "news_short.hook_pick",
+            subject=str(getattr(niche, "topic_subject", "") or "").strip() or "technology",
+            stories=lines,
+        )
+        reply = extract_json_object(
+            await _ollama_chat_json(prompt, model=model, site_config=site_config) or ""
+        ) or {}
+    except Exception as exc:  # noqa: BLE001 — the feed-score pick is a working fallback
+        from poindexter.utils.exception_format import describe_exception
+
+        result.errors.append(f"hook pick failed: {describe_exception(exc)}")
+        logger.warning("[news_shorts] hook pick failed (%s); using the best feed score",
+                       describe_exception(exc))
+        return fallback
+    label = str(reply.get("pick") or "").strip().strip("[]").strip()
+    chosen = labels.get(label)
+    if chosen is None:
+        result.errors.append(f"hook pick named no offered story: {label[:40]!r}")
+        logger.warning("[news_shorts] hook pick named no offered story (%r); using the best "
+                       "feed score", label[:40])
+        return fallback
+    return replace(
+        chosen, picked_by="hook", pick_reason=str(reply.get("reason") or "").strip()[:300],
+    )
 
 
 async def made_since(pool: Any, since: Any) -> int:

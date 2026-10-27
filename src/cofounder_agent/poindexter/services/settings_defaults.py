@@ -917,6 +917,18 @@ DEFAULTS: dict[str, str] = {
     'news_shorts_max_age_hours': '24',
     # Fresh stories sent to the scope check per pick, best-scored first.
     'news_shorts_candidate_limit': '20',
+    # Among the in-scope stories, the structured model picks the one with the
+    # most concrete hook (a named company or product plus a specific number,
+    # record or incident) instead of taking the best feed score. On 2026-10-27
+    # the top Shorts by views were all of that shape (ASML EUV 108, "16,000
+    # requests" 82, "67% hallucinations" 76) and the abstract ones the worst
+    # (6, 3, 1). Any failure falls back to the best feed score. Each task
+    # records which picker chose it (news_short.picked_by) for comparison.
+    'news_shorts_hook_pick_enabled': 'true',
+    # Model for the pick; empty = the structured-extraction model.
+    'news_shorts_hook_pick_model': '',
+    # In-scope stories offered to the pick, in feed-score order.
+    'news_shorts_hook_pick_max_stories': '8',
     # The story's page is the script's whole corpus: fewer readable characters
     # than this and the run stops rather than writing from a headline.
     'news_shorts_min_source_chars': '800',
@@ -7176,6 +7188,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'news_shorts_sources': {'owner': 'news_shorts', 'value_type': 'csv'},
     'news_shorts_max_age_hours': {'owner': 'news_shorts', 'value_type': 'integer'},
     'news_shorts_candidate_limit': {'owner': 'news_shorts', 'value_type': 'integer'},
+    'news_shorts_hook_pick_enabled': {'owner': 'news_shorts', 'value_type': 'boolean'},
+    'news_shorts_hook_pick_model': {'owner': 'news_shorts', 'value_type': 'model'},
+    'news_shorts_hook_pick_max_stories': {'owner': 'news_shorts', 'value_type': 'integer'},
     'news_shorts_min_source_chars': {'owner': 'news_shorts', 'value_type': 'integer'},
     'news_shorts_source_max_chars': {'owner': 'news_shorts', 'value_type': 'integer'},
     'news_shorts_script_model': {'owner': 'news_shorts', 'value_type': 'model'},
