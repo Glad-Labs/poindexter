@@ -22,7 +22,7 @@ audio = [
     # write / DoS / integer overflow advisories. The 0.0.94+ resolver
     # requires livekit-api >=1.0.5 so the livekit constraints widen too.
     "pipecat-ai[silero,whisper,kokoro,livekit]>=0.0.94,<2.0",
-    "pillow>=12.2.0,<13.0",
+    "pillow>=12.2.0,<14.0",
     "livekit>=1.0,<2.0",
     "livekit-api>=1.0.5,<2.0",
     "faster-whisper>=1.1,<2.0",
