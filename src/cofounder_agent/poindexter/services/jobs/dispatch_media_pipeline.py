@@ -61,6 +61,7 @@ from typing import Any
 
 from poindexter.plugins.job import JobResult
 from poindexter.services.media_infra_health import check_media_infra_health
+from poindexter.services.media_policy import shot_count_sql, wants_long_video_sql
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -98,7 +99,20 @@ logger = logging.getLogger(__name__)
 # itself), so those tasks don't match the exclusion. Two-seam join matches
 # media_reconciliation._EXISTING_MEDIA_SQL semantics (fresh rows are
 # task-keyed; ``podcast_distribute``-linked rows may be post-keyed only).
-_ELIGIBLE_SQL = """
+# Long videos are optional per niche (2026-10-27): a post whose plan
+# (posts.media_to_generate) names the Short but not the long form is owed a
+# Short only, so for it the plan that must exist is the short_shot_list and
+# the asset that means "done" is a video_short. Everything else keeps the long
+# lane rules above. The rule lives in services/media_policy.py so this query,
+# the stranded metric and the shot-list backfill read it identically.
+_WANTS_LONG = wants_long_video_sql("pt.task_id")
+_LANE_SHOTS = (
+    f"CASE WHEN {_WANTS_LONG} THEN {shot_count_sql('pv', 'video_shot_list')} "
+    f"ELSE {shot_count_sql('pv', 'short_shot_list')} END"
+)
+_DONE_TYPE = f"CASE WHEN {_WANTS_LONG} THEN 'video' ELSE 'video_short' END"
+
+_ELIGIBLE_SQL = f"""
     SELECT pt.task_id
       FROM pipeline_tasks pt
      WHERE pt.status IN ('approved', 'published')
@@ -107,7 +121,7 @@ _ELIGIBLE_SQL = """
            SELECT 1
              FROM media_assets ma
         LEFT JOIN posts mp ON mp.id = ma.post_id
-            WHERE ma.type = 'video'
+            WHERE ma.type = {_DONE_TYPE}
               AND (ma.task_id = pt.task_id
                    OR mp.metadata->>'pipeline_task_id' = pt.task_id)
        )
@@ -117,19 +131,11 @@ _ELIGIBLE_SQL = """
             WHERE pv.task_id = pt.task_id
               AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' IS NOT NULL
               AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' != ''
-              AND CASE
-                    WHEN jsonb_typeof(
-                           pv.stage_data -> 'task_metadata'
-                             -> 'video_shot_list' -> 'shots') = 'array'
-                    THEN jsonb_array_length(
-                           pv.stage_data -> 'task_metadata'
-                             -> 'video_shot_list' -> 'shots')
-                    ELSE 0
-                  END > 0
+              AND {_LANE_SHOTS} > 0
        )
      ORDER BY pt.updated_at ASC
      LIMIT $1
-"""
+"""  # nosec B608 - only code-built fragments are interpolated (media_policy SQL helpers over literal lane keys and pt.task_id); every value is a bind parameter
 
 # The stranded population: publishable, podcast_script present, no video, and
 # no renderable shot list. Deliberately NOT filtered on
@@ -137,13 +143,13 @@ _ELIGIBLE_SQL = """
 # ALREADY claimed, so a marker-filtered count reported a comforting zero while
 # the whole catalog sat un-renderable. Reported as a job metric every cycle so
 # the number is on a graph rather than inferred from a drift finding.
-_STRANDED_SQL = """
+_STRANDED_SQL = f"""
     SELECT COUNT(*)
       FROM pipeline_tasks pt
      WHERE pt.status IN ('approved', 'published')
        AND NOT EXISTS (
            SELECT 1 FROM media_assets ma
-            WHERE ma.task_id = pt.task_id AND ma.type = 'video'
+            WHERE ma.task_id = pt.task_id AND ma.type = {_DONE_TYPE}
        )
        AND EXISTS (
            SELECT 1
@@ -151,17 +157,9 @@ _STRANDED_SQL = """
             WHERE pv.task_id = pt.task_id
               AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' IS NOT NULL
               AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' != ''
-              AND CASE
-                    WHEN jsonb_typeof(
-                           pv.stage_data -> 'task_metadata'
-                             -> 'video_shot_list' -> 'shots') = 'array'
-                    THEN jsonb_array_length(
-                           pv.stage_data -> 'task_metadata'
-                             -> 'video_shot_list' -> 'shots')
-                    ELSE 0
-                  END = 0
+              AND {_LANE_SHOTS} = 0
        )
-"""
+"""  # nosec B608 - only code-built fragments are interpolated (media_policy SQL helpers over literal lane keys and pt.task_id); every value is a bind parameter
 
 # Conditional claim — only one worker wins. Affects 0 rows if already claimed.
 _CLAIM_SQL = """

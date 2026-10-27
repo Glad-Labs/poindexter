@@ -52,6 +52,7 @@ import logging
 from typing import Any
 
 from poindexter.plugins.job import JobResult
+from poindexter.services.media_policy import shot_count_sql, wants_long_video_sql
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
@@ -80,7 +81,8 @@ _STRANDED_SQL = """
            -- director returns a long list only and the short lane silently
            -- stays un-renderable — half a recovery that reads as a whole one.
            pv.stage_data -> 'task_metadata' ->> 'short_summary_script'
-               AS short_summary_script
+               AS short_summary_script,
+           {wants_long} AS wants_long
       FROM pipeline_tasks pt
       JOIN LATERAL (
            SELECT id, title, content, stage_data
@@ -92,22 +94,21 @@ _STRANDED_SQL = """
      WHERE pt.status IN ('approved', 'published')
        AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' IS NOT NULL
        AND pv.stage_data -> 'task_metadata' ->> 'podcast_script' != ''
+       -- The lane the post is owed (services/media_policy.py): the long
+       -- form, or only the Short for a niche that turned long videos off.
        AND NOT EXISTS (
            SELECT 1 FROM media_assets ma
-            WHERE ma.task_id = pt.task_id AND ma.type = 'video'
+            WHERE ma.task_id = pt.task_id
+              AND ma.type = CASE WHEN {wants_long} THEN 'video' ELSE 'video_short' END
        )
-       AND CASE
-             WHEN jsonb_typeof(
-                    pv.stage_data -> 'task_metadata'
-                      -> 'video_shot_list' -> 'shots') = 'array'
-             THEN jsonb_array_length(
-                    pv.stage_data -> 'task_metadata'
-                      -> 'video_shot_list' -> 'shots')
-             ELSE 0
-           END = 0
+       AND CASE WHEN {wants_long} THEN {long_shots} ELSE {short_shots} END = 0
      ORDER BY pt.updated_at DESC
      LIMIT $1
-"""
+""".format(  # nosec B608 - fills in code-built media_policy fragments only; the limit is a bind parameter
+    wants_long=wants_long_video_sql("pt.task_id"),
+    long_shots=shot_count_sql("pv", "video_shot_list"),
+    short_shots=shot_count_sql("pv", "short_shot_list"),
+)
 
 # Write the regenerated lists into the SAME version row the query read, so a
 # concurrently-written newer version is never clobbered.
@@ -253,8 +254,13 @@ class BackfillVideoShotListsJob:
             long_list = updates.get("video_shot_list")
             short_list = updates.get("short_shot_list")
             n_long = _shots_of(long_list)
+            # A post owed only a Short (its niche turned long videos off) is
+            # recovered by a Short plan; the director takes the short-only
+            # path for it and returns no long list at all.
+            wants_long = row.get("wants_long") is not False
+            recovered = n_long if wants_long else _shots_of(short_list)
 
-            if n_long == 0:
+            if recovered == 0:
                 # Skipped again (busy GPU) or produced nothing usable. Leave
                 # the piece exactly as it was — including its marker — so this
                 # run is a no-op rather than a state change that looks like
@@ -302,7 +308,7 @@ class BackfillVideoShotListsJob:
                     await conn.execute(
                         _WRITE_SQL,
                         row["version_id"],
-                        json.dumps(long_list),
+                        json.dumps(long_list or {}),
                         json.dumps(short_list or {}),
                     )
                     await conn.execute(_UNCLAIM_SQL, row["task_id"])

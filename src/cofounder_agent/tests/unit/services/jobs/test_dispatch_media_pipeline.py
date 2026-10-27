@@ -192,7 +192,10 @@ def test_eligible_sql_excludes_tasks_that_already_have_a_video():
     persist was then discarded. Both seams are checked — fresh rows are
     task-keyed, distribute-linked rows may be post-keyed only."""
     assert "NOT EXISTS" in dmp._ELIGIBLE_SQL
-    assert "ma.type = 'video'" in dmp._ELIGIBLE_SQL
+    # The finished asset is the lane the post is owed: the long video, or its
+    # Short for a niche that turned long videos off (2026-10-27).
+    assert "ma.type = CASE WHEN" in dmp._ELIGIBLE_SQL
+    assert "THEN 'video' ELSE 'video_short' END" in dmp._ELIGIBLE_SQL
     assert "ma.task_id = pt.task_id" in dmp._ELIGIBLE_SQL
     assert "mp.metadata->>'pipeline_task_id' = pt.task_id" in dmp._ELIGIBLE_SQL
 
@@ -876,3 +879,11 @@ async def test_reclaim_lever_isolation_covers_stable_audio():
         await dmp._attempt_vram_reclaim(_sc_gated())
     stable_audio_mock.assert_awaited_once_with(hard=True)
     comfyui_mock.assert_awaited_once_with(hard=True)
+
+
+def test_a_short_only_post_needs_its_short_plan_not_a_long_one():
+    """A post owed only a Short is eligible on its short_shot_list; asking it
+    for a long plan would leave it stranded forever (2026-10-27)."""
+    for sql in (dmp._ELIGIBLE_SQL, dmp._STRANDED_SQL):
+        assert "'video_shot_list'" in sql and "'short_shot_list'" in sql
+        assert "media_to_generate" in sql

@@ -155,6 +155,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from poindexter.plugins.job import JobResult
+from poindexter.services.media_policy import wants_long_video
 from poindexter.services.r2_upload_service import podcast_episode_key
 from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
@@ -978,7 +979,13 @@ class MediaReconciliationJob:
         # render is gone). A wants-video post with no video row is drift →
         # re-dispatched (Pass 2). Not built: the podcast_delivered_gone twin
         # (HEAD a delivered video, re-upload if its object vanished).
-        row["video_missing"] = wants_video and (post_id, "video") not in existing_pairs
+        # The video a post is owed: the long form, unless its plan names the
+        # Short and not the long form (a niche that turned long videos off,
+        # 2026-10-27), in which case its Short is the video. Checking "video"
+        # there would re-dispatch the post forever for a render that is never
+        # made — and every re-dispatch re-renders its Short.
+        owed_type = "video" if wants_long_video(sorted(media_policy)) else "video_short"
+        row["video_missing"] = wants_video and (post_id, owed_type) not in existing_pairs
         row["video_exists"] = False
         row["video_url"] = ""
         return row

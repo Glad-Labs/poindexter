@@ -386,3 +386,43 @@ class TestBackfillVideoShotLists:
         assert job.name == "backfill_video_shot_lists"
         # Real GPU work — overlapping instances must not stack.
         assert job.idempotent is False
+
+
+@pytest.mark.unit
+class TestShortOnlyRecovery:
+    """A post owed only a Short (its niche turned long videos off, 2026-10-27)
+    is recovered by a Short plan. Counting long shots there would leave it
+    stranded forever, since the director never plans a long list for it."""
+
+    async def test_short_plan_recovers_a_short_only_post(self, monkeypatch):
+        monkeypatch.setattr(
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+        )
+        _patch_deps(
+            monkeypatch,
+            stage_result=MagicMock(
+                context_updates={"short_shot_list": _SHOT_LIST}, detail="short-only",
+            ),
+        )
+        pool = _FakePool([{**_row(), "wants_long": False}])
+
+        result = await BackfillVideoShotListsJob().run(pool, _cfg())
+
+        assert result.changes_made == 1
+        assert "media_pipeline_dispatched_at = NULL" in " ".join(w[0] for w in pool.writes)
+
+    async def test_short_plan_alone_does_not_recover_a_post_owed_the_long_form(self, monkeypatch):
+        monkeypatch.setattr(
+            "poindexter.modules.content.jobs.backfill_video_shot_lists.emit_finding", lambda **kw: None,
+        )
+        _patch_deps(
+            monkeypatch,
+            stage_result=MagicMock(
+                context_updates={"short_shot_list": _SHOT_LIST}, detail="no long",
+            ),
+        )
+        pool = _FakePool([{**_row(), "wants_long": True}])
+
+        result = await BackfillVideoShotListsJob().run(pool, _cfg())
+
+        assert result.changes_made == 0 and pool.writes == []

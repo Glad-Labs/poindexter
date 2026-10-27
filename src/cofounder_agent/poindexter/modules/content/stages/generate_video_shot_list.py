@@ -46,6 +46,7 @@ from poindexter.plugins.stage import StageResult
 from poindexter.schemas.video_shot_list import VideoShotList
 from poindexter.services.gpu_admission import GpuBusyError
 from poindexter.services.gpu_scheduler import media_wait_budget_s
+from poindexter.utils.exception_format import describe_exception
 
 logger = logging.getLogger(__name__)
 
@@ -893,6 +894,28 @@ class GenerateVideoShotListStage:
                 detail="no DB pool / Platform handle in context — director skipped",
                 metrics={"skipped": True},
             )
+
+        # A niche that turned long videos off (its default_media_to_generate
+        # names the Short and not the long form, 2026-10-27) takes the same
+        # short-only path: no long director run for a video nobody renders.
+        # A niche with no plan keeps both lanes, as before.
+        if not short_only and context.get("niche_slug"):
+            from poindexter.services.media_policy import (
+                resolve_media_to_generate,
+                wants_long_video,
+            )
+
+            try:
+                plan = await resolve_media_to_generate(pool, context.get("niche_slug"))
+            except Exception as exc:  # noqa: BLE001 — planning both lanes is the safe miss
+                logger.warning(
+                    "[VIDEO_DIRECTOR] could not read the media plan for niche %r (%s); "
+                    "planning both lanes",
+                    context.get("niche_slug"), describe_exception(exc),
+                )
+                plan = []
+            if plan and not wants_long_video(plan):
+                short_only = True
 
         # Seam 1 Wave 3e (#667): config reads go through the handle. The guard
         # above guarantees ``platform`` is non-None here, so no None-tolerance

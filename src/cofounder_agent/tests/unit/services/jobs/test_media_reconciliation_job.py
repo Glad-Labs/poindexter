@@ -1783,3 +1783,31 @@ class TestDriftFingerprintGating:
         store: dict[str, str] = {}
         _, emit = await self._run_once(store, video_status=200)
         emit.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestOwedVideoType:
+    """A niche can turn long videos off (2026-10-27). Its posts are owed a
+    Short, so a post with its Short is not missing a video — counting the long
+    form there re-dispatched it, and re-rendered its Short, on every cycle."""
+
+    async def _check(self, plan, pairs):
+        client = AsyncMock()
+        client.head = AsyncMock()
+        row = {"id": "p1", "title": "t", "content": "b", "media_to_generate": plan}
+        return await MediaReconciliationJob()._check_post_media(
+            client, "https://r2.test", "v2", row, existing_pairs=pairs,
+        )
+
+    async def test_short_only_post_with_its_short_is_complete(self):
+        out = await self._check(["video_short"], {("p1", "video_short")})
+        assert out["video_missing"] is False
+
+    async def test_short_only_post_without_its_short_is_missing(self):
+        out = await self._check(["video_short"], set())
+        assert out["video_missing"] is True
+
+    async def test_a_post_owed_the_long_form_still_needs_it(self):
+        out = await self._check(["video", "video_short"], {("p1", "video_short")})
+        assert out["video_missing"] is True

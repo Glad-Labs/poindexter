@@ -1487,3 +1487,46 @@ def test_a_budget_demotion_that_opens_a_same_source_run_still_validates() -> Non
     assert [s.source for s in shot_list.shots].count("presenter") == 3
     assert any("budget" in n for n in notes)
 
+
+
+# ---------------------------------------------------------------------------
+# A niche that turned long videos off plans only the Short (2026-10-27).
+# ---------------------------------------------------------------------------
+
+
+def _blog_context(platform: MagicMock) -> dict:
+    context = _short_only_context(platform)
+    context.pop("short_only")
+    context["podcast_script"] = "long narration " * 40
+    context["niche_slug"] = "glad-labs"
+    return context
+
+
+@pytest.mark.asyncio
+async def test_a_niche_without_long_video_plans_only_the_short() -> None:
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text=_make_valid_short_director_output()), model="director-model-x",
+    )
+    with patch(
+        "poindexter.services.media_policy.resolve_media_to_generate",
+        AsyncMock(return_value=["podcast", "video_short"]),
+    ):
+        result = await _execute(_blog_context(platform))
+
+    assert platform.dispatch.complete.call_count == 1, "the long director is skipped"
+    assert "video_shot_list" not in result.context_updates
+    assert result.context_updates["short_shot_list"]["aspect"] == "9:16"
+
+
+@pytest.mark.asyncio
+async def test_a_niche_with_long_video_still_runs_the_long_director() -> None:
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text=_make_valid_short_director_output()), model="director-model-x",
+    )
+    with patch(
+        "poindexter.services.media_policy.resolve_media_to_generate",
+        AsyncMock(return_value=["podcast", "video", "video_short"]),
+    ):
+        await _execute(_blog_context(platform))
+
+    assert platform.dispatch.complete.call_count >= 2, "long and short directors both run"
