@@ -668,6 +668,13 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.sync_affiliate_clicks",
             "SyncAffiliateClicksJob",
         ),
+        # Podcast downloads from Cloudflare R2 analytics (2026-10-27): the
+        # only first-party record of a listen. Same CF token as page views.
+        (
+            "jobs",
+            "poindexter.services.jobs.sync_podcast_downloads",
+            "SyncPodcastDownloadsJob",
+        ),
         # CI benchmark ingest (glad-labs-stack#3337 follow-up). The nightly
         # benchmarks workflow measures endpoint latency on a HOSTED runner
         # that can't reach this DB, so this job pulls its

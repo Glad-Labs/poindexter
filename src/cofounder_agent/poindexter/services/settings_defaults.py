@@ -3148,6 +3148,18 @@ DEFAULTS: dict[str, str] = {
     # affiliate_link_clicks every 5 min (mirrors sync_cloudflare_analytics).
     'plugin.job.sync_affiliate_clicks.enabled': 'true',
     'plugin.job.sync_affiliate_clicks.interval_seconds': '300',
+    # Podcast downloads (services/jobs/sync_podcast_downloads.py): R2
+    # GetObject counts per episode per day from Cloudflare's GraphQL
+    # analytics, using cloudflare_analytics_api_token. Fetches are split into
+    # crawler sweeps, platform ingestion of a new episode, and the rest, the
+    # closest first-party sign of a listener (Spotify serves its own copy and
+    # never shows up here).
+    'podcast_downloads_sync_enabled': 'true',
+    'podcast_downloads_lookback_days': '3',
+    'podcast_downloads_initial_lookback_days': '30',
+    'podcast_downloads_ingest_window_hours': '6',
+    # An hour that fetched this many different episodes is a crawler sweep.
+    'podcast_downloads_sweep_min_episodes': '3',
     # Case-insensitive regex marking a /go click as bot traffic at ingest, so
     # affiliate_links.clicks and the Grafana panels count humans only
     # (poindexter#930 — crawlers were 52% of rows). Raw rows are still stored;
@@ -8460,6 +8472,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'screenshot_topic_keywords': {'owner': 'ai_content_generator'},
     'plugin.job.sync_affiliate_clicks.enabled': {'value_type': 'boolean'},
     'plugin.job.sync_affiliate_clicks.interval_seconds': {'value_type': 'integer'},
+    'podcast_downloads_sync_enabled': {'owner': 'sync_podcast_downloads', 'value_type': 'boolean'},
+    'podcast_downloads_lookback_days': {'owner': 'sync_podcast_downloads', 'value_type': 'integer'},
+    'podcast_downloads_initial_lookback_days': {'owner': 'sync_podcast_downloads', 'value_type': 'integer'},
+    'podcast_downloads_ingest_window_hours': {'owner': 'sync_podcast_downloads', 'value_type': 'integer'},
+    'podcast_downloads_sweep_min_episodes': {'owner': 'sync_podcast_downloads', 'value_type': 'integer'},
     'plugin.llm_provider.gemini.enabled': {'owner': 'gemini', 'value_type': 'boolean'},
     'plugin.tts_provider.chatterbox.atempo': {'owner': 'podcast_service', 'value_type': 'float'},
     'plugin.tts_provider.chatterbox.chunk_gap_seconds': {'owner': 'podcast_service', 'value_type': 'float'},
