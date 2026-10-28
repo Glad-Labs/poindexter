@@ -640,6 +640,51 @@ async def _load_resume_quiet(pool: Any) -> tuple[datetime, datetime, frozenset[s
     return resumed_at - _RESUME_QUIET_LEAD, resumed_at + timedelta(minutes=minutes), kinds
 
 
+# night_sleep records the wake only after it has woken the displays, ~35 s
+# after the box unfreezes, but jobs fire at once: on 2026-10-28 a DNS failure
+# at 08:00:18 was routed at 08:00:22 and paged, while the wake (08:00:08) was
+# not recorded until 08:00:44, so the quiet window above did not exist yet.
+# While the latest host_sleep is newer than the latest host_resume, the box
+# has woken but not said so: a batch holding a fresh, non-critical finding of
+# a quiet kind waits for the next pass instead of routing. Bounded so a wake
+# that is never recorded delays a finding by this much at most.
+_WAKE_RECORD_GRACE = timedelta(minutes=5)
+
+
+async def _held_for_wake_record(pool: Any, rows: list[dict[str, Any]]) -> int:
+    """How many findings in ``rows`` wait for night_sleep to record the wake."""
+    try:
+        async with pool.acquire() as conn:
+            slept = await conn.fetchval(
+                "SELECT max(timestamp) FROM audit_log "
+                "WHERE event_type = 'host_sleep' AND timestamp > now() - interval '1 day'")
+            if slept is None:
+                return 0
+            woke = await conn.fetchval(
+                "SELECT max(timestamp) FROM audit_log "
+                "WHERE event_type = 'host_resume' AND timestamp > now() - interval '1 day'")
+            if woke is not None and woke >= slept:
+                return 0
+            kinds_raw = await conn.fetchval(
+                "SELECT value FROM app_settings WHERE key = $1", _RESUME_QUIET_KINDS_KEY)
+    except Exception as exc:
+        logger.warning("[findings_alert_router] wake-record state unreadable: %s",
+                       describe_exception(exc))
+        return 0
+    kinds = {
+        k.strip() for k in (kinds_raw if kinds_raw is not None else _RESUME_QUIET_DEFAULT_KINDS).split(",")
+        if k.strip()
+    }
+    now = datetime.now(timezone.utc)
+    return sum(
+        1 for r in rows
+        if _finding_kind(r) in kinds
+        and _normalize_severity(r.get("severity") or "info") != "critical"
+        and isinstance(r.get("timestamp"), datetime)
+        and now - r["timestamp"] < _WAKE_RECORD_GRACE
+    )
+
+
 def _in_resume_quiet(row: dict[str, Any], kind: str, severity: str,
                      quiet: tuple[datetime, datetime, frozenset[str]] | None) -> bool:
     if quiet is None or _normalize_severity(severity) == "critical":
@@ -737,6 +782,20 @@ class FindingsAlertRouterJob:
                 ok=True,
                 detail=f"no new findings above watermark {watermark}",
                 changes_made=0,
+            )
+
+        held = await _held_for_wake_record(pool, rows)
+        if held:
+            # Watermark untouched: the whole batch is re-read next pass, once
+            # the wake is on record and the quiet window can apply.
+            return JobResult(
+                ok=True,
+                detail=(
+                    f"holding {len(rows)} finding(s) one pass: the box just woke and "
+                    f"{held} quiet-after-wake finding(s) wait for the wake record"
+                ),
+                changes_made=0,
+                metrics={"held_for_wake_record": len(rows)},
             )
 
         policies = await _load_policies(pool)

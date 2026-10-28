@@ -1223,3 +1223,63 @@ async def test_the_quiet_window_is_configurable_and_can_be_switched_off():
 async def test_no_wake_on_record_routes_as_before():
     pool, _ = _woke_pool([_finding_at(1, "job_failure", _WOKE)], resumed_at=None)
     assert (await FindingsAlertRouterJob().run(pool, {})).metrics["routed"] == 1
+
+
+# ---- Woken but not yet recorded (2026-10-28) --------------------------------
+
+
+def _unrecorded_wake_pool(rows, *, slept, woke, kinds=None):
+    pool, conn = _pool_with(fetchrow={"value": "899"}, fetch=rows)
+
+    async def _fetchval(sql, *args):
+        if "'host_sleep'" in sql:
+            return slept
+        if "'host_resume'" in sql and "resumed_at" not in sql:
+            return woke
+        if "resumed_at" in sql:
+            return None
+        if args and args[0] == "host_sleep_resume_quiet_kinds":
+            return kinds
+        return None
+
+    conn.fetchval = AsyncMock(side_effect=_fetchval)
+    return pool, conn
+
+
+async def test_a_finding_seconds_after_an_unrecorded_wake_waits_a_pass():
+    """2026-10-28: the DNS failure at 08:00:18 routed at 08:00:22, before
+    night_sleep recorded the 08:00:08 wake at 08:00:44, so it paged."""
+    now = datetime.now(timezone.utc)
+    rows = [_finding_at(1, "sentry_relay_drain_failed", now - timedelta(seconds=10))]
+    pool, conn = _unrecorded_wake_pool(rows, slept=now - timedelta(hours=7),
+                                       woke=now - timedelta(days=1))
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert result.metrics == {"held_for_wake_record": 1}
+    conn.execute.assert_not_awaited()  # nothing routed, watermark untouched
+
+
+async def test_once_the_wake_is_recorded_the_batch_is_not_held():
+    now = datetime.now(timezone.utc)
+    rows = [_finding_at(1, "post_verification_failure", now - timedelta(seconds=10))]
+    pool, _ = _unrecorded_wake_pool(rows, slept=now - timedelta(hours=7),
+                                    woke=now - timedelta(seconds=30))
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert "held_for_wake_record" not in result.metrics
+    assert result.metrics["routed"] == 1
+
+
+async def test_critical_and_unlisted_kinds_are_not_held():
+    now = datetime.now(timezone.utc)
+    rows = [_finding_at(1, "job_failure", now - timedelta(seconds=10), severity="critical"),
+            _finding_at(2, "post_verification_failure", now - timedelta(seconds=10))]
+    pool, _ = _unrecorded_wake_pool(rows, slept=now - timedelta(hours=7), woke=None)
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert "held_for_wake_record" not in result.metrics
+
+
+async def test_a_wake_that_is_never_recorded_holds_a_finding_five_minutes_at_most():
+    now = datetime.now(timezone.utc)
+    rows = [_finding_at(1, "job_failure", now - timedelta(minutes=6))]
+    pool, _ = _unrecorded_wake_pool(rows, slept=now - timedelta(hours=7), woke=None)
+    result = await FindingsAlertRouterJob().run(pool, {})
+    assert "held_for_wake_record" not in result.metrics
