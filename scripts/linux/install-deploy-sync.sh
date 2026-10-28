@@ -2,7 +2,7 @@
 # install-deploy-sync.sh — make the deploy driver run merged code, behind the
 # launcher's last-known-good fallback, move the docker watchdog and the GPU
 # scraper onto the deploy clone, and refresh the connector's and the recovery
-# agent's units when this host already has them (Glad-Labs/glad-labs-stack#4172,
+# agent's units when this host already has them (Glad-Labs/poindexter#4172,
 # #4188, #4232).
 #
 # Host setup; safe to re-run, and re-run it after any change to the launcher or
