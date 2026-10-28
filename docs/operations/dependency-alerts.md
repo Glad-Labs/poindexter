@@ -106,6 +106,28 @@ through `ignore-unfixed`. As of 2026-10-07:
 - **sprintf-js** (medium, root). Reached through `argparse` in istanbul's
   config loader. Needs an attacker-controlled format string.
 
+## Excepted
+
+A fixed advisory whose fix a dependency's own constraint keeps out of reach
+gets a scoped exception in the gates instead of a red weekly run nobody can
+clear. Each one is pinned (a path and an expiry in `.trivyignore.yaml`, the
+exact installed version in `.grype.yaml`), so it lapses when the package
+moves or the date passes. As of 2026-10-28:
+
+- **filelock** 3.32.7 (`src/cofounder_agent/poetry.lock`):
+  CVE-2026-112940 / GHSA-v4x8-3wr5-3wq8, plus two Windows-only advisories in
+  grype. Fixed in 4.2.1, but litellm (through 1.106.5) declares
+  `filelock<4.0`. All three are in `ReadWriteLock` / `SoftFileLock`, which
+  nothing in the repo or the backend's installed packages uses. Remove both
+  entries when litellm allows filelock 4. `mcp-server-voice` is on 4.2.4.
+- **virtualenv** 21.14.5 (`src/cofounder_agent/poetry.lock`, dev-only via
+  pre-commit), grype only: four activation-script advisories. Every fixed
+  release needs `packaging>=26.3`, and prefect pins `packaging<26.3`. Remove
+  when prefect allows it.
+- **dnspython** 2.8.0 (`src/cofounder_agent/poindexter/brain/poetry.lock`),
+  the lock's python<3.13 branch (CVE-2026-114605 in trivy). The brain image runs 3.14 and
+  gets 2.9.0. Remove when the brain's python floor moves to 3.13.
+
 Dismiss an alert only when its manifest no longer exists (reason
 `inaccurate`, with a comment naming the removed file and where the package
 lives now). Anything with a patched release gets fixed.

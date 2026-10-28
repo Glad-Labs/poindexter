@@ -22,3 +22,32 @@ misconfigurations:
       - "scripts/Dockerfile.auto-embed"
       - "scripts/Dockerfile.gpu-exporter"
       - "scripts/Dockerfile.voice-bot"
+
+vulnerabilities:
+  # CVE-2026-112940 / GHSA-v4x8-3wr5-3wq8 — filelock ReadWriteLock lets
+  # SQLite reopen its lock database by name (symlink / journal swap).
+  #
+  # Fixed only in filelock 4.2.1, and litellm (every release through
+  # 1.106.5) declares `filelock<4.0`, so the backend lock cannot reach the
+  # fix. Not reachable here: nothing in this repo or in the backend's
+  # installed packages uses ReadWriteLock (checked 2026-10-28), and the
+  # attack needs a local user with rename rights in the lock's directory.
+  # mcp-server-voice is on 4.2.4 and stays scanned.
+  #
+  # Remove when litellm allows filelock 4 (then `poetry update filelock
+  # --lock`). The expiry forces a re-check even if nobody remembers.
+  - id: CVE-2026-112940
+    paths:
+      - "src/cofounder_agent/poetry.lock"
+    expired_at: 2027-01-31
+    statement: "unreachable (no ReadWriteLock use); fix blocked by litellm filelock<4.0"
+
+  # CVE-2026-114605 / GHSA-45c3-73f7-pv4m — dnspython 2.8.0 in the brain
+  # lock is its python<3.13 branch only (2.9.0 needs 3.11+, the brain
+  # declares a 3.10 floor). The brain image runs Python 3.14 and resolves
+  # 2.9.0. Remove when the brain's python floor moves to 3.13.
+  - id: CVE-2026-114605
+    paths:
+      - "src/cofounder_agent/poindexter/brain/poetry.lock"
+    expired_at: 2027-01-31
+    statement: "unused branch; the brain image (py3.14) installs dnspython 2.9.0"

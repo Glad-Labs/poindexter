@@ -216,6 +216,9 @@ jobs:
           # like leaked secrets to a secret-scanner pattern matcher; it's
           # the documented record of known-clean findings, not a leak.
           skip-files: '.gitleaks-baseline.json'
+          # Path-scoped, expiring vulnerability exceptions, each with its
+          # reason (docs/operations/dependency-alerts.md, "Excepted").
+          trivyignores: '.trivyignore.yaml'
       - name: Trivy filesystem scan (SARIF for code-scanning tab)
         if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -231,6 +234,7 @@ jobs:
           # like leaked secrets to a secret-scanner pattern matcher; it's
           # the documented record of known-clean findings, not a leak.
           skip-files: '.gitleaks-baseline.json'
+          trivyignores: '.trivyignore.yaml'
       - name: Upload SARIF
         # GitHub Advanced Security is required to accept SARIF uploads on
         # private repos. glad-labs-stack doesn't have GHAS — the API

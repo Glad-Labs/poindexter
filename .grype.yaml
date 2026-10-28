@@ -1,0 +1,41 @@
+# grype ignore rules for the weekly `SBOM + grype scan` in security.yml.
+# grype reads this file from the working directory on its own.
+#
+# Every rule is pinned to the exact installed version, so it stops
+# matching the moment the package moves and the finding comes back.
+# Keep the rationale in step with .trivyignore.yaml and
+# docs/operations/dependency-alerts.md.
+ignore:
+  # filelock 3.32.7 in src/cofounder_agent/poetry.lock. All three advisories
+  # are in ReadWriteLock / SoftFileLock, which nothing here uses; two are
+  # Windows-only. The fix is filelock 4.2.1 and litellm pins filelock<4.0.
+  # Remove when litellm allows filelock 4.
+  - vulnerability: GHSA-v4x8-3wr5-3wq8  # CVE-2026-112940
+    package: {name: filelock, version: 3.32.7}
+  - vulnerability: CVE-2026-112940
+    package: {name: filelock, version: 3.32.7}
+  - vulnerability: GHSA-567q-5qvw-pf92  # CVE-2026-112907, Windows only
+    package: {name: filelock, version: 3.32.7}
+  - vulnerability: GHSA-9vhv-jxww-xfm5  # CVE-2026-112913, Windows only
+    package: {name: filelock, version: 3.32.7}
+
+  # virtualenv 21.14.5 in src/cofounder_agent/poetry.lock, a dev-only
+  # dependency of pre-commit. Every fixed release (21.14.6+) needs
+  # packaging>=26.3 and prefect pins packaging<26.3. The advisories are in
+  # generated activation scripts given a hostile env name or path. Remove
+  # when prefect allows packaging 26.3.
+  - vulnerability: GHSA-c978-59m8-c77v
+    package: {name: virtualenv, version: 21.14.5}
+  - vulnerability: GHSA-vxj4-q4g9-crj7
+    package: {name: virtualenv, version: 21.14.5}
+  - vulnerability: GHSA-394h-qwmc-48pf
+    package: {name: virtualenv, version: 21.14.5}
+  - vulnerability: GHSA-6w3r-xr62-4xcp
+    package: {name: virtualenv, version: 21.14.5}
+
+  # dnspython 2.8.0 in src/cofounder_agent/poindexter/brain/poetry.lock is
+  # the python<3.13 branch only (2.9.0 needs 3.11+, and the lock keeps the
+  # brain's declared 3.10 floor). The brain image runs Python 3.14, which
+  # resolves 2.9.0. Remove when the brain's python floor moves to 3.13.
+  - vulnerability: GHSA-45c3-73f7-pv4m
+    package: {name: dnspython, version: 2.8.0}
