@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## [0.162.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.161.0...v0.162.0) (2026-10-28)
+
+
+### Features
+
+* **ci:** the filmed quick start shows each command as it is typed ([#4557](https://github.com/Glad-Labs/glad-labs-stack/issues/4557)) ([d2f681c](https://github.com/Glad-Labs/glad-labs-stack/commit/d2f681c831118997be761a67097b4e355976aa2a))
+* **cli:** `tasks qa` shows what each QA check said; the how-to films it and the post ([#4573](https://github.com/Glad-Labs/glad-labs-stack/issues/4573)) ([a4d7b6b](https://github.com/Glad-Labs/glad-labs-stack/commit/a4d7b6b29562a0e3c2dfb0be5cf3340e73d92d1c))
+* **media:** a niche can turn long videos off and keep its Shorts ([#4615](https://github.com/Glad-Labs/glad-labs-stack/issues/4615)) ([84f8533](https://github.com/Glad-Labs/glad-labs-stack/commit/84f8533552e32e89d8eb2c443750211ccfa38357))
+* **news-shorts:** pick the in-scope story with the most concrete hook ([#4616](https://github.com/Glad-Labs/glad-labs-stack/issues/4616)) ([aa5f2e9](https://github.com/Glad-Labs/glad-labs-stack/commit/aa5f2e9ac87b6093ec35e7ee94cc1108774bcbe4))
+* **podcast:** count episode downloads from R2 analytics ([#4617](https://github.com/Glad-Labs/glad-labs-stack/issues/4617)) ([3357a29](https://github.com/Glad-Labs/glad-labs-stack/commit/3357a29e26144c877771e105afc4a56ee3821ee0))
+
+
+### Bug Fixes
+
+* **alerts:** atom_runs freshness waits 30h, not 12h ([#4613](https://github.com/Glad-Labs/glad-labs-stack/issues/4613)) ([73269c5](https://github.com/Glad-Labs/glad-labs-stack/commit/73269c5f167907d23abc23800104184fb9220fae))
+* **alerts:** Grafana alert-rule changes actually reach Grafana ([#4589](https://github.com/Glad-Labs/glad-labs-stack/issues/4589)) ([c550843](https://github.com/Glad-Labs/glad-labs-stack/commit/c5508433c738b957e82db3ee5c0b8b50eef82738))
+* **alerts:** hold wake-time findings until the wake is on record ([#4618](https://github.com/Glad-Labs/glad-labs-stack/issues/4618)) ([bbdfeae](https://github.com/Glad-Labs/glad-labs-stack/commit/bbdfeae04ed220f7822474077c51baeed5005af6))
+* **alerts:** put the Brain Daemon Stale wake fix in the template ([#4588](https://github.com/Glad-Labs/glad-labs-stack/issues/4588)) ([3eb0ed6](https://github.com/Glad-Labs/glad-labs-stack/commit/3eb0ed6dfaaf308c3776dab3de7fead8ceb63044))
+* **alerts:** quiet the wake-time and stale-threshold pages, fix two retention bugs ([#4583](https://github.com/Glad-Labs/glad-labs-stack/issues/4583)) ([596493e](https://github.com/Glad-Labs/glad-labs-stack/commit/596493e1afd07ea2af4831cf3b57094c13cb0334))
+* **brain:** a surface that worked pages after two failed runs, not one ([#4563](https://github.com/Glad-Labs/glad-labs-stack/issues/4563)) ([a680e94](https://github.com/Glad-Labs/glad-labs-stack/commit/a680e94e1d10b397333d5e83f50a74e4951629a0))
+* **deps:** clear the security scan backlog blocking every Dependabot PR ([#4621](https://github.com/Glad-Labs/glad-labs-stack/issues/4621)) ([1cced6c](https://github.com/Glad-Labs/glad-labs-stack/commit/1cced6c5eab5b8d8c1271548da72f6b26ec56da2))
+* **llm:** surface Ollama done_reason=length on the ollama/ generate route ([#4571](https://github.com/Glad-Labs/glad-labs-stack/issues/4571)) ([95f31be](https://github.com/Glad-Labs/glad-labs-stack/commit/95f31beccfb59ecd67c54385cafc57bc954d727e))
+* **pro:** a Lemon Squeezy blip defers to the next poll instead of paging twice ([#4582](https://github.com/Glad-Labs/glad-labs-stack/issues/4582)) ([c82b84b](https://github.com/Glad-Labs/glad-labs-stack/commit/c82b84bb9fbf2e21f6a06c86d77e9e8ddf949967))
+* **publish:** a slot publish exports the post to R2 before revalidating ([#4592](https://github.com/Glad-Labs/glad-labs-stack/issues/4592)) ([dec2fd4](https://github.com/Glad-Labs/glad-labs-stack/commit/dec2fd462148aa2b6779e93d214ff21fe5adb899))
+* **qa:** a miscounted faithfulness batch is split, not dropped ([#4612](https://github.com/Glad-Labs/glad-labs-stack/issues/4612)) ([73265dc](https://github.com/Glad-Labs/glad-labs-stack/commit/73265dc8515b77bcd801fbffd8161f9e556a340d))
+* **qa:** faithfulness no longer asks the judge for one long list ([#4593](https://github.com/Glad-Labs/glad-labs-stack/issues/4593)) ([9256dae](https://github.com/Glad-Labs/glad-labs-stack/commit/9256dae85d05bb00b2deab17bdd3cf275ee1c411))
+* **seo:** fit titles and descriptions instead of cutting them mid-phrase ([#4622](https://github.com/Glad-Labs/glad-labs-stack/issues/4622)) ([192ad0b](https://github.com/Glad-Labs/glad-labs-stack/commit/192ad0b397e744b80303fe5102a5860b944e56cc))
+* **tasks:** a body edit re-derives the excerpt and names live social drafts ([#4584](https://github.com/Glad-Labs/glad-labs-stack/issues/4584)) ([36ab5e7](https://github.com/Glad-Labs/glad-labs-stack/commit/36ab5e7f0a3d1fb3aa24d5325a4cc136e4375712))
+* **topics:** rank candidates by short label, not by UUID ([#4594](https://github.com/Glad-Labs/glad-labs-stack/issues/4594)) ([e0994ca](https://github.com/Glad-Labs/glad-labs-stack/commit/e0994caebdfe7beffb328510696a631b278b67ca))
+* **writer:** cap two-pass draft/revise/expand output; stop quickstart-e2e timeouts ([#4567](https://github.com/Glad-Labs/glad-labs-stack/issues/4567)) ([efa5bac](https://github.com/Glad-Labs/glad-labs-stack/commit/efa5bacab7287cae483b3922e4aa32e6d6ce3fd6))
+
 ## [0.161.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.160.0...v0.161.0) (2026-10-20)
 
 
