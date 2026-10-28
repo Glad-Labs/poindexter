@@ -328,12 +328,47 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         kws = [k.lower() for k in sc.fallback_keywords(state)]
         return _finish(title, desc, kws, state)
 
-    # --- title ---
-    raw_title = str(parsed.get("title") or "").strip()
-    if raw_title:
-        title = derive_seo_title(sc.clean_oneline(raw_title), max_len=60)
-    else:
-        title = sc.fallback_title(state)
+    # --- title + description ---
+    # Fit, never cut: a title is shortened only at a natural break and a
+    # description keeps whole sentences (2026-10-28: 132 of 227 published
+    # descriptions and 19 SEO titles ended mid-phrase after a word-boundary
+    # clamp). Anything that will not fit gets one corrective retry, then the
+    # canonical-title / opening-sentence fallbacks.
+    raw_title = sc.clean_oneline(str(parsed.get("title") or ""))
+    raw_desc = sc.clean_oneline(str(parsed.get("description") or ""))
+    title_fit = sc.fit_title(raw_title, 60) if raw_title else ""
+    desc_fit = sc.fit_sentences(raw_desc, 160) if raw_desc else ""
+    too_long = []
+    if raw_title and not title_fit:
+        too_long.append(f"the title was {len(raw_title)} characters")
+    if raw_desc and not desc_fit:
+        too_long.append(f"the description was {len(raw_desc)} characters")
+    if too_long:
+        retry: dict[str, Any] = {}
+        try:
+            retry_raw = await sc.run_seo_llm(
+                state,
+                "atoms.seo.generate_all_metadata",
+                topic=topic,
+                primary_keyword=primary_keyword,
+                content=content_digest,
+                max_attempts=1,
+                backoff_s=0.0,
+                prompt_suffix=(
+                    "\n\nYour previous answer was too long: " + " and ".join(too_long)
+                    + ". Return the same JSON with a title of at most 60 characters and a "
+                    "description of one or two complete sentences, at most 155 characters "
+                    "in total."
+                ),
+            )
+            retry = _extract_json(retry_raw) or {}
+        except Exception as exc:  # noqa: BLE001 — the fallbacks below cover a failed retry
+            sc.degraded("all_metadata_length_retry", exc)
+        if raw_title and not title_fit:
+            title_fit = sc.fit_title(str(retry.get("title") or ""), 60)
+        if raw_desc and not desc_fit:
+            desc_fit = sc.fit_sentences(str(retry.get("description") or ""), 160)
+    title = title_fit or sc.fallback_title(state)
     # Topic-echo guard: the model must never ship the assignment label as the
     # seo_title (2026-07-24, task 1afabaf9). Corrective retry → canonical
     # title/H1 fallback → loud finding.
@@ -341,10 +376,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         state, title=title, topic=topic, primary_keyword=primary_keyword,
         content_digest=content_digest, llm_retry=True,
     )
-
-    # --- description ---
-    raw_desc = str(parsed.get("description") or "").strip()
-    desc = sc.clamp_words(raw_desc, 160) if raw_desc else sc.fallback_description(state)
+    desc = desc_fit or sc.fallback_description(state)
 
     # --- keywords ---
     raw_kw = str(parsed.get("keywords") or "").strip()

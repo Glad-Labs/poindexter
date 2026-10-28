@@ -12,6 +12,7 @@ Covers:
 - Keywords anti-hallucination guard + floor backfill
 - stages flag is set
 """
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 from poindexter.modules.content.atoms import _seo_common as sc
@@ -243,3 +244,54 @@ async def test_keywords_floor_backfill(monkeypatch):
     )
     out = await atom.run(_state())
     assert len(out["seo_keywords_list"]) >= 3
+
+
+# ---------------------------------------------------------------------------
+# Fit, never cut (2026-10-28: 132 of 227 published descriptions and 19 SEO
+# titles ended mid-phrase after a word-boundary clamp)
+# ---------------------------------------------------------------------------
+
+
+def test_fit_sentences_keeps_whole_sentences():
+    text = "First sentence is here. Second sentence pushes it well past the limit we set."
+    assert sc.fit_sentences(text, 40) == "First sentence is here."
+    assert sc.fit_sentences("Short and complete.", 160) == "Short and complete."
+    assert sc.fit_sentences("One very long sentence " * 10, 60) == ""
+
+
+def test_fit_title_cuts_only_at_a_natural_break():
+    assert sc.fit_title("Llama.cpp vs vLLM vs SGLang: Choosing Between Local and Server Inference", 60) == (
+        "Llama.cpp vs vLLM vs SGLang"
+    )
+    assert sc.fit_title("An Unbreakable Title With No Natural Break Anywhere In It At All Here", 60) == ""
+    assert sc.fit_title("Fits Already", 60) == "Fits Already"
+
+
+async def test_an_overlong_description_gets_one_corrective_retry(monkeypatch):
+    long_desc = "This description runs on and on without ever stopping " * 4
+    first = json.dumps({"title": "Regex Validator Fix", "description": long_desc, "keywords": "regex"})
+    second = ('{"title": "Regex Validator Fix", "description": "One unanchored pattern '
+              'slowed every post. Anchoring it cut validation time by 80 percent.", "keywords": "regex"}')
+    llm = AsyncMock(side_effect=[first, second])
+    monkeypatch.setattr(sc, "run_seo_llm", llm)
+    out = await atom.run(_state())
+    assert llm.await_count == 2
+    assert "too long: the description was" in llm.await_args.kwargs["prompt_suffix"]
+    assert out["seo_description"].endswith("80 percent.")
+
+
+async def test_a_failed_retry_falls_back_to_whole_sentences_never_a_fragment(monkeypatch):
+    long_desc = "This description runs on and on without ever stopping " * 4
+    first = json.dumps({"title": "Regex Validator Fix", "description": long_desc, "keywords": "regex"})
+    monkeypatch.setattr(sc, "run_seo_llm", AsyncMock(side_effect=[first, RuntimeError("down")]))
+    out = await atom.run(_state())
+    assert out["seo_description"].endswith((".", "!", "?"))
+    assert len(out["seo_description"]) <= 160
+
+
+async def test_an_overlong_title_falls_back_to_the_canonical_title_head(monkeypatch):
+    long_title = "An Unbreakable Generated Title With No Natural Break That Runs Long"
+    j = json.dumps({"title": long_title, "description": "Short and complete.", "keywords": "regex"})
+    monkeypatch.setattr(sc, "run_seo_llm", AsyncMock(side_effect=[j, j]))
+    out = await atom.run(_state(title="The Regex Validator Bug: How One Pattern Fired Eight Times Per Post"))
+    assert out["seo_title"] == "The Regex Validator Bug"

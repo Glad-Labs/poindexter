@@ -49,6 +49,52 @@ def clamp_words(text: str, limit: int) -> str:
     return cut.rstrip(",.;:- ")
 
 
+_SENTENCE_END = re.compile(r"""[.!?]["')\]]?$""")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# Where a long title can be shortened without cutting a phrase: the head of
+# "Head: tail" / "Head — tail" reads as a whole title on its own.
+_TITLE_BREAKS = (": ", " — ", " – ", " - ", " | ")
+_MIN_TITLE_HEAD = 20
+
+
+def fit_sentences(text: str, limit: int) -> str:
+    """``text`` cut to whole sentences within ``limit`` chars, or ``""``.
+
+    A text already within the limit is returned whole. A longer one keeps as
+    many complete sentences as fit; if not even the first fits, the result is
+    empty so the caller can ask again rather than ship a fragment.
+    :func:`clamp_words` cut at a word, and on 2026-10-28 132 of 227 published
+    meta descriptions ended mid-sentence ("... are built for").
+    """
+    t = clean_oneline(text)
+    if len(t) <= limit:
+        return t
+    kept = ""
+    for sentence in _SENTENCE_SPLIT.split(t):
+        candidate = f"{kept} {sentence}".strip()
+        if len(candidate) > limit:
+            break
+        kept = candidate
+    return kept if kept and _SENTENCE_END.search(kept) else ""
+
+
+def fit_title(text: str, limit: int) -> str:
+    """``text`` within ``limit`` chars without cutting a phrase, or ``""``.
+
+    A long title is shortened only at a natural break, keeping the head of
+    "Head: tail" when it is a title on its own. 19 published SEO titles were
+    word-boundary cuts of the real title ("Choosing Between Local").
+    """
+    t = clean_oneline(text)
+    if len(t) <= limit:
+        return t
+    for sep in _TITLE_BREAKS:
+        head = t.split(sep, 1)[0].strip()
+        if head != t and _MIN_TITLE_HEAD <= len(head) <= limit:
+            return head
+    return ""
+
+
 # A word-boundary clip can leave a dangling connective ("... Micro-SaaS &").
 # We only strip these when the title was actually truncated — a short title that
 # legitimately ends in a preposition ("What to Look For") must be left alone.
@@ -155,7 +201,7 @@ def fallback_title(state: dict[str, Any]) -> str:
         or state.get("topic")
         or ""
     )
-    return derive_seo_title(canonical, max_len=60)
+    return fit_title(canonical, 60) or derive_seo_title(canonical, max_len=60)
 
 
 def resolve_primary_keyword(state: dict[str, Any]) -> str:
@@ -218,11 +264,15 @@ def fallback_description(state: dict[str, Any]) -> str:
     content = state.get("content") or ""
     topic = state.get("topic") or ""
     paragraphs = content.split("\n\n")
+    # Prose only: a list, heading, quote, table or a one-line label ("What
+    # You'll Learn") makes a broken snippet ("* The surprising ...").
     excerpt = next(
-        (p for p in paragraphs if p.strip() and not p.startswith("#")),
+        (p for p in paragraphs
+         if len(p.strip()) >= 60 and not re.match(r"\s*([#*>|_-]|\d+\.|<)", p)),
         content[:200],
     )
-    return (excerpt.strip() or topic)[:160]
+    excerpt = excerpt.strip()
+    return fit_sentences(excerpt, 160) or clamp_words(excerpt or topic, 160)
 
 
 def fallback_keywords(state: dict[str, Any], count: int = 5) -> list[str]:
@@ -234,6 +284,8 @@ __all__ = [
     "clean_oneline",
     "clamp_words",
     "clean_title",
+    "fit_sentences",
+    "fit_title",
     "run_seo_llm",
     "degraded",
     "fallback_title",
