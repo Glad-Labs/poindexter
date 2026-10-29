@@ -7,6 +7,7 @@ each phase is now independently testable.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -72,6 +73,24 @@ class TestParsePublishInputs:
     def test_blank_or_already_set_alt_text_is_left_alone(self, task_metadata, expected):
         out = _parse_publish_inputs({"topic": "T", "content": "body", "task_metadata": task_metadata}, "t1")
         assert out.metadata.get("featured_image_alt") == expected
+
+    def test_the_topic_note_is_kept_out_of_the_in_brief_summary(self):
+        """2026-10-29: the topic source's note rode on the task as
+        metadata.summary and showed as the post's "In brief" text on every
+        topic-sourced post; the summary job skips posts that have one."""
+        note = "Google autocomplete suggests this query (suggestion rank 1)."
+        task = {"topic": "T", "content": "body",
+                "task_metadata": json.dumps({"metadata": {"summary": note, "source": "topic_batch"}})}
+        out = _parse_publish_inputs(task, "t1")
+        assert "summary" not in out.metadata
+        assert out.metadata["topic_summary"] == note
+        assert out.metadata["source"] == "topic_batch"
+
+    def test_an_existing_topic_summary_is_not_overwritten(self):
+        task = {"topic": "T", "content": "body",
+                "task_metadata": '{"metadata": {"summary": "new", "topic_summary": "kept"}}'}
+        out = _parse_publish_inputs(task, "t1")
+        assert out.metadata["topic_summary"] == "kept" and "summary" not in out.metadata
 
     def test_result_wins_over_metadata_on_merge(self):
         task = {

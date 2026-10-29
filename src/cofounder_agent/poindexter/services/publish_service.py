@@ -855,6 +855,18 @@ def _parse_publish_inputs(
     if isinstance(featured_alt, str) and featured_alt.strip() and not metadata.get("featured_image_alt"):
         metadata["featured_image_alt"] = featured_alt.strip()
 
+    # The topic's own note rides on the task as metadata["summary"]: what the
+    # topic source said about the story ("Google autocomplete suggests this
+    # query..."). On a post, metadata->>'summary' is the "In brief" text, and
+    # the summary job fills only posts where it is empty, so the note showed as
+    # the article's summary on every topic-sourced post (77 on 2026-10-29; the
+    # HKEPC post's said "thousands", the claim its article disputes). Keep the
+    # note under its own key so the job writes a real summary.
+    if "summary" in metadata:
+        note = metadata.pop("summary")
+        if note and not metadata.get("topic_summary"):
+            metadata["topic_summary"] = note
+
     if not draft_content or not topic:
         msg = "Missing content or topic — cannot create post"
         logger.warning("[publish_service] %s for task %s", msg, task_id)
