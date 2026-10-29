@@ -48,8 +48,11 @@ class AuditPublishedQualityJob:
         )
 
         # posts.id is UUID, audit_log.task_id is VARCHAR — cast on compare.
-        # ``content_preview`` keeps the first 3000 chars (enough to spot
-        # headings cheaply); ``word_count`` is read from the persisted
+        # ``has_headings`` is computed in SQL over the FULL content. It used
+        # to be checked against a 3000-char preview, which flagged any post
+        # whose first H2 sits past that point (a long intro plus an inline
+        # image tag): 27 of 229 published posts on 2026-10-29, each one a
+        # false "no headings found" finding. ``word_count`` is read from the persisted
         # column so the threshold check counts the FULL post, not the
         # preview. Previously this job re-derived word_count from the
         # 3000-char preview, which under-counted any post longer than
@@ -61,7 +64,7 @@ class AuditPublishedQualityJob:
         # intentionally low word counts and no headings.
         query = """
             SELECT p.id, p.title, p.slug,
-                   LEFT(p.content, 3000) as content_preview,
+                   (p.content LIKE '%##%' OR p.content ILIKE '%<h2%') AS has_headings,
                    p.word_count
             FROM posts p
             LEFT JOIN pipeline_tasks pt
@@ -94,9 +97,8 @@ class AuditPublishedQualityJob:
 
         issues: list[str] = []
         for row in rows:
-            content = row["content_preview"] or ""
             word_count = row["word_count"] or 0
-            has_headings = "##" in content or "<h2" in content
+            has_headings = bool(row["has_headings"])
             title = (row["title"] or "")[:40]
 
             if word_count < min_words:

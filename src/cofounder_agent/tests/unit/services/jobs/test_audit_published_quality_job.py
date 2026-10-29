@@ -61,10 +61,9 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_high_quality_post_no_issues(self):
         # 600 words with headings → zero findings.
-        content = "## Heading\n\n" + " ".join(["word"] * 600)
         pool, _ = _make_pool([
             {"id": "p1", "title": "Solid Post", "slug": "solid",
-             "content_preview": content, "word_count": 600},
+             "has_headings": True, "word_count": 600},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -80,10 +79,9 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_low_word_count_flagged(self):
-        content = " ".join(["word"] * 100)  # 100 words < default 500
         pool, _ = _make_pool([
             {"id": "p1", "title": "Tiny", "slug": "tiny",
-             "content_preview": content, "word_count": 100},
+             "has_headings": False, "word_count": 100},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -99,10 +97,9 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_no_headings_flagged(self):
-        content = " ".join(["word"] * 800)  # enough words, zero headings
         pool, _ = _make_pool([
             {"id": "p1", "title": "Wall of Text", "slug": "wall",
-             "content_preview": content, "word_count": 800},
+             "has_headings": False, "word_count": 800},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -116,10 +113,9 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_html_headings_count_as_headings(self):
         """Posts rendered to HTML should not be flagged for lack of '##'."""
-        content = "<h2>Title</h2>\n" + " ".join(["word"] * 800)
         pool, _ = _make_pool([
             {"id": "p1", "title": "Rendered", "slug": "rendered",
-             "content_preview": content, "word_count": 800},
+             "has_headings": True, "word_count": 800},
         ])
         job = AuditPublishedQualityJob()
         with patch(
@@ -129,6 +125,24 @@ class TestRun:
             result = await job.run(pool, {"file_gitea_issue": False})
 
         assert result.metrics["issues_found"] == 0
+
+    @pytest.mark.asyncio
+    async def test_headings_checked_over_full_content_not_a_preview(self):
+        """The heading signal must read the whole post, in SQL.
+
+        It used to test a ``LEFT(p.content, 3000)`` preview, so a post
+        whose first H2 sat past char 3000 (long intro + inline image tag)
+        was reported "no headings found" — 27 of 229 published posts on
+        2026-10-29.
+        """
+        pool, conn = _make_pool([])
+        job = AuditPublishedQualityJob()
+        await job.run(pool, {"file_gitea_issue": False})
+        query = conn.fetch.call_args.args[0]
+        assert "LEFT(p.content" not in query
+        assert "p.content LIKE '%##%'" in query
+        assert "p.content ILIKE '%<h2%'" in query
+        assert "AS has_headings" in query
 
     @pytest.mark.asyncio
     async def test_batch_size_and_cooldown_threaded_into_query(self):
@@ -142,10 +156,9 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_min_words_config_respected(self):
-        content = " ".join(["word"] * 300)  # 300 words
         pool, _ = _make_pool([
             {"id": "p1", "title": "Medium", "slug": "m",
-             "content_preview": content, "word_count": 300},
+             "has_headings": False, "word_count": 300},
         ])
         job = AuditPublishedQualityJob()
         # min_words=200 → shouldn't flag word-count. But no headings → 1 issue.
@@ -162,10 +175,9 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_audit_log_failure_does_not_abort(self):
         """A bad audit_log insert shouldn't lose the entire finding run."""
-        content = " ".join(["word"] * 100)
         pool, _ = _make_pool(
             [{"id": "p1", "title": "Short", "slug": "s",
-              "content_preview": content, "word_count": 100}],
+              "has_headings": False, "word_count": 100}],
             execute_raises=RuntimeError("table missing"),
         )
         job = AuditPublishedQualityJob()
@@ -190,7 +202,7 @@ class TestRun:
     async def test_none_content_does_not_crash(self):
         pool, _ = _make_pool([
             {"id": "p1", "title": "Empty", "slug": "e",
-             "content_preview": None, "word_count": None},
+             "has_headings": None, "word_count": None},
         ])
         job = AuditPublishedQualityJob()
         with patch(
