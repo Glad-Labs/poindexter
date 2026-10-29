@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.162.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.162.0...v0.162.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **publish:** keep the topic's note out of the post's "In brief" summary ([#4625](https://github.com/Glad-Labs/glad-labs-stack/issues/4625)) ([c4fd7dc](https://github.com/Glad-Labs/glad-labs-stack/commit/c4fd7dc613f7c672b393d6c9d6907b64185d143e))
+
 ## [0.162.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.161.0...v0.162.0) (2026-10-28)
 
 
