@@ -350,6 +350,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("mcp", "integrations"),
     ("webhook", "integrations"),
     ("cloudflare", "integrations"),
+    ("credential_expiry", "integrations"),
     ("cloudinary", "integrations"),
     ("storage", "integrations"),
     ("resend", "integrations"),

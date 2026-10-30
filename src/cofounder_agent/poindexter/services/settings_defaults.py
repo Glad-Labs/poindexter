@@ -5210,6 +5210,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.sentry_relay_drain_failed.fallback': 'discord',
     'findings.sentry_relay_drain_failed.cooldown_minutes': '180',
     'findings.sentry_relay_drain_failed.min_severity': 'warning',
+    # credential_expiring: a stored API key (a JWT) is within
+    # credential_expiry_warn_days of its exp (warn), or past it (critical).
+    # Repeats daily until the key is replaced.
+    'findings.credential_expiring.delivery': 'discord',
+    'findings.credential_expiring.fallback': 'discord',
+    'findings.credential_expiring.cooldown_minutes': '1440',
+    'findings.credential_expiring.min_severity': 'warn',
+    # Secrets whose JWT exp is checked daily (CSV). The Lemon Squeezy key
+    # expired unannounced on 2026-10-24; an unset key is skipped.
+    'credential_expiry_watch_keys': 'lemon_squeezy_api_key',
+    'credential_expiry_warn_days': '21',
     # sentry_relay_envelope_rejected: GlitchTip refused envelopes outright
     # (wrong key or project), so they were dropped. Usually a DSN that stopped
     # matching the site's build, which means every later error is dropped too.
@@ -8478,6 +8489,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'screenshot_topic_keywords': {'owner': 'ai_content_generator'},
     'plugin.job.sync_affiliate_clicks.enabled': {'value_type': 'boolean'},
     'plugin.job.sync_affiliate_clicks.interval_seconds': {'value_type': 'integer'},
+    'credential_expiry_watch_keys': {'owner': 'check_credential_expiry', 'value_type': 'csv'},
+    'credential_expiry_warn_days': {'owner': 'check_credential_expiry', 'value_type': 'integer'},
     'podcast_downloads_sync_enabled': {'owner': 'sync_podcast_downloads', 'value_type': 'boolean'},
     'podcast_downloads_lookback_days': {'owner': 'sync_podcast_downloads', 'value_type': 'integer'},
     'podcast_downloads_initial_lookback_days': {'owner': 'sync_podcast_downloads', 'value_type': 'integer'},

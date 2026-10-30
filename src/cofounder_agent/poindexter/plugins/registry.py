@@ -675,6 +675,13 @@ def get_core_samples() -> dict[str, list[Any]]:
             "poindexter.services.jobs.sync_podcast_downloads",
             "SyncPodcastDownloadsJob",
         ),
+        # Warns before a stored API key reaches its expiry date (2026-10-30):
+        # the Lemon Squeezy key expired unannounced on 2026-10-24.
+        (
+            "jobs",
+            "poindexter.services.jobs.check_credential_expiry",
+            "CheckCredentialExpiryJob",
+        ),
         # CI benchmark ingest (glad-labs-stack#3337 follow-up). The nightly
         # benchmarks workflow measures endpoint latency on a HOSTED runner
         # that can't reach this DB, so this job pulls its
