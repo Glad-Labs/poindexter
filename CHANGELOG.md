@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.163.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.162.1...v0.163.0) (2026-10-30)
+
+
+### Features
+
+* **analytics:** flag page views by referrer host blocklist ([#4637](https://github.com/Glad-Labs/glad-labs-stack/issues/4637)) ([e046dcf](https://github.com/Glad-Labs/glad-labs-stack/commit/e046dcf74c42a40784fa8ad305ebb0909936e3b9))
+* **ops:** warn before a stored API key expires ([#4639](https://github.com/Glad-Labs/glad-labs-stack/issues/4639)) ([d6579f2](https://github.com/Glad-Labs/glad-labs-stack/commit/d6579f2181a60621f0319fc87a316fb1cf69fd56))
+
+
+### Bug Fixes
+
+* **duplicate-posts:** skip dated series instalments ([#4638](https://github.com/Glad-Labs/glad-labs-stack/issues/4638)) ([18cf98e](https://github.com/Glad-Labs/glad-labs-stack/commit/18cf98e067898f5203dfa5237337af48c694c155))
+* **quality-audit:** check headings over the whole post, not a 3000-char preview ([#4632](https://github.com/Glad-Labs/glad-labs-stack/issues/4632)) ([700c83b](https://github.com/Glad-Labs/glad-labs-stack/commit/700c83b8094f440aab263369afa584e68aa0446f))
+
 ## [0.162.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.162.0...v0.162.1) (2026-10-29)
 
 
