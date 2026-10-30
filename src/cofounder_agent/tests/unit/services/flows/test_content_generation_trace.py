@@ -4,7 +4,7 @@
   claimed row carries the enqueuer's W3C carrier.
 - ``_parent_context_from_claimed`` re-hydrates that carrier into an OTel parent
   context, which the flow attaches around its root span so a content run links
-  to the trace of whatever created the task (Glad-Labs/glad-labs-stack#1997).
+  to the trace of whatever created the task (Glad-Labs/poindexter#1997).
 """
 
 from __future__ import annotations

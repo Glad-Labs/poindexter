@@ -1,5 +1,5 @@
 """Unit tests for the DB-driven pinned + auto-resetting claude-code voice
-session (Glad-Labs/glad-labs-stack#1006).
+session (Glad-Labs/poindexter#1006).
 
 The always-on voice room pins ONE ``claude -p`` session so context survives
 container restarts, and rotates that session when it ages out, burns through
