@@ -126,10 +126,12 @@ class TestRun:
     @pytest.mark.asyncio
     async def test_max_pairs_reported_caps_gitea_body(self):
         """If many duplicates, only max_pairs_reported appear in the body."""
-        # Build 5 titles that all overlap heavily → C(5,2)=10 pairs
+        # Build 5 titles that all overlap heavily → C(5,2)=10 pairs. The
+        # differing word is a letter, not a number: a digit-only difference
+        # is a dated/numbered series and is skipped (TestDatedSeries).
         posts = [
-            {"id": f"p{i}", "title": f"machine learning pipeline tutorial part {i}"}
-            for i in range(5)
+            {"id": f"p{i}", "title": f"machine learning pipeline tutorial {w}"}
+            for i, w in enumerate(["alpha", "beta", "gamma", "delta", "epsilon"])
         ]
         pool = _make_pool(posts)
         job = DetectDuplicatePostsJob()
@@ -181,3 +183,49 @@ class TestRun:
         job = DetectDuplicatePostsJob()
         result = await job.run(pool, {"file_gitea_issue": False})
         assert result.ok is True
+
+
+class TestDatedSeries:
+    """Dated instalments are a series, not duplicates (2026-10-30: all 423
+    reported pairs were 'What we shipped on <date>' posts)."""
+
+    @pytest.mark.asyncio
+    async def test_instalments_differing_only_by_date_are_skipped(self):
+        rows = [
+            {"id": "a", "title": "What we shipped on 2026-05-05"},
+            {"id": "b", "title": "What we shipped on 2026-05-06"},
+            {"id": "c", "title": "What we shipped on 2026-05-07"},
+        ]
+        with patch(
+            "poindexter.services.jobs.detect_duplicate_posts.emit_finding"
+        ) as emit:
+            result = await DetectDuplicatePostsJob().run(_make_pool(rows), {})
+        assert result.ok is True
+        assert result.metrics["duplicate_pairs"] == 0
+        assert result.metrics["series_pairs_skipped"] == 3
+        emit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_identical_titles_still_reported(self):
+        rows = [
+            {"id": "a", "title": "What we shipped on 2026-05-05"},
+            {"id": "b", "title": "What we shipped on 2026-05-05"},
+        ]
+        with patch(
+            "poindexter.services.jobs.detect_duplicate_posts.emit_finding"
+        ) as emit:
+            result = await DetectDuplicatePostsJob().run(_make_pool(rows), {})
+        assert result.metrics["duplicate_pairs"] == 1
+        emit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_word_difference_without_digits_still_reported(self):
+        rows = [
+            {"id": "a", "title": "Running local LLMs on an RTX 5090"},
+            {"id": "b", "title": "Running local LLMs on an RTX 5090 cheaply"},
+        ]
+        with patch(
+            "poindexter.services.jobs.detect_duplicate_posts.emit_finding"
+        ):
+            result = await DetectDuplicatePostsJob().run(_make_pool(rows), {})
+        assert result.metrics["duplicate_pairs"] == 1

@@ -11,6 +11,11 @@ ratio to be meaningful — "AI News" vs "AI Update" would false-positive
 under any threshold). Pairs exceeding ``overlap_threshold`` (default
 0.7) land in a deduplicated Gitea issue for manual triage.
 
+Pairs whose differing words all carry a digit are instalments of a dated
+series ("What we shipped on 2026-05-05" vs "... 2026-05-06"), not duplicates,
+and are skipped. On 2026-10-30 every one of the 423 reported pairs was a
+dev-diary instalment, which buried any real duplicate under the noise.
+
 O(n²) over all published posts, but published count is small enough
 (~hundreds) that the cost is negligible at the 24h cadence.
 
@@ -31,6 +36,16 @@ from poindexter.utils.exception_format import describe_exception
 from poindexter.utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+def is_series_instalment(a: set[str], b: set[str]) -> bool:
+    """True when two title word-sets differ only in digit-bearing words.
+
+    Identical titles (empty difference) are NOT instalments: two posts with
+    the same title are the duplicate this job exists to catch.
+    """
+    diff = a ^ b
+    return bool(diff) and all(any(c.isdigit() for c in w) for w in diff)
 
 
 class DetectDuplicatePostsJob:
@@ -70,6 +85,7 @@ class DetectDuplicatePostsJob:
             )
 
         duplicates: list[tuple[str, str]] = []
+        series_skipped = 0
         # Precompute lowercased word sets once per post — avoids O(n²) re-parsing.
         title_sets = [
             {"id": p["id"], "title": p["title"], "words": set((p["title"] or "").lower().split())}
@@ -88,6 +104,9 @@ class DetectDuplicatePostsJob:
                     len(a["words"]), len(b["words"])
                 )
                 if overlap > overlap_threshold:
+                    if is_series_instalment(a["words"], b["words"]):
+                        series_skipped += 1
+                        continue
                     duplicates.append(
                         ((a["title"] or "")[:50], (b["title"] or "")[:50]),
                     )
@@ -107,7 +126,8 @@ class DetectDuplicatePostsJob:
 
         detail = (
             f"scanned {len(posts)} posts, found {len(duplicates)} pair(s) "
-            f"over {overlap_threshold} overlap"
+            f"over {overlap_threshold} overlap ({series_skipped} dated-series "
+            "pair(s) skipped)"
         )
         logger.info("DetectDuplicatePostsJob: %s", detail)
         return JobResult(
@@ -117,5 +137,6 @@ class DetectDuplicatePostsJob:
             metrics={
                 "posts_scanned": len(posts),
                 "duplicate_pairs": len(duplicates),
+                "series_pairs_skipped": series_skipped,
             },
         )
