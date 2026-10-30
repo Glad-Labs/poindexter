@@ -124,6 +124,49 @@ class TestAttributionGate:
         by_raw = {c.raw: c.attributed for c in extract_claims(text)}
         assert by_raw == {"4 GB": False, "55 tok/s": True}
 
+    def test_a_link_to_the_authors_own_site_is_not_a_citation(self):
+        """Regression from a 72-post run: links to the site's own posts and
+        affiliate pages marked three of the author's own statements as
+        sourced. A relative link points home, not at a source."""
+        claims = extract_claims("Our [RTX 5090](/go/asus-rtx-5090) moves roughly 1,790 GB/s.")
+        assert claims[0].attributed is False
+        claims = extract_claims("We covered it in [the $5,000 piece](/posts/blueprint).")
+        assert claims[0].attributed is False
+
+    def test_a_link_to_another_site_is_still_a_citation(self):
+        for target in ("https://x.test/a", "http://x.test/a", "//x.test/a"):
+            claims = extract_claims(f"The [guide]({target}) prices builds at $18k.")
+            assert claims[0].attributed is True, target
+
+    def test_a_number_inside_a_hypothetical_is_not_scored(self):
+        """Regression from a 72-post run: "if 70% of your users..." and "if
+        the retrieved table says 28%" were scored because the sentence also
+        said "survey" or "benchmark"."""
+        text = (
+            "If the retrieved benchmark table says 28%, the draft says 28%. "
+            "Before any survey analysis: if 70% of your users touch one feature, act."
+        )
+        assert [c.attributed for c in extract_claims(text)] == [False, False, False]
+
+    def test_a_condition_after_the_number_does_not_hide_it(self):
+        """Only text BEFORE the number opens a hypothetical."""
+        claims = extract_claims("The survey found they pay $40 a month if it works.")
+        assert claims[0].attributed is True
+
+    def test_hypothetical_words_are_whole_words(self):
+        """"if" inside "specific" or "verified" must not count."""
+        claims = extract_claims("A specific survey verified 61% of runs.")
+        assert claims[0].attributed is True
+
+    def test_hypothetical_markers_can_be_replaced(self):
+        text = "Imagine the survey found 61% agreed."
+        assert extract_claims(text)[0].attributed is False
+        assert extract_claims(text, hypothetical_markers=())[0].attributed is True
+
+    def test_strict_mode_still_scores_a_hypothetical(self):
+        res = verify("If the survey found 61%, act.", ["0.43"], score_unattributed=True)
+        assert len(res.unsupported) == 1
+
     def test_is_attributed_is_case_insensitive(self):
         assert is_attributed("ACCORDING TO x", DEFAULT_ATTRIBUTION_MARKERS)
 

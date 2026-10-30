@@ -128,9 +128,19 @@ DEFAULT_ATTRIBUTION_MARKERS: tuple[str, ...] = (
     "analysis", "analysed", "analyzed", "published", "documentation", "docs say",
     "per the", "cited", "statistics", "census", "poll", "respondents",
 )
-# A markdown link or a bare citation in the same sentence is itself an
-# attribution — the author is pointing somewhere for the number.
-_SENTENCE_LINK = re.compile(r"\[[^\]]+\]\([^)]*\)")
+# Words that open a hypothetical. A number that comes after one of these in its
+# sentence is an illustration ("if 70% of your users touch one feature"), not a
+# figure taken from a source, so it is never scored. DB-tunable
+# (qa_numeric_fidelity_hypothetical_markers).
+DEFAULT_HYPOTHETICAL_MARKERS: tuple[str, ...] = (
+    "if", "suppose", "supposing", "imagine", "hypothetically", "assuming",
+)
+# A markdown link to another site in the same sentence is itself an
+# attribution — the author is pointing somewhere for the number. A relative
+# link (/posts/..., /go/...) points at our own site, which is not a source for
+# a figure: across 72 published posts, links to our own posts and affiliate
+# pages marked three of our own statements as sourced.
+_SENTENCE_LINK = re.compile(r"\[[^\]]+\]\((?:https?:)?//[^)]*\)")
 # Sentence ends, blank lines, and the edges of every markdown table row. A
 # table has no sentence punctuation, so without the row edges a whole table
 # plus the caption under it read as ONE sentence, and a single "measured" in
@@ -157,6 +167,23 @@ def is_attributed(sentence: str, markers: tuple[str, ...] | list[str]) -> bool:
     if _SENTENCE_LINK.search(sentence):
         return True
     return any(mk in low for mk in markers)
+
+
+def _hypothetical_pattern(words: tuple[str, ...] | list[str]) -> re.Pattern[str] | None:
+    cleaned = sorted({w.strip().lower() for w in words if w and w.strip()}, key=len, reverse=True)
+    if not cleaned:
+        return None
+    return re.compile(r"\b(?:" + "|".join(re.escape(w) for w in cleaned) + r")\b", re.IGNORECASE)
+
+
+def is_hypothetical(sentence_before_number: str, words: tuple[str, ...] | list[str]) -> bool:
+    """Does the sentence open a hypothetical before the number appears?
+
+    Only the text BEFORE the number counts: in "they pay $40 a month if it
+    works" the figure is stated before the condition, and stays checkable.
+    """
+    pattern = _hypothetical_pattern(words)
+    return bool(pattern and pattern.search(sentence_before_number))
 
 
 @dataclass(frozen=True)
@@ -248,11 +275,13 @@ def extract_claims(
     *,
     units: tuple[str, ...] | list[str] = DEFAULT_UNITS,
     markers: tuple[str, ...] | list[str] = DEFAULT_ATTRIBUTION_MARKERS,
+    hypothetical_markers: tuple[str, ...] | list[str] = DEFAULT_HYPOTHETICAL_MARKERS,
     context_chars: int = 60,
     max_claims: int = 400,
 ) -> list[NumericClaim]:
     """Lift checkable numeric claims out of ``text``, flagging which are
-    presented as sourced fact. Pure."""
+    presented as sourced fact. A number inside a hypothetical is never
+    flagged as sourced, whatever else its sentence says. Pure."""
     scrubbed = strip_uncheckable(text or "")
     unit_alt = _unit_alternation(units)
     pattern = re.compile(
@@ -265,12 +294,20 @@ def extract_claims(
 
     bounds = _sentence_bounds(scrubbed)
     marker_tuple = tuple(m.lower() for m in markers)
+    hypothetical = _hypothetical_pattern(hypothetical_markers)
 
-    def sentence_at(idx: int) -> str:
+    def sentence_start(idx: int) -> int:
         for lo, hi in bounds:
             if lo <= idx < hi:
-                return text[lo:hi]
-        return ""
+                return lo
+        return idx
+
+    def attributed_at(idx: int) -> bool:
+        lo = sentence_start(idx)
+        hi = next((h for low, h in bounds if low == lo), len(text))
+        if hypothetical and hypothetical.search(text[lo:idx]):
+            return False
+        return is_attributed(text[lo:hi], marker_tuple)
 
     claims: list[NumericClaim] = []
     for m in pattern.finditer(scrubbed):
@@ -312,7 +349,7 @@ def extract_claims(
                 # at 0 dp, not 1, so the rounding contract must follow it.
                 decimals=max(0, _decimals(token) - (len(str(int(magnitude))) - 1)),
                 context=" ".join(text[lo:hi].split()),
-                attributed=is_attributed(sentence_at(start), marker_tuple),
+                attributed=attributed_at(start),
             ),
         )
     return claims
@@ -423,6 +460,7 @@ def verify(
     *,
     units: tuple[str, ...] | list[str] = DEFAULT_UNITS,
     markers: tuple[str, ...] | list[str] = DEFAULT_ATTRIBUTION_MARKERS,
+    hypothetical_markers: tuple[str, ...] | list[str] = DEFAULT_HYPOTHETICAL_MARKERS,
     allow_derived: bool = False,
     score_unattributed: bool = False,
     max_pairs: int = 20000,
@@ -438,7 +476,8 @@ def verify(
     docstring for the measured reason.
     """
     claims = extract_claims(
-        content, units=units, markers=markers, max_claims=max_claims,
+        content, units=units, markers=markers,
+        hypothetical_markers=hypothetical_markers, max_claims=max_claims,
     )
     if score_unattributed:
         claims = [
@@ -473,6 +512,7 @@ def verify(
 
 __all__ = [
     "DEFAULT_ATTRIBUTION_MARKERS",
+    "DEFAULT_HYPOTHETICAL_MARKERS",
     "DEFAULT_UNITS",
     "ClaimVerdict",
     "FidelityResult",
@@ -480,6 +520,7 @@ __all__ = [
     "extract_claims",
     "extract_corpus_numbers",
     "is_attributed",
+    "is_hypothetical",
     "strip_uncheckable",
     "verify",
 ]

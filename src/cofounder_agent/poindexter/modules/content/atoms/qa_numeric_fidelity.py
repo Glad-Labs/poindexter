@@ -149,6 +149,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     from poindexter.services.numeric_fidelity import (
         DEFAULT_ATTRIBUTION_MARKERS,
+        DEFAULT_HYPOTHETICAL_MARKERS,
         DEFAULT_UNITS,
         verify,
     )
@@ -167,6 +168,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         _cfg(site_config, "qa_numeric_fidelity_attribution_markers", ""),
         DEFAULT_ATTRIBUTION_MARKERS,
     )
+    hypothetical_markers = _csv(
+        _cfg(site_config, "qa_numeric_fidelity_hypothetical_markers", ""),
+        DEFAULT_HYPOTHETICAL_MARKERS,
+    )
     allow_derived = str(
         _cfg(site_config, "qa_numeric_fidelity_allow_derived", "false"),
     ).lower() in ("true", "1", "yes")
@@ -179,6 +184,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             [corpus],
             units=units,
             markers=markers,
+            hypothetical_markers=hypothetical_markers,
             allow_derived=allow_derived,
         )
     except Exception as exc:  # noqa: BLE001

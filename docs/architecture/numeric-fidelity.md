@@ -59,13 +59,24 @@ sourced. Over 72 published posts that was 26 of 51 unsupported flags. With row
 edges as sentence breaks the same run gives 87 scored numbers and 29 flags; a
 cell is scored only when its own row carries the attribution.
 
+**Hypotheticals and links to our own site are not attribution (2026-10-30).** A
+number after "if", "suppose", "imagine", "assuming" or "hypothetically" in its
+sentence is never scored; a condition after the number doesn't count ("they pay
+$40 a month if it works" stays checkable). Only a link to another site marks a
+sentence as sourced; a relative `/posts/` or `/go/` link points at our own
+pages. On the 72-post run these removed 6 of the 16 flags outside two posts
+with stale research, kept all 6 fair flags and added none. Ignoring "we found"
+was measured and dropped: one scored number in 72 posts depended on it, and it
+would blind the rail on benchmark posts built from our own measurements.
+
 **The known false-positive mode is kept, not tuned away**: a hypothetical
 quantity inside a sentence carrying an attribution word. Two examples do not
 justify a heuristic that would cost real catches, and advisory-first means an
-operator sees every flag before it can block anything. The 72-post run found 9
-false flags among the 16 that weren't stale-research artifacts, in three shapes:
-hypotheticals ("if 70% of your users"), the author's own findings ("we found 14
-files"), and links to our own posts counted as citations.
+operator sees every flag before it can block anything. After the two rules
+above, the 72-post run leaves 4 false flags: "we found 14 files", an
+illustrative "$20-$40 a month", a hypothetical inside a quoted source ("a
+framework with 50,000 stars"), and "we poll it for 60 seconds", where the verb
+"poll" reads as a citation word.
 
 ## The rules
 
@@ -119,14 +130,20 @@ instrument for that call.
 
 ## Settings
 
-| Key                                       | Default | Meaning                                                |
-| ----------------------------------------- | ------- | ------------------------------------------------------ |
-| `qa_numeric_fidelity_enabled`             | `true`  | master switch (advisory either way)                    |
-| `qa_numeric_fidelity_offender_penalty`    | `25`    | score penalty per unsupported attributed number        |
-| `qa_numeric_fidelity_min_corpus_numbers`  | `3`     | below this the rail skips instead of guessing          |
-| `qa_numeric_fidelity_allow_derived`       | `true`  | permit a recorded pair-derivation to satisfy a claim   |
-| `qa_numeric_fidelity_units`               | `''`    | checkable unit vocabulary (CSV); empty = code defaults |
-| `qa_numeric_fidelity_attribution_markers` | `''`    | attribution vocabulary (CSV); empty = code defaults    |
+| Key                                        | Default | Meaning                                                |
+| ------------------------------------------ | ------- | ------------------------------------------------------ |
+| `qa_numeric_fidelity_enabled`              | `true`  | master switch (advisory either way)                    |
+| `qa_numeric_fidelity_offender_penalty`     | `25`    | score penalty per unsupported attributed number        |
+| `qa_numeric_fidelity_min_corpus_numbers`   | `3`     | below this the rail skips instead of guessing          |
+| `qa_numeric_fidelity_allow_derived`        | `false` | permit a recorded pair-derivation to satisfy a claim   |
+| `qa_numeric_fidelity_units`                | `''`    | checkable unit vocabulary (CSV); empty = code defaults |
+| `qa_numeric_fidelity_attribution_markers`  | `''`    | attribution vocabulary (CSV); empty = code defaults    |
+| `qa_numeric_fidelity_hypothetical_markers` | `''`    | words opening a hypothetical (CSV); empty = defaults   |
+
+`allow_derived` read `true` on prod until 2026-10-30: the code default moved to
+`false` on 2026-09-01, but a changed default never rewrites an existing row.
+On the 72-post run it let one fair flag through, an unsourced "50-60%"
+acceptance rate "explained" as `1 - 2026/5090`, a year over a GPU model number.
 
 ## Strict mode — ready, not yet wired
 

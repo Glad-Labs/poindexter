@@ -2725,13 +2725,13 @@ DEFAULTS: dict[str, str] = {
     # measured over 40 posts: one extra false positive. Only sound on a small,
     # unit-homogeneous corpus.
     'qa_numeric_fidelity_allow_derived': 'false',
-    # Checkable unit vocabulary (CSV). Empty = the code's DEFAULT_UNITS. What a
-    # niche measures in is per-install, so it is a setting, not a constant.
+    # Per-install vocabularies (CSV; empty = the code's DEFAULT_*): checkable
+    # units, words marking a number as SOURCED FACT (only those are scored), and
+    # words opening a hypothetical (a number after one is never scored). See
+    # docs/architecture/numeric-fidelity.md.
     'qa_numeric_fidelity_units': '',
-    # Words that mark a number as SOURCED FACT rather than the author's own
-    # framing (CSV). Empty = the code's DEFAULT_ATTRIBUTION_MARKERS. Only
-    # attributed numbers are scored — see docs/architecture/numeric-fidelity.md.
     'qa_numeric_fidelity_attribution_markers': '',
+    'qa_numeric_fidelity_hypothetical_markers': '',
     # Web fact-check rail (qa.web_factcheck) claim-verification heuristics.
     # A claim is treated as VERIFIED when at least `match_ratio` of its key
     # terms (tokens longer than `min_term_len` chars) appear in the first
@@ -7143,6 +7143,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_numeric_fidelity_allow_derived': {'owner': 'qa_numeric_fidelity', 'value_type': 'boolean'},
     'qa_numeric_fidelity_attribution_markers': {'owner': 'qa_numeric_fidelity'},
     'qa_numeric_fidelity_enabled': {'owner': 'qa_numeric_fidelity', 'value_type': 'boolean'},
+    'qa_numeric_fidelity_hypothetical_markers': {'owner': 'qa_numeric_fidelity'},
     'qa_numeric_fidelity_min_corpus_numbers': {'owner': 'qa_numeric_fidelity', 'value_type': 'integer'},
     'qa_numeric_fidelity_offender_penalty': {'owner': 'qa_numeric_fidelity', 'value_type': 'float'},
     'qa_numeric_fidelity_units': {'owner': 'qa_numeric_fidelity'},
