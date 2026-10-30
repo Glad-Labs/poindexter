@@ -104,6 +104,26 @@ class TestAttributionGate:
         assert by_raw["90%"] is True
         assert by_raw["12 posts"] is False
 
+    def test_each_table_row_is_its_own_sentence(self):
+        """Regression from a 72-post run: a table has no sentence punctuation,
+        so the whole table and its caption read as one sentence, and one
+        "measured" in the caption marked every cell as sourced (26 of 51
+        flags). A cell is sourced only if its own row says so."""
+        text = (
+            "| Card | VRAM |\n"
+            "|---|---|\n"
+            "| RTX 3060 | 12GB |\n"
+            "| RTX 5090 | 32GB (measured) |\n"
+            "Speeds were measured on our own cards."
+        )
+        by_raw = {c.raw: c.attributed for c in extract_claims(text)}
+        assert by_raw == {"12GB": False, "32GB": True}
+
+    def test_a_caption_still_attributes_its_own_sentence(self):
+        text = "| a | 4 GB |\nThe benchmark measured 55 tok/s."
+        by_raw = {c.raw: c.attributed for c in extract_claims(text)}
+        assert by_raw == {"4 GB": False, "55 tok/s": True}
+
     def test_is_attributed_is_case_insensitive(self):
         assert is_attributed("ACCORDING TO x", DEFAULT_ATTRIBUTION_MARKERS)
 

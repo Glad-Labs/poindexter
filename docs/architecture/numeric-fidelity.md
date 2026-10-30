@@ -52,10 +52,20 @@ signal — "according to", "the survey found", a citation link, a named report.
 > An attributed one is a promise about someone else's data.
 > Only the second kind can be caught being wrong by a reader.
 
+**Each markdown table row is its own sentence (2026-10-30).** A table has no
+sentence punctuation, so a whole table and the caption under it used to read
+as one sentence, and one "measured" in the caption marked every cell as
+sourced. Over 72 published posts that was 26 of 51 unsupported flags. With row
+edges as sentence breaks the same run gives 87 scored numbers and 29 flags; a
+cell is scored only when its own row carries the attribution.
+
 **The known false-positive mode is kept, not tuned away**: a hypothetical
 quantity inside a sentence carrying an attribution word. Two examples do not
 justify a heuristic that would cost real catches, and advisory-first means an
-operator sees every flag before it can block anything.
+operator sees every flag before it can block anything. The 72-post run found 9
+false flags among the 16 that weren't stale-research artifacts, in three shapes:
+hypotheticals ("if 70% of your users"), the author's own findings ("we found 14
+files"), and links to our own posts counted as citations.
 
 ## The rules
 

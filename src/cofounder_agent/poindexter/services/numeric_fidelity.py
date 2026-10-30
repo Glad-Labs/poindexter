@@ -131,7 +131,14 @@ DEFAULT_ATTRIBUTION_MARKERS: tuple[str, ...] = (
 # A markdown link or a bare citation in the same sentence is itself an
 # attribution — the author is pointing somewhere for the number.
 _SENTENCE_LINK = re.compile(r"\[[^\]]+\]\([^)]*\)")
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n{2,}")
+# Sentence ends, blank lines, and the edges of every markdown table row. A
+# table has no sentence punctuation, so without the row edges a whole table
+# plus the caption under it read as ONE sentence, and a single "measured" in
+# the caption marked every cell as sourced. Across 72 published posts that
+# put 26 of 51 unsupported flags on table cells.
+_SENTENCE_SPLIT = re.compile(
+    r"(?<=[.!?])\s+|\n{2,}|\n(?=[ \t]*\|)|(?<=\|)[ \t]*\n",
+)
 
 
 def _sentence_bounds(text: str) -> list[tuple[int, int]]:
