@@ -1,4 +1,0 @@
-# Exclude sensitive data
-*.secrets.md
-*-passwords.md
-api-keys/

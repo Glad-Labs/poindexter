@@ -1,4 +1,4 @@
-"""Shot-list-driven video composition (Glad-Labs/glad-labs-stack#649).
+"""Shot-list-driven video composition (Glad-Labs/poindexter#649).
 
 Director output (a ``VideoShotList`` produced by the
 ``generate_video_shot_list`` pipeline stage) drives per-shot rendering
