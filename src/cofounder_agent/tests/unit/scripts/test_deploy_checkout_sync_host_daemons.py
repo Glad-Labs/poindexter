@@ -1,6 +1,6 @@
 """``deploy-checkout-sync.sh`` step 8b restarts host daemons whose files changed.
 
-Glad-Labs/glad-labs-stack#4188. ``poindexter-gpu-scraper`` and
+Glad-Labs/poindexter#4188. ``poindexter-gpu-scraper`` and
 ``poindexter-recovery-agent`` are long-running host systemd services. Each reads
 its code once, at start, so a merged change reaches it only through a restart:
 the recovery agent already ran from the deploy clone and still sat on

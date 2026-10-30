@@ -1,4 +1,4 @@
-"""Contract tests for the host CLI launcher and its installer (Glad-Labs/glad-labs-stack#4156).
+"""Contract tests for the host CLI launcher and its installer (Glad-Labs/poindexter#4156).
 
 ``scripts/linux/poindexter-cli.sh`` is what ``~/.local/bin/poindexter`` links
 to. Its predecessor exec'd the newest poetry venv under
