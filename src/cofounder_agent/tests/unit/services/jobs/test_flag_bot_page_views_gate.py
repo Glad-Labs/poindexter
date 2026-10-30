@@ -126,3 +126,57 @@ async def test_sweep_pass_runs_with_configured_cap():
     ]
     assert order == ["flood:ua_path", "sweep:ua_distinct_paths", "view_count"]
     assert result.metrics["sweep_flagged"] == 0
+
+
+def test_parse_referrer_hosts_normalizes_every_spelling():
+    from poindexter.services.jobs.flag_bot_page_views import parse_referrer_hosts
+
+    assert parse_referrer_hosts("https://www.aocr.org/, WWW.Spam.example ,aocr.org") == [
+        "aocr.org",
+        "spam.example",
+    ]
+    assert parse_referrer_hosts("") == []
+    assert parse_referrer_hosts(None) == []
+
+
+@pytest.mark.asyncio
+async def test_referrer_pass_skipped_when_no_hosts_configured():
+    conn = _RecordingConn()
+    config = {"_site_config": _FakeSiteConfig({})}
+    result = await FlagBotPageViewsJob().run(_RecordingPool(conn), config)
+    assert result.ok is True
+    assert not [c for c in conn.calls if "referrer:blocklist" in c[0]]
+    assert result.metrics["referrer_flagged"] == 0
+
+
+@pytest.mark.asyncio
+async def test_referrer_pass_flags_configured_hosts_all_history():
+    """A forged-referrer run that stays under both windowed caps (the
+    2026-10-26 www.aocr.org run: 82 hits, 27 paths over four days) is only
+    catchable by the referrer it claims."""
+
+    class _Conn(_RecordingConn):
+        async def execute(self, sql, *args):
+            self.calls.append((sql, args))
+            return "UPDATE 82" if "referrer:blocklist" in sql else "UPDATE 0"
+
+    conn = _Conn()
+    config = {
+        "_site_config": _FakeSiteConfig(
+            {"beacon_bot_referrer_hosts": "https://www.aocr.org/"}
+        )
+    }
+    result = await FlagBotPageViewsJob().run(_RecordingPool(conn), config)
+    assert result.ok is True
+
+    calls = [c for c in conn.calls if "referrer:blocklist" in c[0]]
+    assert len(calls) == 1
+    sql, args = calls[0]
+    assert args == (["aocr.org"],)
+    # All history, not window-scoped: a referrer is not shared by real readers
+    # the way a bare UA string is.
+    assert "created_at" not in sql
+    assert result.metrics["referrer_flagged"] == 82
+    assert result.changes_made == 82
+    # The view-count recompute still runs after the flag passes.
+    assert "view_count" in conn.calls[-1][0]

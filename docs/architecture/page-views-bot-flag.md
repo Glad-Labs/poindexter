@@ -22,6 +22,14 @@ signatures, materialized as `page_views.is_bot`:
   Window-scoped on purpose: bare UA strings are shared across real humans, so
   whole-history flagging on a UA alone would over-flag — and for the same
   reason this signature has no all-history backfill twin.
+- **Referrer blocklist** — rows whose referrer host (`www.` stripped) is listed
+  in `beacon_bot_referrer_hosts` are flagged across all history
+  (`referrer:blocklist`). For referrer spam that forges one site onto every hit
+  and stays under both windowed caps: the 2026-10-26 `www.aocr.org` run was 82
+  hits on 27 old posts over four days from one Chrome UA, never more than 25
+  distinct paths in a day, and half that week's "human" views. Unlike a bare
+  UA, a referrer host is not shared by unrelated readers, so whole-history
+  flagging is safe. Off until a host is named.
 
 ## Two surfaces
 
@@ -47,6 +55,9 @@ the raw read and owns the pipe-liveness case.
   the UA's window rows flagged. ~25 distinct pages/day is a sixth of the live
   corpus — fanatical for a human reader; raise it if operator browsing sessions
   start getting caught (flags are reversible, see Notes).
+- `beacon_bot_referrer_hosts` (empty) — comma-separated referrer hosts to flag
+  (`aocr.org`, `www.aocr.org` and `https://www.aocr.org/` all work). Name a host
+  only after reading its rows.
 
 ## Notes
 
@@ -54,7 +65,8 @@ the raw read and owns the pipe-liveness case.
   is the single writer. The sync ingest no longer bumps it.
 - Flagging is monotonic (only sets `is_bot` true). To re-open after raising a
   cap: `UPDATE page_views SET is_bot=false WHERE bot_reason LIKE 'flood:%'` (or
-  `'sweep:%'` for the path-sweep signature) then let the next sweep re-evaluate.
+  `'sweep:%'` for the path-sweep signature, `'referrer:%'` after removing a
+  host from the blocklist) then let the next sweep re-evaluate.
 - No IP signal exists on the beacon (CF bot-score is plan-gated); the flood-cap
   is the near-term heuristic. Bot rows are retained (audit), not dropped.
 - The one-time backfill is guarded by the `beacon_bot_flag_backfilled`

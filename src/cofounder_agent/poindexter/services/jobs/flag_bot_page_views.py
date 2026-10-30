@@ -20,10 +20,18 @@ Per run (gated by app_settings.beacon_bot_flag_enabled):
    poisoned the traffic-anomaly baseline for a week). Window-scoped on purpose:
    bare UA strings are shared across real humans, so whole-history flagging
    would over-flag — and for the same reason this pass has NO backfill twin.
-3. One-time backfill — sentinel-guarded (beacon_bot_flag_backfilled), same
+3. Referrer-host pass — any row whose referrer host (``www.`` stripped) is
+   listed in beacon_bot_referrer_hosts is flagged, across ALL history. A
+   referrer is a claim the client makes, so spam that forges one site's
+   homepage onto every hit is a stronger signature than any UA count: the
+   2026-10-26 ``www.aocr.org`` run (82 hits, one Chrome UA, 27 old posts over
+   four days) never hit 26 distinct paths in one window, so the sweep could not
+   see it, and it was half the week's "human" views. Empty by default; an
+   operator names a host only after looking at its rows.
+4. One-time backfill — sentinel-guarded (beacon_bot_flag_backfilled), same
    pair grouping over all history at beacon_flood_backfill_cap, to catch bots
    that flooded historically but aren't active in the current window.
-4. Recompute posts.view_count authoritatively from page_views_human (this job is
+5. Recompute posts.view_count authoritatively from page_views_human (this job is
    the single writer of view_count; the sync job's incremental bump is removed in
    the same PR). Bot-only posts reset to 0.
 
@@ -74,6 +82,17 @@ WHERE pv.user_agent IS NOT DISTINCT FROM s.user_agent
   AND pv.is_bot = false
 """
 
+_REFERRER_UPDATE = """
+UPDATE page_views
+SET is_bot = true, bot_reason = 'referrer:blocklist', flagged_at = now()
+WHERE is_bot = false
+  AND referrer IS NOT NULL
+  AND regexp_replace(
+        lower(split_part(split_part(referrer, '://', 2), '/', 1)),
+        '^www\\.', ''
+      ) = ANY($1::text[])
+"""
+
 _BACKFILL_UPDATE = """
 WITH flooded AS (
     SELECT user_agent, path
@@ -115,6 +134,26 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
 """
 
 
+def parse_referrer_hosts(raw: str | None) -> list[str]:
+    """Normalize the beacon_bot_referrer_hosts CSV to bare lowercase hosts.
+
+    Accepts ``aocr.org``, ``www.aocr.org`` or a pasted ``https://www.aocr.org/``
+    and returns ``aocr.org`` for each, matching how the SQL normalizes the
+    stored referrer.
+    """
+    hosts: list[str] = []
+    for item in (raw or "").split(","):
+        h = item.strip().lower()
+        if "://" in h:
+            h = h.split("://", 1)[1]
+        h = h.split("/", 1)[0]
+        if h.startswith("www."):
+            h = h[4:]
+        if h and h not in hosts:
+            hosts.append(h)
+    return hosts
+
+
 def _rowcount(status: Any) -> int:
     """Parse asyncpg's 'UPDATE N' command tag into an int."""
     try:
@@ -152,8 +191,11 @@ class FlagBotPageViewsJob:
             (sc.get("beacon_sweep_max_distinct_paths", "25") or "25").strip()
         )
 
+        referrer_hosts = parse_referrer_hosts(sc.get("beacon_bot_referrer_hosts", ""))
+
         flagged = 0
         sweep_flagged = 0
+        referrer_flagged = 0
         did_backfill = False
         try:
             async with pool.acquire() as conn:
@@ -164,6 +206,11 @@ class FlagBotPageViewsJob:
                     swept = await conn.execute(_SWEEP_UPDATE, str(window_hours), sweep_cap)
                     sweep_flagged = _rowcount(swept)
                     flagged += sweep_flagged
+
+                    if referrer_hosts:
+                        ref = await conn.execute(_REFERRER_UPDATE, referrer_hosts)
+                        referrer_flagged = _rowcount(ref)
+                        flagged += referrer_flagged
 
                     sentinel = await conn.fetchval(
                         "SELECT value FROM app_settings WHERE key = 'beacon_bot_flag_backfilled'"
@@ -183,12 +230,14 @@ class FlagBotPageViewsJob:
             ok=True,
             detail=(
                 f"flagged {flagged} bot page_views "
-                f"(sweep={sweep_flagged}, backfill={did_backfill})"
+                f"(sweep={sweep_flagged}, referrer={referrer_flagged}, "
+                f"backfill={did_backfill})"
             ),
             changes_made=flagged,
             metrics={
                 "rows_flagged": flagged,
                 "sweep_flagged": sweep_flagged,
+                "referrer_flagged": referrer_flagged,
                 "backfill_ran": int(did_backfill),
             },
         )

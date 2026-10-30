@@ -6747,6 +6747,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # (147 hits / 145 paths, 2026-07-26, poindexter#973). Window-scoped and
     # backfill-less on purpose: bare UA strings are shared across real humans.
     'beacon_sweep_max_distinct_paths': '25',
+    # Comma-separated referrer hosts whose page_views are flagged as bot across
+    # all history (referrer:blocklist). For referrer spam that forges one
+    # site's homepage onto every hit while staying under both windowed caps.
+    # Empty = pass off. Name a host only after reading its rows.
+    'beacon_bot_referrer_hosts': '',
 
     # --- Distribution attribution (services/distribution_ref.py) ---
     # Every outbound link Poindexter places on another platform carries a
@@ -7764,6 +7769,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'auto_embed_watch_max_retries': {'owner': 'auto_embed_watch', 'value_type': 'integer'},
     'auto_embed_watch_retry_delay_seconds': {'owner': 'auto_embed_watch', 'value_type': 'integer'},
     'beacon_bot_flag_enabled': {'owner': 'flag_bot_page_views', 'value_type': 'boolean'},
+    'beacon_bot_referrer_hosts': {'owner': 'flag_bot_page_views', 'value_type': 'string'},
     'beacon_flood_backfill_cap': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
     'beacon_flood_cap_per_window': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
     'beacon_flood_window_hours': {'owner': 'flag_bot_page_views', 'value_type': 'integer'},
