@@ -355,6 +355,30 @@ poindexter posts retitle 481 "Why Docker Changed Everything"
 Useful when you need to fix a title without going through the full
 approval queue again (e.g. remove a first-person pronoun caught late).
 
+### `posts edit-body <slug>`
+
+```bash
+# Surgical fix: must match exactly once (or pass --all)
+poindexter posts edit-body my-post --find "8 GB" --replace "16 GB"
+
+# Replace the whole body, and the SEO title + excerpt with it
+poindexter posts edit-body my-post --from-file rewrite.md \
+  --seo-title "New title" --excerpt "One-line summary."
+
+# Open the stored markdown in $EDITOR; --dry-run shows the change and stops
+poindexter posts edit-body my-post --dry-run
+```
+
+Edits a post's stored markdown (it reads `GET /api/posts/{slug}?format=markdown`,
+never the rendered HTML) and writes it through `PATCH /api/posts/{id}`, which
+re-exports a published post and refreshes the site cache. The edit is live
+when the command returns. `--seo-title`, `--seo-description` and `--excerpt`
+work alone too, for a meta-only change. Before writing, the pre-edit post is
+saved as JSON under `~/.poindexter/backups/posts/` (`--backup-dir` overrides).
+A body edit that leaves the old excerpt in place prints a warning, because
+listings, RSS and social cards show the excerpt. For drafts still awaiting
+approval use `tasks edit-body`, which edits the draft store instead.
+
 ---
 
 ## `settings`

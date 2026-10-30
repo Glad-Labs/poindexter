@@ -248,6 +248,18 @@ class TestGetPostBySlug:
         assert "meta" in data
         assert "tags" in data["meta"]
 
+    def test_format_markdown_passes_raw_content(self):
+        pool, conn = _make_pool_mock(fetchrow_return=SAMPLE_POST_ROW)
+        conn.fetch = AsyncMock(return_value=[])
+        with patch("poindexter.routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)), \
+             patch("poindexter.routes.cms_routes.PostsService.get_post_by_slug",
+                   new=AsyncMock(return_value={"data": {}, "meta": {}})) as svc:
+            client = TestClient(_build_app())
+            assert client.get("/api/posts/test-post?format=markdown").status_code == 200
+            assert client.get("/api/posts/test-post").status_code == 200
+            assert client.get("/api/posts/test-post?format=pdf").status_code == 422
+        assert [c.kwargs["raw_content"] for c in svc.await_args_list] == [True, False]
+
     def test_found_post_has_slug_in_data(self):
         pool, conn = _make_pool_mock(fetchrow_return=SAMPLE_POST_ROW)
         conn.fetch = AsyncMock(return_value=[])

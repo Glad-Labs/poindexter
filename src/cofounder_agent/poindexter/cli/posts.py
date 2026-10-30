@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import sys
+from typing import NoReturn
 
 import click
 
@@ -31,7 +32,7 @@ async def _make_gate_pool():
     return await open_cli_pool(_gate_dsn())
 
 
-def _exit_error(msg: str, code: int = 1) -> None:
+def _exit_error(msg: str, code: int = 1) -> NoReturn:
     click.echo(f"Error: {msg}", err=True)
     sys.exit(code)
 
@@ -279,6 +280,10 @@ def posts_get(slug: str, content: bool, json_output: bool) -> None:
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+    # The route answers {data: post, meta: {tags, category}}. The plain output
+    # read fields off the envelope and printed "?" for every one of them.
+    if not json_output and isinstance(p, dict) and isinstance(p.get("data"), dict):
+        p = p["data"]
 
     if json_output:
         if not content and isinstance(p, dict):
@@ -315,6 +320,42 @@ async def _patch_post(post_id: str, updates: dict) -> dict:
     async with WorkerClient() as c:
         resp = await c.patch(f"/api/posts/{post_id}", json=updates)
         return await c.json_or_raise(resp)
+
+
+async def _get_post_markdown(slug: str) -> dict:
+    """Fetch a post with its stored markdown body (not the rendered HTML)."""
+    async with WorkerClient() as c:
+        resp = await c.get(f"/api/posts/{slug}", params={"format": "markdown"})
+        body = await c.json_or_raise(resp)
+    if isinstance(body, dict) and isinstance(body.get("data"), dict):
+        return body["data"]
+    return body if isinstance(body, dict) else {}
+
+
+def apply_find_replace(body: str, find: str, replace: str, *, replace_all: bool) -> str:
+    """Replace ``find`` in ``body``; refuse a miss, and an ambiguous hit unless ``replace_all``."""
+    count = body.count(find)
+    if count == 0:
+        raise click.ClickException("--find text not found in the post body")
+    if count > 1 and not replace_all:
+        raise click.ClickException(
+            f"--find text appears {count} times; make it more specific or pass --all"
+        )
+    return body.replace(find, replace)
+
+
+def write_post_backup(post: dict, backup_dir: str) -> str:
+    """Save the pre-edit post fields as JSON and return the file path."""
+    from datetime import datetime, timezone
+
+    os.makedirs(backup_dir, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = os.path.join(backup_dir, f"{post.get('slug') or post.get('id')}-{stamp}.json")
+    keep = ("id", "slug", "title", "content", "excerpt", "seo_title",
+            "seo_description", "seo_keywords", "updated_at")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({k: post.get(k) for k in keep}, fh, indent=2, default=str)
+    return path
 
 
 async def _unpublish_post(post_id: str) -> dict:
@@ -389,6 +430,114 @@ def posts_retitle(post_id: str, title: str) -> None:
         f"Retitled: {post_id}  new title: {p.get('title', title)[:70]}",
         fg="green",
     )
+
+
+@posts_group.command("edit-body")
+@click.argument("slug")
+@click.option("--find", default=None, help="Text to replace (must match exactly once unless --all).")
+@click.option("--replace", default=None, help="Replacement for --find (default: delete the match).")
+@click.option("--all", "replace_all", is_flag=True, help="With --find, replace every match.")
+@click.option(
+    "--from-file", "from_file", default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Replace the whole body with this markdown file.",
+)
+@click.option("--seo-title", default=None, help="Also set the SEO <title>.")
+@click.option("--seo-description", default=None, help="Also set the meta description.")
+@click.option("--excerpt", default=None, help="Also set the excerpt (listings, RSS, social cards).")
+@click.option(
+    "--backup-dir", default=os.path.join(os.path.expanduser("~"), ".poindexter", "backups", "posts"),
+    show_default=True, help="Where the pre-edit copy is saved.",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would change and stop.")
+def posts_edit_body(
+    slug: str,
+    find: str | None,
+    replace: str | None,
+    replace_all: bool,
+    from_file: str | None,
+    seo_title: str | None,
+    seo_description: str | None,
+    excerpt: str | None,
+    backup_dir: str,
+    dry_run: bool,
+) -> None:
+    """Edit a post's body by slug, and push a published post to the live site.
+
+    Pick one edit: --find/--replace, --from-file, or neither to open the
+    stored markdown in $EDITOR. The pre-edit post is saved to --backup-dir
+    first. The update goes through PATCH /api/posts/{id}, which re-exports a
+    published post and refreshes the site cache, so the change is live when
+    the command returns. For drafts awaiting approval use `tasks edit-body`.
+    """
+    if find is not None and from_file is not None:
+        raise click.UsageError("use --find or --from-file, not both")
+    try:
+        post = _run(_get_post_markdown(slug))
+    except RuntimeError as e:
+        _exit_error(str(e))
+    post_id = post.get("id")
+    current = post.get("content") or ""
+    if not post_id:
+        _exit_error(f"post '{slug}' came back without an id")
+
+    if find is not None:
+        new_body = apply_find_replace(current, find, replace or "", replace_all=replace_all)
+    elif from_file is not None:
+        with open(from_file, encoding="utf-8") as fh:
+            new_body = fh.read()
+    elif any(v is not None for v in (seo_title, seo_description, excerpt)):
+        new_body = current  # meta-only edit
+    else:
+        edited = click.edit(current, extension=".md")
+        new_body = current if edited is None else edited
+
+    updates: dict = {}
+    if new_body.strip() and new_body != current:
+        updates["content"] = new_body
+    elif not new_body.strip():
+        _exit_error("refusing to write an empty body")
+    for key, value in (("seo_title", seo_title), ("seo_description", seo_description),
+                       ("excerpt", excerpt)):
+        if value is not None and value != post.get(key):
+            updates[key] = value
+    if not updates:
+        click.echo("(no changes)")
+        return
+
+    click.echo(f"{post.get('title', slug)}  [{post.get('status', '?')}]")
+    if "content" in updates:
+        click.echo(f"  body: {len(current)} -> {len(new_body)} chars")
+    for key in ("seo_title", "seo_description", "excerpt"):
+        if key in updates:
+            click.echo(f"  {key}: {updates[key][:100]}")
+    if "content" in updates and "excerpt" not in updates and post.get("excerpt"):
+        click.secho(
+            f"  excerpt unchanged: {post['excerpt'][:100]!r} (set --excerpt if it "
+            "describes the old body)",
+            fg="yellow",
+        )
+    if dry_run:
+        click.echo("(dry run, nothing written)")
+        return
+
+    backup = write_post_backup(post, backup_dir)
+    click.echo(f"  backup: {backup}")
+    try:
+        result = _run(_patch_post(str(post_id), updates))
+    except RuntimeError as e:
+        _exit_error(f"{e} (nothing changed; backup kept at {backup})")
+    live = result.get("live") or {}
+    if live.get("refreshed"):
+        click.secho(f"Updated and live: /posts/{live.get('slug', slug)}", fg="green")
+    elif live.get("reason") == "not_published":
+        click.secho("Updated (post is not published, so nothing to push live)", fg="green")
+    else:
+        click.secho(
+            f"Updated in the database, but the live site was NOT refreshed: {live}. "
+            "It will catch up on the next static-export reconciliation.",
+            fg="yellow",
+        )
 
 
 # ===========================================================================

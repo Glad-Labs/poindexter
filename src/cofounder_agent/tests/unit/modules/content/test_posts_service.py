@@ -225,6 +225,20 @@ class TestGetPostBySlug:
         assert "tags" in result["meta"]
         assert "category" in result["meta"]
 
+    async def test_content_is_rendered_html_by_default(self):
+        pool, _ = _make_pool(fetchrow_return=_post_row(), fetch_return=[])
+        result = await PostsService(pool=pool).get_post_by_slug("test-post")
+        assert "<h1" in result["data"]["content"]
+
+    async def test_raw_content_returns_stored_markdown(self):
+        """`posts edit-body` writes content back through PATCH; reading it as
+        HTML would replace the markdown source with HTML."""
+        pool, _ = _make_pool(fetchrow_return=_post_row(), fetch_return=[])
+        result = await PostsService(pool=pool).get_post_by_slug(
+            "test-post", raw_content=True
+        )
+        assert result["data"]["content"] == "# Hello\n\nContent here."
+
     async def test_timestamps_are_iso(self):
         row = _post_row()
         pool, _ = _make_pool(fetchrow_return=row, fetch_return=[])

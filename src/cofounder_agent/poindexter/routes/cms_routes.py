@@ -6,7 +6,7 @@ Using pure asyncpg for non-blocking database access.
 """
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -300,15 +300,20 @@ async def search_posts(
 async def get_post_by_slug(
     request: Request,
     slug: str,
+    format: Literal["html", "markdown"] = "html",  # noqa: A002 — public query parameter name
 ):
     """
     Get single post by slug with full content and tags (ASYNC).
     Returns: {data: {...}, meta: {tags: [...]}}
+
+    ``content`` is rendered HTML by default. ``?format=markdown`` returns the
+    stored markdown instead, which is what ``poindexter posts edit-body``
+    edits and PATCHes back.
     """
     try:
         pool = await get_db_pool()
         svc = PostsService(pool=pool)
-        result = await svc.get_post_by_slug(slug)
+        result = await svc.get_post_by_slug(slug, raw_content=format == "markdown")
         if result is None:
             raise HTTPException(status_code=404, detail="Post not found")
         return result

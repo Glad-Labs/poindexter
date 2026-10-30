@@ -38,11 +38,16 @@ def _format_timestamps(row: dict) -> dict:
     return row
 
 
-def _enrich_post(post: dict) -> dict:
-    """Apply excerpt generation, markdown→HTML, and coverImage mapping."""
+def _enrich_post(post: dict, *, raw_content: bool = False) -> dict:
+    """Apply excerpt generation, markdown→HTML, and coverImage mapping.
+
+    ``raw_content`` keeps ``content`` as the stored markdown. An editor needs
+    that: writing the rendered HTML back through ``PATCH /api/posts/{id}``
+    would replace the markdown source with HTML.
+    """
     if not post.get("excerpt") and post.get("content"):
         post["excerpt"] = generate_excerpt_from_content(post["content"])
-    if post.get("content"):
+    if post.get("content") and not raw_content:
         post["content"] = convert_markdown_to_html(post["content"])
     map_featured_image_to_coverimage(post)
     return post
@@ -158,8 +163,14 @@ class PostsService:
 
         return {"posts": posts, "total": len(posts), "offset": 0, "limit": limit}
 
-    async def get_post_by_slug(self, slug: str) -> dict[str, Any] | None:
-        """Return ``{data: post, meta: {tags, category}}`` or ``None`` if not found."""
+    async def get_post_by_slug(
+        self, slug: str, *, raw_content: bool = False,
+    ) -> dict[str, Any] | None:
+        """Return ``{data: post, meta: {tags, category}}`` or ``None`` if not found.
+
+        ``content`` is rendered HTML unless ``raw_content`` asks for the stored
+        markdown (``poindexter posts edit-body`` edits that).
+        """
         async with self._pool.acquire() as conn:
             post_row = await conn.fetchrow(
                 """
@@ -177,7 +188,7 @@ class PostsService:
             post = dict(post_row)
             post_id = post["id"]
             _format_timestamps(post)
-            _enrich_post(post)
+            _enrich_post(post, raw_content=raw_content)
 
             tags: list[dict] = []
             try:
