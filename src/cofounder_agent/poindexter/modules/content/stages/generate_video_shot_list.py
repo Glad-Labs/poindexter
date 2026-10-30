@@ -41,7 +41,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+from poindexter.modules.content.media_gpu_skip import surface_media_gpu_busy_skip
 from poindexter.plugins.stage import StageResult
 from poindexter.schemas.video_shot_list import VideoShotList
 from poindexter.services.gpu_admission import GpuBusyError

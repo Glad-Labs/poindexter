@@ -247,7 +247,7 @@ def test_media_skip_finding_kind_is_distinct_from_qa_rails():
     """Separate kinds because the remedies differ: a QA skip means review is
     being crowded out, a media skip means the post shipped without a podcast
     script or shot list."""
-    from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+    from poindexter.modules.content.media_gpu_skip import surface_media_gpu_busy_skip
 
     class _Busy:
         reason = "holder_eta_exceeds_budget"
@@ -270,7 +270,7 @@ def test_skip_finding_never_raises_into_the_caller():
     """The finding is telemetry on a degraded path — if emitting it could
     raise, a contention skip would become the stage crash it exists to avoid.
     """
-    from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+    from poindexter.modules.content.media_gpu_skip import surface_media_gpu_busy_skip
 
     class _Busy:
         reason = "holder_eta_exceeds_budget"
@@ -286,7 +286,7 @@ def test_skip_finding_never_raises_into_the_caller():
 def test_skip_finding_tolerates_a_busy_error_without_eta():
     """``eta_seconds`` is None when admission refuses for a reason other than a
     holder estimate; formatting it must not blow up the degraded path."""
-    from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+    from poindexter.modules.content.media_gpu_skip import surface_media_gpu_busy_skip
 
     class _Busy:
         reason = "queue_depth"
@@ -346,7 +346,7 @@ class TestTerminalGpuBusySkip:
         return captured
 
     def test_default_skip_stays_advisory(self, monkeypatch):
-        from poindexter.modules.content.stages._media_gpu_skip import (
+        from poindexter.modules.content.media_gpu_skip import (
             surface_media_gpu_busy_skip,
         )
 
@@ -361,7 +361,7 @@ class TestTerminalGpuBusySkip:
         assert captured[0]["extra"]["terminal"] is False
 
     def test_terminal_skip_warns_and_names_the_loss(self, monkeypatch):
-        from poindexter.modules.content.stages._media_gpu_skip import (
+        from poindexter.modules.content.media_gpu_skip import (
             surface_media_gpu_busy_skip,
         )
 

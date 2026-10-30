@@ -285,6 +285,15 @@ _MIGRATED_CALLERS = {
     # each skips in place and the stage carries on.
     "modules/content/stages/generate_media_scripts.py":
         "non-critical stage — partial work preserved + finding",
+    # The ambient bed's render moved here on 2026-10-30 so the news_short
+    # graph (media.generate_ambient_bed) makes it with the same code. Same
+    # gpu.lock("video") and the same gpu_sched_media_max_wait_s budget as
+    # before the move. It can afford to skip for the reason above: the bed is
+    # optional, a skipped bed renders the video without background music, and
+    # both callers carry on (the stage with its own GpuBusyError handler, the
+    # node via ambient_bed_or_nothing, which raises media_gpu_busy_skip).
+    "modules/content/ambient_bed.py":
+        "optional music bed — video renders without it + finding",
     "modules/content/stages/generate_video_shot_list.py":
         "fail-soft director — no shot list + audit + finding",
     "modules/content/stages/review_video_shot_list.py":

@@ -52,9 +52,6 @@
   "src/cofounder_agent/poindexter/modules/content/post_edit_service.py": {
     "arg-type": 2
   },
-  "src/cofounder_agent/poindexter/modules/content/stages/generate_media_scripts.py": {
-    "union-attr": 1
-  },
   "src/cofounder_agent/poindexter/services/caption_align.py": {
     "arg-type": 1,
     "assignment": 4

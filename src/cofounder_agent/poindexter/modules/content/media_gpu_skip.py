@@ -1,7 +1,9 @@
 """Shared contention-skip reporting for the media stages (poindexter#914 P2).
 
-Library, not a stage — the leading underscore keeps it out of any registry
-walk, same convention as ``atoms/_image_helpers.py``.
+A module-root library, not a stage: the media stages, the shared music bed
+(``ambient_bed``) and its graph node all report through it, and an atom's
+dependencies may not reach into ``stages/``. It lived at
+``stages/_media_gpu_skip.py`` until the news Short graph needed it.
 
 All three media stages (``generate_media_scripts``,
 ``generate_video_shot_list``, ``review_video_shot_list``) opt into GPU

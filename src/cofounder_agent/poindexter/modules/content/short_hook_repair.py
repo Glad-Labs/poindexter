@@ -227,7 +227,7 @@ async def repair_short_hook(
         title=title, article=article, max_words=max_words,
         max_chars=max_chars, target_seconds=target_seconds,
     )
-    from poindexter.modules.content.stages._media_gpu_skip import (
+    from poindexter.modules.content.media_gpu_skip import (
         surface_media_gpu_busy_skip,
     )
     from poindexter.services.gpu_admission import GpuBusyError

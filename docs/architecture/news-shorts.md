@@ -19,18 +19,26 @@ One `pipeline_tasks` row per Short, `task_type` and `template_slug` both
 `news_short`. The Prefect content flow claims it like any other task, and runs
 the graph in `services/news_short_spec.py`:
 
-| Node                                 | Atom                                                  | What it does                                                                                                                                                                                                        |
-| ------------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `research`                           | `news_short.research`                                 | Fetches the story's own page. The page is the whole corpus, and a page with fewer than `news_shorts_min_source_chars` readable characters stops the run. Also finds the related post and the niche's topic subject. |
-| `write_script`                       | `news_short.write_script`                             | The director model writes the narration (`news_short.script` in `skills/content/news-short/SKILL.md`), code checks it, one corrective retry. Fails the task after two rejections.                                   |
-| `shot_list`                          | `stage.generate_video_shot_list` (`short_only: true`) | The 9:16 director only. The long director is skipped.                                                                                                                                                               |
-| `review_shot_list`                   | `stage.review_video_shot_list`                        | Reviews the Short's list when there is no long one.                                                                                                                                                                 |
-| `render_narration` … `persist_media` | the `media_pipeline` Short steps                      | Narration, captions, audio QA, the 9:16 render, the YouTube package, video QA, the durable `video_short` row. The long lane has no script and does nothing.                                                         |
-| `finalize`                           | `news_short.finalize`                                 | Marks the row standalone, titles it with the headline, stores the narration where the existing Short readers look for it. Fails when nothing rendered.                                                              |
-| `done`                               | `atoms.set_task_status`                               | The task lands at `completed`.                                                                                                                                                                                      |
+| Node                                   | Atom                                                  | What it does                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `research`                             | `news_short.research`                                 | Fetches the story's own page. The page is the whole corpus, and a page with fewer than `news_shorts_min_source_chars` readable characters stops the run. Also finds the related post and the niche's topic subject. |
+| `write_script`                         | `news_short.write_script`                             | The director model writes the narration (`news_short.script` in `skills/content/news-short/SKILL.md`), code checks it, one corrective retry. Fails the task after two rejections.                                   |
+| `shot_list`                            | `stage.generate_video_shot_list` (`short_only: true`) | The 9:16 director only. The long director is skipped.                                                                                                                                                               |
+| `review_shot_list`                     | `stage.review_video_shot_list`                        | Reviews the Short's list when there is no long one.                                                                                                                                                                 |
+| `render_narration` … `qa_audio`        | the `media_pipeline` Short steps                      | Narration, captions and audio QA. The long lane has no script and does nothing.                                                                                                                                     |
+| `ambient_bed`                          | `media.generate_ambient_bed`                          | The instrumental bed mixed under the narration at -18 dB, the same one a blog Short carries. Best-effort: no bed, the Short renders narration-only.                                                                 |
+| `render_short_video` … `persist_media` | the `media_pipeline` Short steps                      | The 9:16 render, the YouTube package, video QA, the durable `video_short` row.                                                                                                                                      |
+| `finalize`                             | `news_short.finalize`                                 | Marks the row standalone, titles it with the headline, stores the narration where the existing Short readers look for it. Fails when nothing rendered.                                                              |
+| `done`                                 | `atoms.set_task_status`                               | The task lands at `completed`.                                                                                                                                                                                      |
 
 Everything after `write_script` is the same atom the blog's Short runs, so a
-fix to any of them reaches both.
+fix to any of them reaches both. The one exception is the music bed: a blog
+post makes it in `generate_media_scripts`, which this graph doesn't run, so the
+`ambient_bed` node makes it here. Both call `modules/content/ambient_bed.py`.
+Until 2026-10-30 news Shorts had no bed at all and went out narration-only
+beside blog Shorts with music. A bed costs about a minute of GPU time on the
+`stable-audio` sidecar; a busy GPU skips it and raises a `media_gpu_busy_skip`
+finding.
 
 ## Picking a story
 

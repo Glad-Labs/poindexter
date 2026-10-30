@@ -263,7 +263,7 @@ async def test_gpu_busy_is_a_skip_not_a_failure(monkeypatch):
     monkeypatch.setattr(gs, "gpu", SimpleNamespace(lock=lambda *a, **k: _Busy()))
     monkeypatch.setattr(gs, "media_wait_budget_s", lambda: 1.0)
     seen = {}
-    import poindexter.modules.content.stages._media_gpu_skip as skipmod
+    import poindexter.modules.content.media_gpu_skip as skipmod
     monkeypatch.setattr(
         skipmod, "surface_media_gpu_busy_skip",
         lambda stage, busy, *, task_id, terminal=False: seen.update(stage=stage, terminal=terminal),

@@ -28,8 +28,13 @@ import re
 import uuid
 from typing import Any
 
+from poindexter.modules.content.ambient_bed import (
+    AMBIENT_PROMPT_FALLBACK,
+    ambient_mood_cues,
+    generate_ambient_bed,
+)
+from poindexter.modules.content.media_gpu_skip import surface_media_gpu_busy_skip
 from poindexter.modules.content.short_hook_repair import repair_short_hook
-from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
 from poindexter.plugins.stage import StageResult
 from poindexter.services.audio_gen_service import generate_audio, is_audio_gen_enabled
 from poindexter.services.gpu_admission import GpuBusyError
@@ -45,32 +50,10 @@ _INTRO_PROMPT_FALLBACK = (
     "foley, no noise."
 )
 
-_AMBIENT_PROMPT_FALLBACK = (
-    "Lo-fi chillhop instrumental background music for a technology explainer "
-    "video: mellow electric piano chords, warm bass, soft drum loop, 80 BPM, "
-    "relaxed and focused. No vocals, no sound effects, no foley. "
-    "Mood cues: {mood}"
-)
-
-
-def _ambient_mood_cues(scenes: list[Any]) -> str:
-    """First real scene description, reduced to plain mood text.
-
-    Scene entries are SDXL *visual* prompts (and legacy rows carry markdown
-    headers like ``### PART 1``). Fed verbatim to the music model they produce
-    literal soundscapes — an office scene became engine-room hum — so the
-    scene text is demoted to trailing mood cues inside a music-directed
-    template, and markdown/header junk is stripped before use.
-    """
-    for entry in scenes or []:
-        text = str(entry).strip()
-        text = re.sub(r"^#+\s.*$", "", text, flags=re.MULTILINE)
-        text = re.sub(r"[*#_`]+", " ", text)
-        text = re.sub(r"^\s*Scene\s+\w+\s*[:.\-]\s*", "", text, flags=re.IGNORECASE)
-        text = " ".join(text.split())
-        if len(text) >= 20:
-            return text[:160]
-    return ""
+# The bed's prompt, mood cues and render live in ``modules/content/ambient_bed``
+# so the news Short graph makes its bed with the same code.
+_AMBIENT_PROMPT_FALLBACK = AMBIENT_PROMPT_FALLBACK
+_ambient_mood_cues = ambient_mood_cues
 
 logger = logging.getLogger(__name__)
 
@@ -672,40 +655,21 @@ class GenerateMediaScriptsStage:
                     # Music-directed template (operator-tunable); the scene
                     # text rides along as mood cues only — verbatim visual
                     # prompts make the model render room tone, not music.
-                    mood = _ambient_mood_cues(video_scenes) or (title or "calm focus")
-                    template = sc.get(
-                        "audio_gen_ambient_prompt_template", _AMBIENT_PROMPT_FALLBACK,
-                    ) or _AMBIENT_PROMPT_FALLBACK
-                    ambient_prompt = template.replace("{mood}", mood)
-                    # Same render lock as the intro sting above. Its bounded
-                    # wait is a term of resolve_stage_timeout_seconds: it sits
-                    # in front of the render that floor exists to protect.
-                    async with gpu.lock(
-                        "video", model=_audio_engine_label(sc),
-                        task_id=context.get("task_id"), phase="video_ambient_bed",
-                        max_wait_s=media_wait_budget_s(), priority="background",
-                    ):
-                        ambient_result = await generate_audio(
-                            ambient_prompt,
-                            "ambient",
-                            site_config=sc,
-                            # Durable + deterministic (poindexter#1021): this
-                            # path is frozen into task_metadata and read by the
-                            # render graph in another container, possibly days
-                            # later.
-                            output_dir=str(VIDEO_DIR),
-                            output_stem=f"{media_stem}_ambient",
-                            # Model max (~47s): the compositor loops the bed
-                            # under the whole video, so the longest clip =
-                            # fewest audible loop seams (provider default 5s
-                            # is sting-sized).
-                            duration_s=47.0,
-                        )
-                    if ambient_result is not None:
-                        path = ambient_result.file_path or ""
-                        if path:
-                            ambient_audio_path = path
-                            logger.info("[MEDIA] Video ambient bed: %s", path)
+                    ambient_audio_path = await generate_ambient_bed(
+                        _ambient_mood_cues(video_scenes) or (title or "calm focus"),
+                        site_config=sc,
+                        # Durable + deterministic (poindexter#1021): this
+                        # path is frozen into task_metadata and read by the
+                        # render graph in another container, possibly days
+                        # later.
+                        output_dir=str(VIDEO_DIR),
+                        output_stem=f"{media_stem}_ambient",
+                        task_id=context.get("task_id"),
+                        generate=generate_audio,
+                        is_enabled=is_audio_gen_enabled,
+                    )
+                    if ambient_audio_path:
+                        logger.info("[MEDIA] Video ambient bed: %s", ambient_audio_path)
                 except GpuBusyError as busy:
                     # Ahead of the broad handler: the video renders without a
                     # music bed, and every script above is already built.

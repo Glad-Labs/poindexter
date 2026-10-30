@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from poindexter.modules.content.stages._media_gpu_skip import surface_media_gpu_busy_skip
+from poindexter.modules.content.media_gpu_skip import surface_media_gpu_busy_skip
 from poindexter.modules.content.stages.generate_video_shot_list import (
     _DIRECTOR_MAX_RETRIES_DEFAULT,
     _DIRECTOR_MAX_TOKENS_DEFAULT,

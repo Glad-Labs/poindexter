@@ -63,3 +63,13 @@ def test_release_follows_persist_and_precedes_the_terminal_status():
     done = next(n for n in NEWS_SHORT_GRAPH_DEF["nodes"] if n["id"] == "done")
     assert done["atom"] == "atoms.set_task_status"
     assert done["config"]["target_status"] == "completed"
+
+
+def test_the_music_bed_is_made_before_the_short_renders():
+    """A news Short carries the same instrumental bed a blog Short has had
+    since #679; it must exist before the render that mixes it."""
+    edges = [(e["from"], e["to"]) for e in NEWS_SHORT_GRAPH_DEF["edges"]]
+    assert _atoms(NEWS_SHORT_GRAPH_DEF)["ambient_bed"] == "media.generate_ambient_bed"
+    assert ("qa_audio", "ambient_bed") in edges
+    assert ("ambient_bed", "render_short_video") in edges
+    assert ("qa_audio", "render_short_video") not in edges

@@ -22,6 +22,10 @@ claims it like any other task.
                                              — the Short lane's audio steps;
                                                the long lane has no script and
                                                no-ops
+      → ambient_bed (media.generate_ambient_bed)
+                                             — the instrumental bed mixed under
+                                               the narration, as a blog Short
+                                               gets; best-effort
       → render_short_video → package_short   — the 9:16 render, then its
                                                YouTube title + description lead
       → media_qa → persist_media             — video QA, durable video_short row
@@ -64,6 +68,7 @@ NEWS_SHORT_GRAPH_DEF: dict[str, Any] = {
         {"id": "render_narration", "atom": "media.render_narration"},
         {"id": "transcribe_narration", "atom": "media.transcribe_narration"},
         {"id": "qa_audio", "atom": "qa.audio"},
+        {"id": "ambient_bed", "atom": "media.generate_ambient_bed"},
         {"id": "render_short_video", "atom": "media.render_short_video"},
         {"id": "package_short", "atom": "media.package_short"},
         {"id": "media_qa", "atom": "media.qa"},
@@ -85,7 +90,8 @@ NEWS_SHORT_GRAPH_DEF: dict[str, Any] = {
         {"from": "review_shot_list", "to": "render_narration"},
         {"from": "render_narration", "to": "transcribe_narration"},
         {"from": "transcribe_narration", "to": "qa_audio"},
-        {"from": "qa_audio", "to": "render_short_video"},
+        {"from": "qa_audio", "to": "ambient_bed"},
+        {"from": "ambient_bed", "to": "render_short_video"},
         {"from": "render_short_video", "to": "package_short"},
         {"from": "package_short", "to": "media_qa"},
         {"from": "media_qa", "to": "persist_media"},
