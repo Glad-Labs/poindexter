@@ -10,7 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "next": "^16.4.2",
+    "next": "^16.4.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -18,10 +18,10 @@
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "autoprefixer": "^10.6.1",
+    "autoprefixer": "^10.6.2",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.4.2",
-    "postcss": "^8.5.30",
+    "eslint-config-next": "^16.4.3",
+    "postcss": "^8.5.32",
     "tailwindcss": "^3.4.19",
     "typescript": "^5"
   },
