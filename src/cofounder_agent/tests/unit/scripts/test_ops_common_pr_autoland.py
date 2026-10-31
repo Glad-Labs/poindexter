@@ -33,11 +33,11 @@ def _ops_dir() -> Path:
 sys.path.insert(0, str(_ops_dir()))
 import _common as c  # noqa: E402
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 WT = "/home/op/.poindexter/worktrees/claude-md-sync-2026-08-08-0230"
 BRANCH = "auto/claude-md-sync-2026-08-08-0230"
-CREATED_URL = "https://github.com/Glad-Labs/glad-labs-stack/pull/9999"
-EXISTING_URL = "https://github.com/Glad-Labs/glad-labs-stack/pull/3126"
+CREATED_URL = "https://github.com/Glad-Labs/poindexter/pull/9999"
+EXISTING_URL = "https://github.com/Glad-Labs/poindexter/pull/3126"
 LOG = logging.getLogger("test-ops-autoland")
 
 
@@ -170,7 +170,7 @@ class TestWaitForMerge:
 
     def test_the_pr_is_looked_up_by_its_url_when_given(self, monkeypatch):
         shell = _Shell(views=[_pr(state="MERGED")]).install(monkeypatch)
-        url = "https://github.com/Glad-Labs/glad-labs-stack/pull/4521"
+        url = "https://github.com/Glad-Labs/poindexter/pull/4521"
         c.wait_for_merge(REPO, BRANCH, cwd=WT, budget_seconds=60.0, poll_seconds=0.0,
                          log=LOG, pr_ref=url)
         assert url in shell.argv("gh", "pr", "view")

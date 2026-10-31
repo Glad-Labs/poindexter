@@ -201,7 +201,7 @@ class TestDevDiaryContext:
 # Substance policy — the thin-day bar
 # ---------------------------------------------------------------------------
 #
-# Every case below is drawn from real Glad-Labs/glad-labs-stack history over
+# Every case below is drawn from real Glad-Labs/poindexter history over
 # 2026-07-08..07-31, not invented. That window is what set the defaults.
 
 
