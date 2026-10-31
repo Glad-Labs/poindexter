@@ -17,7 +17,7 @@
 
 ---
 
-This is not a demo repo. Poindexter™ is the production system behind [gladlabs.io](https://www.gladlabs.io) — 220+ live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
+This is not a demo repo. Poindexter™ is the production system behind [gladlabs.io](https://www.gladlabs.io) — 230+ live posts and counting, every one generated, reviewed, and published by this pipeline on a single PC. Here is the operator's actual view of it running:
 
 <img src="docs/assets/readme/console.gif" alt="Operator console, live: a post mid-pipeline in the system pulse, KPI row, approval inbox with QA verdicts, then the TRACE view and the animated system map" width="100%">
 
@@ -286,7 +286,7 @@ Built by one person in evening hours, directing AI coding agents (Claude Code) t
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Pop!\_OS). Single-operator content business publishing daily.
-- 220+ live posts on [gladlabs.io](https://www.gladlabs.io) (400+ posts total, 2,000+ pipeline runs).
+- 230+ live posts on [gladlabs.io](https://www.gladlabs.io) (400+ posts total, 2,000+ pipeline runs).
 - 23,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup --auto` takes a fresh clone to a healthy local stack — no `.env` file, no manual secret wrangling — and the quick start above runs on a clean GitHub runner every week (with a tiny stand-in model, since a runner has no GPU), failing unless the queued post reaches the approval queue.
 - Live in-place upgrades — schema changes applied to a running instance with zero data loss.
