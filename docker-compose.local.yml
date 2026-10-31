@@ -1595,8 +1595,27 @@ services:
     # Preferred OOM victim (poindexter#1021) — stateless model server; the
     # 2026-08-24 incident's biggest RAM holder (~29GB RSS+swap).
     oom_score_adj: 400
+    # --disable-pinned-memory --fast-disk (2026-10-30): by default ComfyUI may
+    # PIN up to ~92% of host RAM ("Enabled pinned memory 55747.0"), and pinned
+    # pages cannot be swapped, so every WAN render pushed the rest of the box
+    # (the 3090 judge, speaches, the desktop compositor) into swap and the
+    # thrashing alerts fired. Replaying one WAN 2.2 i2v job under each flag set:
+    #   prod flags   peak 30.7 GiB (30.4 anon), host min-available 2.9 GiB,
+    #                swap +7.0 GiB, 365 s
+    #   both flags   peak 12.0 GiB (2.4 anon, the rest reclaimable file
+    #                cache), host min-available 29.0 GiB, swap +0, 352 s
+    # Same seed, output PSNR 44.6 dB against prod (visually identical).
+    # --fast-disk reads weights straight from the NVMe model dirs below; a
+    # host with models on a slow disk should drop it.
     command: ["python", "main.py", "--listen", "0.0.0.0", "--port", "8188",
-              "--reserve-vram", "${COMFYUI_RESERVE_VRAM_GB:-1.5}"]
+              "--reserve-vram", "${COMFYUI_RESERVE_VRAM_GB:-1.5}",
+              "--disable-pinned-memory", "--fast-disk"]
+    # A ceiling so one runaway render cannot take the host (the 2026-08-24 and
+    # 08-27 incidents). 2x the measured 12 GiB peak; most of a render's
+    # footprint is file cache, which the kernel reclaims inside the limit
+    # before it would OOM. Swap stays allowed (memswap defaults to 2x), so a
+    # render that overshoots slows down rather than dies.
+    mem_limit: ${COMFYUI_MEM_LIMIT:-24g}
     ports:
       - "127.0.0.1:8188:8188"
     environment:

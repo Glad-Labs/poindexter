@@ -46,6 +46,15 @@ quality class, so it is the provider's default regime.
   malware surface; adding any requires a security review). Compose service
   `comfyui` behind `--profile comfyui`, port bound to `127.0.0.1:8188` only
   (the API is unauthenticated), `--reserve-vram` headroom for the desktop.
+- **Host RAM contract (2026-10-30)** — `--disable-pinned-memory --fast-disk`
+  and `mem_limit: ${COMFYUI_MEM_LIMIT:-24g}`. By default ComfyUI may pin up to
+  ~92% of host RAM, and pinned pages cannot be swapped, so each WAN 2.2 render
+  (two 14 GB models plus a 6.3 GB text encoder) pushed the 3090 judge, speaches
+  and the desktop into swap. Replaying one i2v job: prod flags peaked at 30.7
+  GiB (30.4 anon) with host available RAM down to 2.9 GiB and swap +7 GiB; both
+  flags peaked at 12.0 GiB (2.4 anon, the rest reclaimable file cache), swap
+  +0, render 352 s vs 365 s, output PSNR 44.6 dB (visually identical).
+  `--fast-disk` assumes the model dirs are on NVMe.
 - **GPL-3 boundary** — ComfyUI is consumed strictly over HTTP as a sidecar,
   never vendored or imported; the image clones the pinned tag at build time.
   (Same boundary the 2026-06-19 video-quality design specified.)
