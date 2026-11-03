@@ -1,6 +1,6 @@
 """Migration 20260922_181657: revenue_events external_id unique index + drop LS test rows
 
-ISSUE: Glad-Labs/glad-labs-stack#3216
+ISSUE: Glad-Labs/poindexter#3216
 
 ``revenue_events`` carried no uniqueness on ``external_id`` — only
 ``PK(id)`` plus non-unique indexes on created_at/type/post. Every writer

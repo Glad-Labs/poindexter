@@ -107,7 +107,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 # by publish_service.publish_post_from_task. Defaults
                 # to empty array when omitted so legacy callers don't
                 # silently inherit a "spawn everything" behavior.
-                # Closes the seam gap from Glad-Labs/glad-labs-stack#480.
+                # Closes the seam gap from Glad-Labs/poindexter#480.
                 media_to_generate = list(post_data.get("media_to_generate") or [])
 
                 # word_count + reading_time — both columns exist on the
@@ -152,7 +152,7 @@ class ContentDatabase(DatabaseServiceMixin):
 
                 # video_shot_list — JSONB director output from the
                 # ``generate_video_shot_list`` pipeline stage
-                # (Glad-Labs/glad-labs-stack#649 PR 2). Shape pinned by
+                # (Glad-Labs/poindexter#649 PR 2). Shape pinned by
                 # ``schemas/video_shot_list.VideoShotList``. NULL means
                 # the director didn't run (older posts, or stage
                 # skipped due to missing podcast script) — the shot-list

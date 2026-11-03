@@ -14,7 +14,7 @@ seed). But 18 legacy AV assets generated *before* that policy took hold
 
 The 7 videos were additionally mass-re-uploaded to YouTube on 2026-06-15 by a
 grandfather migration that left ``dispatched_at`` NULL — see
-Glad-Labs/glad-labs-stack#1596. Those YouTube uploads have no programmatic
+Glad-Labs/poindexter#1596. Those YouTube uploads have no programmatic
 handle and must be deleted by hand in YouTube Studio.
 
 Scoped to dev_diary ONLY (``pipeline_tasks.template_slug='dev_diary'`` via

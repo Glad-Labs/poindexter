@@ -1,6 +1,6 @@
 """``install-deploy-sync.sh`` puts the deploy driver behind the launcher.
 
-Glad-Labs/glad-labs-stack#4172. The installer is the one idempotent way the
+Glad-Labs/poindexter#4172. The installer is the one idempotent way the
 host gets (1) an installed COPY of the launcher, outside every git tree, (2) a
 last-known-good driver that was proven on this host, and (3) the unit renders:
 deploy-sync execs the installed launcher, and the docker watchdog and (since

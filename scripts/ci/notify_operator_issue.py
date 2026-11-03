@@ -55,13 +55,13 @@ fails the build.
 Usage::
 
     python3 scripts/ci/notify_operator_issue.py failed \
-        --repo Glad-Labs/glad-labs-stack \
+        --repo Glad-Labs/poindexter \
         --title "⚠️ poindexter mirror sync FAILED" \
         --label bug --body-file body.md \
         --run-url "$RUN_URL" --commit "$GITHUB_SHA"
 
     python3 scripts/ci/notify_operator_issue.py recovered \
-        --repo Glad-Labs/glad-labs-stack \
+        --repo Glad-Labs/poindexter \
         --title "⚠️ poindexter mirror sync FAILED" \
         --run-url "$RUN_URL" --commit "$GITHUB_SHA"
 """

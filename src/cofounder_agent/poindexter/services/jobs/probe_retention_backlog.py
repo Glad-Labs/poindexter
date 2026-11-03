@@ -1,6 +1,6 @@
 """ProbeRetentionBacklogJob — is each retention policy actually keeping up?
 
-poindexter#933, from Glad-Labs/glad-labs-stack#2871 where
+poindexter#933, from Glad-Labs/poindexter#2871 where
 ``retention.checkpoint_prune`` failed to prune ~20k rows **for months** while
 reporting success on every run: ``last_error`` NULL, ``last_run_at`` current,
 ``total_deleted`` non-zero, the Grafana panel green. Every signal we had was a

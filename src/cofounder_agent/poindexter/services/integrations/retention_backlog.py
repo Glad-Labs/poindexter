@@ -1,6 +1,6 @@
 """Retention backlog registry — how a policy states whether it is keeping up.
 
-poindexter#933, from the Glad-Labs/glad-labs-stack#2871 bug where
+poindexter#933, from the Glad-Labs/poindexter#2871 bug where
 ``retention.checkpoint_prune`` failed to prune ~20k rows **for months** while
 reporting success on every run.
 

@@ -1,6 +1,6 @@
 """``deploy-checkout-sync.sh`` keeps the host CLI's venv on the deployed lockfile.
 
-Glad-Labs/glad-labs-stack#4156: the host ``poindexter`` command runs out of
+Glad-Labs/poindexter#4156: the host ``poindexter`` command runs out of
 ``~/.poindexter/cli-venv``, editable-installed from the deploy clone
 (``scripts/linux/cli-venv-sync.sh``). Code reaches it for free, since each CLI
 call is a fresh process. A ``poetry.lock`` change does not, so every sync pass

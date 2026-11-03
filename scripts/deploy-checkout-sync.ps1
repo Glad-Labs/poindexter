@@ -74,7 +74,7 @@
   brain-daemon) left the worker importing STALE code against a NEW tree
   (2026-07-02, twice). See Get-DeployOutcome.
 
-  OBSERVABILITY (Glad-Labs/glad-labs-stack). When this task runs under the
+  OBSERVABILITY (Glad-Labs/poindexter). When this task runs under the
   Scheduler it runs hidden + non-interactive, so its `Write-Host` narration
   goes nowhere and the Windows TaskScheduler/Operational history log is
   disabled by default - leaving a green-looking 0x0 task with no on-disk

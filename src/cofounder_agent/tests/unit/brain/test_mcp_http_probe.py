@@ -184,7 +184,7 @@ class TestMcpHttpProbe:
 
     @pytest.mark.asyncio
     async def test_kill_switch_fails_closed_on_missing_enabled_row(self):
-        """Glad-Labs/glad-labs-stack#468: an absent `mcp_http_probe_enabled`
+        """Glad-Labs/poindexter#468: an absent `mcp_http_probe_enabled`
         row must NOT fall back to `DEFAULT_ENABLED=True` — that's the silent
         fail-open path that caused 10 false-positive alerts/24h after the
         operator had set the kill-switch to 'false' five days earlier.

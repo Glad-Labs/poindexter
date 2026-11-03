@@ -1,7 +1,7 @@
 """Integration tests for the ``lab_outcomes_v1`` view + the additive
 columns introduced by migration ``20260528_204250``.
 
-Phase 0 of the content R&D lab (Glad-Labs/glad-labs-stack). The view is
+Phase 0 of the content R&D lab (Glad-Labs/poindexter). The view is
 the **single read surface** every later phase consumes — bandit, variant
 experiments, learnings digest. Get the joins right here and downstream
 phases stop fighting schema.

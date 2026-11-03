@@ -17,7 +17,7 @@ missing canonical, zero/multiple <h1>, missing og:image / og:image:alt /
 twitter:card, JSON-LD parse errors, and <img> tags with no alt attribute.
 
 Originally the one-off crawler used in the 2026-06-02 SEO remediation
-(Glad-Labs/glad-labs-stack#962); kept as a permanent verification tool —
+(Glad-Labs/poindexter#962); kept as a permanent verification tool —
 re-run after a content/metadata change to confirm issue counts dropped.
 """
 from __future__ import annotations

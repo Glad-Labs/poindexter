@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cli-venv-sync.sh — keep the host `poindexter` CLI on the DEPLOYED code
-# (Glad-Labs/glad-labs-stack#4156).
+# (Glad-Labs/poindexter#4156).
 #
 # Why this exists. The host CLI used to run out of a poetry venv editable-
 # installed against the OPERATOR checkout (~/glad-labs-website) — i.e. whatever

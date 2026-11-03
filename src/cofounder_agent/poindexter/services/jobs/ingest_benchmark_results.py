@@ -21,7 +21,7 @@ Config (``plugin.job.ingest_benchmark_results``):
 
 Settings (``app_settings``):
 - ``benchmark_ingest_repo`` — non-secret, ``owner/repo`` whose Actions runs
-  hold the artifacts (the operator sets ``Glad-Labs/glad-labs-stack``).
+  hold the artifacts (the operator sets ``Glad-Labs/poindexter``).
   Empty = feature unconfigured; the job skips quietly (fresh-install
   posture, same as sync_cloudflare_analytics with no account id).
 - ``gh_token`` — existing secret, reused (dev_diary_source reads the same

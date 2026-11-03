@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install-host-cli.sh — make the host `poindexter` command run the DEPLOYED code
-# (Glad-Labs/glad-labs-stack#4156).
+# (Glad-Labs/poindexter#4156).
 #
 # One-time host setup; safe to re-run. It:
 #   1. builds the CLI venv (~/.poindexter/cli-venv) from the deploy clone's

@@ -52,7 +52,7 @@ imports **fresh on-disk code**, rather than running it in-process. The
 long-lived MCP server would otherwise bind the worker to stale cached
 modules after any code change (a deaf bridge a mobile operator can't fix by
 restarting) — see
-[Glad-Labs/glad-labs-stack#1010](https://github.com/Glad-Labs/glad-labs-stack/issues/1010).
+[Glad-Labs/poindexter#1010](https://github.com/Glad-Labs/poindexter/issues/1010).
 The worker's PID lands in `<sid>.lock` and its readiness in `<sid>.status`
 (`connecting` → `ready` / `error: …`); the launcher polls that handshake
 (up to 30s for a cold Whisper load) before returning, and `voice_leave_room`

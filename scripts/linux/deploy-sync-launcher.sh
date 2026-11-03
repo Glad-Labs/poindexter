@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy-sync-launcher.sh — run the MERGED deploy driver every fire, and keep a
 # last-known-good copy so a broken merge can't brick the syncer that would
-# deliver its fix. (Glad-Labs/glad-labs-stack#4172)
+# deliver its fix. (Glad-Labs/poindexter#4172)
 #
 # poindexter-deploy-sync.service execs an INSTALLED COPY of this file:
 #
