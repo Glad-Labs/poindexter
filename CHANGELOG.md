@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## [0.164.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.163.0...v0.164.0) (2026-11-03)
+
+
+### Features
+
+* **cli:** posts edit-body edits a live post and pushes it to the site ([#4642](https://github.com/Glad-Labs/glad-labs-stack/issues/4642)) ([0f287c6](https://github.com/Glad-Labs/glad-labs-stack/commit/0f287c615f7ffb3afcb8dec764a2d30dabcb2f75))
+* **media:** give news Shorts the same music bed as blog Shorts ([#4644](https://github.com/Glad-Labs/glad-labs-stack/issues/4644)) ([fa4a8ce](https://github.com/Glad-Labs/glad-labs-stack/commit/fa4a8ce36307ae156b020850c7631813189e9894))
+
+
+### Bug Fixes
+
+* **qa:** don't score hypotheticals or links to our own site as sourced ([#4643](https://github.com/Glad-Labs/glad-labs-stack/issues/4643)) ([a0e2460](https://github.com/Glad-Labs/glad-labs-stack/commit/a0e24606ad1bff9d3b89b76bda6943ef742fa17d))
+* **qa:** score a markdown table cell only when its own row is attributed ([#4641](https://github.com/Glad-Labs/glad-labs-stack/issues/4641)) ([2cf24ea](https://github.com/Glad-Labs/glad-labs-stack/commit/2cf24ea79200857335ce5906c4524a5d68100d92))
+
+
+### Performance
+
+* **comfyui:** stop pinning host RAM; cap the container at 24g ([#4647](https://github.com/Glad-Labs/glad-labs-stack/issues/4647)) ([624e183](https://github.com/Glad-Labs/glad-labs-stack/commit/624e1839a91e22133d9fc2ef24b119141438c29a))
+
 ## [0.163.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.162.1...v0.163.0) (2026-10-30)
 
 
